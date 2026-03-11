@@ -32,14 +32,13 @@ Armature service repository — a monorepo containing a Node.js API, React UI, R
 │       ├── migrations/
 │       └── Cargo.toml
 ├── packages/
-│   └── armature/       # Sui Move smart contracts
+│   ├── armature_framework/        # DAO Framework code
+│   │   ├── sources/
+│   │   │   ├── *.move
+│   │   └── Move.toml
+│   └── armature_proposals/       # DAO Proposal code
 │       ├── sources/
-│       │   ├── pool.move
-│       │   ├── registry.move
-│       │   └── helper/
-│       │       ├── constants.move
-│       │       ├── math.move
-│       │       └── utils.move
+│   │   │   ├── *.move
 │       └── Move.toml
 ├── docker-compose.yml  # PostgreSQL for indexer
 ├── Cargo.toml          # Rust workspace root
