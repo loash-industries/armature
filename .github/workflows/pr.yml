@@ -10,6 +10,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Detect which paths changed
   changes:
@@ -17,6 +21,8 @@ jobs:
     outputs:
       ui: ${{ steps.filter.outputs.ui }}
       api: ${{ steps.filter.outputs.api }}
+      indexer: ${{ steps.filter.outputs.indexer }}
+      move: ${{ steps.filter.outputs.move }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -31,9 +37,11 @@ jobs:
               - '.github/workflows/**'
             indexer:
               - 'crates/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
               - '.github/workflows/**'
             move:
-              - 'packages/armature/sources/**'
+              - 'packages/**'
               - '.github/workflows/**'
 
   # Build API Docker image
@@ -99,3 +107,96 @@ jobs:
       - name: Run tests
         working-directory: api
         run: yarn test:cov
+
+  # Rust indexer: fmt, clippy, test, build
+  rust-indexer:
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+    if: needs.changes.outputs.indexer == 'true'
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.90.0
+        with:
+          components: clippy,rustfmt
+
+      - name: Cache cargo registry & target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libssl-dev libpq-dev
+
+      - name: cargo fmt (check)
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: cargo test
+        run: cargo test --all-features
+
+      - name: cargo build
+        run: cargo build --release
+
+  # Move contracts: fmt, build, test
+  move-contracts:
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+    if: needs.changes.outputs.move == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Homebrew
+        run: |
+          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          echo "/home/linuxbrew/.linuxbrew/bin" >> $GITHUB_PATH
+
+      - name: Install Sui CLI
+        run: /home/linuxbrew/.linuxbrew/bin/brew install sui
+
+      - name: Setup Node.js (for prettier-move)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check Move formatting
+        run: |
+          npm i @mysten/prettier-plugin-move
+          npx prettier-move -c packages/armature/**/*.move
+
+      - name: Build Move packages
+        run: |
+          for dir in packages/*; do
+            if [ -d "$dir" ] && [ -f "$dir/Move.toml" ]; then
+              echo "Building $dir"
+              sui move build --path "$dir"
+            fi
+          done
+
+      - name: Test Move packages
+        env:
+          SUI_SKIP_SHARED_OBJECTS_VERSION_CHECK: 1
+        run: |
+          for dir in packages/*; do
+            if [ -d "$dir" ] && [ -f "$dir/Move.toml" ]; then
+              echo "Testing $dir"
+              sui move test --path "$dir" -i 100000000 --force
+            fi
+          done
