@@ -26,6 +26,13 @@ public enum GovernanceTypeInit has copy, drop, store {
     InitWeighted { initial_delegates: vector<address>, initial_weights: vector<u64> },
 }
 
+// === GovernanceTypeInit constructors ===
+
+/// Create an InitBoard payload for DAO creation.
+public fun init_board(initial_members: vector<address>, seat_count: u8): GovernanceTypeInit {
+    GovernanceTypeInit::InitBoard { initial_members, seat_count }
+}
+
 // === GovernanceConfig constructors ===
 
 /// Create a Board governance config from an InitBoard payload.
