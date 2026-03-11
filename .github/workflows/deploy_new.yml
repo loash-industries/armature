@@ -6,11 +6,16 @@ permissions:
   security-events: write
   actions: read
   checks: write
+  packages: write
 
 on:
   push:
     branches:
       - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   # Detect which paths changed
@@ -19,6 +24,7 @@ jobs:
     outputs:
       ui: ${{ steps.filter.outputs.ui }}
       api: ${{ steps.filter.outputs.api }}
+      indexer: ${{ steps.filter.outputs.indexer }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -32,7 +38,10 @@ jobs:
               - 'api/**'
               - '.github/workflows/**'
             indexer:
-              - 'indexer/**'
+              - 'crates/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'Dockerfile'
               - '.github/workflows/**'
 
   create-tag:
@@ -50,7 +59,7 @@ jobs:
       image_tag: ${{ needs.create-tag.outputs.tag }}
       docker_build_context: api
     secrets:
-      GH_AUTH_TOKEN: ${{ secrets.GH_REGISTRY_TOKEN }}
+      GH_AUTH_TOKEN: ${{ secrets.GH_AUTH_TOKEN }}
 
   # Build UI Docker image
   build-ui:
@@ -63,7 +72,7 @@ jobs:
       image_tag: ${{ needs.create-tag.outputs.tag }}
       docker_build_context: ui
     secrets:
-      GH_AUTH_TOKEN: ${{ secrets.GH_REGISTRY_TOKEN }}
+      GH_AUTH_TOKEN: ${{ secrets.GH_AUTH_TOKEN }}
 
   unit-test:
     uses: loash-industries/workflows/.github/workflows/js-validate-code.yml@v0.3.5
@@ -77,7 +86,7 @@ jobs:
       test_names: "['test:cov']"
       working_directory: api
     secrets:
-      GH_AUTH_TOKEN: ${{ secrets.GH_REGISTRY_TOKEN }}
+      GH_AUTH_TOKEN: ${{ secrets.GH_AUTH_TOKEN }}
 
   deploy-dev:
     uses: loash-industries/workflows/.github/workflows/deploy.yml@v0.3.5
@@ -100,7 +109,7 @@ jobs:
       npm_private_registry_url: "https://npm.pkg.github.com/"
     secrets:
       deploy_key: ${{ secrets.DEPLOY_KEY }}
-      GH_AUTH_TOKEN: ${{ secrets.GH_REGISTRY_TOKEN }}
+      GH_AUTH_TOKEN: ${{ secrets.GH_AUTH_TOKEN }}
 
   deploy-prd:
     uses: loash-industries/workflows/.github/workflows/deploy.yml@v0.3.5
@@ -123,7 +132,7 @@ jobs:
       npm_private_registry_url: "https://npm.pkg.github.com/"
     secrets:
       deploy_key: ${{ secrets.DEPLOY_KEY }}
-      GH_AUTH_TOKEN: ${{ secrets.GH_REGISTRY_TOKEN }}
+      GH_AUTH_TOKEN: ${{ secrets.GH_AUTH_TOKEN }}
 
   # Deploy UI to dev
   deploy-ui-dev:
@@ -146,7 +155,7 @@ jobs:
       npm_private_registry_url: "https://npm.pkg.github.com/"
     secrets:
       deploy_key: ${{ secrets.DEPLOY_KEY }}
-      GH_AUTH_TOKEN: ${{ secrets.GH_REGISTRY_TOKEN }}
+      GH_AUTH_TOKEN: ${{ secrets.GH_AUTH_TOKEN }}
 
   # Deploy UI to prd
   deploy-ui-prd:
@@ -169,4 +178,116 @@ jobs:
       npm_private_registry_url: "https://npm.pkg.github.com/"
     secrets:
       deploy_key: ${{ secrets.DEPLOY_KEY }}
-      GH_AUTH_TOKEN: ${{ secrets.GH_REGISTRY_TOKEN }}
+      GH_AUTH_TOKEN: ${{ secrets.GH_AUTH_TOKEN }}
+
+  # Build & test Rust indexer
+  build-indexer:
+    runs-on: self-hosted
+    needs:
+      - changes
+      - create-tag
+    if: needs.changes.outputs.indexer == 'true'
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.90.0
+        with:
+          components: clippy,rustfmt
+
+      - name: Cache cargo registry & target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libssl-dev libpq-dev
+
+      - name: cargo fmt (check)
+        run: cargo fmt --all -- --check
+
+      - name: cargo test
+        run: cargo test --all-features
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GH_AUTH_TOKEN }}
+
+      - name: Build & push indexer image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository }}/indexer:${{ needs.create-tag.outputs.tag }}
+          build-args: |
+            GIT_REVISION=${{ needs.create-tag.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+    outputs:
+      image_ref: ghcr.io/${{ github.repository }}/indexer:${{ needs.create-tag.outputs.tag }}
+
+  # Deploy indexer to dev
+  deploy-indexer-dev:
+    uses: loash-industries/workflows/.github/workflows/deploy.yml@v0.3.5
+    needs:
+      - changes
+      - build-indexer
+      - create-tag
+    if: |
+      always() &&
+      needs.changes.outputs.indexer == 'true' &&
+      needs.build-indexer.result == 'success'
+    with:
+      environment: dev
+      argocd_workload_repository: ${{ github.repository }}-workload
+      workload_path: workload/dev/main
+      image_tag: ${{ needs.create-tag.outputs.tag }}-indexer
+      docker_build_context: .
+      yaml_label: "github-workflow-managed-indexer"
+      npm_private_registry_url: "https://npm.pkg.github.com/"
+    secrets:
+      deploy_key: ${{ secrets.DEPLOY_KEY }}
+      GH_AUTH_TOKEN: ${{ secrets.GH_AUTH_TOKEN }}
+
+  # Deploy indexer to prd
+  deploy-indexer-prd:
+    uses: loash-industries/workflows/.github/workflows/deploy.yml@v0.3.5
+    needs:
+      - changes
+      - build-indexer
+      - create-tag
+    if: |
+      always() &&
+      needs.changes.outputs.indexer == 'true' &&
+      needs.build-indexer.result == 'success'
+    with:
+      environment: prd
+      argocd_workload_repository: ${{ github.repository }}-workload
+      workload_path: workload/prd/main
+      image_tag: ${{ needs.create-tag.outputs.tag }}-indexer
+      docker_build_context: .
+      yaml_label: "github-workflow-managed-indexer"
+      npm_private_registry_url: "https://npm.pkg.github.com/"
+    secrets:
+      deploy_key: ${{ secrets.DEPLOY_KEY }}
+      GH_AUTH_TOKEN: ${{ secrets.GH_AUTH_TOKEN }}
