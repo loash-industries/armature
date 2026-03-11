@@ -182,7 +182,7 @@ jobs:
 
   # Build & test Rust indexer
   build-indexer:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs:
       - changes
       - create-tag
