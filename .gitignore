@@ -12,6 +12,7 @@ Cargo.lock
 # Move
 packages/armature_framework/build/
 packages/**/Move.lock
+packages/armature_packages/build/
 
 # Logs
 *.log

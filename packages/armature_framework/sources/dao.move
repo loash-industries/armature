@@ -1,16 +1,15 @@
 module armature::dao;
 
+use armature::capability_vault;
+use armature::charter;
+use armature::emergency;
+use armature::governance::{Self, GovernanceConfig, GovernanceTypeInit};
+use armature::proposal::{Self, ProposalConfig};
+use armature::treasury_vault;
 use std::string::String;
 use sui::event;
 use sui::vec_map::{Self, VecMap};
 use sui::vec_set::{Self, VecSet};
-
-use armature::governance::{Self, GovernanceConfig, GovernanceTypeInit};
-use armature::proposal::{Self, ProposalConfig};
-use armature::treasury_vault;
-use armature::capability_vault;
-use armature::charter;
-use armature::emergency;
 
 // === Errors ===
 
@@ -207,7 +206,10 @@ public fun id(self: &DAO): ID { object::id(self) }
 // === Internal ===
 
 /// Build the default proposal config map and enabled types set.
-fun default_proposal_configs(): (VecMap<std::ascii::String, ProposalConfig>, VecSet<std::ascii::String>) {
+fun default_proposal_configs(): (
+    VecMap<std::ascii::String, ProposalConfig>,
+    VecSet<std::ascii::String>,
+) {
     let default_config = proposal::new_config(
         DEFAULT_QUORUM,
         DEFAULT_APPROVAL_THRESHOLD,

@@ -1,16 +1,15 @@
 #[test_only]
 module armature::dao_tests;
 
-use std::string;
-use sui::test_scenario;
-
+use armature::capability_vault::CapabilityVault;
+use armature::charter::Charter;
 use armature::dao::{Self, DAO};
+use armature::emergency::{EmergencyFreeze, FreezeAdminCap};
 use armature::governance;
 use armature::proposal;
 use armature::treasury_vault::TreasuryVault;
-use armature::capability_vault::CapabilityVault;
-use armature::charter::Charter;
-use armature::emergency::{EmergencyFreeze, FreezeAdminCap};
+use std::string;
+use sui::test_scenario;
 
 const CREATOR: address = @0xA;
 const MEMBER_B: address = @0xB;
@@ -218,22 +217,22 @@ fun test_board_governance_persists_across_proposals() {
 fun test_config_valid_boundaries_succeeds() {
     // Minimum valid config
     let _config_min = proposal::new_config(
-        1,       // quorum min
-        5_000,   // threshold min
-        0,       // propose_threshold
+        1, // quorum min
+        5_000, // threshold min
+        0, // propose_threshold
         3_600_000, // expiry min (1 hour)
-        0,       // execution_delay
-        0,       // cooldown
+        0, // execution_delay
+        0, // cooldown
     );
 
     // Maximum valid config
     let _config_max = proposal::new_config(
-        10_000,  // quorum max
-        10_000,  // threshold max
+        10_000, // quorum max
+        10_000, // threshold max
         1_000_000, // propose_threshold
         604_800_000, // expiry (7 days)
-        86_400_000,  // execution_delay (1 day)
-        86_400_000,  // cooldown (1 day)
+        86_400_000, // execution_delay (1 day)
+        86_400_000, // cooldown (1 day)
     );
 }
 
