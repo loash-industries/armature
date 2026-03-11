@@ -29,6 +29,12 @@ jobs:
             api:
               - 'api/**'
               - '.github/workflows/**'
+            indexer:
+              - 'crates/**'
+              - '.github/workflows/**'
+            move:
+              - 'packages/armature/sources/**'
+              - '.github/workflows/**'
 
   # Build API Docker image
   build-api:

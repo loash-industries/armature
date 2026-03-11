@@ -1,24 +1,49 @@
 # armature
-armature service repository
 
-
-A monorepo containing a Node.js API, React UI, rust indexer, and sui move contracts.
+Armature service repository — a monorepo containing a Node.js API, React UI, Rust indexer, and Sui Move contracts.
 
 ## Structure
 
 ```
-├── api/          # Express API server
+├── api/                # Express API server
 │   ├── src/
 │   │   └── index.ts
 │   ├── Dockerfile
 │   └── package.json
-├── ui/           # React frontend (Vite)
+├── ui/                 # React frontend (Vite)
 │   ├── src/
 │   │   ├── App.tsx
 │   │   └── main.tsx
 │   └── package.json
-├── crates/           # Rust indexer
-└── package.json  # Workspace root
+├── crates/
+│   ├── indexer/        # Rust event indexer (Sui checkpoint processor)
+│   │   ├── src/
+│   │   │   ├── main.rs
+│   │   │   ├── lib.rs
+│   │   │   ├── models.rs
+│   │   │   ├── traits.rs
+│   │   │   └── handlers/
+│   │   └── Cargo.toml
+│   └── schema/         # Diesel ORM schema & migrations
+│       ├── src/
+│       │   ├── lib.rs
+│       │   ├── models.rs
+│       │   └── schema.rs
+│       ├── migrations/
+│       └── Cargo.toml
+├── packages/
+│   └── armature/       # Sui Move smart contracts
+│       ├── sources/
+│       │   ├── pool.move
+│       │   ├── registry.move
+│       │   └── helper/
+│       │       ├── constants.move
+│       │       ├── math.move
+│       │       └── utils.move
+│       └── Move.toml
+├── docker-compose.yml  # PostgreSQL for indexer
+├── Cargo.toml          # Rust workspace root
+└── package.json        # Node workspace root
 ```
 
 ## Development
@@ -61,4 +86,45 @@ Build the API image:
 cd api
 docker build -t test-api .
 docker run -p 3000:3000 test-api
+```
+
+## Rust Indexer
+
+Start PostgreSQL:
+
+```bash
+docker compose up -d
+```
+
+Build and run the indexer:
+
+```bash
+cargo build
+cargo run --bin armature-indexer -- --db-url postgres://postgres:postgrespw@localhost:5432/armature
+```
+
+Run tests:
+
+```bash
+cargo test
+```
+
+## Move Contracts
+
+Build:
+
+```bash
+sui move build --path packages/armature
+```
+
+Test:
+
+```bash
+sui move test --path packages/armature
+```
+
+Format:
+
+```bash
+bunx prettier-move -c packages/armature/sources/**/*.move --write
 ```

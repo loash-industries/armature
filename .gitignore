@@ -4,6 +4,14 @@ node_modules/
 # Build outputs
 api/dist/
 ui/dist/
+target/
+
+# Rust
+Cargo.lock
+
+# Move
+packages/armature/build/
+packages/**/Move.lock
 
 # Logs
 *.log
@@ -16,3 +24,7 @@ ui/dist/
 
 # OS files
 .DS_Store
+
+# Environment
+.env
+.env.local
