@@ -176,10 +176,15 @@ jobs:
         with:
           node-version: 22
 
-      - name: Check Move formatting
+      - name: Check Move formatting (armature_framework)
         run: |
           npm i @mysten/prettier-plugin-move
-          npx prettier-move -c packages/armature/**/*.move
+          npx prettier-move -c packages/armature_framework/**/*.move
+
+      - name: Check Move formatting (armature_proposals)
+        run: |
+          npm i @mysten/prettier-plugin-move
+          npx prettier-move -c packages/armature_proposals/**/*.move
 
       - name: Build Move packages
         run: |
