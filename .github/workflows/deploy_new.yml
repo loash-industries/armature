@@ -1,0 +1,172 @@
+name: Deploy
+
+permissions:
+  id-token: write
+  contents: read
+  security-events: write
+  actions: read
+  checks: write
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  # Detect which paths changed
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      ui: ${{ steps.filter.outputs.ui }}
+      api: ${{ steps.filter.outputs.api }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            ui:
+              - 'ui/**'
+              - '.github/workflows/**'
+            api:
+              - 'api/**'
+              - '.github/workflows/**'
+            indexer:
+              - 'indexer/**'
+              - '.github/workflows/**'
+
+  create-tag:
+    if: github.ref == 'refs/heads/main'
+    uses: loash-industries/workflows/.github/workflows/create-eph-tag.yml@v0.3.5
+
+  # Build/Test API code
+  build:
+    uses: loash-industries/workflows/.github/workflows/docker-build-and-validate.yml@v0.3.5
+    needs:
+      - changes
+      - create-tag
+    if: needs.changes.outputs.api == 'true'
+    with:
+      image_tag: ${{ needs.create-tag.outputs.tag }}
+      docker_build_context: api
+    secrets:
+      GH_AUTH_TOKEN: ${{ secrets.GH_REGISTRY_TOKEN }}
+
+  # Build UI Docker image
+  build-ui:
+    uses: loash-industries/workflows/.github/workflows/docker-build-and-validate.yml@v0.3.5
+    needs:
+      - changes
+      - create-tag
+    if: needs.changes.outputs.ui == 'true'
+    with:
+      image_tag: ${{ needs.create-tag.outputs.tag }}
+      docker_build_context: ui
+    secrets:
+      GH_AUTH_TOKEN: ${{ secrets.GH_REGISTRY_TOKEN }}
+
+  unit-test:
+    uses: loash-industries/workflows/.github/workflows/js-validate-code.yml@v0.3.5
+    with:
+      node_version: 22
+      npm_client: yarn
+      npm_registry_name: npm
+      prettier_enabled: false
+      tests_report_path: api/junit*.xml
+      tests_coverage_path: api/coverage/**/*
+      test_names: "['test:cov']"
+      working_directory: api
+    secrets:
+      GH_AUTH_TOKEN: ${{ secrets.GH_REGISTRY_TOKEN }}
+
+  deploy-dev:
+    uses: loash-industries/workflows/.github/workflows/deploy.yml@v0.3.5
+    needs:
+      - changes
+      - build
+      - create-tag
+      - unit-test
+    if: |
+      always() &&
+      needs.changes.outputs.api == 'true' &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped') &&
+      needs.unit-test.result == 'success'
+    with:
+      environment: dev
+      argocd_workload_repository: ${{ github.repository }}-workload
+      workload_path: workload/dev/main
+      image_tag: ${{ needs.create-tag.outputs.tag }}
+      docker_build_context: api
+      npm_private_registry_url: "https://npm.pkg.github.com/"
+    secrets:
+      deploy_key: ${{ secrets.DEPLOY_KEY }}
+      GH_AUTH_TOKEN: ${{ secrets.GH_REGISTRY_TOKEN }}
+
+  deploy-prd:
+    uses: loash-industries/workflows/.github/workflows/deploy.yml@v0.3.5
+    needs:
+      - changes
+      - build
+      - create-tag
+      - unit-test
+    if: |
+      always() &&
+      needs.changes.outputs.api == 'true' &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped') &&
+      needs.unit-test.result == 'success'
+    with:
+      environment: prd
+      argocd_workload_repository: ${{ github.repository }}-workload
+      workload_path: workload/prd/main
+      image_tag: ${{ needs.create-tag.outputs.tag }}
+      docker_build_context: api
+      npm_private_registry_url: "https://npm.pkg.github.com/"
+    secrets:
+      deploy_key: ${{ secrets.DEPLOY_KEY }}
+      GH_AUTH_TOKEN: ${{ secrets.GH_REGISTRY_TOKEN }}
+
+  # Deploy UI to dev
+  deploy-ui-dev:
+    uses: loash-industries/workflows/.github/workflows/deploy.yml@v0.3.5
+    needs:
+      - changes
+      - build-ui
+      - create-tag
+    if: |
+      always() &&
+      needs.changes.outputs.ui == 'true' &&
+      (needs.build-ui.result == 'success' || needs.build-ui.result == 'skipped')
+    with:
+      environment: dev
+      argocd_workload_repository: ${{ github.repository }}-workload
+      workload_path: workload/dev/main
+      image_tag: ${{ needs.create-tag.outputs.tag }}-ui
+      docker_build_context: ui
+      yaml_label: "github-workflow-managed-ui"
+      npm_private_registry_url: "https://npm.pkg.github.com/"
+    secrets:
+      deploy_key: ${{ secrets.DEPLOY_KEY }}
+      GH_AUTH_TOKEN: ${{ secrets.GH_REGISTRY_TOKEN }}
+
+  # Deploy UI to prd
+  deploy-ui-prd:
+    uses: loash-industries/workflows/.github/workflows/deploy.yml@v0.3.5
+    needs:
+      - changes
+      - build-ui
+      - create-tag
+    if: |
+      always() &&
+      needs.changes.outputs.ui == 'true' &&
+      (needs.build-ui.result == 'success' || needs.build-ui.result == 'skipped')
+    with:
+      environment: prd
+      argocd_workload_repository: ${{ github.repository }}-workload
+      workload_path: workload/prd/main
+      image_tag: ${{ needs.create-tag.outputs.tag }}-ui
+      docker_build_context: ui
+      yaml_label: "github-workflow-managed-ui"
+      npm_private_registry_url: "https://npm.pkg.github.com/"
+    secrets:
+      deploy_key: ${{ secrets.DEPLOY_KEY }}
+      GH_AUTH_TOKEN: ${{ secrets.GH_REGISTRY_TOKEN }}
