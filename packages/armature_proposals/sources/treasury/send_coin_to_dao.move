@@ -15,4 +15,5 @@ public fun new<T>(recipient_treasury: ID, amount: u64): SendCoinToDAO<T> {
 // === Accessors ===
 
 public fun recipient_treasury<T>(self: &SendCoinToDAO<T>): ID { self.recipient_treasury }
+
 public fun amount<T>(self: &SendCoinToDAO<T>): u64 { self.amount }

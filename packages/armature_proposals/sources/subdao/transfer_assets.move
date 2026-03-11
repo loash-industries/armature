@@ -27,7 +27,11 @@ public fun new(
 // === Accessors ===
 
 public fun target_dao_id(self: &TransferAssets): ID { self.target_dao_id }
+
 public fun target_treasury_id(self: &TransferAssets): ID { self.target_treasury_id }
+
 public fun target_vault_id(self: &TransferAssets): ID { self.target_vault_id }
+
 public fun coin_types(self: &TransferAssets): &vector<TypeName> { &self.coin_types }
+
 public fun cap_ids(self: &TransferAssets): &vector<ID> { &self.cap_ids }

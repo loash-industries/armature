@@ -41,9 +41,15 @@ public fun new(
 // === Accessors ===
 
 public fun target_type(self: &UpdateProposalConfig): TypeName { self.target_type }
+
 public fun quorum(self: &UpdateProposalConfig): Option<u16> { self.quorum }
+
 public fun approval_threshold(self: &UpdateProposalConfig): Option<u16> { self.approval_threshold }
+
 public fun propose_threshold(self: &UpdateProposalConfig): Option<u64> { self.propose_threshold }
+
 public fun expiry_ms(self: &UpdateProposalConfig): Option<u64> { self.expiry_ms }
+
 public fun execution_delay_ms(self: &UpdateProposalConfig): Option<u64> { self.execution_delay_ms }
+
 public fun cooldown_ms(self: &UpdateProposalConfig): Option<u64> { self.cooldown_ms }
