@@ -10,7 +10,7 @@ target/
 Cargo.lock
 
 # Move
-packages/armature/build/
+packages/armature_framework/build/
 packages/**/Move.lock
 
 # Logs
