@@ -113,17 +113,17 @@ cargo test
 Build:
 
 ```bash
-sui move build --path packages/armature
+sui move build --path packages/armature_framework
 ```
 
 Test:
 
 ```bash
-sui move test --path packages/armature
+sui move test --path packages/armature_framework
 ```
 
 Format:
 
 ```bash
-bunx prettier-move -c packages/armature/sources/**/*.move --write
+bunx prettier-move -c packages/armature_framework/sources/**/*.move --write
 ```
