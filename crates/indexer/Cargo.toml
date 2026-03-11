@@ -1,0 +1,42 @@
+[package]
+name = "armature-indexer"
+version = "0.1.0"
+license = "Apache-2.0"
+publish = false
+edition = "2021"
+
+[dependencies]
+tokio.workspace = true
+sui-indexer-alt-framework = { git = "https://github.com/MystenLabs/sui.git", rev = "072a2111619715c3348d1b83c0526c3bcfa5cdd1" }
+sui-futures = { git = "https://github.com/MystenLabs/sui.git", rev = "072a2111619715c3348d1b83c0526c3bcfa5cdd1" }
+sui-sdk-types = { git = "https://github.com/mystenlabs/sui-rust-sdk", features = ["serde"], rev = "048124e484f14b9bf2a402227c9bc255c7621bc1" }
+clap = { workspace = true, features = ["env"] }
+diesel = { workspace = true, features = ["postgres", "uuid", "chrono", "serde_json", "numeric"] }
+diesel-async = { workspace = true, features = ["bb8", "postgres"] }
+hex = "0.4"
+tracing.workspace = true
+async-trait.workspace = true
+bcs.workspace = true
+serde.workspace = true
+serde_json = { workspace = true }
+anyhow.workspace = true
+url.workspace = true
+bigdecimal.workspace = true
+
+sui-pg-db.workspace = true
+prometheus.workspace = true
+sui-indexer-alt-metrics.workspace = true
+sui-types.workspace = true
+move-core-types.workspace = true
+telemetry-subscribers.workspace = true
+tokio-util.workspace = true
+sui-field-count = { git = "https://github.com/MystenLabs/sui.git", rev = "072a2111619715c3348d1b83c0526c3bcfa5cdd1" }
+
+armature-schema = { path = "../schema" }
+
+[dev-dependencies]
+insta = { version = "1.43.1", features = ["json"] }
+
+[[bin]]
+name = "armature-indexer"
+path = "src/main.rs"

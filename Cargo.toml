@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "crates/indexer",
+    "crates/schema",
+]
+
+[workspace.dependencies]
+tokio = "1.49.0"
+serde = "1.0.217"
+serde_json = "1.0.138"
+diesel = "2.2.12"
+diesel-async = "0.5.2"
+diesel_migrations = "2.2.0"
+anyhow = "1.0.98"
+tracing = "0.1.41"
+clap = "4.5.31"
+async-trait = "0.1.83"
+bcs = "0.1.6"
+url = "2.5.4"
+prometheus = "0.13.4"
+tokio-util = "0.7.13"
+bigdecimal = "0.4"
+
+sui-indexer-alt-metrics = { git = "https://github.com/MystenLabs/sui.git", rev = "072a2111619715c3348d1b83c0526c3bcfa5cdd1" }
+telemetry-subscribers = { git = "https://github.com/MystenLabs/sui.git", rev = "072a2111619715c3348d1b83c0526c3bcfa5cdd1" }
+sui-pg-db = { git = "https://github.com/MystenLabs/sui.git", rev = "072a2111619715c3348d1b83c0526c3bcfa5cdd1" }
+move-core-types = { git = "https://github.com/MystenLabs/sui.git", rev = "072a2111619715c3348d1b83c0526c3bcfa5cdd1" }
+sui-types = { git = "https://github.com/MystenLabs/sui.git", rev = "072a2111619715c3348d1b83c0526c3bcfa5cdd1" }
