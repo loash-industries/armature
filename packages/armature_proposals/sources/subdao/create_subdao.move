@@ -25,6 +25,9 @@ public fun new(
 // === Accessors ===
 
 public fun initial_board(self: &CreateSubDAO): &vector<address> { &self.initial_board }
+
 public fun seat_count(self: &CreateSubDAO): u8 { self.seat_count }
+
 public fun metadata_ipfs(self: &CreateSubDAO): &String { &self.metadata_ipfs }
+
 public fun enabled_proposals(self: &CreateSubDAO): &vector<TypeName> { &self.enabled_proposals }

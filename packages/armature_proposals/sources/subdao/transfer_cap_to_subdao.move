@@ -15,4 +15,5 @@ public fun new(cap_id: ID, target_subdao: ID): TransferCapToSubDAO {
 // === Accessors ===
 
 public fun cap_id(self: &TransferCapToSubDAO): ID { self.cap_id }
+
 public fun target_subdao(self: &TransferCapToSubDAO): ID { self.target_subdao }

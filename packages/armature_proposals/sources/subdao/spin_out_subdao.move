@@ -15,4 +15,5 @@ public fun new(subdao_id: ID, control_cap_id: ID): SpinOutSubDAO {
 // === Accessors ===
 
 public fun subdao_id(self: &SpinOutSubDAO): ID { self.subdao_id }
+
 public fun control_cap_id(self: &SpinOutSubDAO): ID { self.control_cap_id }

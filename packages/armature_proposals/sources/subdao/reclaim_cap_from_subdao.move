@@ -17,5 +17,7 @@ public fun new(subdao_id: ID, cap_id: ID, control_id: ID): ReclaimCapFromSubDAO 
 // === Accessors ===
 
 public fun subdao_id(self: &ReclaimCapFromSubDAO): ID { self.subdao_id }
+
 public fun cap_id(self: &ReclaimCapFromSubDAO): ID { self.cap_id }
+
 public fun control_id(self: &ReclaimCapFromSubDAO): ID { self.control_id }

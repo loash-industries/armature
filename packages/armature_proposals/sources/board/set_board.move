@@ -16,4 +16,5 @@ public fun new(new_members: vector<address>, new_seat_count: u8): SetBoard {
 // === Accessors ===
 
 public fun new_members(self: &SetBoard): &vector<address> { &self.new_members }
+
 public fun new_seat_count(self: &SetBoard): u8 { self.new_seat_count }
