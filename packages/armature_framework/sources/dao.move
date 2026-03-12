@@ -260,8 +260,9 @@ public fun submit_proposal<P: store>(
 /// Authorize execution of a Passed proposal. Validates DAO status, dao_id match,
 /// and executor eligibility, then transitions the proposal to Executed and returns
 /// an ExecutionRequest hot potato for the handler to consume.
+/// Records the execution timestamp for cooldown tracking.
 public fun authorize_execution<P: store>(
-    self: &DAO,
+    self: &mut DAO,
     proposal: &mut Proposal<P>,
     clock: &Clock,
     ctx: &TxContext,
@@ -277,7 +278,11 @@ public fun authorize_execution<P: store>(
         option::none()
     };
 
-    proposal::execute(proposal, &self.governance, last_executed_at_ms, clock, ctx)
+    let request = proposal::execute(proposal, &self.governance, last_executed_at_ms, clock, ctx);
+
+    self.record_execution(type_key, clock.timestamp_ms());
+
+    request
 }
 
 /// Record the execution timestamp for a proposal type.
