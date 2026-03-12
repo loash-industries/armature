@@ -1,4 +1,9 @@
-import { useParams, useNavigate, Link } from "@tanstack/react-router";
+import {
+  useParams,
+  useNavigate,
+  useRouterState,
+  Link,
+} from "@tanstack/react-router";
 import {
   Sidebar,
   SidebarHeader,
@@ -30,9 +35,17 @@ const NAV_ITEMS = [
   { label: "SubDAOs", path: "subdaos" },
 ] as const;
 
+function useActivePath(): string {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const parts = pathname.split("/").filter(Boolean);
+  // URL shape: /dao/<id>/<page>
+  return parts[2] ?? "";
+}
+
 export function DaoSidebar() {
   const { daoId } = useParams({ strict: false });
   const navigate = useNavigate();
+  const activePath = useActivePath();
 
   return (
     <Sidebar>
@@ -62,8 +75,8 @@ export function DaoSidebar() {
           <SidebarGroupLabel>Navigation</SidebarGroupLabel>
           <SidebarMenu>
             {NAV_ITEMS.map((item) => (
-              <SidebarMenuItem key={item.path}>
-                <SidebarMenuButton asChild>
+              <SidebarMenuItem key={item.label}>
+                <SidebarMenuButton asChild isActive={activePath === item.path}>
                   <Link
                     to={item.path ? `/dao/$daoId/${item.path}` : "/dao/$daoId"}
                     params={{ daoId: daoId ?? "" }}
