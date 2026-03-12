@@ -1,5 +1,6 @@
 module armature::emergency;
 
+use armature::proposal::ExecutionRequest;
 use sui::clock::Clock;
 use sui::event;
 use sui::vec_map::{Self, VecMap};
@@ -178,6 +179,51 @@ public(package) fun governance_unfreeze(self: &mut EmergencyFreeze, type_key: st
 /// Update the max freeze duration. Only callable within the framework package.
 public(package) fun set_max_freeze_duration_ms(self: &mut EmergencyFreeze, new_max: u64) {
     self.max_freeze_duration_ms = new_max;
+}
+
+// === Governance Mutators (ExecutionRequest-gated) ===
+
+/// Unfreeze a proposal type via governance. Authorized by ExecutionRequest.
+public fun governance_unfreeze_type<P>(
+    self: &mut EmergencyFreeze,
+    type_key: std::ascii::String,
+    _req: &ExecutionRequest<P>,
+) {
+    assert!(self.dao_id == _req.req_dao_id(), EDAOMismatch);
+    assert!(self.frozen_types.contains(&type_key), ENotFrozen);
+
+    self.frozen_types.remove(&type_key);
+
+    event::emit(TypeUnfrozen {
+        dao_id: self.dao_id,
+        type_key,
+    });
+}
+
+/// Update the max freeze duration via governance. Authorized by ExecutionRequest.
+public fun update_freeze_duration<P>(
+    self: &mut EmergencyFreeze,
+    new_max: u64,
+    _req: &ExecutionRequest<P>,
+) {
+    assert!(self.dao_id == _req.req_dao_id(), EDAOMismatch);
+    self.max_freeze_duration_ms = new_max;
+}
+
+/// Unfreeze all currently frozen types. Authorized by ExecutionRequest.
+/// Used as a side effect during FreezeAdminCap transfer.
+public fun unfreeze_all<P>(self: &mut EmergencyFreeze, _req: &ExecutionRequest<P>) {
+    assert!(self.dao_id == _req.req_dao_id(), EDAOMismatch);
+
+    let dao_id = self.dao_id;
+    let keys = self.frozen_types.keys();
+    let mut i = 0;
+    while (i < keys.length()) {
+        let type_key = keys[i];
+        self.frozen_types.remove(&type_key);
+        event::emit(TypeUnfrozen { dao_id, type_key });
+        i = i + 1;
+    };
 }
 
 // === Internal ===

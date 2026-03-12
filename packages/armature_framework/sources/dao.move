@@ -76,6 +76,7 @@ public struct DAO has key, store {
     capability_vault_id: ID,
     charter_id: ID,
     emergency_freeze_id: ID,
+    execution_paused: bool,
 }
 
 // === Events ===
@@ -144,6 +145,7 @@ public fun create(
         capability_vault_id,
         charter_id,
         emergency_freeze_id,
+        execution_paused: false,
     };
 
     // Emit creation event
@@ -202,6 +204,9 @@ public fun charter_id(self: &DAO): ID { self.charter_id }
 /// Returns the emergency freeze ID.
 public fun emergency_freeze_id(self: &DAO): ID { self.emergency_freeze_id }
 
+/// Returns whether proposal execution is paused on this DAO.
+public fun is_execution_paused(self: &DAO): bool { self.execution_paused }
+
 /// Returns the last-executed-at map (type_key → timestamp_ms).
 public fun last_executed_at(self: &DAO): &VecMap<std::ascii::String, u64> {
     &self.last_executed_at
@@ -220,6 +225,53 @@ public fun set_board_governance<P>(
     _req: &ExecutionRequest<P>,
 ) {
     self.governance.set_board(new_members);
+}
+
+/// Remove a proposal type from the enabled set and its config.
+/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+public fun disable_proposal_type<P>(
+    self: &mut DAO,
+    type_key: std::ascii::String,
+    _req: &ExecutionRequest<P>,
+) {
+    self.enabled_proposal_types.remove(&type_key);
+    self.proposal_configs.remove(&type_key);
+}
+
+/// Add a proposal type to the enabled set with a mandatory config.
+/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+public fun enable_proposal_type<P>(
+    self: &mut DAO,
+    type_key: std::ascii::String,
+    config: ProposalConfig,
+    _req: &ExecutionRequest<P>,
+) {
+    self.enabled_proposal_types.insert(type_key);
+    self.proposal_configs.insert(type_key, config);
+}
+
+/// Replace the ProposalConfig for an existing proposal type.
+/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+public fun update_proposal_config<P>(
+    self: &mut DAO,
+    type_key: std::ascii::String,
+    new_config: ProposalConfig,
+    _req: &ExecutionRequest<P>,
+) {
+    let entry = self.proposal_configs.get_mut(&type_key);
+    *entry = new_config;
+}
+
+/// Pause or resume proposal execution on this DAO.
+/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+public fun set_execution_paused<P>(self: &mut DAO, paused: bool, _req: &ExecutionRequest<P>) {
+    self.execution_paused = paused;
+}
+
+/// Transition the DAO to Migrating status (irreversible).
+/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+public fun set_migrating<P>(self: &mut DAO, _req: &ExecutionRequest<P>) {
+    self.status = DAOStatus::Migrating;
 }
 
 /// Record the execution timestamp for a proposal type.
