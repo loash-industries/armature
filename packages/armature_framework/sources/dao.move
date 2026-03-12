@@ -227,7 +227,7 @@ public fun set_board_governance<P>(
 }
 
 /// Submit a new proposal on this DAO. Validates DAO status, type enablement,
-/// and proposer eligibility before delegating to proposal::create_internal.
+/// and proposer eligibility before delegating to proposal::create.
 #[allow(lint(share_owned, custom_state_change))]
 public fun submit_proposal<P: store>(
     self: &DAO,
@@ -236,7 +236,7 @@ public fun submit_proposal<P: store>(
     metadata_ipfs: String,
     clock: &Clock,
     ctx: &mut TxContext,
-): ID {
+) {
     assert!(self.status.is_active(), EDAONotActive);
     assert!(self.enabled_proposal_types.contains(&type_key), ETypeNotEnabled);
     self.governance.assert_board_member(ctx.sender());
@@ -244,15 +244,14 @@ public fun submit_proposal<P: store>(
     let config_idx = self.proposal_configs.get_idx(&type_key);
     let (_, config) = self.proposal_configs.get_entry_by_idx(config_idx);
 
-    let (vote_snapshot, total_snapshot_weight) = self.governance.board_vote_snapshot();
-
-    proposal::create_internal(
+    proposal::create(
         object::id(self),
-        *config,
-        vote_snapshot,
-        total_snapshot_weight,
-        payload,
+        type_key,
+        ctx.sender(),
         metadata_ipfs,
+        payload,
+        *config,
+        &self.governance,
         clock,
         ctx,
     )
@@ -271,7 +270,14 @@ public fun authorize_execution<P: store>(
     assert!(proposal.dao_id() == object::id(self), EDAOMismatch);
     self.governance.assert_board_member(ctx.sender());
 
-    proposal::execute_internal(proposal, clock)
+    let type_key = proposal.type_key();
+    let last_executed_at_ms = if (self.last_executed_at.contains(&type_key)) {
+        option::some(*self.last_executed_at.get(&type_key))
+    } else {
+        option::none()
+    };
+
+    proposal::execute(proposal, &self.governance, last_executed_at_ms, clock, ctx)
 }
 
 /// Record the execution timestamp for a proposal type.

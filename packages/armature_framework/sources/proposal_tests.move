@@ -25,7 +25,7 @@ public struct TestPayload has drop, store {
 fun create_test_dao(scenario: &mut test_scenario::Scenario) {
     scenario.next_tx(CREATOR);
     {
-        let init = governance::init_board(vector[CREATOR, MEMBER_B], 3);
+        let init = governance::init_board(vector[CREATOR, MEMBER_B]);
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
@@ -370,7 +370,7 @@ fun test_vote_snapshot_immutable_after_creation() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let new_member: address = @0xC;
-        dao.governance_mut().set_board(vector[CREATOR, new_member], 3);
+        dao.governance_mut().set_board(vector[CREATOR, new_member]);
         test_scenario::return_shared(dao);
     };
 
@@ -403,7 +403,7 @@ fun test_new_member_cannot_vote_on_old_proposal() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let new_member: address = @0xC;
-        dao.governance_mut().set_board(vector[CREATOR, MEMBER_B, new_member], 3);
+        dao.governance_mut().set_board(vector[CREATOR, MEMBER_B, new_member]);
         test_scenario::return_shared(dao);
     };
 
