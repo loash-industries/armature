@@ -136,7 +136,8 @@ public fun execute_reclaim_cap<T: key + store>(
 }
 
 /// Execute a CreateSubDAO proposal: spawn a new Board-governance child DAO and
-/// store a SubDAOControl token in the controller's capability vault.
+/// store a SubDAOControl token and the child's FreezeAdminCap in the
+/// controller's capability vault.
 public fun execute_create_subdao(
     vault: &mut CapabilityVault,
     proposal: &Proposal<CreateSubDAO>,
@@ -148,7 +149,7 @@ public fun execute_create_subdao(
     let payload = proposal.payload();
     let gov_init = governance::init_board(*payload.initial_board());
 
-    let subdao_id = dao::create(
+    let (subdao, freeze_admin_cap) = dao::create_subdao(
         &gov_init,
         *payload.name(),
         *payload.description(),
@@ -156,7 +157,15 @@ public fun execute_create_subdao(
         ctx,
     );
 
+    let subdao_id = object::id(&subdao);
+
     let control_cap_id = vault.create_subdao_control(subdao_id, &request, ctx);
+
+    // Store the child DAO's FreezeAdminCap in the controller's vault
+    vault.store_cap(freeze_admin_cap, &request);
+
+    // Set controller_cap_id on SubDAO and share it
+    dao::share_subdao(subdao, control_cap_id);
 
     event::emit(SubDAOCreated {
         controller_dao_id: vault.dao_id(),

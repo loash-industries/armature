@@ -6,6 +6,7 @@ use armature::emergency;
 use armature::governance::{Self, GovernanceConfig, GovernanceTypeInit};
 use armature::proposal::{Self, ExecutionRequest, ProposalConfig};
 use armature::treasury_vault;
+use std::option::{Self, Option};
 use std::string::String;
 use sui::event;
 use sui::vec_map::{Self, VecMap};
@@ -27,6 +28,14 @@ const DEFAULT_PROPOSAL_TYPES: vector<vector<u8>> = vector[
     b"EmergencyFreeze",
     b"EmergencyUnfreeze",
     b"CharterUpdate",
+];
+
+/// Proposal types blocked for SubDAOs — hierarchy-altering operations
+/// reserved for independent DAOs.
+const SUBDAO_BLOCKED_TYPES: vector<vector<u8>> = vector[
+    b"SpawnDAO",
+    b"SpinOutSubDAO",
+    b"CreateSubDAO",
 ];
 
 // Default config values: quorum=5000 (50%), threshold=5000 (50%), propose_threshold=0,
@@ -78,6 +87,8 @@ public struct DAO has key, store {
     charter_id: ID,
     emergency_freeze_id: ID,
     execution_paused: bool,
+    controller_cap_id: Option<ID>,
+    controller_paused: bool,
 }
 
 // === Events ===
@@ -147,6 +158,8 @@ public fun create(
         charter_id,
         emergency_freeze_id,
         execution_paused: false,
+        controller_cap_id: option::none(),
+        controller_paused: false,
     };
 
     // Emit creation event
@@ -207,6 +220,12 @@ public fun emergency_freeze_id(self: &DAO): ID { self.emergency_freeze_id }
 
 /// Returns whether proposal execution is paused on this DAO.
 public fun is_execution_paused(self: &DAO): bool { self.execution_paused }
+
+/// Returns the controller capability ID if this DAO is a SubDAO.
+public fun controller_cap_id(self: &DAO): &Option<ID> { &self.controller_cap_id }
+
+/// Returns whether the controller has paused this SubDAO's execution.
+public fun is_controller_paused(self: &DAO): bool { self.controller_paused }
 
 /// Returns the last-executed-at map (type_key → timestamp_ms).
 public fun last_executed_at(self: &DAO): &VecMap<std::ascii::String, u64> {
@@ -274,6 +293,22 @@ public fun set_execution_paused<P>(self: &mut DAO, paused: bool, req: &Execution
     self.execution_paused = paused;
 }
 
+/// Set or clear controller-initiated pause on this SubDAO.
+/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+public fun set_controller_paused<P>(self: &mut DAO, paused: bool, req: &ExecutionRequest<P>) {
+    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    self.controller_paused = paused;
+}
+
+/// Clear the controller relationship (for SpinOutSubDAO).
+/// Resets controller_cap_id to none and controller_paused to false.
+/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+public fun clear_controller<P>(self: &mut DAO, req: &ExecutionRequest<P>) {
+    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    self.controller_cap_id = option::none();
+    self.controller_paused = false;
+}
+
 /// Transition the DAO to Migrating status (irreversible).
 /// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
 public fun set_migrating<P>(self: &mut DAO, req: &ExecutionRequest<P>) {
@@ -296,6 +331,83 @@ public(package) fun record_execution(
     };
 }
 
+/// Create a new SubDAO with Board governance and filtered proposal types.
+/// Returns the un-shared DAO and FreezeAdminCap. The caller must set
+/// controller_cap_id via `share_subdao()` before sharing.
+/// Companion objects (treasury, vault, charter, emergency) are shared internally.
+/// Hierarchy-altering proposal types (SpawnDAO, SpinOutSubDAO, CreateSubDAO)
+/// are excluded from the SubDAO's enabled types.
+public fun create_subdao(
+    gov_init: &GovernanceTypeInit,
+    name: String,
+    description: String,
+    image_url: String,
+    ctx: &mut TxContext,
+): (DAO, emergency::FreezeAdminCap) {
+    assert!(name.length() > 0, EInvalidName);
+    assert!(description.length() > 0, EInvalidDescription);
+
+    let governance = governance::new_board(gov_init);
+
+    let dao_uid = object::new(ctx);
+    let dao_id = dao_uid.to_inner();
+
+    let treasury_vault = treasury_vault::new(dao_id, ctx);
+    let treasury_id = object::id(&treasury_vault);
+
+    let cap_vault = capability_vault::new(dao_id, ctx);
+    let capability_vault_id = object::id(&cap_vault);
+
+    let dao_charter = charter::new(dao_id, name, description, image_url, ctx);
+    let charter_id = object::id(&dao_charter);
+
+    let emergency_freeze = emergency::new(dao_id, ctx);
+    let emergency_freeze_id = object::id(&emergency_freeze);
+
+    let freeze_admin_cap = emergency::new_admin_cap(dao_id, ctx);
+
+    let (proposal_configs, enabled_proposal_types) = subdao_proposal_configs();
+
+    let dao = DAO {
+        id: dao_uid,
+        status: DAOStatus::Active,
+        governance,
+        proposal_configs,
+        enabled_proposal_types,
+        last_executed_at: vec_map::empty(),
+        treasury_id,
+        capability_vault_id,
+        charter_id,
+        emergency_freeze_id,
+        execution_paused: false,
+        controller_cap_id: option::none(),
+        controller_paused: false,
+    };
+
+    event::emit(DAOCreated {
+        dao_id,
+        treasury_id,
+        capability_vault_id,
+        charter_id,
+        emergency_freeze_id,
+        creator: ctx.sender(),
+    });
+
+    treasury_vault::share(treasury_vault);
+    capability_vault::share(cap_vault);
+    charter::share(dao_charter);
+    emergency::share(emergency_freeze);
+
+    (dao, freeze_admin_cap)
+}
+
+/// Share a SubDAO after setting its controller_cap_id.
+/// Consumes the DAO by value — can only be called on an un-shared DAO.
+public fun share_subdao(mut dao: DAO, controller_cap_id: ID) {
+    dao.controller_cap_id = option::some(controller_cap_id);
+    transfer::share_object(dao);
+}
+
 // === Internal ===
 
 /// Build the default proposal config map and enabled types set.
@@ -303,6 +415,22 @@ fun default_proposal_configs(): (
     VecMap<std::ascii::String, ProposalConfig>,
     VecSet<std::ascii::String>,
 ) {
+    build_proposal_configs(DEFAULT_PROPOSAL_TYPES, vector[])
+}
+
+/// Build proposal configs for SubDAOs — defaults minus blocked hierarchy types.
+fun subdao_proposal_configs(): (
+    VecMap<std::ascii::String, ProposalConfig>,
+    VecSet<std::ascii::String>,
+) {
+    build_proposal_configs(DEFAULT_PROPOSAL_TYPES, SUBDAO_BLOCKED_TYPES)
+}
+
+/// Build proposal config map and enabled set from a types list, excluding blocked types.
+fun build_proposal_configs(
+    types: vector<vector<u8>>,
+    blocked: vector<vector<u8>>,
+): (VecMap<std::ascii::String, ProposalConfig>, VecSet<std::ascii::String>) {
     let default_config = proposal::new_config(
         DEFAULT_QUORUM,
         DEFAULT_APPROVAL_THRESHOLD,
@@ -315,14 +443,34 @@ fun default_proposal_configs(): (
     let mut configs = vec_map::empty<std::ascii::String, ProposalConfig>();
     let mut enabled = vec_set::empty<std::ascii::String>();
 
-    let types = DEFAULT_PROPOSAL_TYPES;
+    let blocked_set = {
+        let mut s = vec_set::empty<std::ascii::String>();
+        let mut j = 0;
+        while (j < blocked.length()) {
+            s.insert(blocked[j].to_ascii_string());
+            j = j + 1;
+        };
+        s
+    };
+
     let mut i = 0;
     while (i < types.length()) {
         let type_name = types[i].to_ascii_string();
-        configs.insert(type_name, default_config);
-        enabled.insert(type_name);
+        if (!blocked_set.contains(&type_name)) {
+            configs.insert(type_name, default_config);
+            enabled.insert(type_name);
+        };
         i = i + 1;
     };
 
     (configs, enabled)
+}
+
+// === Test Helpers ===
+
+#[test_only]
+/// Enable a proposal type on the DAO without an ExecutionRequest.
+public fun test_enable_type(self: &mut DAO, type_key: std::ascii::String, config: ProposalConfig) {
+    self.enabled_proposal_types.insert(type_key);
+    self.proposal_configs.insert(type_key, config);
 }
