@@ -71,6 +71,7 @@ public struct DAO has key, store {
     governance: GovernanceConfig,
     proposal_configs: VecMap<std::ascii::String, ProposalConfig>,
     enabled_proposal_types: VecSet<std::ascii::String>,
+    last_executed_at: VecMap<std::ascii::String, u64>,
     treasury_id: ID,
     capability_vault_id: ID,
     charter_id: ID,
@@ -138,6 +139,7 @@ public fun create(
         governance,
         proposal_configs,
         enabled_proposal_types,
+        last_executed_at: vec_map::empty(),
         treasury_id,
         capability_vault_id,
         charter_id,
@@ -200,6 +202,11 @@ public fun charter_id(self: &DAO): ID { self.charter_id }
 /// Returns the emergency freeze ID.
 public fun emergency_freeze_id(self: &DAO): ID { self.emergency_freeze_id }
 
+/// Returns the last-executed-at map (type_key → timestamp_ms).
+public fun last_executed_at(self: &DAO): &VecMap<std::ascii::String, u64> {
+    &self.last_executed_at
+}
+
 /// Returns the DAO's object ID.
 public fun id(self: &DAO): ID { object::id(self) }
 
@@ -214,6 +221,21 @@ public fun set_board_governance<P>(
     _req: &ExecutionRequest<P>,
 ) {
     self.governance.set_board(new_members, new_seat_count);
+}
+
+/// Record the execution timestamp for a proposal type.
+/// Called after a successful execute() to update cooldown tracking.
+public(package) fun record_execution(
+    self: &mut DAO,
+    type_key: std::ascii::String,
+    timestamp_ms: u64,
+) {
+    if (self.last_executed_at.contains(&type_key)) {
+        let entry = self.last_executed_at.get_mut(&type_key);
+        *entry = timestamp_ms;
+    } else {
+        self.last_executed_at.insert(type_key, timestamp_ms);
+    };
 }
 
 // === Internal ===
