@@ -51,7 +51,11 @@ function timeAgo(timestampMs: number): string {
 
 export function DaoDashboard() {
   const { daoId } = useParams({ strict: false });
-  const { data: dao, isLoading: daoLoading } = useDaoSummary(daoId ?? "");
+  const {
+    data: dao,
+    isLoading: daoLoading,
+    isError: daoError,
+  } = useDaoSummary(daoId ?? "");
   const { data: balances, isLoading: balancesLoading } = useTreasuryBalances(
     dao?.treasuryId,
   );
@@ -59,11 +63,22 @@ export function DaoDashboard() {
     daoId ?? "",
   );
 
-  const totalSui =
-    balances?.reduce((sum, b) => sum + b.balance, 0n) ?? 0n;
+  const treasuryLoading = daoLoading || balancesLoading;
+  const treasuryValue = dao
+    ? `${formatBalance(balances?.reduce((sum, b) => sum + b.balance, 0n) ?? 0n)} SUI`
+    : "—";
 
   return (
     <div className="space-y-6">
+      {daoError && (
+        <Alert variant="destructive">
+          <AlertTitle>Connection Error</AlertTitle>
+          <AlertDescription>
+            Could not fetch DAO data. Check that the network is reachable.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {dao?.status === "Migrating" && (
         <Alert variant="destructive">
           <AlertTitle>DAO Migrating</AlertTitle>
@@ -87,8 +102,8 @@ export function DaoDashboard() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard
           title="Treasury"
-          loading={daoLoading || balancesLoading}
-          value={`${formatBalance(totalSui)} SUI`}
+          loading={treasuryLoading}
+          value={treasuryValue}
           description={
             balances && balances.length > 1
               ? `${balances.length} coin types`
