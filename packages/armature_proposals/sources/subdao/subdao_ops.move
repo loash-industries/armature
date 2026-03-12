@@ -352,7 +352,8 @@ public fun execute_spin_out_subdao(
 /// PTB flow:
 ///   1. `board_voting::authorize_execution` → `ExecutionRequest<TransferAssets>`
 ///   2. `validate_transfer_assets(..., &request)` — validates limits, emits event
-///   3. N × `source_treasury.withdraw<T>(amount, &request, ctx)` → `target_treasury.deposit<T>(coin)`
+///   3. N × `source_treasury.withdraw<T>(amount, &request, ctx)` →
+/// `target_treasury.deposit<T>(coin)`
 ///   4. N × `source_vault.extract_cap<T>(cap_id, &request)` → `target_vault.receive_cap<T>(cap)`
 ///   5. `finalize_transfer_assets(request, &proposal)` — consumes the request
 public fun validate_transfer_assets(
