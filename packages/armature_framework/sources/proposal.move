@@ -387,6 +387,62 @@ public(package) fun execute<P: store>(
     ExecutionRequest<P> { dao_id, proposal_id }
 }
 
+// === Lifecycle: privileged_create ===
+
+/// Create a privileged proposal directly in Executed status.
+/// Used by the controller bypass flow (SubDAOControl-authorized).
+/// The proposal is shared for on-chain audit; returns an ExecutionRequest
+/// to authorize SubDAO mutations in the same PTB.
+#[allow(lint(share_owned, custom_state_change))]
+public(package) fun privileged_create<P: store>(
+    dao_id: ID,
+    type_key: std::ascii::String,
+    proposer: address,
+    metadata_ipfs: String,
+    payload: P,
+    clock: &Clock,
+    ctx: &mut TxContext,
+): ExecutionRequest<P> {
+    let now = clock.timestamp_ms();
+
+    let proposal = Proposal<P> {
+        id: object::new(ctx),
+        dao_id,
+        type_key,
+        proposer,
+        metadata_ipfs,
+        payload,
+        vote_snapshot: vec_map::empty(),
+        total_snapshot_weight: 0,
+        votes_cast: vec_map::empty(),
+        yes_weight: 0,
+        no_weight: 0,
+        config: new_config(10_000, 10_000, 0, MIN_EXPIRY_MS, 0, 0),
+        created_at_ms: now,
+        passed_at_ms: option::some(now),
+        status: ProposalStatus::Executed,
+    };
+
+    let proposal_id = object::id(&proposal);
+
+    event::emit(ProposalCreated {
+        proposal_id,
+        dao_id,
+        type_key,
+        proposer,
+    });
+
+    event::emit(ProposalExecuted {
+        proposal_id,
+        dao_id,
+        executor: proposer,
+    });
+
+    transfer::share_object(proposal);
+
+    ExecutionRequest<P> { dao_id, proposal_id }
+}
+
 // === ExecutionRequest ===
 
 /// Create an ExecutionRequest. Only callable within the framework package.
