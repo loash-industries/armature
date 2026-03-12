@@ -9,14 +9,14 @@ use sui::clock::Clock;
 
 const EDAONotActive: u64 = 0;
 const ETypeNotEnabled: u64 = 1;
-const ENotBoardMember: u64 = 2;
-const EDAOIdMismatch: u64 = 3;
+const EDAOIdMismatch: u64 = 2;
 
 // === Submit ===
 
 /// Submit a new proposal for board governance.
 /// Validates: DAO is active, type is enabled, proposer is a board member.
 /// Looks up the ProposalConfig for the given type_key from the DAO.
+#[allow(lint(share_owned, custom_state_change))]
 public fun submit_proposal<P: store>(
     dao: &DAO,
     type_key: std::ascii::String,
