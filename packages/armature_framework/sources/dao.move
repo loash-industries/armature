@@ -17,6 +17,11 @@ use sui::vec_set::{Self, VecSet};
 const EInvalidName: u64 = 0;
 const EInvalidDescription: u64 = 1;
 const EDAOIdMismatch: u64 = 2;
+const ENotMigrating: u64 = 3;
+const ETreasuryIdMismatch: u64 = 4;
+const EVaultIdMismatch: u64 = 5;
+const ECharterIdMismatch: u64 = 6;
+const EFreezeIdMismatch: u64 = 7;
 
 // === Constants ===
 
@@ -52,7 +57,7 @@ const DEFAULT_COOLDOWN_MS: u64 = 0;
 /// DAO lifecycle status.
 public enum DAOStatus has copy, drop, store {
     Active,
-    Migrating,
+    Migrating { successor_dao_id: ID },
 }
 
 /// Returns true if the status is Active.
@@ -66,8 +71,16 @@ public fun is_active(self: &DAOStatus): bool {
 /// Returns true if the status is Migrating.
 public fun is_migrating(self: &DAOStatus): bool {
     match (self) {
-        DAOStatus::Migrating => true,
+        DAOStatus::Migrating { .. } => true,
         _ => false,
+    }
+}
+
+/// Returns the successor DAO ID if the status is Migrating.
+public fun successor_dao_id(self: &DAOStatus): ID {
+    match (self) {
+        DAOStatus::Migrating { successor_dao_id } => *successor_dao_id,
+        _ => abort 0,
     }
 }
 
@@ -101,6 +114,12 @@ public struct DAOCreated has copy, drop {
     charter_id: ID,
     emergency_freeze_id: ID,
     creator: address,
+}
+
+/// Emitted when a Migrating DAO is permanently destroyed.
+public struct DAODestroyed has copy, drop {
+    dao_id: ID,
+    successor_dao_id: ID,
 }
 
 // === Constructor ===
@@ -311,9 +330,9 @@ public fun clear_controller<P>(self: &mut DAO, req: &ExecutionRequest<P>) {
 
 /// Transition the DAO to Migrating status (irreversible).
 /// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
-public fun set_migrating<P>(self: &mut DAO, req: &ExecutionRequest<P>) {
+public fun set_migrating<P>(self: &mut DAO, successor_dao_id: ID, req: &ExecutionRequest<P>) {
     assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
-    self.status = DAOStatus::Migrating;
+    self.status = DAOStatus::Migrating { successor_dao_id };
 }
 
 /// Record the execution timestamp for a proposal type.
@@ -406,6 +425,53 @@ public fun create_subdao(
 public fun share_subdao(mut dao: DAO, controller_cap_id: ID) {
     dao.controller_cap_id = option::some(controller_cap_id);
     transfer::share_object(dao);
+}
+
+/// Permissionless cleanup of a Migrating DAO.
+/// Destroys the DAO and all companion objects. Aborts if the DAO is not
+/// in Migrating status or if the treasury/vault still hold assets.
+/// The caller must pass the exact companion objects referenced by the DAO.
+public fun destroy(
+    dao: DAO,
+    treasury: treasury_vault::TreasuryVault,
+    vault: capability_vault::CapabilityVault,
+    charter: charter::Charter,
+    freeze: emergency::EmergencyFreeze,
+) {
+    assert!(dao.status.is_migrating(), ENotMigrating);
+    assert!(object::id(&treasury) == dao.treasury_id, ETreasuryIdMismatch);
+    assert!(object::id(&vault) == dao.capability_vault_id, EVaultIdMismatch);
+    assert!(object::id(&charter) == dao.charter_id, ECharterIdMismatch);
+    assert!(object::id(&freeze) == dao.emergency_freeze_id, EFreezeIdMismatch);
+
+    let successor_dao_id = dao.status.successor_dao_id();
+    let dao_id = object::id(&dao);
+
+    // Destroy companion objects (asserts vaults are empty internally)
+    treasury_vault::destroy_empty(treasury);
+    capability_vault::destroy_empty(vault);
+    charter::destroy(charter);
+    emergency::destroy(freeze);
+
+    // Destroy the DAO itself
+    let DAO {
+        id,
+        status: _,
+        governance: _,
+        proposal_configs: _,
+        enabled_proposal_types: _,
+        last_executed_at: _,
+        treasury_id: _,
+        capability_vault_id: _,
+        charter_id: _,
+        emergency_freeze_id: _,
+        execution_paused: _,
+        controller_cap_id: _,
+        controller_paused: _,
+    } = dao;
+    id.delete();
+
+    event::emit(DAODestroyed { dao_id, successor_dao_id });
 }
 
 // === Internal ===

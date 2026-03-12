@@ -42,6 +42,7 @@ public fun submit_proposal<P: store>(
         payload,
         config,
         dao.governance(),
+        dao.status().is_active(),
         clock,
         ctx,
     );

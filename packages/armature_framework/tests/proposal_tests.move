@@ -60,6 +60,7 @@ fun create_test_proposal(scenario: &mut test_scenario::Scenario, clock: &Clock) 
             TestPayload { value: 42 },
             config,
             dao.governance(),
+            dao.status().is_active(),
             clock,
             scenario.ctx(),
         );
@@ -643,6 +644,7 @@ fun test_execute_delay_not_elapsed_aborts() {
             TestPayload { value: 42 },
             config,
             dao.governance(),
+            dao.status().is_active(),
             &clock,
             scenario.ctx(),
         );
@@ -704,6 +706,7 @@ fun test_execute_delay_elapsed_succeeds() {
             TestPayload { value: 42 },
             config,
             dao.governance(),
+            dao.status().is_active(),
             &clock,
             scenario.ctx(),
         );
@@ -768,6 +771,7 @@ fun test_execute_cooldown_active_aborts() {
             TestPayload { value: 42 },
             config,
             dao.governance(),
+            dao.status().is_active(),
             &clock,
             scenario.ctx(),
         );
@@ -835,6 +839,7 @@ fun test_execute_cooldown_elapsed_succeeds() {
             TestPayload { value: 42 },
             config,
             dao.governance(),
+            dao.status().is_active(),
             &clock,
             scenario.ctx(),
         );
