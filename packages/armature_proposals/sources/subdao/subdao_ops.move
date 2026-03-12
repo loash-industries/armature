@@ -3,6 +3,7 @@ module armature_proposals::subdao_ops;
 use armature::capability_vault::{CapabilityVault, SubDAOControl};
 use armature::controller;
 use armature::dao::{Self, DAO};
+use armature::emergency;
 use armature::governance;
 use armature::proposal::{Self, Proposal, ExecutionRequest};
 use armature::treasury_vault::TreasuryVault;
@@ -22,6 +23,9 @@ const EVaultDAOMismatch: u64 = 0;
 const ESubDAOVaultMismatch: u64 = 1;
 const EDAOMismatch: u64 = 2;
 const EAssetLimitExceeded: u64 = 4;
+const ETargetTreasuryMismatch: u64 = 5;
+const ETargetVaultMismatch: u64 = 6;
+const ETargetDAOMismatch: u64 = 7;
 
 // === Constants ===
 
@@ -88,7 +92,7 @@ public fun execute_transfer_cap<T: key + store>(
     assert!(target_vault.dao_id() == payload.target_subdao(), ESubDAOVaultMismatch);
 
     let cap: T = source_vault.extract_cap(payload.cap_id(), &request);
-    target_vault.store_cap(cap, &request);
+    target_vault.receive_cap(cap, &request);
 
     event::emit(CapTransferredToSubDAO {
         dao_id: source_vault.dao_id(),
@@ -289,10 +293,12 @@ public fun execute_spawn_dao(
 }
 
 /// Execute a SpinOutSubDAO proposal: clear the controller relationship on the
-/// SubDAO, re-enable previously blocked proposal types, then destroy the
-/// SubDAOControl token — permanently granting the SubDAO full independence.
+/// SubDAO, re-enable previously blocked proposal types, transfer the SubDAO's
+/// FreezeAdminCap back to it, then destroy the SubDAOControl token —
+/// permanently granting the SubDAO full independence.
 public fun execute_spin_out_subdao(
     vault: &mut CapabilityVault,
+    subdao_vault: &mut CapabilityVault,
     subdao: &mut DAO,
     proposal: &Proposal<SpinOutSubDAO>,
     request: ExecutionRequest<SpinOutSubDAO>,
@@ -302,6 +308,7 @@ public fun execute_spin_out_subdao(
     assert!(vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
 
     let payload = proposal.payload();
+    assert!(subdao_vault.dao_id() == payload.subdao_id(), ESubDAOVaultMismatch);
 
     // Loan SubDAOControl to perform privileged ops on the SubDAO
     let (control, loan) = vault.loan_cap<SubDAOControl, SpinOutSubDAO>(
@@ -315,7 +322,14 @@ public fun execute_spin_out_subdao(
         subdao,
         b"SpinOutSubDAO".to_ascii_string(),
         std::string::utf8(b"Controller-initiated spin-out"),
-        spin_out_subdao::new(payload.subdao_id(), payload.control_cap_id()),
+        spin_out_subdao::new(
+            payload.subdao_id(),
+            payload.control_cap_id(),
+            payload.freeze_admin_cap_id(),
+            *payload.spawn_dao_config(),
+            *payload.spin_out_subdao_config(),
+            *payload.create_subdao_config(),
+        ),
         clock,
         ctx,
     );
@@ -323,15 +337,33 @@ public fun execute_spin_out_subdao(
     // Clear controller relationship (resets controller_cap_id and controller_paused)
     subdao.clear_controller(&subdao_req);
 
-    // Re-enable hierarchy-altering types that were blocked for SubDAOs
-    let default_config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-    subdao.enable_proposal_type(b"SpawnDAO".to_ascii_string(), default_config, &subdao_req);
-    subdao.enable_proposal_type(b"SpinOutSubDAO".to_ascii_string(), default_config, &subdao_req);
-    subdao.enable_proposal_type(b"CreateSubDAO".to_ascii_string(), default_config, &subdao_req);
+    // Re-enable hierarchy-altering types with governance-specified configs
+    subdao.enable_proposal_type(
+        b"SpawnDAO".to_ascii_string(),
+        *payload.spawn_dao_config(),
+        &subdao_req,
+    );
+    subdao.enable_proposal_type(
+        b"SpinOutSubDAO".to_ascii_string(),
+        *payload.spin_out_subdao_config(),
+        &subdao_req,
+    );
+    subdao.enable_proposal_type(
+        b"CreateSubDAO".to_ascii_string(),
+        *payload.create_subdao_config(),
+        &subdao_req,
+    );
 
     // Consume the privileged request and return the loan
     controller::privileged_consume(subdao_req, &control);
     vault.return_cap(control, loan);
+
+    // Transfer SubDAO's FreezeAdminCap from parent vault to SubDAO vault
+    let freeze_cap = vault.extract_cap<emergency::FreezeAdminCap, SpinOutSubDAO>(
+        payload.freeze_admin_cap_id(),
+        &request,
+    );
+    subdao_vault.receive_cap(freeze_cap, &request);
 
     // Now destroy the SubDAOControl permanently
     vault.destroy_subdao_control(payload.control_cap_id(), &request);
@@ -345,20 +377,24 @@ public fun execute_spin_out_subdao(
 }
 
 /// Validate a TransferAssets proposal: check ownership and asset count limits,
-/// emit the transfer event. Borrows the ExecutionRequest so the caller can
-/// compose typed `withdraw<T>` / `extract_cap<T>` calls in the same PTB
+/// verify target objects match the proposal payload, and emit the transfer event.
+/// Borrows the ExecutionRequest so the caller can compose typed
+/// `withdraw<T>` / `extract_cap<T>` calls in the same PTB
 /// before calling `finalize_transfer_assets` to consume the request.
 ///
 /// PTB flow:
 ///   1. `board_voting::authorize_execution` → `ExecutionRequest<TransferAssets>`
-///   2. `validate_transfer_assets(..., &request)` — validates limits, emits event
+///   2. `validate_transfer_assets(..., &request)` — validates limits + targets, emits event
 ///   3. N × `source_treasury.withdraw<T>(amount, &request, ctx)` →
 /// `target_treasury.deposit<T>(coin)`
-///   4. N × `source_vault.extract_cap<T>(cap_id, &request)` → `target_vault.receive_cap<T>(cap)`
+///   4. N × `source_vault.extract_cap<T>(cap_id, &request)` →
+/// `target_vault.receive_cap<T>(cap, &request)`
 ///   5. `finalize_transfer_assets(request, &proposal)` — consumes the request
 public fun validate_transfer_assets(
     source_treasury: &TreasuryVault,
     source_cap_vault: &CapabilityVault,
+    target_treasury: &TreasuryVault,
+    target_cap_vault: &CapabilityVault,
     proposal: &Proposal<TransferAssets>,
     request: &ExecutionRequest<TransferAssets>,
 ) {
@@ -366,6 +402,13 @@ public fun validate_transfer_assets(
     assert!(source_cap_vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
 
     let payload = proposal.payload();
+
+    // Validate target objects match proposal payload
+    assert!(object::id(target_treasury) == payload.target_treasury_id(), ETargetTreasuryMismatch);
+    assert!(object::id(target_cap_vault) == payload.target_vault_id(), ETargetVaultMismatch);
+    assert!(target_treasury.dao_id() == payload.target_dao_id(), ETargetDAOMismatch);
+    assert!(target_cap_vault.dao_id() == payload.target_dao_id(), ETargetDAOMismatch);
+
     assert!(
         payload.coin_types().length() + payload.cap_ids().length() <= MAX_TRANSFER_ASSETS,
         EAssetLimitExceeded,
