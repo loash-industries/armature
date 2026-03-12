@@ -73,9 +73,9 @@ public fun deposit<T>(self: &mut TreasuryVault, coin: Coin<T>) {
     };
 }
 
-/// Withdraw a coin from the vault. Requires an `ExecutionRequest` — package-internal only.
+/// Withdraw a coin from the vault. Requires an `ExecutionRequest`.
 /// If the withdrawal drains the balance to zero, the dynamic field and registry entry are removed.
-public(package) fun withdraw<T, P>(
+public fun withdraw<T, P>(
     self: &mut TreasuryVault,
     amount: u64,
     _req: &ExecutionRequest<P>,

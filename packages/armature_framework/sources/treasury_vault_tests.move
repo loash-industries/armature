@@ -372,6 +372,6 @@ fun test_balance_after_deposit_returns_correct() {
 // These must be tested via PTB-based integration tests (sui client call).
 // The claim_coin implementation is verified by code review and integration testing.
 
-// Note: test_withdraw_requires_execution_request is a compile-time guarantee.
-// withdraw is public(package), so external modules cannot call it.
+// Note: test_withdraw_requires_execution_request is enforced by the ExecutionRequest
+// parameter — only code holding a valid ExecutionRequest (from governance) can withdraw.
 // This is verified by the Move type system and does not need a runtime test.
