@@ -1,12 +1,16 @@
+import { Card, CardHeader, CardContent, Badge } from "@awar.dev/ui";
+
 function App() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-neutral-950 font-mono text-amber-400">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold tracking-tight text-rose-900">
+    <div className="flex min-h-screen items-center justify-center bg-background font-mono text-foreground">
+      <Card className="w-80">
+        <CardHeader className="text-center text-2xl font-bold">
           armature
-        </h1>
-        <p className="mt-2 text-sm text-amber-400/60">DAO Framework</p>
-      </div>
+        </CardHeader>
+        <CardContent className="text-center">
+          <Badge variant="outline">DAO Framework</Badge>
+        </CardContent>
+      </Card>
     </div>
   );
 }
