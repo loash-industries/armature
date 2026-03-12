@@ -50,7 +50,7 @@ public fun execute_send_coin<T>(
 
     transfer::public_transfer(coin, payload.recipient());
 
-    proposal::consume(request);
+    proposal::finalize(request, proposal);
 }
 
 /// Execute a SendCoinToDAO proposal: withdraw from source treasury, deposit into target.
@@ -76,5 +76,5 @@ public fun execute_send_coin_to_dao<T>(
         target_treasury: payload.recipient_treasury(),
     });
 
-    proposal::consume(request);
+    proposal::finalize(request, proposal);
 }

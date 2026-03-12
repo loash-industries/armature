@@ -22,6 +22,8 @@ const ENotExpired: u64 = 10;
 #[allow(unused_const)]
 const ETypeNotEnabled: u64 = 11;
 const EExecutionPaused: u64 = 12;
+const ERequestMismatch: u64 = 13;
+const ENotExecuted: u64 = 14;
 
 // === Constants ===
 
@@ -210,7 +212,7 @@ public fun total_snapshot_weight<P: store>(self: &Proposal<P>): u64 {
 /// Create a new proposal and share it. Snapshots the current governance weights.
 /// The proposer must be in the snapshot (board member for Board governance).
 #[allow(lint(share_owned))]
-public fun create<P: store>(
+public(package) fun create<P: store>(
     dao_id: ID,
     type_key: std::ascii::String,
     proposer: address,
@@ -396,7 +398,18 @@ public fun req_dao_id<P>(self: &ExecutionRequest<P>): ID { self.dao_id }
 
 public fun req_proposal_id<P>(self: &ExecutionRequest<P>): ID { self.proposal_id }
 
-/// Consume the execution request. Called by handlers to finalize execution.
-public fun consume<P>(req: ExecutionRequest<P>) {
+/// Consume the execution request. Framework-internal only.
+public(package) fun consume<P>(req: ExecutionRequest<P>) {
+    let ExecutionRequest { dao_id: _, proposal_id: _ } = req;
+}
+
+/// Consume the execution request after validating it matches the proposal.
+/// External packages (handlers) must use this instead of consume().
+/// Asserts the request was produced for the given proposal and that
+/// the proposal has been executed through the governance flow.
+public fun finalize<P: store>(req: ExecutionRequest<P>, proposal: &Proposal<P>) {
+    assert!(req.dao_id == proposal.dao_id, ERequestMismatch);
+    assert!(req.proposal_id == object::id(proposal), ERequestMismatch);
+    assert!(proposal.status.is_executed(), ENotExecuted);
     let ExecutionRequest { dao_id: _, proposal_id: _ } = req;
 }

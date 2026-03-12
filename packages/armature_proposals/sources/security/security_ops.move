@@ -49,7 +49,7 @@ public fun execute_transfer_freeze_admin(
 
     transfer::public_transfer(cap, payload.new_admin());
 
-    proposal::consume(request);
+    proposal::finalize(request, proposal);
 }
 
 /// Execute an UnfreezeProposalType proposal: unfreeze a single proposal type
@@ -63,7 +63,7 @@ public fun execute_unfreeze_proposal_type(
 
     emergency::governance_unfreeze_type(freeze, payload.type_key(), &request);
 
-    proposal::consume(request);
+    proposal::finalize(request, proposal);
 }
 
 /// Execute an UpdateFreezeConfig proposal: update the max freeze duration.
@@ -85,5 +85,5 @@ public fun execute_update_freeze_config(
         new_max_freeze_duration_ms: payload.new_max_freeze_duration_ms(),
     });
 
-    proposal::consume(request);
+    proposal::finalize(request, proposal);
 }

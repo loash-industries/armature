@@ -71,7 +71,7 @@ public fun execute_disable_proposal_type(
         type_key,
     });
 
-    proposal::consume(request);
+    proposal::finalize(request, proposal);
 }
 
 /// Execute an EnableProposalType proposal: add a type to the enabled set.
@@ -96,7 +96,7 @@ public fun execute_enable_proposal_type(
         type_key,
     });
 
-    proposal::consume(request);
+    proposal::finalize(request, proposal);
 }
 
 /// Execute an UpdateProposalConfig proposal: merge optional field overrides
@@ -135,7 +135,7 @@ public fun execute_update_proposal_config(
         target_type_key: target_key,
     });
 
-    proposal::consume(request);
+    proposal::finalize(request, proposal);
 }
 
 /// Execute an UpdateMetadata proposal: update the DAO charter's IPFS CID.
@@ -155,7 +155,7 @@ public fun execute_update_metadata(
         new_ipfs_cid: *payload.new_ipfs_cid(),
     });
 
-    proposal::consume(request);
+    proposal::finalize(request, proposal);
 }
 
 // === Internal ===

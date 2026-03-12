@@ -94,7 +94,7 @@ public fun execute_transfer_cap<T: key + store>(
         target_vault: object::id(target_vault),
     });
 
-    proposal::consume(request);
+    proposal::finalize(request, proposal);
 }
 
 /// Execute a ReclaimCapFromSubDAO proposal: loan the SubDAOControl from the
@@ -132,7 +132,7 @@ public fun execute_reclaim_cap<T: key + store>(
         subdao_id: payload.subdao_id(),
     });
 
-    proposal::consume(request);
+    proposal::finalize(request, proposal);
 }
 
 /// Execute a CreateSubDAO proposal: spawn a new Board-governance child DAO and
@@ -164,7 +164,7 @@ public fun execute_create_subdao(
         control_cap_id,
     });
 
-    proposal::consume(request);
+    proposal::finalize(request, proposal);
 }
 
 /// Execute a PauseSubDAOExecution proposal: pause all proposal execution on the DAO.
@@ -182,7 +182,7 @@ public fun execute_pause_subdao_execution(
 
     event::emit(SubDAOExecutionPaused { dao_id: dao.id() });
 
-    proposal::consume(request);
+    proposal::finalize(request, proposal);
 }
 
 /// Execute an UnpauseSubDAOExecution proposal: resume proposal execution on the DAO.
@@ -198,7 +198,7 @@ public fun execute_unpause_subdao_execution(
 
     event::emit(SubDAOExecutionUnpaused { dao_id: dao.id() });
 
-    proposal::consume(request);
+    proposal::finalize(request, proposal);
 }
 
 /// Execute a SpawnDAO proposal: create a successor DAO and transition
@@ -228,7 +228,7 @@ public fun execute_spawn_dao(
         successor_dao_id: successor_id,
     });
 
-    proposal::consume(request);
+    proposal::finalize(request, proposal);
 }
 
 /// Execute a SpinOutSubDAO proposal: destroy the SubDAOControl token,
@@ -249,7 +249,7 @@ public fun execute_spin_out_subdao(
         subdao_id: payload.subdao_id(),
     });
 
-    proposal::consume(request);
+    proposal::finalize(request, proposal);
 }
 
 /// Execute a TransferAssets proposal: validate limits and authorize the PTB to
@@ -278,5 +278,5 @@ public fun execute_transfer_assets(
         cap_count: payload.cap_ids().length(),
     });
 
-    proposal::consume(request);
+    proposal::finalize(request, proposal);
 }

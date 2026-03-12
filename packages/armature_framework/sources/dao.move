@@ -15,6 +15,7 @@ use sui::vec_set::{Self, VecSet};
 
 const EInvalidName: u64 = 0;
 const EInvalidDescription: u64 = 1;
+const EDAOIdMismatch: u64 = 2;
 
 // === Constants ===
 
@@ -222,8 +223,9 @@ public fun id(self: &DAO): ID { object::id(self) }
 public fun set_board_governance<P>(
     self: &mut DAO,
     new_members: vector<address>,
-    _req: &ExecutionRequest<P>,
+    req: &ExecutionRequest<P>,
 ) {
+    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
     self.governance.set_board(new_members);
 }
 
@@ -232,8 +234,9 @@ public fun set_board_governance<P>(
 public fun disable_proposal_type<P>(
     self: &mut DAO,
     type_key: std::ascii::String,
-    _req: &ExecutionRequest<P>,
+    req: &ExecutionRequest<P>,
 ) {
+    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
     self.enabled_proposal_types.remove(&type_key);
     self.proposal_configs.remove(&type_key);
 }
@@ -244,8 +247,9 @@ public fun enable_proposal_type<P>(
     self: &mut DAO,
     type_key: std::ascii::String,
     config: ProposalConfig,
-    _req: &ExecutionRequest<P>,
+    req: &ExecutionRequest<P>,
 ) {
+    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
     self.enabled_proposal_types.insert(type_key);
     self.proposal_configs.insert(type_key, config);
 }
@@ -256,21 +260,24 @@ public fun update_proposal_config<P>(
     self: &mut DAO,
     type_key: std::ascii::String,
     new_config: ProposalConfig,
-    _req: &ExecutionRequest<P>,
+    req: &ExecutionRequest<P>,
 ) {
+    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
     let entry = self.proposal_configs.get_mut(&type_key);
     *entry = new_config;
 }
 
 /// Pause or resume proposal execution on this DAO.
 /// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
-public fun set_execution_paused<P>(self: &mut DAO, paused: bool, _req: &ExecutionRequest<P>) {
+public fun set_execution_paused<P>(self: &mut DAO, paused: bool, req: &ExecutionRequest<P>) {
+    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
     self.execution_paused = paused;
 }
 
 /// Transition the DAO to Migrating status (irreversible).
 /// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
-public fun set_migrating<P>(self: &mut DAO, _req: &ExecutionRequest<P>) {
+public fun set_migrating<P>(self: &mut DAO, req: &ExecutionRequest<P>) {
+    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
     self.status = DAOStatus::Migrating;
 }
 

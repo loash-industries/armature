@@ -53,7 +53,7 @@ public fun execute_propose_upgrade(
         policy: payload.policy(),
     });
 
-    proposal::consume(request);
+    proposal::finalize(request, proposal);
 
     (ticket, cap, loan)
 }
