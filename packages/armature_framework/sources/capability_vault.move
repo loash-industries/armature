@@ -73,7 +73,7 @@ public fun contains(self: &CapabilityVault, cap_id: ID): bool {
 
 /// Returns the IDs of stored capabilities for a given type.
 public fun ids_for_type<T: key + store>(self: &CapabilityVault): vector<ID> {
-    let type_name = std::type_name::get<T>().into_string();
+    let type_name = std::type_name::with_defining_ids<T>().into_string();
     if (self.ids_by_type.contains(&type_name)) {
         *self.ids_by_type.get(&type_name)
     } else {
@@ -200,7 +200,7 @@ public fun new_subdao_control_for_testing(subdao_id: ID, ctx: &mut TxContext): S
 
 /// Register a capability in the type and ID tracking sets.
 fun register_cap<T: key + store>(self: &mut CapabilityVault, cap_id: ID) {
-    let type_name = std::type_name::get<T>().into_string();
+    let type_name = std::type_name::with_defining_ids<T>().into_string();
     self.cap_ids.insert(cap_id);
     if (!self.cap_types.contains(&type_name)) {
         self.cap_types.insert(type_name);
@@ -212,7 +212,7 @@ fun register_cap<T: key + store>(self: &mut CapabilityVault, cap_id: ID) {
 
 /// Deregister a capability from the type and ID tracking sets.
 fun deregister_cap<T: key + store>(self: &mut CapabilityVault, cap_id: ID) {
-    let type_name = std::type_name::get<T>().into_string();
+    let type_name = std::type_name::with_defining_ids<T>().into_string();
     self.cap_ids.remove(&cap_id);
     let ids = self.ids_by_type.get_mut(&type_name);
     let (found, idx) = ids.index_of(&cap_id);
