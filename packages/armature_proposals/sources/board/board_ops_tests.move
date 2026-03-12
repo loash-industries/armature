@@ -1,6 +1,7 @@
 #[test_only]
 module armature_proposals::board_ops_tests;
 
+use armature::board_voting;
 use armature::dao::{Self, DAO};
 use armature::governance;
 use armature::proposal::Proposal;
@@ -40,10 +41,11 @@ fun test_set_board_e2e() {
         clock.set_for_testing(1000);
 
         let payload = set_board::new(vector[CREATOR, MEMBER_B, NEW_MEMBER]);
-        dao.submit_proposal(
+        board_voting::submit_proposal(
+            &dao,
             b"SetBoard".to_ascii_string(),
-            payload,
             string::utf8(b"Add NEW_MEMBER to board"),
+            payload,
             &clock,
             scenario.ctx(),
         );
@@ -70,7 +72,12 @@ fun test_set_board_e2e() {
         let mut proposal = scenario.take_shared<Proposal<set_board::SetBoard>>();
         clock.set_for_testing(3000);
 
-        let request = dao.authorize_execution(&mut proposal, &clock, scenario.ctx());
+        let request = board_voting::authorize_execution(
+            &mut dao,
+            &mut proposal,
+            &clock,
+            scenario.ctx(),
+        );
 
         // Handler: apply the board change and consume the request
         board_ops::execute_set_board(&mut dao, &proposal, request);
@@ -115,10 +122,11 @@ fun test_set_board_empty_members_aborts() {
         clock.set_for_testing(1000);
 
         let payload = set_board::new(vector[]);
-        dao.submit_proposal(
+        board_voting::submit_proposal(
+            &dao,
             b"SetBoard".to_ascii_string(),
-            payload,
             string::utf8(b"Empty board"),
+            payload,
             &clock,
             scenario.ctx(),
         );
@@ -142,7 +150,12 @@ fun test_set_board_empty_members_aborts() {
         let mut proposal = scenario.take_shared<Proposal<set_board::SetBoard>>();
         clock.set_for_testing(3000);
 
-        let request = dao.authorize_execution(&mut proposal, &clock, scenario.ctx());
+        let request = board_voting::authorize_execution(
+            &mut dao,
+            &mut proposal,
+            &clock,
+            scenario.ctx(),
+        );
         board_ops::execute_set_board(&mut dao, &proposal, request);
 
         test_scenario::return_shared(proposal);
