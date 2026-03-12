@@ -1,13 +1,26 @@
 module armature::proposal;
 
+use armature::governance::GovernanceConfig;
 use std::string::String;
-use sui::vec_map::VecMap;
+use sui::clock::Clock;
+use sui::event;
+use sui::vec_map::{Self, VecMap};
 
 // === Errors ===
 
 const EInvalidQuorum: u64 = 0;
 const EInvalidApprovalThreshold: u64 = 1;
 const EInvalidExpiryMs: u64 = 2;
+const ENotActive: u64 = 3;
+const ENotPassed: u64 = 4;
+const EAlreadyVoted: u64 = 5;
+const ENotInSnapshot: u64 = 6;
+const ENotEligible: u64 = 7;
+const EDelayNotElapsed: u64 = 8;
+const ECooldownActive: u64 = 9;
+const ENotExpired: u64 = 10;
+#[allow(unused_const)]
+const ETypeNotEnabled: u64 = 11;
 
 // === Constants ===
 
@@ -48,6 +61,7 @@ public struct ExecutionRequest<phantom P> {
 public struct Proposal<P: store> has key {
     id: UID,
     dao_id: ID,
+    type_key: std::ascii::String,
     proposer: address,
     metadata_ipfs: String,
     payload: P,
@@ -60,6 +74,37 @@ public struct Proposal<P: store> has key {
     created_at_ms: u64,
     passed_at_ms: Option<u64>,
     status: ProposalStatus,
+}
+
+// === Events ===
+
+public struct ProposalCreated has copy, drop {
+    proposal_id: ID,
+    dao_id: ID,
+    type_key: std::ascii::String,
+    proposer: address,
+}
+
+public struct VoteCast has copy, drop {
+    proposal_id: ID,
+    voter: address,
+    approve: bool,
+    weight: u64,
+}
+
+public struct ProposalPassed has copy, drop {
+    proposal_id: ID,
+    yes_weight: u64,
+    no_weight: u64,
+}
+
+public struct ProposalExecuted has copy, drop {
+    proposal_id: ID,
+    executor: address,
+}
+
+public struct ProposalExpired has copy, drop {
+    proposal_id: ID,
 }
 
 // === ProposalConfig ===
@@ -100,6 +145,36 @@ public fun execution_delay_ms(self: &ProposalConfig): u64 { self.execution_delay
 
 public fun cooldown_ms(self: &ProposalConfig): u64 { self.cooldown_ms }
 
+// === ProposalStatus helpers ===
+
+public fun is_active(self: &ProposalStatus): bool {
+    match (self) {
+        ProposalStatus::Active => true,
+        _ => false,
+    }
+}
+
+public fun is_passed(self: &ProposalStatus): bool {
+    match (self) {
+        ProposalStatus::Passed => true,
+        _ => false,
+    }
+}
+
+public fun is_executed(self: &ProposalStatus): bool {
+    match (self) {
+        ProposalStatus::Executed => true,
+        _ => false,
+    }
+}
+
+public fun is_expired(self: &ProposalStatus): bool {
+    match (self) {
+        ProposalStatus::Expired => true,
+        _ => false,
+    }
+}
+
 // === Proposal ===
 
 /// Return the payload from a proposal. Used by handlers to read execution data.
@@ -107,6 +182,192 @@ public fun payload<P: store>(self: &Proposal<P>): &P { &self.payload }
 
 /// Return the DAO ID this proposal belongs to.
 public fun dao_id<P: store>(self: &Proposal<P>): ID { self.dao_id }
+
+/// Return the proposal's current status.
+public fun status<P: store>(self: &Proposal<P>): &ProposalStatus { &self.status }
+
+/// Return the proposal's type key.
+public fun type_key<P: store>(self: &Proposal<P>): std::ascii::String { self.type_key }
+
+/// Return the proposal's yes weight.
+public fun yes_weight<P: store>(self: &Proposal<P>): u64 { self.yes_weight }
+
+/// Return the proposal's no weight.
+public fun no_weight<P: store>(self: &Proposal<P>): u64 { self.no_weight }
+
+// === Lifecycle: create ===
+
+/// Create a new proposal and share it. Snapshots the current governance weights.
+/// The proposer must be in the snapshot (board member for Board governance).
+#[allow(lint(share_owned))]
+public fun create<P: store>(
+    dao_id: ID,
+    type_key: std::ascii::String,
+    proposer: address,
+    metadata_ipfs: String,
+    payload: P,
+    config: ProposalConfig,
+    governance: &GovernanceConfig,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
+    let (vote_snapshot, total_snapshot_weight) = governance.board_vote_snapshot();
+
+    let proposal = Proposal<P> {
+        id: object::new(ctx),
+        dao_id,
+        type_key,
+        proposer,
+        metadata_ipfs,
+        payload,
+        vote_snapshot,
+        total_snapshot_weight,
+        votes_cast: vec_map::empty(),
+        yes_weight: 0,
+        no_weight: 0,
+        config,
+        created_at_ms: clock.timestamp_ms(),
+        passed_at_ms: option::none(),
+        status: ProposalStatus::Active,
+    };
+
+    let proposal_id = object::id(&proposal);
+
+    event::emit(ProposalCreated {
+        proposal_id,
+        dao_id,
+        type_key,
+        proposer,
+    });
+
+    transfer::share_object(proposal);
+}
+
+// === Lifecycle: vote ===
+
+/// Cast a vote on an active proposal. The voter must be in the snapshot
+/// and must not have already voted. If quorum and threshold are met,
+/// the proposal transitions to Passed.
+public fun vote<P: store>(self: &mut Proposal<P>, approve: bool, clock: &Clock, ctx: &TxContext) {
+    assert!(self.status.is_active(), ENotActive);
+
+    let voter = ctx.sender();
+
+    // Voter must be in snapshot
+    assert!(self.vote_snapshot.contains(&voter), ENotInSnapshot);
+
+    // No double voting
+    assert!(!self.votes_cast.contains(&voter), EAlreadyVoted);
+
+    // Get voter weight from snapshot
+    let weight = *self.vote_snapshot.get(&voter);
+
+    // Record vote
+    self.votes_cast.insert(voter, approve);
+    if (approve) {
+        self.yes_weight = self.yes_weight + weight;
+    } else {
+        self.no_weight = self.no_weight + weight;
+    };
+
+    let proposal_id = object::id(self);
+
+    event::emit(VoteCast {
+        proposal_id,
+        voter,
+        approve,
+        weight,
+    });
+
+    // Check if proposal passes: quorum and approval threshold met
+    // Quorum check: (yes + no) * 10000 >= quorum * total_snapshot_weight
+    let total_voted = self.yes_weight + self.no_weight;
+    let quorum_met =
+        total_voted * 10_000 >= (self.config.quorum as u64) * self.total_snapshot_weight;
+
+    // Threshold check: yes * 10000 >= threshold * (yes + no)
+    let threshold_met = if (total_voted == 0) {
+        false
+    } else {
+        self.yes_weight * 10_000 >= (self.config.approval_threshold as u64) * total_voted
+    };
+
+    if (quorum_met && threshold_met) {
+        self.status = ProposalStatus::Passed;
+        self.passed_at_ms = option::some(clock.timestamp_ms());
+
+        event::emit(ProposalPassed {
+            proposal_id,
+            yes_weight: self.yes_weight,
+            no_weight: self.no_weight,
+        });
+    };
+}
+
+// === Lifecycle: try_expire ===
+
+/// Attempt to expire an active proposal. Succeeds if the current time
+/// exceeds created_at_ms + expiry_ms. Aborts if not Active or not expired.
+public fun try_expire<P: store>(self: &mut Proposal<P>, clock: &Clock) {
+    assert!(self.status.is_active(), ENotActive);
+    let now = clock.timestamp_ms();
+    assert!(now >= self.created_at_ms + self.config.expiry_ms, ENotExpired);
+
+    self.status = ProposalStatus::Expired;
+
+    event::emit(ProposalExpired {
+        proposal_id: object::id(self),
+    });
+}
+
+// === Lifecycle: execute ===
+
+/// Execute a passed proposal. Returns an ExecutionRequest hot potato.
+/// The executor must be a current board member.
+/// Checks execution_delay (time since passed) and cooldown (time since last
+/// execution of this type in the DAO).
+public fun execute<P: store>(
+    self: &mut Proposal<P>,
+    governance: &GovernanceConfig,
+    last_executed_at_ms: Option<u64>,
+    clock: &Clock,
+    ctx: &TxContext,
+): ExecutionRequest<P> {
+    assert!(self.status.is_passed(), ENotPassed);
+
+    let executor = ctx.sender();
+
+    // Executor must be a current board member
+    assert!(governance.is_board_member(executor), ENotEligible);
+
+    let now = clock.timestamp_ms();
+    let passed_at = self.passed_at_ms.destroy_some();
+
+    // Check execution delay
+    if (self.config.execution_delay_ms > 0) {
+        assert!(now >= passed_at + self.config.execution_delay_ms, EDelayNotElapsed);
+    };
+
+    // Check cooldown
+    if (self.config.cooldown_ms > 0) {
+        if (last_executed_at_ms.is_some()) {
+            let last = last_executed_at_ms.destroy_some();
+            assert!(now >= last + self.config.cooldown_ms, ECooldownActive);
+        };
+    };
+
+    self.status = ProposalStatus::Executed;
+
+    let proposal_id = object::id(self);
+    let dao_id = self.dao_id;
+
+    event::emit(ProposalExecuted {
+        proposal_id,
+        executor,
+    });
+
+    ExecutionRequest<P> { dao_id, proposal_id }
+}
 
 // === ExecutionRequest ===
 
