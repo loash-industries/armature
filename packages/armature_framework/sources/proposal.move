@@ -1,5 +1,8 @@
 module armature::proposal;
 
+use std::string::String;
+use sui::vec_map::VecMap;
+
 // === Errors ===
 
 const EInvalidQuorum: u64 = 0;
@@ -40,6 +43,25 @@ public struct ExecutionRequest<phantom P> {
     proposal_id: ID,
 }
 
+/// A shared proposal object. Generic over the payload type P.
+/// Created by proposal::create, voted on, then executed or expired.
+public struct Proposal<P: store> has key {
+    id: UID,
+    dao_id: ID,
+    proposer: address,
+    metadata_ipfs: String,
+    payload: P,
+    vote_snapshot: VecMap<address, u64>,
+    total_snapshot_weight: u64,
+    votes_cast: VecMap<address, bool>,
+    yes_weight: u64,
+    no_weight: u64,
+    config: ProposalConfig,
+    created_at_ms: u64,
+    passed_at_ms: Option<u64>,
+    status: ProposalStatus,
+}
+
 // === ProposalConfig ===
 
 /// Create and validate a new ProposalConfig.
@@ -77,6 +99,14 @@ public fun expiry_ms(self: &ProposalConfig): u64 { self.expiry_ms }
 public fun execution_delay_ms(self: &ProposalConfig): u64 { self.execution_delay_ms }
 
 public fun cooldown_ms(self: &ProposalConfig): u64 { self.cooldown_ms }
+
+// === Proposal ===
+
+/// Return the payload from a proposal. Used by handlers to read execution data.
+public fun payload<P: store>(self: &Proposal<P>): &P { &self.payload }
+
+/// Return the DAO ID this proposal belongs to.
+public fun dao_id<P: store>(self: &Proposal<P>): ID { self.dao_id }
 
 // === ExecutionRequest ===
 

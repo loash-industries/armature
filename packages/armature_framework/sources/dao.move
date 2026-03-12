@@ -4,7 +4,7 @@ use armature::capability_vault;
 use armature::charter;
 use armature::emergency;
 use armature::governance::{Self, GovernanceConfig, GovernanceTypeInit};
-use armature::proposal::{Self, ProposalConfig};
+use armature::proposal::{Self, ExecutionRequest, ProposalConfig};
 use armature::treasury_vault;
 use std::string::String;
 use sui::event;
@@ -202,6 +202,19 @@ public fun emergency_freeze_id(self: &DAO): ID { self.emergency_freeze_id }
 
 /// Returns the DAO's object ID.
 public fun id(self: &DAO): ID { object::id(self) }
+
+// === Public Mutators (ExecutionRequest-gated) ===
+
+/// Replace the DAO's board members and seat count.
+/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+public fun set_board_governance<P>(
+    self: &mut DAO,
+    new_members: vector<address>,
+    new_seat_count: u8,
+    _req: &ExecutionRequest<P>,
+) {
+    self.governance.set_board(new_members, new_seat_count);
+}
 
 // === Internal ===
 
