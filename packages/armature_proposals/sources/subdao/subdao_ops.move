@@ -10,7 +10,7 @@ use armature_proposals::create_subdao::CreateSubDAO;
 use armature_proposals::pause_execution::{Self, PauseSubDAOExecution, UnpauseSubDAOExecution};
 use armature_proposals::reclaim_cap_from_subdao::ReclaimCapFromSubDAO;
 use armature_proposals::spawn_dao::SpawnDAO;
-use armature_proposals::spin_out_subdao::SpinOutSubDAO;
+use armature_proposals::spin_out_subdao::{Self, SpinOutSubDAO};
 use armature_proposals::transfer_assets::TransferAssets;
 use armature_proposals::transfer_cap_to_subdao::TransferCapToSubDAO;
 use sui::clock::Clock;
@@ -278,7 +278,7 @@ public fun execute_spawn_dao(
         ctx,
     );
 
-    dao.set_migrating(&request);
+    dao.set_migrating(successor_id, &request);
 
     event::emit(SuccessorDAOSpawned {
         origin_dao_id: dao.id(),
@@ -288,17 +288,52 @@ public fun execute_spawn_dao(
     proposal::finalize(request, proposal);
 }
 
-/// Execute a SpinOutSubDAO proposal: destroy the SubDAOControl token,
-/// permanently relinquishing the parent's authority over the sub-DAO.
+/// Execute a SpinOutSubDAO proposal: clear the controller relationship on the
+/// SubDAO, re-enable previously blocked proposal types, then destroy the
+/// SubDAOControl token — permanently granting the SubDAO full independence.
 public fun execute_spin_out_subdao(
     vault: &mut CapabilityVault,
+    subdao: &mut DAO,
     proposal: &Proposal<SpinOutSubDAO>,
     request: ExecutionRequest<SpinOutSubDAO>,
+    clock: &Clock,
+    ctx: &mut TxContext,
 ) {
     assert!(vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
 
     let payload = proposal.payload();
 
+    // Loan SubDAOControl to perform privileged ops on the SubDAO
+    let (control, loan) = vault.loan_cap<SubDAOControl, SpinOutSubDAO>(
+        payload.control_cap_id(),
+        &request,
+    );
+
+    // Create a privileged request on the SubDAO via controller bypass
+    let subdao_req = controller::privileged_submit(
+        &control,
+        subdao,
+        b"SpinOutSubDAO".to_ascii_string(),
+        std::string::utf8(b"Controller-initiated spin-out"),
+        spin_out_subdao::new(payload.subdao_id(), payload.control_cap_id()),
+        clock,
+        ctx,
+    );
+
+    // Clear controller relationship (resets controller_cap_id and controller_paused)
+    subdao.clear_controller(&subdao_req);
+
+    // Re-enable hierarchy-altering types that were blocked for SubDAOs
+    let default_config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+    subdao.enable_proposal_type(b"SpawnDAO".to_ascii_string(), default_config, &subdao_req);
+    subdao.enable_proposal_type(b"SpinOutSubDAO".to_ascii_string(), default_config, &subdao_req);
+    subdao.enable_proposal_type(b"CreateSubDAO".to_ascii_string(), default_config, &subdao_req);
+
+    // Consume the privileged request and return the loan
+    controller::privileged_consume(subdao_req, &control);
+    vault.return_cap(control, loan);
+
+    // Now destroy the SubDAOControl permanently
     vault.destroy_subdao_control(payload.control_cap_id(), &request);
 
     event::emit(SubDAOSpunOut {
@@ -309,15 +344,22 @@ public fun execute_spin_out_subdao(
     proposal::finalize(request, proposal);
 }
 
-/// Execute a TransferAssets proposal: validate limits and authorize the PTB to
-/// perform the actual typed asset transfers via `withdraw<T>` / `extract_cap<T>`.
-/// The caller must include the individual typed transfer commands in the same PTB
-/// using `&request` before this handler is invoked.
-public fun execute_transfer_assets(
+/// Validate a TransferAssets proposal: check ownership and asset count limits,
+/// emit the transfer event. Borrows the ExecutionRequest so the caller can
+/// compose typed `withdraw<T>` / `extract_cap<T>` calls in the same PTB
+/// before calling `finalize_transfer_assets` to consume the request.
+///
+/// PTB flow:
+///   1. `board_voting::authorize_execution` → `ExecutionRequest<TransferAssets>`
+///   2. `validate_transfer_assets(..., &request)` — validates limits, emits event
+///   3. N × `source_treasury.withdraw<T>(amount, &request, ctx)` → `target_treasury.deposit<T>(coin)`
+///   4. N × `source_vault.extract_cap<T>(cap_id, &request)` → `target_vault.receive_cap<T>(cap)`
+///   5. `finalize_transfer_assets(request, &proposal)` — consumes the request
+public fun validate_transfer_assets(
     source_treasury: &TreasuryVault,
     source_cap_vault: &CapabilityVault,
     proposal: &Proposal<TransferAssets>,
-    request: ExecutionRequest<TransferAssets>,
+    request: &ExecutionRequest<TransferAssets>,
 ) {
     assert!(source_treasury.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
     assert!(source_cap_vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
@@ -334,6 +376,12 @@ public fun execute_transfer_assets(
         coin_count: payload.coin_types().length(),
         cap_count: payload.cap_ids().length(),
     });
+}
 
+/// Consume the ExecutionRequest after all typed transfers are complete.
+public fun finalize_transfer_assets(
+    request: ExecutionRequest<TransferAssets>,
+    proposal: &Proposal<TransferAssets>,
+) {
     proposal::finalize(request, proposal);
 }
