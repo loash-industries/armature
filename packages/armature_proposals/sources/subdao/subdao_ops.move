@@ -193,11 +193,10 @@ public fun execute_pause_subdao_execution(
 
     let payload = proposal.payload();
 
-    let (control, loan) = controller_vault
-        .loan_cap<SubDAOControl, PauseSubDAOExecution>(
-            payload.pause_control_id(),
-            &request,
-        );
+    let (control, loan) = controller_vault.loan_cap<SubDAOControl, PauseSubDAOExecution>(
+        payload.pause_control_id(),
+        &request,
+    );
 
     let subdao_req = controller::privileged_submit(
         &control,
@@ -234,11 +233,10 @@ public fun execute_unpause_subdao_execution(
 
     let payload = proposal.payload();
 
-    let (control, loan) = controller_vault
-        .loan_cap<SubDAOControl, UnpauseSubDAOExecution>(
-            payload.unpause_control_id(),
-            &request,
-        );
+    let (control, loan) = controller_vault.loan_cap<SubDAOControl, UnpauseSubDAOExecution>(
+        payload.unpause_control_id(),
+        &request,
+    );
 
     let subdao_req = controller::privileged_submit(
         &control,
