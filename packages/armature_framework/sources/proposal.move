@@ -21,6 +21,7 @@ const ECooldownActive: u64 = 9;
 const ENotExpired: u64 = 10;
 #[allow(unused_const)]
 const ETypeNotEnabled: u64 = 11;
+const EExecutionPaused: u64 = 12;
 
 // === Constants ===
 
@@ -87,6 +88,7 @@ public struct ProposalCreated has copy, drop {
 
 public struct VoteCast has copy, drop {
     proposal_id: ID,
+    dao_id: ID,
     voter: address,
     approve: bool,
     weight: u64,
@@ -94,17 +96,20 @@ public struct VoteCast has copy, drop {
 
 public struct ProposalPassed has copy, drop {
     proposal_id: ID,
+    dao_id: ID,
     yes_weight: u64,
     no_weight: u64,
 }
 
 public struct ProposalExecuted has copy, drop {
     proposal_id: ID,
+    dao_id: ID,
     executor: address,
 }
 
 public struct ProposalExpired has copy, drop {
     proposal_id: ID,
+    dao_id: ID,
 }
 
 // === ProposalConfig ===
@@ -279,6 +284,7 @@ public fun vote<P: store>(self: &mut Proposal<P>, approve: bool, clock: &Clock, 
 
     event::emit(VoteCast {
         proposal_id,
+        dao_id: self.dao_id,
         voter,
         approve,
         weight,
@@ -303,6 +309,7 @@ public fun vote<P: store>(self: &mut Proposal<P>, approve: bool, clock: &Clock, 
 
         event::emit(ProposalPassed {
             proposal_id,
+            dao_id: self.dao_id,
             yes_weight: self.yes_weight,
             no_weight: self.no_weight,
         });
@@ -322,6 +329,7 @@ public fun try_expire<P: store>(self: &mut Proposal<P>, clock: &Clock) {
 
     event::emit(ProposalExpired {
         proposal_id: object::id(self),
+        dao_id: self.dao_id,
     });
 }
 
@@ -331,13 +339,15 @@ public fun try_expire<P: store>(self: &mut Proposal<P>, clock: &Clock) {
 /// The executor must be a current board member.
 /// Checks execution_delay (time since passed) and cooldown (time since last
 /// execution of this type in the DAO).
-public fun execute<P: store>(
+public(package) fun execute<P: store>(
     self: &mut Proposal<P>,
     governance: &GovernanceConfig,
     last_executed_at_ms: Option<u64>,
+    execution_paused: bool,
     clock: &Clock,
     ctx: &TxContext,
 ): ExecutionRequest<P> {
+    assert!(!execution_paused, EExecutionPaused);
     assert!(self.status.is_passed(), ENotPassed);
 
     let executor = ctx.sender();
@@ -368,6 +378,7 @@ public fun execute<P: store>(
 
     event::emit(ProposalExecuted {
         proposal_id,
+        dao_id,
         executor,
     });
 
