@@ -43,10 +43,7 @@ public fun privileged_submit<P: store>(
 
 /// Consume the ExecutionRequest from a privileged operation.
 /// Validates the request's DAO ID matches the SubDAOControl's target.
-public fun privileged_consume<P>(
-    req: ExecutionRequest<P>,
-    control: &SubDAOControl,
-) {
+public fun privileged_consume<P>(req: ExecutionRequest<P>, control: &SubDAOControl) {
     assert!(req.req_dao_id() == control.subdao_id(), EControlMismatch);
     proposal::consume(req);
 }
