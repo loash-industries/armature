@@ -104,9 +104,14 @@ public fun store_cap<T: key + store, P>(
     dof::add(&mut self.id, cap_id, cap);
 }
 
-/// Receive a capability into the vault without authorization.
-/// Used by TransferAssets to deposit caps into the target DAO's vault.
-public fun receive_cap<T: key + store>(self: &mut CapabilityVault, cap: T) {
+/// Receive a capability into the vault for cross-DAO transfers.
+/// Requires an ExecutionRequest for governance authorization but does NOT
+/// check dao_id match, since the request originates from the source DAO.
+public fun receive_cap<T: key + store, P>(
+    self: &mut CapabilityVault,
+    cap: T,
+    _req: &ExecutionRequest<P>,
+) {
     let cap_id = object::id(&cap);
     register_cap<T>(self, cap_id);
     dof::add(&mut self.id, cap_id, cap);
