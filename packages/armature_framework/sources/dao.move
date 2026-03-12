@@ -4,10 +4,9 @@ use armature::capability_vault;
 use armature::charter;
 use armature::emergency;
 use armature::governance::{Self, GovernanceConfig, GovernanceTypeInit};
-use armature::proposal::{Self, ExecutionRequest, Proposal, ProposalConfig};
+use armature::proposal::{Self, ExecutionRequest, ProposalConfig};
 use armature::treasury_vault;
 use std::string::String;
-use sui::clock::Clock;
 use sui::event;
 use sui::vec_map::{Self, VecMap};
 use sui::vec_set::{Self, VecSet};
@@ -16,9 +15,6 @@ use sui::vec_set::{Self, VecSet};
 
 const EInvalidName: u64 = 0;
 const EInvalidDescription: u64 = 1;
-const EDAONotActive: u64 = 2;
-const ETypeNotEnabled: u64 = 3;
-const EDAOMismatch: u64 = 4;
 
 // === Constants ===
 
@@ -224,65 +220,6 @@ public fun set_board_governance<P>(
     _req: &ExecutionRequest<P>,
 ) {
     self.governance.set_board(new_members);
-}
-
-/// Submit a new proposal on this DAO. Validates DAO status, type enablement,
-/// and proposer eligibility before delegating to proposal::create.
-#[allow(lint(share_owned, custom_state_change))]
-public fun submit_proposal<P: store>(
-    self: &DAO,
-    type_key: std::ascii::String,
-    payload: P,
-    metadata_ipfs: String,
-    clock: &Clock,
-    ctx: &mut TxContext,
-) {
-    assert!(self.status.is_active(), EDAONotActive);
-    assert!(self.enabled_proposal_types.contains(&type_key), ETypeNotEnabled);
-    self.governance.assert_board_member(ctx.sender());
-
-    let config_idx = self.proposal_configs.get_idx(&type_key);
-    let (_, config) = self.proposal_configs.get_entry_by_idx(config_idx);
-
-    proposal::create(
-        object::id(self),
-        type_key,
-        ctx.sender(),
-        metadata_ipfs,
-        payload,
-        *config,
-        &self.governance,
-        clock,
-        ctx,
-    )
-}
-
-/// Authorize execution of a Passed proposal. Validates DAO status, dao_id match,
-/// and executor eligibility, then transitions the proposal to Executed and returns
-/// an ExecutionRequest hot potato for the handler to consume.
-/// Records the execution timestamp for cooldown tracking.
-public fun authorize_execution<P: store>(
-    self: &mut DAO,
-    proposal: &mut Proposal<P>,
-    clock: &Clock,
-    ctx: &TxContext,
-): ExecutionRequest<P> {
-    assert!(self.status.is_active(), EDAONotActive);
-    assert!(proposal.dao_id() == object::id(self), EDAOMismatch);
-    self.governance.assert_board_member(ctx.sender());
-
-    let type_key = proposal.type_key();
-    let last_executed_at_ms = if (self.last_executed_at.contains(&type_key)) {
-        option::some(*self.last_executed_at.get(&type_key))
-    } else {
-        option::none()
-    };
-
-    let request = proposal::execute(proposal, &self.governance, last_executed_at_ms, clock, ctx);
-
-    self.record_execution(type_key, clock.timestamp_ms());
-
-    request
 }
 
 /// Record the execution timestamp for a proposal type.
