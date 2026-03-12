@@ -172,6 +172,39 @@ public fun privileged_extract<T: key + store>(
     dof::remove(&mut self.id, cap_id)
 }
 
+/// Create a SubDAOControl for `subdao_id` and store it in this vault.
+/// Returns the ID of the newly created control token.
+/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+public fun create_subdao_control<P>(
+    self: &mut CapabilityVault,
+    subdao_id: ID,
+    _req: &ExecutionRequest<P>,
+    ctx: &mut TxContext,
+): ID {
+    let control = SubDAOControl {
+        id: object::new(ctx),
+        subdao_id,
+    };
+    let cap_id = object::id(&control);
+    register_cap<SubDAOControl>(self, cap_id);
+    dof::add(&mut self.id, cap_id, control);
+    cap_id
+}
+
+/// Extract and permanently destroy a SubDAOControl from this vault.
+/// Used by SpinOutSubDAO to relinquish parent authority over a sub-DAO.
+/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+public fun destroy_subdao_control<P>(
+    self: &mut CapabilityVault,
+    cap_id: ID,
+    _req: &ExecutionRequest<P>,
+) {
+    deregister_cap<SubDAOControl>(self, cap_id);
+    let control: SubDAOControl = dof::remove(&mut self.id, cap_id);
+    let SubDAOControl { id, subdao_id: _ } = control;
+    id.delete();
+}
+
 // === SubDAOControl Accessors ===
 
 /// Returns the sub-DAO ID this control token is bound to.

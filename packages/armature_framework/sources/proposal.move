@@ -195,6 +195,11 @@ public fun yes_weight<P: store>(self: &Proposal<P>): u64 { self.yes_weight }
 /// Return the proposal's no weight.
 public fun no_weight<P: store>(self: &Proposal<P>): u64 { self.no_weight }
 
+/// Return the total snapshot weight used for quorum/threshold calculations.
+public fun total_snapshot_weight<P: store>(self: &Proposal<P>): u64 {
+    self.total_snapshot_weight
+}
+
 // === Lifecycle: create ===
 
 /// Create a new proposal and share it. Snapshots the current governance weights.
