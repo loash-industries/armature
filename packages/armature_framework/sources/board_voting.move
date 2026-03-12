@@ -72,6 +72,7 @@ public fun authorize_execution<P: store>(
         prop,
         dao.governance(),
         last_ms,
+        dao.is_execution_paused(),
         clock,
         ctx,
     );
