@@ -10,6 +10,7 @@ use sui::vec_set::{Self, VecSet};
 const ENotController: u64 = 0;
 const ECapIdMismatch: u64 = 1;
 const EVaultIdMismatch: u64 = 2;
+const EDAOIdMismatch: u64 = 3;
 
 // === Structs ===
 
@@ -95,8 +96,9 @@ public(package) fun store_cap_init<T: key + store>(self: &mut CapabilityVault, c
 public fun store_cap<T: key + store, P>(
     self: &mut CapabilityVault,
     cap: T,
-    _req: &ExecutionRequest<P>,
+    req: &ExecutionRequest<P>,
 ) {
+    assert!(self.dao_id == req.req_dao_id(), EDAOIdMismatch);
     let cap_id = object::id(&cap);
     register_cap<T>(self, cap_id);
     dof::add(&mut self.id, cap_id, cap);
@@ -108,8 +110,9 @@ public fun store_cap<T: key + store, P>(
 public fun borrow_cap<T: key + store, P>(
     self: &CapabilityVault,
     cap_id: ID,
-    _req: &ExecutionRequest<P>,
+    req: &ExecutionRequest<P>,
 ): &T {
+    assert!(self.dao_id == req.req_dao_id(), EDAOIdMismatch);
     dof::borrow(&self.id, cap_id)
 }
 
@@ -117,8 +120,9 @@ public fun borrow_cap<T: key + store, P>(
 public fun borrow_cap_mut<T: key + store, P>(
     self: &mut CapabilityVault,
     cap_id: ID,
-    _req: &ExecutionRequest<P>,
+    req: &ExecutionRequest<P>,
 ): &mut T {
+    assert!(self.dao_id == req.req_dao_id(), EDAOIdMismatch);
     dof::borrow_mut(&mut self.id, cap_id)
 }
 
@@ -129,8 +133,9 @@ public fun borrow_cap_mut<T: key + store, P>(
 public fun loan_cap<T: key + store, P>(
     self: &mut CapabilityVault,
     cap_id: ID,
-    _req: &ExecutionRequest<P>,
+    req: &ExecutionRequest<P>,
 ): (T, CapLoan) {
+    assert!(self.dao_id == req.req_dao_id(), EDAOIdMismatch);
     let cap: T = dof::remove(&mut self.id, cap_id);
     let loan = CapLoan {
         cap_id,
@@ -154,8 +159,9 @@ public fun return_cap<T: key + store>(self: &mut CapabilityVault, cap: T, loan: 
 public fun extract_cap<T: key + store, P>(
     self: &mut CapabilityVault,
     cap_id: ID,
-    _req: &ExecutionRequest<P>,
+    req: &ExecutionRequest<P>,
 ): T {
+    assert!(self.dao_id == req.req_dao_id(), EDAOIdMismatch);
     deregister_cap<T>(self, cap_id);
     dof::remove(&mut self.id, cap_id)
 }
@@ -178,9 +184,10 @@ public fun privileged_extract<T: key + store>(
 public fun create_subdao_control<P>(
     self: &mut CapabilityVault,
     subdao_id: ID,
-    _req: &ExecutionRequest<P>,
+    req: &ExecutionRequest<P>,
     ctx: &mut TxContext,
 ): ID {
+    assert!(self.dao_id == req.req_dao_id(), EDAOIdMismatch);
     let control = SubDAOControl {
         id: object::new(ctx),
         subdao_id,
@@ -197,8 +204,9 @@ public fun create_subdao_control<P>(
 public fun destroy_subdao_control<P>(
     self: &mut CapabilityVault,
     cap_id: ID,
-    _req: &ExecutionRequest<P>,
+    req: &ExecutionRequest<P>,
 ) {
+    assert!(self.dao_id == req.req_dao_id(), EDAOIdMismatch);
     deregister_cap<SubDAOControl>(self, cap_id);
     let control: SubDAOControl = dof::remove(&mut self.id, cap_id);
     let SubDAOControl { id, subdao_id: _ } = control;
