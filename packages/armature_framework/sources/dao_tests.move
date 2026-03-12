@@ -17,7 +17,7 @@ const MEMBER_B: address = @0xB;
 fun create_test_dao(scenario: &mut test_scenario::Scenario) {
     scenario.next_tx(CREATOR);
     {
-        let init = governance::init_board(vector[CREATOR, MEMBER_B], 3);
+        let init = governance::init_board(vector[CREATOR, MEMBER_B]);
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
@@ -198,7 +198,7 @@ fun test_board_governance_persists_across_proposals() {
         // Simulate a SetBoard proposal execution by mutating governance
         let gov = dao.governance_mut();
         let new_member: address = @0xC;
-        gov.set_board(vector[CREATOR, MEMBER_B, new_member], 5);
+        gov.set_board(vector[CREATOR, MEMBER_B, new_member]);
 
         // Verify still Board governance with updated members
         let gov = dao.governance();

@@ -20,7 +20,7 @@ public struct USDC has drop {}
 fun create_test_dao(scenario: &mut test_scenario::Scenario) {
     scenario.next_tx(CREATOR);
     {
-        let init = governance::init_board(vector[CREATOR], 3);
+        let init = governance::init_board(vector[CREATOR]);
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
