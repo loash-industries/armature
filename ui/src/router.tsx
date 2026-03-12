@@ -2,8 +2,8 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
-  Outlet,
 } from "@tanstack/react-router";
+import { AppShell } from "@/components/AppShell";
 import { DaoDashboard } from "@/pages/DaoDashboard";
 import { TreasuryPage } from "@/pages/TreasuryPage";
 import { CapVaultPage } from "@/pages/CapVaultPage";
@@ -15,13 +15,12 @@ import { GovConfigPage } from "@/pages/GovConfigPage";
 import { EmergencyPage } from "@/pages/EmergencyPage";
 import { SubDAOListPage } from "@/pages/SubDAOListPage";
 
-const rootRoute = createRootRoute({
-  component: Outlet,
-});
+const rootRoute = createRootRoute();
 
 const daoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "dao/$daoId",
+  component: AppShell,
 });
 
 const dashboardRoute = createRoute({
