@@ -1,17 +1,19 @@
 module armature_proposals::subdao_ops;
 
 use armature::capability_vault::{CapabilityVault, SubDAOControl};
+use armature::controller;
 use armature::dao::{Self, DAO};
 use armature::governance;
 use armature::proposal::{Self, Proposal, ExecutionRequest};
 use armature::treasury_vault::TreasuryVault;
 use armature_proposals::create_subdao::CreateSubDAO;
-use armature_proposals::pause_execution::{PauseSubDAOExecution, UnpauseSubDAOExecution};
+use armature_proposals::pause_execution::{Self, PauseSubDAOExecution, UnpauseSubDAOExecution};
 use armature_proposals::reclaim_cap_from_subdao::ReclaimCapFromSubDAO;
 use armature_proposals::spawn_dao::SpawnDAO;
 use armature_proposals::spin_out_subdao::SpinOutSubDAO;
 use armature_proposals::transfer_assets::TransferAssets;
 use armature_proposals::transfer_cap_to_subdao::TransferCapToSubDAO;
+use sui::clock::Clock;
 use sui::event;
 
 // === Errors ===
@@ -176,36 +178,84 @@ public fun execute_create_subdao(
     proposal::finalize(request, proposal);
 }
 
-/// Execute a PauseSubDAOExecution proposal: pause all proposal execution on the DAO.
-/// Must be submitted by the parent DAO (privileged_submit) and executed against
-/// the SubDAO's DAO object.
+/// Execute a PauseSubDAOExecution proposal: loan SubDAOControl from the
+/// controller's vault, create a privileged proposal on the SubDAO, and set
+/// `controller_paused = true` on the SubDAO.
 public fun execute_pause_subdao_execution(
-    dao: &mut DAO,
+    controller_vault: &mut CapabilityVault,
+    subdao: &mut DAO,
     proposal: &Proposal<PauseSubDAOExecution>,
     request: ExecutionRequest<PauseSubDAOExecution>,
+    clock: &Clock,
+    ctx: &mut TxContext,
 ) {
-    assert!(dao.id() == request.req_dao_id(), EDAOMismatch);
-    let _ = proposal.payload();
+    assert!(controller_vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
 
-    dao.set_execution_paused(true, &request);
+    let payload = proposal.payload();
 
-    event::emit(SubDAOExecutionPaused { dao_id: dao.id() });
+    let (control, loan) = controller_vault
+        .loan_cap<SubDAOControl, PauseSubDAOExecution>(
+            payload.pause_control_id(),
+            &request,
+        );
+
+    let subdao_req = controller::privileged_submit(
+        &control,
+        subdao,
+        b"PauseSubDAOExecution".to_ascii_string(),
+        std::string::utf8(b"Controller-initiated pause"),
+        pause_execution::new_pause(payload.pause_control_id()),
+        clock,
+        ctx,
+    );
+
+    subdao.set_controller_paused(true, &subdao_req);
+
+    controller::privileged_consume(subdao_req, &control);
+    controller_vault.return_cap(control, loan);
+
+    event::emit(SubDAOExecutionPaused { dao_id: subdao.id() });
 
     proposal::finalize(request, proposal);
 }
 
-/// Execute an UnpauseSubDAOExecution proposal: resume proposal execution on the DAO.
+/// Execute an UnpauseSubDAOExecution proposal: loan SubDAOControl from the
+/// controller's vault, create a privileged proposal on the SubDAO, and set
+/// `controller_paused = false` on the SubDAO.
 public fun execute_unpause_subdao_execution(
-    dao: &mut DAO,
+    controller_vault: &mut CapabilityVault,
+    subdao: &mut DAO,
     proposal: &Proposal<UnpauseSubDAOExecution>,
     request: ExecutionRequest<UnpauseSubDAOExecution>,
+    clock: &Clock,
+    ctx: &mut TxContext,
 ) {
-    assert!(dao.id() == request.req_dao_id(), EDAOMismatch);
-    let _ = proposal.payload();
+    assert!(controller_vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
 
-    dao.set_execution_paused(false, &request);
+    let payload = proposal.payload();
 
-    event::emit(SubDAOExecutionUnpaused { dao_id: dao.id() });
+    let (control, loan) = controller_vault
+        .loan_cap<SubDAOControl, UnpauseSubDAOExecution>(
+            payload.unpause_control_id(),
+            &request,
+        );
+
+    let subdao_req = controller::privileged_submit(
+        &control,
+        subdao,
+        b"UnpauseSubDAOExecution".to_ascii_string(),
+        std::string::utf8(b"Controller-initiated unpause"),
+        pause_execution::new_unpause(payload.unpause_control_id()),
+        clock,
+        ctx,
+    );
+
+    subdao.set_controller_paused(false, &subdao_req);
+
+    controller::privileged_consume(subdao_req, &control);
+    controller_vault.return_cap(control, loan);
+
+    event::emit(SubDAOExecutionUnpaused { dao_id: subdao.id() });
 
     proposal::finalize(request, proposal);
 }
