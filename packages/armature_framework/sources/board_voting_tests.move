@@ -30,14 +30,10 @@ public struct TestPayload has drop, store {
 
 // === Helpers ===
 
-fun create_dao_with_members(
-    scenario: &mut test_scenario::Scenario,
-    members: vector<address>,
-    seat_count: u8,
-) {
+fun create_dao_with_members(scenario: &mut test_scenario::Scenario, members: vector<address>) {
     scenario.next_tx(CREATOR);
     {
-        let init = governance::init_board(members, seat_count);
+        let init = governance::init_board(members);
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
@@ -99,7 +95,7 @@ fun test_board__single_member_yes_passes() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_dao_with_members(&mut scenario, vector[CREATOR], 1);
+    create_dao_with_members(&mut scenario, vector[CREATOR]);
     submit_proposal_with_config(&mut scenario, &clock, 5_000, 5_000);
 
     vote_as(&mut scenario, CREATOR, true, &clock);
@@ -125,7 +121,7 @@ fun test_board__unanimous_3_member_passes() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_dao_with_members(&mut scenario, vector[CREATOR, MEMBER_B, MEMBER_C], 3);
+    create_dao_with_members(&mut scenario, vector[CREATOR, MEMBER_B, MEMBER_C]);
     // quorum 10000 (100%) so all 3 must vote before it can pass
     submit_proposal_with_config(&mut scenario, &clock, 10_000, 5_000);
 
@@ -157,7 +153,7 @@ fun test_board__2_of_3_yes_passes_at_66() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_dao_with_members(&mut scenario, vector[CREATOR, MEMBER_B, MEMBER_C], 3);
+    create_dao_with_members(&mut scenario, vector[CREATOR, MEMBER_B, MEMBER_C]);
     submit_proposal_with_config(&mut scenario, &clock, 6_600, 6_600);
 
     vote_as(&mut scenario, CREATOR, true, &clock);
@@ -194,7 +190,7 @@ fun test_board__1_of_3_yes_fails_at_66() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_dao_with_members(&mut scenario, vector[CREATOR, MEMBER_B, MEMBER_C], 3);
+    create_dao_with_members(&mut scenario, vector[CREATOR, MEMBER_B, MEMBER_C]);
     submit_proposal_with_config(&mut scenario, &clock, 6_600, 5_000);
 
     vote_as(&mut scenario, CREATOR, true, &clock);
@@ -221,7 +217,7 @@ fun test_board__exact_quorum_boundary() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_dao_with_members(&mut scenario, vector[CREATOR, MEMBER_B, MEMBER_C], 3);
+    create_dao_with_members(&mut scenario, vector[CREATOR, MEMBER_B, MEMBER_C]);
     // Quorum 6666 = 66.66%. With 3 members, need 2*10000=20000 >= 6666*3=19998 → met
     submit_proposal_with_config(&mut scenario, &clock, 6_666, 5_000);
 
@@ -249,7 +245,7 @@ fun test_board__below_quorum_does_not_pass() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_dao_with_members(&mut scenario, vector[CREATOR, MEMBER_B, MEMBER_C], 3);
+    create_dao_with_members(&mut scenario, vector[CREATOR, MEMBER_B, MEMBER_C]);
     submit_proposal_with_config(&mut scenario, &clock, 6_667, 5_000);
 
     vote_as(&mut scenario, CREATOR, true, &clock);
@@ -277,7 +273,7 @@ fun test_board__threshold_boundary_50_percent() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_dao_with_members(&mut scenario, vector[CREATOR, MEMBER_B, MEMBER_C], 3);
+    create_dao_with_members(&mut scenario, vector[CREATOR, MEMBER_B, MEMBER_C]);
     submit_proposal_with_config(&mut scenario, &clock, 5_000, 5_000);
 
     vote_as(&mut scenario, CREATOR, true, &clock);
@@ -307,7 +303,7 @@ fun test_board__no_votes_majority_fails() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_dao_with_members(&mut scenario, vector[CREATOR, MEMBER_B, MEMBER_C], 3);
+    create_dao_with_members(&mut scenario, vector[CREATOR, MEMBER_B, MEMBER_C]);
     // quorum 10000 (100%) so all 3 must vote before quorum is met
     submit_proposal_with_config(&mut scenario, &clock, 10_000, 5_000);
 
@@ -341,7 +337,7 @@ fun test_board__abstention_not_counted_in_threshold() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_dao_with_members(&mut scenario, vector[CREATOR, MEMBER_B, MEMBER_C], 3);
+    create_dao_with_members(&mut scenario, vector[CREATOR, MEMBER_B, MEMBER_C]);
     // Low quorum so 1 voter is enough
     submit_proposal_with_config(&mut scenario, &clock, 1, 5_000);
 
@@ -386,7 +382,6 @@ fun test_board__large_board_10_members() {
             MEMBER_I,
             MEMBER_J,
         ],
-        10,
     );
     submit_proposal_with_config(&mut scenario, &clock, 7_000, 6_600);
 
