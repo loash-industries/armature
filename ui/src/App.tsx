@@ -1,33 +1,14 @@
-import { useState, useEffect } from 'react'
-import './App.css'
-
 function App() {
-  const [message, setMessage] = useState<string>('')
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    fetch('/api/')
-      .then((res) => res.text())
-      .then((data) => {
-        setMessage(data)
-        setLoading(false)
-      })
-      .catch((err) => {
-        setMessage('Failed to connect to API')
-        setLoading(false)
-        console.error(err)
-      })
-  }, [])
-
   return (
-    <div className="app">
-      <h1>Test UI</h1>
-      <div className="card">
-        <h2>API Response:</h2>
-        {loading ? <p>Loading...</p> : <p>{message}</p>}
+    <div className="flex min-h-screen items-center justify-center bg-neutral-950 font-mono text-amber-400">
+      <div className="text-center">
+        <h1 className="text-4xl font-bold tracking-tight text-rose-900">
+          armature
+        </h1>
+        <p className="mt-2 text-sm text-amber-400/60">DAO Framework</p>
       </div>
     </div>
-  )
+  );
 }
 
-export default App
+export default App;
