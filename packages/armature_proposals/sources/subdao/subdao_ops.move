@@ -38,6 +38,8 @@ public fun execute_transfer_cap<T: key + store>(
     assert!(source_vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
 
     let payload = proposal.payload();
+    assert!(target_vault.dao_id() == payload.target_subdao(), ESubDAOVaultMismatch);
+
     let cap: T = source_vault.extract_cap(payload.cap_id(), &request);
     target_vault.store_cap(cap, &request);
 
