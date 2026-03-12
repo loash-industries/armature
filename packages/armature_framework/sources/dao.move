@@ -4,11 +4,7 @@ use armature::capability_vault;
 use armature::charter;
 use armature::emergency;
 use armature::governance::{Self, GovernanceConfig, GovernanceTypeInit};
-<<<<<<< feat/14-treasury-vault
-use armature::proposal::{Self, ProposalConfig};
-=======
 use armature::proposal::{Self, ExecutionRequest, ProposalConfig};
->>>>>>> main
 use armature::treasury_vault;
 use std::string::String;
 use sui::event;
