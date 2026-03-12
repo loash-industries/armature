@@ -7,9 +7,13 @@ import type {
   DaoFields,
   DaoSummary,
   CharterFields,
+  CharterDetail,
   TreasuryVaultFields,
   TreasuryCoinBalance,
   EmergencyFreezeFields,
+  EmergencyFreezeDetail,
+  GovernanceDetail,
+  GovernanceMember,
   ActivityEvent,
 } from "@/types/dao";
 
@@ -166,6 +170,142 @@ export function useDaoActivity(daoId: string, limit = 10) {
 
       allEvents.sort((a, b) => b.timestampMs - a.timestampMs);
       return allEvents.slice(0, limit);
+    },
+    enabled: !!daoId,
+  });
+}
+
+/** Fetch governance members for the Board page. */
+export function useGovernanceDetail(daoId: string) {
+  const client = useSuiClient();
+
+  return useQuery({
+    queryKey: cacheKeys.board(daoId),
+    queryFn: async (): Promise<GovernanceDetail> => {
+      const daoObj = await getObject(client, daoId);
+      const dao = moveFields<DaoFields>(daoObj);
+      const gov = dao.governance;
+
+      if (gov.variant === "Board") {
+        return {
+          type: "Board",
+          members: gov.fields.members.contents.map((addr) => ({
+            address: addr,
+          })),
+        };
+      } else if (gov.variant === "Direct") {
+        return {
+          type: "Direct",
+          members: gov.fields.voters.contents.map(
+            (e): GovernanceMember => ({
+              address: e.key,
+              weight: Number(e.value),
+            }),
+          ),
+          totalShares: Number(gov.fields.total_shares),
+        };
+      } else {
+        return {
+          type: "Weighted",
+          members: gov.fields.delegates.contents.map(
+            (e): GovernanceMember => ({
+              address: e.key,
+              weight: Number(e.value),
+            }),
+          ),
+          totalShares: Number(gov.fields.total_delegated),
+        };
+      }
+    },
+    enabled: !!daoId,
+  });
+}
+
+/** Fetch charter details for the Charter page. */
+export function useCharterDetail(charterId: string | undefined) {
+  const client = useSuiClient();
+
+  return useQuery({
+    queryKey: cacheKeys.charter(charterId ?? ""),
+    queryFn: async (): Promise<CharterDetail> => {
+      const obj = await getObject(client, charterId!);
+      const charter = moveFields<CharterFields>(obj);
+      return {
+        id: charterId!,
+        name: charter.name,
+        description: charter.description,
+        imageUrl: charter.image_url,
+      };
+    },
+    enabled: !!charterId,
+  });
+}
+
+/** Fetch emergency freeze details for the Emergency page. */
+export function useEmergencyFreezeDetail(freezeId: string | undefined) {
+  const client = useSuiClient();
+
+  return useQuery({
+    queryKey: cacheKeys.emergency(freezeId ?? ""),
+    queryFn: async (): Promise<EmergencyFreezeDetail> => {
+      const obj = await getObject(client, freezeId!);
+      const freeze = moveFields<EmergencyFreezeFields>(obj);
+      return {
+        id: freezeId!,
+        frozenTypes: freeze.frozen_types.contents.map((e) => ({
+          typeKey: e.key,
+          expiryMs: Number(e.value),
+        })),
+        maxFreezeDurationMs: Number(freeze.max_freeze_duration_ms),
+      };
+    },
+    enabled: !!freezeId,
+  });
+}
+
+/** Fetch treasury-specific events (CoinClaimed). */
+export function useTreasuryEvents(daoId: string, limit = 20) {
+  const client = useSuiClient();
+
+  return useQuery({
+    queryKey: cacheKeys.events("treasury", daoId),
+    queryFn: async (): Promise<ActivityEvent[]> => {
+      try {
+        const result = await queryEvents(
+          client,
+          {
+            MoveModule: {
+              package: PACKAGE_ID,
+              module: MODULES.treasury_vault,
+            },
+          },
+          undefined,
+          limit,
+        );
+
+        return result.data
+          .filter((ev) => {
+            const parsed = ev.parsedJson as Record<string, unknown>;
+            return (
+              (parsed.dao_id as string) === daoId ||
+              (parsed.vault_id as string) === daoId
+            );
+          })
+          .map((ev) => {
+            const parsed = ev.parsedJson as Record<string, unknown>;
+            const typeParts = ev.type.split("::");
+            const eventName = typeParts[typeParts.length - 1] ?? ev.type;
+            return {
+              txDigest: ev.id.txDigest,
+              eventType: eventName,
+              label: eventLabel(eventName),
+              description: eventDescription(eventName, parsed),
+              timestampMs: Number(ev.timestampMs ?? 0),
+            };
+          });
+      } catch {
+        return [];
+      }
     },
     enabled: !!daoId,
   });

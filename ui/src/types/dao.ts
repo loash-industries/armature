@@ -62,6 +62,33 @@ export interface EmergencyFreezeFields {
   max_freeze_duration_ms: string;
 }
 
+/** Parsed governance detail for the Board page. */
+export interface GovernanceDetail {
+  type: "Board" | "Direct" | "Weighted";
+  members: GovernanceMember[];
+  totalShares?: number;
+}
+
+export interface GovernanceMember {
+  address: string;
+  weight?: number;
+}
+
+/** Parsed charter for the Charter page. */
+export interface CharterDetail {
+  id: string;
+  name: string;
+  description: string;
+  imageUrl: string;
+}
+
+/** Parsed emergency freeze for the Emergency page. */
+export interface EmergencyFreezeDetail {
+  id: string;
+  frozenTypes: Array<{ typeKey: string; expiryMs: number }>;
+  maxFreezeDurationMs: number;
+}
+
 /** Parsed DAO summary used by the dashboard. */
 export interface DaoSummary {
   id: string;
