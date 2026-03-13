@@ -27,7 +27,8 @@ public fun submit_proposal<P: store>(
     ctx: &mut TxContext,
 ) {
     let is_active = dao.status().is_active();
-    let is_migration_ok = dao.status().is_migrating()
+    let is_migration_ok =
+        dao.status().is_migrating()
         && dao::is_migration_allowed_type(&type_key);
     assert!(is_active || is_migration_ok, EDAONotActive);
     assert!(dao.enabled_proposal_types().contains(&type_key), ETypeNotEnabled);
@@ -64,7 +65,8 @@ public fun authorize_execution<P: store>(
 ): ExecutionRequest<P> {
     let type_key = prop.type_key();
     let is_active = dao.status().is_active();
-    let is_migration_ok = dao.status().is_migrating()
+    let is_migration_ok =
+        dao.status().is_migrating()
         && dao::is_migration_allowed_type(&type_key);
     assert!(is_active || is_migration_ok, EDAONotActive);
     assert!(prop.dao_id() == dao.id(), EDAOIdMismatch);

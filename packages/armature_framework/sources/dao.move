@@ -53,9 +53,7 @@ const UNDISABLEABLE_TYPES: vector<vector<u8>> = vector[
 ];
 
 /// Proposal types that may be created and executed during Migrating status.
-const MIGRATION_ALLOWED_TYPES: vector<vector<u8>> = vector[
-    b"TransferAssets",
-];
+const MIGRATION_ALLOWED_TYPES: vector<vector<u8>> = vector[b"TransferAssets"];
 
 // Default config values: quorum=5000 (50%), threshold=5000 (50%), propose_threshold=0,
 // expiry=7 days, execution_delay=0, cooldown=0
