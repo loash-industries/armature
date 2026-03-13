@@ -4,21 +4,13 @@ import {
   SidebarInset,
   SidebarTrigger,
   ScrollArea,
-  Badge,
   Separator,
 } from "@awar.dev/ui";
-import { useCurrentAccount } from "@mysten/dapp-kit";
 import { DaoSidebar } from "./DaoSidebar";
 import { SubDAOBreadcrumb } from "./SubDAOBreadcrumb";
-
-function truncateAddress(address: string): string {
-  if (address.length <= 10) return address;
-  return `${address.slice(0, 6)}...${address.slice(-4)}`;
-}
+import { WalletStatus } from "./WalletStatus";
 
 export function AppShell() {
-  const account = useCurrentAccount();
-
   return (
     <SidebarProvider>
       <DaoSidebar />
@@ -28,9 +20,7 @@ export function AppShell() {
           <Separator orientation="vertical" className="h-6" />
           <SubDAOBreadcrumb />
           <div className="flex-1" />
-          {account && (
-            <Badge variant="outline">{truncateAddress(account.address)}</Badge>
-          )}
+          <WalletStatus />
         </header>
         <ScrollArea className="flex-1">
           <main className="p-4">
