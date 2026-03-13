@@ -10,6 +10,7 @@ use sui::clock::Clock;
 const EDAONotActive: u64 = 0;
 const ETypeNotEnabled: u64 = 1;
 const EDAOIdMismatch: u64 = 2;
+const EControllerPaused: u64 = 3;
 
 // === Submit ===
 
@@ -59,6 +60,7 @@ public fun authorize_execution<P: store>(
 ): ExecutionRequest<P> {
     assert!(dao.status().is_active(), EDAONotActive);
     assert!(prop.dao_id() == dao.id(), EDAOIdMismatch);
+    assert!(!dao.is_controller_paused(), EControllerPaused);
 
     let type_key = prop.type_key();
     let last_executed_at = dao.last_executed_at();
