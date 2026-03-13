@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   useParams,
   useNavigate,
@@ -22,6 +23,8 @@ import {
   SelectContent,
   SelectItem,
 } from "@awar.dev/ui";
+import { useProposalFormOptions } from "@/hooks/useProposalFormOptions";
+import { ProposalTypeSelector } from "@/components/proposals/ProposalTypeSelector";
 
 const NAV_ITEMS = [
   { label: "Dashboard", path: "" },
@@ -46,6 +49,8 @@ export function DaoSidebar() {
   const { daoId } = useParams({ strict: false });
   const navigate = useNavigate();
   const activePath = useActivePath();
+  const [selectorOpen, setSelectorOpen] = useState(false);
+  const { enabledTypes, frozenTypes } = useProposalFormOptions(daoId ?? "");
 
   return (
     <Sidebar>
@@ -91,7 +96,22 @@ export function DaoSidebar() {
       </SidebarContent>
 
       <SidebarFooter>
-        <Button className="w-full">+ New Proposal</Button>
+        <Button className="w-full" onClick={() => setSelectorOpen(true)}>
+          + New Proposal
+        </Button>
+        <ProposalTypeSelector
+          open={selectorOpen}
+          onOpenChange={setSelectorOpen}
+          enabledTypes={enabledTypes}
+          frozenTypes={frozenTypes}
+          onSelect={(typeKey) => {
+            navigate({
+              to: `/dao/$daoId/proposals/new`,
+              params: { daoId: daoId ?? "" },
+              search: { type: typeKey },
+            });
+          }}
+        />
       </SidebarFooter>
     </Sidebar>
   );
