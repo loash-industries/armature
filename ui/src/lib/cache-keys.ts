@@ -4,6 +4,7 @@ export const cacheKeys = {
   treasuryBalance: (daoId: string, coinType: string) =>
     ["treasury", daoId, "balance", coinType] as const,
   capVault: (daoId: string) => ["capVault", daoId] as const,
+  capVaultEntries: (vaultId: string) => ["capVaultEntries", vaultId] as const,
   proposals: (daoId: string) => ["proposals", daoId] as const,
   proposal: (id: string) => ["proposal", id] as const,
   board: (daoId: string) => ["board", daoId] as const,
