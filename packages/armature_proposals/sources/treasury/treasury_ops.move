@@ -3,6 +3,7 @@ module armature_proposals::treasury_ops;
 use armature::dao::DAO;
 use armature::proposal::{Self, Proposal, ExecutionRequest};
 use armature::treasury_vault::TreasuryVault;
+use armature::utils;
 use armature_proposals::send_coin::SendCoin;
 use armature_proposals::send_coin_to_dao::SendCoinToDAO;
 use armature_proposals::send_small_payment::{Self, SendSmallPayment, SmallPaymentState};
@@ -110,7 +111,7 @@ public fun execute_send_small_payment<T>(
     // Lazy-init type state on first execution
     if (!dao.has_type_state<SendSmallPayment<T>>()) {
         let balance = vault.balance<T>();
-        let max_spend = balance * send_small_payment::default_spend_limit_bps() / 10_000;
+        let max_spend = utils::mul_bps(balance, send_small_payment::default_spend_limit_bps());
         dao.init_type_state(
             send_small_payment::new_state(
                 now,
@@ -128,7 +129,7 @@ public fun execute_send_small_payment<T>(
     // Epoch rollover: reset spend tracking if the epoch window has elapsed
     if (now >= state.epoch_start_ms() + state.epoch_duration_ms()) {
         let balance = vault.balance<T>();
-        let new_max = balance * state.spend_limit_bps() / 10_000;
+        let new_max = utils::mul_bps(balance, state.spend_limit_bps());
         state.reset_epoch(now, new_max);
     };
 

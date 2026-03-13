@@ -28,6 +28,7 @@ const MANDATORY_EXEMPT_TYPES: vector<vector<u8>> = vector[
 
 /// Tracks frozen proposal types and their expiry times.
 /// Created as a shared object during DAO creation.
+/// Note: `freeze_exempt_types` field added pre-mainnet. Safe since no on-chain objects exist yet.
 public struct EmergencyFreeze has key, store {
     id: UID,
     dao_id: ID,
