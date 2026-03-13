@@ -14,6 +14,7 @@ import { CharterPage } from "@/pages/CharterPage";
 import { GovConfigPage } from "@/pages/GovConfigPage";
 import { EmergencyPage } from "@/pages/EmergencyPage";
 import { SubDAOListPage } from "@/pages/SubDAOListPage";
+import { NewProposalPage } from "@/pages/NewProposalPage";
 
 const rootRoute = createRootRoute();
 
@@ -45,6 +46,12 @@ const proposalsRoute = createRoute({
   getParentRoute: () => daoRoute,
   path: "proposals",
   component: ProposalsList,
+});
+
+const newProposalRoute = createRoute({
+  getParentRoute: () => daoRoute,
+  path: "proposals/new",
+  component: NewProposalPage,
 });
 
 const proposalDetailRoute = createRoute({
@@ -89,6 +96,7 @@ const routeTree = rootRoute.addChildren([
     treasuryRoute,
     vaultRoute,
     proposalsRoute,
+    newProposalRoute,
     proposalDetailRoute,
     boardRoute,
     charterRoute,

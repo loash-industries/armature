@@ -3,6 +3,7 @@ import { useSuiClient } from "@mysten/dapp-kit";
 import { cacheKeys } from "@/lib/cache-keys";
 import { getObject, getDynamicFields, queryEvents } from "@/lib/sui-rpc";
 import { PACKAGE_ID, MODULES } from "@/config/constants";
+import { ALL_PROPOSAL_TYPE_KEYS } from "@/config/proposal-types";
 import type {
   DaoFields,
   DaoSummary,
@@ -312,21 +313,6 @@ export function useTreasuryEvents(daoId: string, limit = 20) {
   });
 }
 
-/** All known proposal type keys in the framework. */
-const ALL_PROPOSAL_TYPES = [
-  "SetBoard",
-  "TreasuryWithdraw",
-  "CapabilityExtract",
-  "EmergencyFreeze",
-  "EmergencyUnfreeze",
-  "CharterUpdate",
-  "SpawnDAO",
-  "SpinOutSubDAO",
-  "CreateSubDAO",
-  "TransferFreezeAdmin",
-  "UnfreezeProposalType",
-] as const;
-
 const PROTECTED_TYPES = new Set(["TransferFreezeAdmin", "UnfreezeProposalType"]);
 
 /** Fetch governance config: all proposal types with their enabled/frozen/protected status and config. */
@@ -353,7 +339,7 @@ export function useGovernanceConfig(daoId: string) {
         dao.proposal_configs.contents.map((e) => [e.key, e.value]),
       );
 
-      return ALL_PROPOSAL_TYPES.map((typeKey) => {
+      return ALL_PROPOSAL_TYPE_KEYS.map((typeKey) => {
         const raw = configMap.get(typeKey);
         return {
           typeKey,
