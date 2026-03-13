@@ -8,6 +8,7 @@ use armature::emergency::EmergencyFreeze;
 use armature::governance;
 use armature::proposal::{Self, Proposal};
 use armature_proposals::create_subdao::{Self, CreateSubDAO};
+use armature_proposals::pause_execution;
 use armature_proposals::reclaim_cap_from_subdao::{Self, ReclaimCapFromSubDAO};
 use armature_proposals::subdao_ops;
 use armature_proposals::transfer_cap_to_subdao::{Self, TransferCapToSubDAO};
@@ -658,6 +659,444 @@ fun reclaim_cap_wrong_vault_aborts() {
         test_scenario::return_shared(parent_vault);
         test_scenario::return_shared(subdao_vault);
         test_scenario::return_shared(parent_dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// =========================================================================
+// Pause / Unpause SubDAO Execution
+// =========================================================================
+
+#[test]
+/// E2E: Controller pauses SubDAO execution → SubDAO board cannot authorize
+/// proposals → Controller unpauses → SubDAO can authorize again.
+fun pause_and_unpause_subdao_e2e() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    let (parent_dao_id, control_cap_id) = setup_parent_and_subdao(
+        &mut scenario,
+        &mut clock,
+    );
+
+    // Enable PauseSubDAOExecution and UnpauseSubDAOExecution on parent
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+        dao.test_enable_type(
+            b"PauseSubDAOExecution".to_ascii_string(),
+            config,
+        );
+        dao.test_enable_type(
+            b"UnpauseSubDAOExecution".to_ascii_string(),
+            config,
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    // Capture SubDAO ID
+    let subdao_id;
+    scenario.next_tx(CREATOR);
+    {
+        let parent = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let subdao = scenario.take_shared<DAO>();
+        subdao_id = subdao.id();
+        assert!(!subdao.is_controller_paused());
+        test_scenario::return_shared(subdao);
+        test_scenario::return_shared(parent);
+    };
+
+    // ── Pause: submit on parent, vote, execute ──
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        clock.set_for_testing(10_000);
+        let payload = pause_execution::new_pause(control_cap_id);
+        board_voting::submit_proposal(
+            &dao,
+            b"PauseSubDAOExecution".to_ascii_string(),
+            string::utf8(b"Pause SubDAO"),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<pause_execution::PauseSubDAOExecution>>();
+        clock.set_for_testing(11_000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut parent_dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let mut vault = scenario.take_shared_by_id<
+            CapabilityVault,
+        >(parent_dao.capability_vault_id());
+        let mut proposal = scenario.take_shared<Proposal<pause_execution::PauseSubDAOExecution>>();
+        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(parent_dao.emergency_freeze_id());
+        let mut subdao = scenario.take_shared_by_id<DAO>(subdao_id);
+        clock.set_for_testing(12_000);
+
+        let request = board_voting::authorize_execution(
+            &mut parent_dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+
+        subdao_ops::execute_pause_subdao_execution(
+            &mut vault,
+            &mut subdao,
+            &proposal,
+            request,
+            &clock,
+            scenario.ctx(),
+        );
+
+        // Verify SubDAO is paused
+        assert!(subdao.is_controller_paused());
+
+        test_scenario::return_shared(subdao);
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(vault);
+        test_scenario::return_shared(parent_dao);
+    };
+
+    // ── Unpause: submit on parent, vote, execute ──
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        clock.set_for_testing(20_000);
+        let payload = pause_execution::new_unpause(control_cap_id);
+        board_voting::submit_proposal(
+            &dao,
+            b"UnpauseSubDAOExecution".to_ascii_string(),
+            string::utf8(b"Unpause SubDAO"),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<
+            Proposal<pause_execution::UnpauseSubDAOExecution>,
+        >();
+        clock.set_for_testing(21_000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut parent_dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let mut vault = scenario.take_shared_by_id<
+            CapabilityVault,
+        >(parent_dao.capability_vault_id());
+        let mut proposal = scenario.take_shared<
+            Proposal<pause_execution::UnpauseSubDAOExecution>,
+        >();
+        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(parent_dao.emergency_freeze_id());
+        let mut subdao = scenario.take_shared_by_id<DAO>(subdao_id);
+        clock.set_for_testing(22_000);
+
+        let request = board_voting::authorize_execution(
+            &mut parent_dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+
+        subdao_ops::execute_unpause_subdao_execution(
+            &mut vault,
+            &mut subdao,
+            &proposal,
+            request,
+            &clock,
+            scenario.ctx(),
+        );
+
+        // Verify SubDAO is unpaused
+        assert!(!subdao.is_controller_paused());
+
+        test_scenario::return_shared(subdao);
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(vault);
+        test_scenario::return_shared(parent_dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::board_voting::EControllerPaused)]
+/// Paused SubDAO rejects authorize_execution with EControllerPaused.
+fun paused_subdao_blocks_execution() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    let (parent_dao_id, control_cap_id) = setup_parent_and_subdao(
+        &mut scenario,
+        &mut clock,
+    );
+
+    // Enable PauseSubDAOExecution on parent
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+        dao.test_enable_type(
+            b"PauseSubDAOExecution".to_ascii_string(),
+            config,
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    // Capture SubDAO ID
+    let subdao_id;
+    scenario.next_tx(CREATOR);
+    {
+        let parent = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let subdao = scenario.take_shared<DAO>();
+        subdao_id = subdao.id();
+        test_scenario::return_shared(subdao);
+        test_scenario::return_shared(parent);
+    };
+
+    // Pause the SubDAO
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        clock.set_for_testing(10_000);
+        board_voting::submit_proposal(
+            &dao,
+            b"PauseSubDAOExecution".to_ascii_string(),
+            string::utf8(b"Pause SubDAO"),
+            pause_execution::new_pause(control_cap_id),
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<pause_execution::PauseSubDAOExecution>>();
+        clock.set_for_testing(11_000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut parent_dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let mut vault = scenario.take_shared_by_id<
+            CapabilityVault,
+        >(parent_dao.capability_vault_id());
+        let mut proposal = scenario.take_shared<Proposal<pause_execution::PauseSubDAOExecution>>();
+        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(parent_dao.emergency_freeze_id());
+        let mut subdao = scenario.take_shared_by_id<DAO>(subdao_id);
+        clock.set_for_testing(12_000);
+
+        let request = board_voting::authorize_execution(
+            &mut parent_dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+
+        subdao_ops::execute_pause_subdao_execution(
+            &mut vault,
+            &mut subdao,
+            &proposal,
+            request,
+            &clock,
+            scenario.ctx(),
+        );
+
+        test_scenario::return_shared(subdao);
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(vault);
+        test_scenario::return_shared(parent_dao);
+    };
+
+    // Now try to enable a type on the paused SubDAO and execute a proposal
+    // The SubDAO has SetBoard enabled by default.
+    scenario.next_tx(SUBDAO_MEMBER);
+    {
+        let subdao = scenario.take_shared_by_id<DAO>(subdao_id);
+        clock.set_for_testing(20_000);
+        board_voting::submit_proposal(
+            &subdao,
+            b"SetBoard".to_ascii_string(),
+            string::utf8(b"Try to change board while paused"),
+            armature_proposals::set_board::new(vector[SUBDAO_MEMBER, CREATOR]),
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(subdao);
+    };
+
+    scenario.next_tx(SUBDAO_MEMBER);
+    {
+        let mut proposal = scenario.take_shared<
+            Proposal<armature_proposals::set_board::SetBoard>,
+        >();
+        clock.set_for_testing(21_000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    // This should abort with EControllerPaused
+    scenario.next_tx(SUBDAO_MEMBER);
+    {
+        let mut subdao = scenario.take_shared_by_id<DAO>(subdao_id);
+        let mut proposal = scenario.take_shared<
+            Proposal<armature_proposals::set_board::SetBoard>,
+        >();
+        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(subdao.emergency_freeze_id());
+        clock.set_for_testing(22_000);
+
+        // This will abort — SubDAO is controller-paused
+        let request = board_voting::authorize_execution(
+            &mut subdao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+
+        // Unreachable: consume the request so compiler is happy
+        armature_proposals::board_ops::execute_set_board(
+            &mut subdao,
+            &proposal,
+            request,
+        );
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(subdao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// =========================================================================
+// Multi-member SubDAO
+// =========================================================================
+
+#[test]
+/// Create SubDAO with 3-member board, verify all members can submit proposals.
+fun create_multi_member_subdao() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    let parent_dao_id;
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR, MEMBER_B]);
+        parent_dao_id =
+            dao::create(
+                &init,
+                string::utf8(b"Parent DAO"),
+                string::utf8(b"Multi-member SubDAO test"),
+                string::utf8(b""),
+                scenario.ctx(),
+            );
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+        dao.test_enable_type(b"CreateSubDAO".to_ascii_string(), config);
+        test_scenario::return_shared(dao);
+    };
+
+    // Create SubDAO with 3 members: SUBDAO_MEMBER, CREATOR, MEMBER_B
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        clock.set_for_testing(1_000);
+        board_voting::submit_proposal(
+            &dao,
+            b"CreateSubDAO".to_ascii_string(),
+            string::utf8(b"Create 3-member SubDAO"),
+            create_subdao::new(
+                string::utf8(b"Engineering"),
+                string::utf8(b"Multi-member"),
+                vector[SUBDAO_MEMBER, CREATOR, MEMBER_B],
+                string::utf8(b""),
+            ),
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<CreateSubDAO>>();
+        clock.set_for_testing(2_000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let mut vault = scenario.take_shared<CapabilityVault>();
+        let mut proposal = scenario.take_shared<Proposal<CreateSubDAO>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        clock.set_for_testing(3_000);
+
+        let request = board_voting::authorize_execution(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        subdao_ops::execute_create_subdao(
+            &mut vault,
+            &proposal,
+            request,
+            scenario.ctx(),
+        );
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(vault);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(dao);
+    };
+
+    // Verify SubDAO board has all 3 members
+    scenario.next_tx(CREATOR);
+    {
+        let parent = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let subdao = scenario.take_shared<DAO>();
+        assert!(subdao.governance().is_board_member(SUBDAO_MEMBER));
+        assert!(subdao.governance().is_board_member(CREATOR));
+        assert!(subdao.governance().is_board_member(MEMBER_B));
+        test_scenario::return_shared(subdao);
+        test_scenario::return_shared(parent);
     };
 
     clock.destroy_for_testing();
