@@ -104,6 +104,19 @@ public fun store_cap<T: key + store, P>(
     dof::add(&mut self.id, cap_id, cap);
 }
 
+/// Receive a capability into the vault for cross-DAO transfers.
+/// Requires an ExecutionRequest for governance authorization but does NOT
+/// check dao_id match, since the request originates from the source DAO.
+public fun receive_cap<T: key + store, P>(
+    self: &mut CapabilityVault,
+    cap: T,
+    _req: &ExecutionRequest<P>,
+) {
+    let cap_id = object::id(&cap);
+    register_cap<T>(self, cap_id);
+    dof::add(&mut self.id, cap_id, cap);
+}
+
 // === Borrow ===
 
 /// Borrow an immutable reference to a stored capability.
@@ -235,6 +248,20 @@ public fun new_subdao_control_for_testing(subdao_id: ID, ctx: &mut TxContext): S
         id: object::new(ctx),
         subdao_id,
     }
+}
+
+/// Returns true if the vault contains no capabilities.
+public fun is_empty(self: &CapabilityVault): bool {
+    self.cap_ids.is_empty()
+}
+
+/// Destroy an empty CapabilityVault. Aborts if capabilities are still stored.
+public(package) fun destroy_empty(vault: CapabilityVault) {
+    let CapabilityVault { id, dao_id: _, cap_types, cap_ids, ids_by_type } = vault;
+    assert!(cap_ids.is_empty());
+    assert!(cap_types.is_empty());
+    assert!(ids_by_type.is_empty());
+    id.delete();
 }
 
 // === Internal ===

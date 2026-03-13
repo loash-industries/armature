@@ -317,7 +317,7 @@ fun privileged_submit_rejects_inactive_subdao() {
             object::id(&subdao),
             object::id_from_address(@0xBEEF),
         );
-        subdao.set_migrating(&req);
+        subdao.set_migrating(object::id_from_address(@0xDEAD), &req);
         proposal::consume(req);
 
         // Try privileged_submit on inactive SubDAO — should abort

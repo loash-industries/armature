@@ -11,7 +11,7 @@ const ENotBoardMember: u64 = 2;
 
 /// Sealed governance model enum. The governance type is immutable at creation.
 /// Governance state within a variant may be mutated by authorized proposal handlers.
-public enum GovernanceConfig has store {
+public enum GovernanceConfig has drop, store {
     Board { members: VecSet<address> },
     Direct { voters: VecMap<address, u64>, total_shares: u64 },
     Weighted { delegates: VecMap<address, u64>, total_delegated: u64 },

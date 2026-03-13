@@ -57,6 +57,12 @@ public fun description(self: &Charter): &std::string::String { &self.description
 /// Returns the DAO image URL.
 public fun image_url(self: &Charter): &std::string::String { &self.image_url }
 
+/// Destroy a Charter object.
+public(package) fun destroy(charter: Charter) {
+    let Charter { id, dao_id: _, name: _, description: _, image_url: _ } = charter;
+    id.delete();
+}
+
 // === Public Mutators (ExecutionRequest-gated) ===
 
 /// Update the DAO's metadata IPFS CID (stored as image_url).
