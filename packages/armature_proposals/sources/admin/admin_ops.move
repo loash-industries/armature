@@ -3,6 +3,7 @@ module armature_proposals::admin_ops;
 use armature::charter::Charter;
 use armature::dao::{Self, DAO};
 use armature::proposal::{Self, Proposal, ExecutionRequest};
+use armature::utils;
 use armature_proposals::disable_proposal_type::DisableProposalType;
 use armature_proposals::enable_proposal_type::EnableProposalType;
 use armature_proposals::update_metadata::UpdateMetadata;
@@ -24,8 +25,6 @@ const ENABLE_APPROVAL_FLOOR_BPS: u64 = 6_600;
 
 /// 80% approval floor for self-referencing UpdateProposalConfig (basis points).
 const SELF_UPDATE_APPROVAL_FLOOR_BPS: u64 = 8_000;
-
-const BPS_SCALE: u64 = 10_000;
 
 // === Events ===
 
@@ -175,5 +174,5 @@ fun assert_disableable(type_key: &std::ascii::String) {
 /// Assert that a proposal's approval rate meets the specified floor (in basis points).
 fun assert_approval_floor<P: store>(proposal: &Proposal<P>, floor_bps: u64) {
     let total = proposal.total_snapshot_weight();
-    assert!(proposal.yes_weight() * BPS_SCALE >= floor_bps * total, EApprovalFloorNotMet);
+    assert!(utils::gte_bps(proposal.yes_weight(), total, floor_bps), EApprovalFloorNotMet);
 }

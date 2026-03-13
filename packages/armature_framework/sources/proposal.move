@@ -1,6 +1,7 @@
 module armature::proposal;
 
 use armature::governance::GovernanceConfig;
+use armature::utils;
 use std::string::String;
 use sui::clock::Clock;
 use sui::event;
@@ -297,16 +298,21 @@ public fun vote<P: store>(self: &mut Proposal<P>, approve: bool, clock: &Clock, 
     });
 
     // Check if proposal passes: quorum and approval threshold met
-    // Quorum check: (yes + no) * 10000 >= quorum * total_snapshot_weight
     let total_voted = self.yes_weight + self.no_weight;
-    let quorum_met =
-        total_voted * 10_000 >= (self.config.quorum as u64) * self.total_snapshot_weight;
+    let quorum_met = utils::gte_bps(
+        total_voted,
+        self.total_snapshot_weight,
+        (self.config.quorum as u64),
+    );
 
-    // Threshold check: yes * 10000 >= threshold * (yes + no)
     let threshold_met = if (total_voted == 0) {
         false
     } else {
-        self.yes_weight * 10_000 >= (self.config.approval_threshold as u64) * total_voted
+        utils::gte_bps(
+            self.yes_weight,
+            total_voted,
+            (self.config.approval_threshold as u64),
+        )
     };
 
     if (quorum_met && threshold_met) {
