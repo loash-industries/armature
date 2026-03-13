@@ -30,10 +30,6 @@ const EFreezeIdMismatch: u64 = 7;
 /// Default proposal type keys that every DAO starts with.
 const DEFAULT_PROPOSAL_TYPES: vector<vector<u8>> = vector[
     b"SetBoard",
-    b"TreasuryWithdraw",
-    b"CapabilityExtract",
-    b"EmergencyFreeze",
-    b"EmergencyUnfreeze",
     b"CharterUpdate",
     b"EnableProposalType",
     b"DisableProposalType",

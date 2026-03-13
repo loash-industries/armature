@@ -132,22 +132,18 @@ fun test_default_proposal_types() {
         let enabled = dao.enabled_proposal_types();
         let configs = dao.proposal_configs();
 
-        // Verify all 11 default types are enabled
+        // Verify all 7 default types are enabled
         assert!(enabled.contains(&b"SetBoard".to_ascii_string()));
-        assert!(enabled.contains(&b"TreasuryWithdraw".to_ascii_string()));
-        assert!(enabled.contains(&b"CapabilityExtract".to_ascii_string()));
-        assert!(enabled.contains(&b"EmergencyFreeze".to_ascii_string()));
-        assert!(enabled.contains(&b"EmergencyUnfreeze".to_ascii_string()));
         assert!(enabled.contains(&b"CharterUpdate".to_ascii_string()));
         assert!(enabled.contains(&b"EnableProposalType".to_ascii_string()));
         assert!(enabled.contains(&b"DisableProposalType".to_ascii_string()));
         assert!(enabled.contains(&b"UpdateProposalConfig".to_ascii_string()));
         assert!(enabled.contains(&b"TransferFreezeAdmin".to_ascii_string()));
         assert!(enabled.contains(&b"UnfreezeProposalType".to_ascii_string()));
-        assert!(enabled.length() == 11);
+        assert!(enabled.length() == 7);
 
         // Verify each has a config entry
-        assert!(configs.length() == 11);
+        assert!(configs.length() == 7);
 
         // Verify default config values
         let (_, config) = configs.get_entry_by_idx(0);
