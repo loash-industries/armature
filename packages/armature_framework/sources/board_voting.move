@@ -1,6 +1,6 @@
 module armature::board_voting;
 
-use armature::dao::DAO;
+use armature::dao::{Self, DAO};
 use armature::proposal::{Self, ExecutionRequest, Proposal};
 use std::string::String;
 use sui::clock::Clock;
@@ -26,7 +26,10 @@ public fun submit_proposal<P: store>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    assert!(dao.status().is_active(), EDAONotActive);
+    let is_active = dao.status().is_active();
+    let is_migration_ok = dao.status().is_migrating()
+        && dao::is_migration_allowed_type(&type_key);
+    assert!(is_active || is_migration_ok, EDAONotActive);
     assert!(dao.enabled_proposal_types().contains(&type_key), ETypeNotEnabled);
 
     let proposer = ctx.sender();
@@ -42,7 +45,7 @@ public fun submit_proposal<P: store>(
         payload,
         config,
         dao.governance(),
-        dao.status().is_active(),
+        true, // status already validated above
         clock,
         ctx,
     );
@@ -59,11 +62,14 @@ public fun authorize_execution<P: store>(
     clock: &Clock,
     ctx: &TxContext,
 ): ExecutionRequest<P> {
-    assert!(dao.status().is_active(), EDAONotActive);
+    let type_key = prop.type_key();
+    let is_active = dao.status().is_active();
+    let is_migration_ok = dao.status().is_migrating()
+        && dao::is_migration_allowed_type(&type_key);
+    assert!(is_active || is_migration_ok, EDAONotActive);
     assert!(prop.dao_id() == dao.id(), EDAOIdMismatch);
     assert!(!dao.is_controller_paused(), EControllerPaused);
 
-    let type_key = prop.type_key();
     let last_executed_at = dao.last_executed_at();
     let last_ms = if (last_executed_at.contains(&type_key)) {
         option::some(*last_executed_at.get(&type_key))

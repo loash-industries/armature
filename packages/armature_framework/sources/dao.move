@@ -43,6 +43,20 @@ const SUBDAO_BLOCKED_TYPES: vector<vector<u8>> = vector[
     b"CreateSubDAO",
 ];
 
+/// Proposal types that can never be disabled via DisableProposalType.
+/// These are governance meta-operations and security invariants.
+const UNDISABLEABLE_TYPES: vector<vector<u8>> = vector[
+    b"EnableProposalType",
+    b"DisableProposalType",
+    b"TransferFreezeAdmin",
+    b"UnfreezeProposalType",
+];
+
+/// Proposal types that may be created and executed during Migrating status.
+const MIGRATION_ALLOWED_TYPES: vector<vector<u8>> = vector[
+    b"TransferAssets",
+];
+
 // Default config values: quorum=5000 (50%), threshold=5000 (50%), propose_threshold=0,
 // expiry=7 days, execution_delay=0, cooldown=0
 const DEFAULT_QUORUM: u16 = 5_000;
@@ -472,6 +486,37 @@ public fun destroy(
     id.delete();
 
     event::emit(DAODestroyed { dao_id, successor_dao_id });
+}
+
+// === Type Classification Queries ===
+
+/// Returns true if the type key is undisableable (cannot be removed via DisableProposalType).
+public fun is_undisableable_type(type_key: &std::ascii::String): bool {
+    let types = UNDISABLEABLE_TYPES;
+    vec_contains_key(&types, type_key)
+}
+
+/// Returns true if the type key is blocked for controlled SubDAOs.
+/// SubDAOs with `controller_cap_id.is_some()` cannot enable these types.
+public fun is_subdao_blocked_type(type_key: &std::ascii::String): bool {
+    let types = SUBDAO_BLOCKED_TYPES;
+    vec_contains_key(&types, type_key)
+}
+
+/// Returns true if the type key is allowed during Migrating status.
+public fun is_migration_allowed_type(type_key: &std::ascii::String): bool {
+    let types = MIGRATION_ALLOWED_TYPES;
+    vec_contains_key(&types, type_key)
+}
+
+/// Helper: check if a vector of byte-string constants contains the given ascii key.
+fun vec_contains_key(keys: &vector<vector<u8>>, target: &std::ascii::String): bool {
+    let mut i = 0;
+    while (i < keys.length()) {
+        if (keys[i].to_ascii_string() == *target) return true;
+        i = i + 1;
+    };
+    false
 }
 
 // === Internal ===
