@@ -162,6 +162,7 @@ fun test_status_passed_to_executed() {
         let req = prop.execute(
             dao.governance(),
             option::none(),
+            false,
             &clock,
             scenario.ctx(),
         );
@@ -266,7 +267,7 @@ fun test_cannot_vote_on_executed_aborts() {
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
         let dao = scenario.take_shared<DAO>();
-        let req = prop.execute(dao.governance(), option::none(), &clock, scenario.ctx());
+        let req = prop.execute(dao.governance(), option::none(), false, &clock, scenario.ctx());
         proposal::consume(req);
         test_scenario::return_shared(prop);
         test_scenario::return_shared(dao);
@@ -310,7 +311,7 @@ fun test_cannot_execute_expired_aborts() {
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
         let dao = scenario.take_shared<DAO>();
-        let req = prop.execute(dao.governance(), option::none(), &clock, scenario.ctx());
+        let req = prop.execute(dao.governance(), option::none(), false, &clock, scenario.ctx());
         proposal::consume(req);
         test_scenario::return_shared(prop);
         test_scenario::return_shared(dao);
@@ -444,7 +445,7 @@ fun test_non_board_member_cannot_execute_aborts() {
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
         let dao = scenario.take_shared<DAO>();
-        let req = prop.execute(dao.governance(), option::none(), &clock, scenario.ctx());
+        let req = prop.execute(dao.governance(), option::none(), false, &clock, scenario.ctx());
         proposal::consume(req);
         test_scenario::return_shared(prop);
         test_scenario::return_shared(dao);
@@ -479,7 +480,7 @@ fun test_board_member_can_execute() {
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
         let dao = scenario.take_shared<DAO>();
-        let req = prop.execute(dao.governance(), option::none(), &clock, scenario.ctx());
+        let req = prop.execute(dao.governance(), option::none(), false, &clock, scenario.ctx());
         assert!(prop.status().is_executed());
         proposal::consume(req);
         test_scenario::return_shared(prop);
@@ -517,7 +518,7 @@ fun test_passed_proposal_retryable_after_failure() {
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
         let dao = scenario.take_shared<DAO>();
-        let req = prop.execute(dao.governance(), option::none(), &clock, scenario.ctx());
+        let req = prop.execute(dao.governance(), option::none(), false, &clock, scenario.ctx());
         assert!(prop.status().is_executed());
         proposal::consume(req);
         test_scenario::return_shared(prop);
@@ -662,7 +663,7 @@ fun test_execute_delay_not_elapsed_aborts() {
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
         let dao = scenario.take_shared<DAO>();
-        let req = prop.execute(dao.governance(), option::none(), &clock, scenario.ctx());
+        let req = prop.execute(dao.governance(), option::none(), false, &clock, scenario.ctx());
         proposal::consume(req);
         test_scenario::return_shared(prop);
         test_scenario::return_shared(dao);
@@ -725,7 +726,7 @@ fun test_execute_delay_elapsed_succeeds() {
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
         let dao = scenario.take_shared<DAO>();
-        let req = prop.execute(dao.governance(), option::none(), &clock, scenario.ctx());
+        let req = prop.execute(dao.governance(), option::none(), false, &clock, scenario.ctx());
         assert!(prop.status().is_executed());
         proposal::consume(req);
         test_scenario::return_shared(prop);
@@ -790,6 +791,7 @@ fun test_execute_cooldown_active_aborts() {
         let req = prop.execute(
             dao.governance(),
             option::some(999_500),
+            false,
             &clock,
             scenario.ctx(),
         );
@@ -856,10 +858,43 @@ fun test_execute_cooldown_elapsed_succeeds() {
         let req = prop.execute(
             dao.governance(),
             option::some(10_000_000 - 7_200_000),
+            false,
             &clock,
             scenario.ctx(),
         );
         assert!(prop.status().is_executed());
+        proposal::consume(req);
+        test_scenario::return_shared(prop);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::proposal::EExecutionPaused)]
+fun test_execute_paused_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_test_dao(&mut scenario);
+    create_test_proposal(&mut scenario, &clock);
+
+    // CREATOR's single vote meets 50% threshold — proposal passes
+    scenario.next_tx(CREATOR);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        prop.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(prop);
+    };
+
+    // Execute with execution_paused=true — should abort with EExecutionPaused
+    scenario.next_tx(CREATOR);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let dao = scenario.take_shared<DAO>();
+        let req = prop.execute(dao.governance(), option::none(), true, &clock, scenario.ctx());
         proposal::consume(req);
         test_scenario::return_shared(prop);
         test_scenario::return_shared(dao);

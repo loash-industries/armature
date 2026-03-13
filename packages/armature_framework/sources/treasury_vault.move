@@ -10,6 +10,7 @@ use sui::vec_set::{Self, VecSet};
 // === Errors ===
 
 const EInsufficientBalance: u64 = 0;
+const EDAOIdMismatch: u64 = 1;
 
 // === Events ===
 
@@ -78,9 +79,10 @@ public fun deposit<T>(self: &mut TreasuryVault, coin: Coin<T>) {
 public fun withdraw<T, P>(
     self: &mut TreasuryVault,
     amount: u64,
-    _req: &ExecutionRequest<P>,
+    req: &ExecutionRequest<P>,
     ctx: &mut TxContext,
 ): Coin<T> {
+    assert!(self.dao_id == req.req_dao_id(), EDAOIdMismatch);
     let type_key = std::type_name::with_original_ids<T>().into_string();
 
     assert!(
