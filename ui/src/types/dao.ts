@@ -33,12 +33,28 @@ export type GovernanceConfigFields =
     };
 
 export interface ProposalConfigFields {
-  quorum_threshold_bps: string;
-  approval_threshold_bps: string;
-  voting_duration_ms: string;
+  quorum: string;
+  approval_threshold: string;
+  propose_threshold: string;
+  expiry_ms: string;
   execution_delay_ms: string;
-  execution_window_ms: string;
   cooldown_ms: string;
+}
+
+/** Parsed proposal type config for the Governance page. */
+export interface ProposalTypeConfig {
+  typeKey: string;
+  enabled: boolean;
+  frozen: boolean;
+  protected: boolean;
+  config: {
+    quorum: number;
+    approvalThreshold: number;
+    proposeThreshold: number;
+    expiryMs: number;
+    executionDelayMs: number;
+    cooldownMs: number;
+  } | null;
 }
 
 export interface TreasuryVaultFields {
