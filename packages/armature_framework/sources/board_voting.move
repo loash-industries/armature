@@ -38,6 +38,8 @@ public fun submit_proposal<P: store>(
 
     let config = *dao.proposal_configs().get(&type_key);
 
+    // Status validated above: active or migration-allowed
+    let status_ok = true;
     proposal::create<P>(
         dao.id(),
         type_key,
@@ -46,7 +48,7 @@ public fun submit_proposal<P: store>(
         payload,
         config,
         dao.governance(),
-        true, // status already validated above
+        status_ok,
         clock,
         ctx,
     );

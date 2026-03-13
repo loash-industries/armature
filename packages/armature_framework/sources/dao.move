@@ -33,6 +33,11 @@ const DEFAULT_PROPOSAL_TYPES: vector<vector<u8>> = vector[
     b"EmergencyFreeze",
     b"EmergencyUnfreeze",
     b"CharterUpdate",
+    b"EnableProposalType",
+    b"DisableProposalType",
+    b"UpdateProposalConfig",
+    b"TransferFreezeAdmin",
+    b"UnfreezeProposalType",
 ];
 
 /// Proposal types blocked for SubDAOs — hierarchy-altering operations
