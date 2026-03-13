@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams } from "@tanstack/react-router";
+import { useParams, useNavigate } from "@tanstack/react-router";
 import {
   Card,
   CardHeader,
@@ -151,6 +151,7 @@ function ConfigDetail({
 
 function TypeDetailPanel({ item }: { item: ProposalTypeConfig }) {
   const { daoId } = useParams({ strict: false });
+  const navigate = useNavigate();
 
   if (!item.config) {
     return (
@@ -163,7 +164,11 @@ function TypeDetailPanel({ item }: { item: ProposalTypeConfig }) {
           size="sm"
           onClick={(e) => {
             e.stopPropagation();
-            window.location.hash = `/dao/${daoId}/proposals?action=enable&type=${item.typeKey}`;
+            navigate({
+              to: `/dao/$daoId/proposals/new`,
+              params: { daoId: daoId ?? "" },
+              search: { type: "EnableProposalType" },
+            });
           }}
         >
           Propose Enable
@@ -242,7 +247,11 @@ function TypeDetailPanel({ item }: { item: ProposalTypeConfig }) {
           size="sm"
           onClick={(e) => {
             e.stopPropagation();
-            window.location.hash = `/dao/${daoId}/proposals?action=update-config&type=${item.typeKey}`;
+            navigate({
+              to: `/dao/$daoId/proposals/new`,
+              params: { daoId: daoId ?? "" },
+              search: { type: "UpdateProposalConfig" },
+            });
           }}
         >
           Propose Config Change
@@ -253,7 +262,11 @@ function TypeDetailPanel({ item }: { item: ProposalTypeConfig }) {
             size="sm"
             onClick={(e) => {
               e.stopPropagation();
-              window.location.hash = `/dao/${daoId}/proposals?action=disable&type=${item.typeKey}`;
+              navigate({
+                to: `/dao/$daoId/proposals/new`,
+                params: { daoId: daoId ?? "" },
+                search: { type: "DisableProposalType" },
+              });
             }}
           >
             Propose Disable
