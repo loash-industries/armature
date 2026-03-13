@@ -11,7 +11,9 @@ Cargo.lock
 
 # Move
 packages/armature_framework/build/
+packages/armature_proposals/build/
 packages/**/Move.lock
+packages/**/.ephemeral.toml
 packages/armature_packages/build/
 
 # Logs
