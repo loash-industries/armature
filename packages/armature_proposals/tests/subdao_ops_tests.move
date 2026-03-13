@@ -4,6 +4,7 @@ module armature_proposals::subdao_ops_tests;
 use armature::board_voting;
 use armature::capability_vault::CapabilityVault;
 use armature::dao::{Self, DAO};
+use armature::emergency::EmergencyFreeze;
 use armature::governance;
 use armature::proposal::{Self, Proposal};
 use armature_proposals::create_subdao::{Self, CreateSubDAO};
@@ -93,11 +94,13 @@ fun create_subdao_e2e() {
         let mut dao = scenario.take_shared<DAO>();
         let mut proposal = scenario.take_shared<Proposal<CreateSubDAO>>();
         let mut vault = scenario.take_shared<CapabilityVault>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let request = board_voting::authorize_execution(
             &mut dao,
             &mut proposal,
+            &freeze,
             &clock,
             scenario.ctx(),
         );
@@ -112,6 +115,7 @@ fun create_subdao_e2e() {
         // 6. Verify: vault should contain SubDAOControl + FreezeAdminCap
         assert!(vault.cap_ids().length() >= 2);
 
+        test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
@@ -205,11 +209,13 @@ fun create_subdao_vault_mismatch_aborts() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let mut proposal = scenario.take_shared<Proposal<CreateSubDAO>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let request = board_voting::authorize_execution(
             &mut dao,
             &mut proposal,
+            &freeze,
             &clock,
             scenario.ctx(),
         );
@@ -229,6 +235,7 @@ fun create_subdao_vault_mismatch_aborts() {
         );
 
         test_scenario::return_shared(vault_b);
+        test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
