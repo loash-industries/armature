@@ -13,6 +13,9 @@ export interface DaoFields {
   capability_vault_id: string;
   charter_id: string;
   emergency_freeze_id: string;
+  execution_paused: boolean;
+  controller_cap_id: { vec: string[] };
+  controller_paused: boolean;
 }
 
 export type GovernanceConfigFields =
@@ -117,6 +120,21 @@ export interface DaoSummary {
   capabilityVaultId: string;
   enabledProposalTypes: string[];
   frozenTypes: Array<{ typeKey: string; expiryMs: number }>;
+}
+
+export interface SubDAONode {
+  daoId: string;
+  name: string;
+  status: "Active" | "Migrating";
+  controllerPaused: boolean;
+  executionPaused: boolean;
+  childCount: number;
+}
+
+export interface DAOHierarchy {
+  root: SubDAONode;
+  children: SubDAONode[];
+  parentId: string | null;
 }
 
 /** A coin balance entry from the treasury. */
