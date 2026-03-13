@@ -137,6 +137,25 @@ export interface DAOHierarchy {
   parentId: string | null;
 }
 
+/** On-chain CapabilityVault fields. */
+export interface CapabilityVaultFields {
+  id: { id: string };
+  dao_id: string;
+  cap_types: { contents: string[] };
+  cap_ids: { contents: string[] };
+  ids_by_type: { contents: Array<{ key: string; value: string[] }> };
+}
+
+/** Parsed capability entry for the vault page. */
+export interface CapabilityEntry {
+  id: string;
+  typeName: string;
+  shortType: string;
+  objectType: string | null;
+  isSubDAOControl: boolean;
+  subdaoId: string | null;
+}
+
 /** A coin balance entry from the treasury. */
 export interface TreasuryCoinBalance {
   coinType: string;
