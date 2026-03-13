@@ -196,3 +196,69 @@ fun test_freeze__emits_type_frozen_event() {
     destroy(cap);
     clock.destroy_for_testing();
 }
+
+// === Freeze Exempt Types Tests ===
+
+#[test]
+/// Default exempt types include TransferFreezeAdmin and UnfreezeProposalType.
+fun test_exempt__default_types_include_mandatory() {
+    let (freeze, cap, clock) = setup();
+
+    let exempt = freeze.freeze_exempt_types();
+    assert!(exempt.contains(&b"TransferFreezeAdmin".to_ascii_string()));
+    assert!(exempt.contains(&b"UnfreezeProposalType".to_ascii_string()));
+
+    destroy(freeze);
+    destroy(cap);
+    clock.destroy_for_testing();
+}
+
+#[test, expected_failure(abort_code = emergency::EProtectedType)]
+/// Custom exempt type added via test helper cannot be frozen.
+fun test_exempt__custom_exempt_type_cannot_be_frozen() {
+    let (mut freeze, cap, clock) = setup();
+    let type_key = b"CustomType".to_ascii_string();
+
+    emergency::add_exempt_type_for_testing(&mut freeze, type_key);
+    // Should abort — now exempt
+    emergency::freeze_type(&mut freeze, &cap, type_key, &clock);
+
+    destroy(freeze);
+    destroy(cap);
+    clock.destroy_for_testing();
+}
+
+#[test]
+/// Removing an exempt type allows it to be frozen again.
+fun test_exempt__removed_type_can_be_frozen() {
+    let (mut freeze, cap, clock) = setup();
+    let type_key = b"CustomType".to_ascii_string();
+
+    emergency::add_exempt_type_for_testing(&mut freeze, type_key);
+    assert!(freeze.freeze_exempt_types().contains(&type_key));
+
+    emergency::remove_exempt_type_for_testing(&mut freeze, type_key);
+    assert!(!freeze.freeze_exempt_types().contains(&type_key));
+
+    // Should succeed — no longer exempt
+    emergency::freeze_type(&mut freeze, &cap, type_key, &clock);
+    assert!(emergency::is_frozen(&freeze, &type_key, &clock));
+
+    destroy(freeze);
+    destroy(cap);
+    clock.destroy_for_testing();
+}
+
+#[test, expected_failure(abort_code = emergency::EMandatoryExemptType)]
+/// Mandatory exempt types cannot be removed via governance.
+fun test_exempt__mandatory_type_cannot_be_removed() {
+    let (mut freeze, cap, clock) = setup();
+    let type_key = b"TransferFreezeAdmin".to_ascii_string();
+
+    // Should abort — mandatory type
+    emergency::remove_exempt_type_for_testing(&mut freeze, type_key);
+
+    destroy(freeze);
+    destroy(cap);
+    clock.destroy_for_testing();
+}

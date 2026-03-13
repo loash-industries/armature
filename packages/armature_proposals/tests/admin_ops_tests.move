@@ -127,6 +127,8 @@ fun enable_non_blocked_type_succeeds_for_subdao_with_controller() {
 
     create_and_share_subdao(&mut scenario);
     clock.set_for_testing(1000);
+    // "TreasuryWithdraw" is not in SUBDAO_BLOCKED_TYPES but IS in the SubDAO defaults —
+    // use a custom key that isn't pre-enabled to avoid a duplicate-insert abort.
     submit_enable_type_proposal(&mut scenario, &clock, b"CustomAction");
     clock.set_for_testing(2000);
     vote_yes(&mut scenario, &clock);

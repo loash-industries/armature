@@ -5,6 +5,7 @@ use armature::proposal::{Self, Proposal, ExecutionRequest};
 use armature_proposals::transfer_freeze_admin::TransferFreezeAdmin;
 use armature_proposals::unfreeze_proposal_type::UnfreezeProposalType;
 use armature_proposals::update_freeze_config::UpdateFreezeConfig;
+use armature_proposals::update_freeze_exempt_types::UpdateFreezeExemptTypes;
 use sui::event;
 
 // === Errors ===
@@ -83,6 +84,28 @@ public fun execute_update_freeze_config(
     event::emit(FreezeConfigUpdated {
         dao_id: freeze.dao_id(),
         new_max_freeze_duration_ms: payload.new_max_freeze_duration_ms(),
+    });
+
+    proposal::finalize(request, proposal);
+}
+
+/// Execute an UpdateFreezeExemptTypes proposal: add or remove types from
+/// the freeze-exempt set on EmergencyFreeze.
+public fun execute_update_freeze_exempt_types(
+    freeze: &mut EmergencyFreeze,
+    proposal: &Proposal<UpdateFreezeExemptTypes>,
+    request: ExecutionRequest<UpdateFreezeExemptTypes>,
+) {
+    assert!(freeze.dao_id() == request.req_dao_id(), EFreezeDaoMismatch);
+
+    let payload = proposal.payload();
+
+    payload.types_to_add().do_ref!(|t| {
+        emergency::add_freeze_exempt_type(freeze, *t, &request);
+    });
+
+    payload.types_to_remove().do_ref!(|t| {
+        emergency::remove_freeze_exempt_type(freeze, *t, &request);
     });
 
     proposal::finalize(request, proposal);
