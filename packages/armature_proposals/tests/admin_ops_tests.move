@@ -49,6 +49,17 @@ fun create_and_share_subdao(scenario: &mut test_scenario::Scenario) {
     };
 }
 
+/// Enable the EnableProposalType proposal type on the shared DAO.
+fun enable_enable_proposal_type(scenario: &mut test_scenario::Scenario) {
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+        dao.test_enable_type(b"EnableProposalType".to_ascii_string(), config);
+        test_scenario::return_shared(dao);
+    };
+}
+
 /// Submit an EnableProposalType proposal for the given type key.
 fun submit_enable_type_proposal(
     scenario: &mut test_scenario::Scenario,
@@ -91,6 +102,7 @@ fun enable_blocked_type_aborts_for_subdao_with_controller() {
     let mut clock = clock::create_for_testing(scenario.ctx());
 
     create_and_share_subdao(&mut scenario);
+    enable_enable_proposal_type(&mut scenario);
     clock.set_for_testing(1000);
     submit_enable_type_proposal(&mut scenario, &clock, b"SpawnDAO");
     clock.set_for_testing(2000);
@@ -126,7 +138,10 @@ fun enable_non_blocked_type_succeeds_for_subdao_with_controller() {
     let mut clock = clock::create_for_testing(scenario.ctx());
 
     create_and_share_subdao(&mut scenario);
+    enable_enable_proposal_type(&mut scenario);
     clock.set_for_testing(1000);
+    // "TreasuryWithdraw" is not in SUBDAO_BLOCKED_TYPES but IS in the SubDAO defaults —
+    // use a custom key that isn't pre-enabled to avoid a duplicate-insert abort.
     submit_enable_type_proposal(&mut scenario, &clock, b"CustomAction");
     clock.set_for_testing(2000);
     vote_yes(&mut scenario, &clock);
@@ -163,6 +178,7 @@ fun enable_blocked_type_succeeds_for_independent_dao() {
     let mut clock = clock::create_for_testing(scenario.ctx());
 
     create_dao(&mut scenario);
+    enable_enable_proposal_type(&mut scenario);
     clock.set_for_testing(1000);
     submit_enable_type_proposal(&mut scenario, &clock, b"SpawnDAO");
     clock.set_for_testing(2000);
