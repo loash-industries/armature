@@ -250,6 +250,12 @@ public fun new_subdao_control_for_testing(subdao_id: ID, ctx: &mut TxContext): S
     }
 }
 
+#[test_only]
+/// Store a capability in the vault without an ExecutionRequest. Test-only.
+public fun store_cap_for_testing<T: key + store>(self: &mut CapabilityVault, cap: T) {
+    store_cap_init(self, cap);
+}
+
 /// Returns true if the vault contains no capabilities.
 public fun is_empty(self: &CapabilityVault): bool {
     self.cap_ids.is_empty()
