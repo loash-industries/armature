@@ -4,6 +4,7 @@ use armature::proposal::ExecutionRequest;
 use sui::clock::Clock;
 use sui::event;
 use sui::vec_map::{Self, VecMap};
+use sui::vec_set::{Self, VecSet};
 
 // === Errors ===
 
@@ -11,14 +12,17 @@ const EDAOMismatch: u64 = 0;
 const EProtectedType: u64 = 1;
 const EFrozen: u64 = 2;
 const ENotFrozen: u64 = 3;
+const EMandatoryExemptType: u64 = 4;
 
 // === Constants ===
 
 const DEFAULT_MAX_FREEZE_DURATION_MS: u64 = 604_800_000; // 7 days
 
-/// Protected type keys that cannot be frozen.
-const PROTECTED_TRANSFER_FREEZE_ADMIN: vector<u8> = b"TransferFreezeAdmin";
-const PROTECTED_UNFREEZE_PROPOSAL_TYPE: vector<u8> = b"UnfreezeProposalType";
+/// Mandatory freeze-exempt type keys that can never be removed from the exempt set.
+const MANDATORY_EXEMPT_TYPES: vector<vector<u8>> = vector[
+    b"TransferFreezeAdmin",
+    b"UnfreezeProposalType",
+];
 
 // === Structs ===
 
@@ -29,6 +33,7 @@ public struct EmergencyFreeze has key, store {
     dao_id: ID,
     frozen_types: VecMap<std::ascii::String, u64>,
     max_freeze_duration_ms: u64,
+    freeze_exempt_types: VecSet<std::ascii::String>,
 }
 
 /// Admin capability for triggering emergency freezes.
@@ -51,6 +56,16 @@ public struct TypeUnfrozen has copy, drop {
     type_key: std::ascii::String,
 }
 
+public struct FreezeExemptTypeAdded has copy, drop {
+    dao_id: ID,
+    type_key: std::ascii::String,
+}
+
+public struct FreezeExemptTypeRemoved has copy, drop {
+    dao_id: ID,
+    type_key: std::ascii::String,
+}
+
 // === Constructor ===
 
 /// Create a new EmergencyFreeze. Only callable within the framework package.
@@ -60,6 +75,7 @@ public(package) fun new(dao_id: ID, ctx: &mut TxContext): EmergencyFreeze {
         dao_id,
         frozen_types: vec_map::empty(),
         max_freeze_duration_ms: DEFAULT_MAX_FREEZE_DURATION_MS,
+        freeze_exempt_types: default_exempt_types(),
     }
 }
 
@@ -104,9 +120,20 @@ public fun is_empty(self: &EmergencyFreeze): bool {
     self.frozen_types.is_empty()
 }
 
+/// Returns the set of freeze-exempt types.
+public fun freeze_exempt_types(self: &EmergencyFreeze): &VecSet<std::ascii::String> {
+    &self.freeze_exempt_types
+}
+
 /// Destroy an EmergencyFreeze object.
 public(package) fun destroy(freeze: EmergencyFreeze) {
-    let EmergencyFreeze { id, dao_id: _, frozen_types, max_freeze_duration_ms: _ } = freeze;
+    let EmergencyFreeze {
+        id,
+        dao_id: _,
+        frozen_types,
+        max_freeze_duration_ms: _,
+        freeze_exempt_types: _,
+    } = freeze;
     assert!(frozen_types.is_empty());
     id.delete();
 }
@@ -138,7 +165,7 @@ public fun freeze_type(
     clock: &Clock,
 ) {
     assert!(cap.dao_id == self.dao_id, EDAOMismatch);
-    assert!(!is_protected(&type_key), EProtectedType);
+    assert!(!self.freeze_exempt_types.contains(&type_key), EProtectedType);
 
     let expiry_ms = clock.timestamp_ms() + self.max_freeze_duration_ms;
 
@@ -238,12 +265,53 @@ public fun unfreeze_all<P>(self: &mut EmergencyFreeze, _req: &ExecutionRequest<P
     };
 }
 
+/// Add a type to the freeze-exempt set via governance.
+public fun add_freeze_exempt_type<P>(
+    self: &mut EmergencyFreeze,
+    type_key: std::ascii::String,
+    req: &ExecutionRequest<P>,
+) {
+    assert!(self.dao_id == req.req_dao_id(), EDAOMismatch);
+    self.freeze_exempt_types.insert(type_key);
+    event::emit(FreezeExemptTypeAdded { dao_id: self.dao_id, type_key });
+}
+
+/// Remove a type from the freeze-exempt set via governance.
+/// Cannot remove mandatory exempt types (TransferFreezeAdmin, UnfreezeProposalType).
+public fun remove_freeze_exempt_type<P>(
+    self: &mut EmergencyFreeze,
+    type_key: std::ascii::String,
+    req: &ExecutionRequest<P>,
+) {
+    assert!(self.dao_id == req.req_dao_id(), EDAOMismatch);
+    assert!(!is_mandatory_exempt(&type_key), EMandatoryExemptType);
+    self.freeze_exempt_types.remove(&type_key);
+    event::emit(FreezeExemptTypeRemoved { dao_id: self.dao_id, type_key });
+}
+
 // === Internal ===
 
-/// Returns true if the type_key is a protected type that cannot be frozen.
-fun is_protected(type_key: &std::ascii::String): bool {
-    *type_key == PROTECTED_TRANSFER_FREEZE_ADMIN.to_ascii_string()
-        || *type_key == PROTECTED_UNFREEZE_PROPOSAL_TYPE.to_ascii_string()
+/// Returns true if the type_key is a mandatory freeze-exempt type that cannot be removed.
+fun is_mandatory_exempt(type_key: &std::ascii::String): bool {
+    let types = MANDATORY_EXEMPT_TYPES;
+    let mut i = 0;
+    while (i < types.length()) {
+        if (types[i].to_ascii_string() == *type_key) return true;
+        i = i + 1;
+    };
+    false
+}
+
+/// Build the default set of freeze-exempt types from mandatory constants.
+fun default_exempt_types(): VecSet<std::ascii::String> {
+    let types = MANDATORY_EXEMPT_TYPES;
+    let mut exempt = vec_set::empty();
+    let mut i = 0;
+    while (i < types.length()) {
+        exempt.insert(types[i].to_ascii_string());
+        i = i + 1;
+    };
+    exempt
 }
 
 // === Test Helpers ===
@@ -256,4 +324,18 @@ public fun new_for_testing(dao_id: ID, ctx: &mut TxContext): EmergencyFreeze {
 #[test_only]
 public fun new_admin_cap_for_testing(dao_id: ID, ctx: &mut TxContext): FreezeAdminCap {
     new_admin_cap(dao_id, ctx)
+}
+
+#[test_only]
+public fun add_exempt_type_for_testing(self: &mut EmergencyFreeze, type_key: std::ascii::String) {
+    self.freeze_exempt_types.insert(type_key);
+}
+
+#[test_only]
+public fun remove_exempt_type_for_testing(
+    self: &mut EmergencyFreeze,
+    type_key: std::ascii::String,
+) {
+    assert!(!is_mandatory_exempt(&type_key), EMandatoryExemptType);
+    self.freeze_exempt_types.remove(&type_key);
 }

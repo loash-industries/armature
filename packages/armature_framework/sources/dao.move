@@ -8,6 +8,8 @@ use armature::proposal::{Self, ExecutionRequest, ProposalConfig};
 use armature::treasury_vault;
 use std::option::{Self, Option};
 use std::string::String;
+use std::type_name;
+use sui::dynamic_field as df;
 use sui::event;
 use sui::vec_map::{Self, VecMap};
 use sui::vec_set::{Self, VecSet};
@@ -350,6 +352,37 @@ public fun clear_controller<P>(self: &mut DAO, req: &ExecutionRequest<P>) {
 public fun set_migrating<P>(self: &mut DAO, successor_dao_id: ID, req: &ExecutionRequest<P>) {
     assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
     self.status = DAOStatus::Migrating { successor_dao_id };
+}
+
+// === ProposalTypeState ===
+
+/// Check if type state exists for proposal type P.
+public fun has_type_state<P>(self: &DAO): bool {
+    df::exists_(&self.id, type_name::with_defining_ids<P>())
+}
+
+/// Borrow immutable reference to type state for proposal type P.
+public fun borrow_type_state<P, S: store>(self: &DAO): &S {
+    df::borrow(&self.id, type_name::with_defining_ids<P>())
+}
+
+/// Borrow mutable reference to type state. Requires ExecutionRequest for authorization.
+public fun borrow_type_state_mut<P, S: store>(self: &mut DAO, req: &ExecutionRequest<P>): &mut S {
+    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    df::borrow_mut(&mut self.id, type_name::with_defining_ids<P>())
+}
+
+/// Initialize type state for proposal type P (lazy-init on first execution).
+/// Requires ExecutionRequest for authorization.
+public fun init_type_state<P, S: store>(self: &mut DAO, state: S, req: &ExecutionRequest<P>) {
+    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    df::add(&mut self.id, type_name::with_defining_ids<P>(), state);
+}
+
+/// Remove type state for proposal type P. Requires ExecutionRequest for authorization.
+public fun remove_type_state<P, S: store>(self: &mut DAO, req: &ExecutionRequest<P>): S {
+    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    df::remove(&mut self.id, type_name::with_defining_ids<P>())
 }
 
 /// Record the execution timestamp for a proposal type.
