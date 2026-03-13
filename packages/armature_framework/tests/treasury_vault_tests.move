@@ -365,10 +365,102 @@ fun test_balance_after_deposit_returns_correct() {
     scenario.end();
 }
 
-// Note: test_claim_coin__recovers_direct_transfer and test_claim_coin__emits_event
-// require Receiving<T> ticket creation which is not supported by test_scenario.
-// These must be tested via PTB-based integration tests (sui client call).
-// The claim_coin implementation is verified by code review and integration testing.
+#[test]
+/// claim_coin recovers a coin that was directly transferred to the vault address.
+fun test_claim_coin_recovers_direct_transfer() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    create_test_dao(&mut scenario);
+
+    // Get vault's object ID (used as the "owner" address for direct transfers)
+    let vault_id;
+    scenario.next_tx(CREATOR);
+    {
+        let vault = scenario.take_shared<TreasuryVault>();
+        vault_id = object::id(&vault);
+        test_scenario::return_shared(vault);
+    };
+
+    // Simulate misdirected transfer: send a coin directly to the vault address
+    scenario.next_tx(CREATOR);
+    {
+        let coin = coin::mint_for_testing<SUI>(50_000, scenario.ctx());
+        transfer::public_transfer(coin, vault_id.to_address());
+    };
+
+    // Claim the coin via claim_coin
+    scenario.next_tx(CREATOR);
+    {
+        let mut vault = scenario.take_shared<TreasuryVault>();
+        assert!(vault.balance<SUI>() == 0); // Not deposited yet
+
+        let ticket = test_scenario::most_recent_receiving_ticket<coin::Coin<SUI>>(
+            &vault_id,
+        );
+        vault.claim_coin<SUI>(ticket, scenario.ctx());
+
+        // Now the balance should reflect the recovered coin
+        assert!(vault.balance<SUI>() == 50_000);
+        test_scenario::return_shared(vault);
+    };
+
+    scenario.end();
+}
+
+#[test]
+/// claim_coin works for multiple coin types and sequential claims.
+fun test_claim_coin_multiple_types() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    create_test_dao(&mut scenario);
+
+    let vault_id;
+    scenario.next_tx(CREATOR);
+    {
+        let vault = scenario.take_shared<TreasuryVault>();
+        vault_id = object::id(&vault);
+        test_scenario::return_shared(vault);
+    };
+
+    // Send SUI directly to vault
+    scenario.next_tx(CREATOR);
+    {
+        let coin = coin::mint_for_testing<SUI>(10_000, scenario.ctx());
+        transfer::public_transfer(coin, vault_id.to_address());
+    };
+
+    // Claim SUI
+    scenario.next_tx(CREATOR);
+    {
+        let mut vault = scenario.take_shared<TreasuryVault>();
+        let ticket = test_scenario::most_recent_receiving_ticket<coin::Coin<SUI>>(
+            &vault_id,
+        );
+        vault.claim_coin<SUI>(ticket, scenario.ctx());
+        assert!(vault.balance<SUI>() == 10_000);
+        test_scenario::return_shared(vault);
+    };
+
+    // Send USDC directly to vault
+    scenario.next_tx(CREATOR);
+    {
+        let coin = coin::mint_for_testing<USDC>(25_000, scenario.ctx());
+        transfer::public_transfer(coin, vault_id.to_address());
+    };
+
+    // Claim USDC
+    scenario.next_tx(CREATOR);
+    {
+        let mut vault = scenario.take_shared<TreasuryVault>();
+        let ticket = test_scenario::most_recent_receiving_ticket<coin::Coin<USDC>>(
+            &vault_id,
+        );
+        vault.claim_coin<USDC>(ticket, scenario.ctx());
+        assert!(vault.balance<USDC>() == 25_000);
+        assert!(vault.balance<SUI>() == 10_000); // Still there
+        test_scenario::return_shared(vault);
+    };
+
+    scenario.end();
+}
 
 // Note: test_withdraw_requires_execution_request is enforced by the ExecutionRequest
 // parameter — only code holding a valid ExecutionRequest (from governance) can withdraw.
