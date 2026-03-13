@@ -9,6 +9,7 @@ import {
 } from "@awar.dev/ui";
 import { useCurrentAccount } from "@mysten/dapp-kit";
 import { DaoSidebar } from "./DaoSidebar";
+import { SubDAOBreadcrumb } from "./SubDAOBreadcrumb";
 
 function truncateAddress(address: string): string {
   if (address.length <= 10) return address;
@@ -25,6 +26,7 @@ export function AppShell() {
         <header className="flex h-14 items-center gap-2 border-b px-4">
           <SidebarTrigger />
           <Separator orientation="vertical" className="h-6" />
+          <SubDAOBreadcrumb />
           <div className="flex-1" />
           {account && (
             <Badge variant="outline">{truncateAddress(account.address)}</Badge>

@@ -11,6 +11,7 @@ export const cacheKeys = {
   governance: (daoId: string) => ["governance", daoId] as const,
   emergency: (daoId: string) => ["emergency", daoId] as const,
   subdaos: (daoId: string) => ["subdaos", daoId] as const,
+  hierarchy: (daoId: string) => ["hierarchy", daoId] as const,
   ownedDaos: (address: string) => ["ownedDaos", address] as const,
   events: (module: string, cursor?: string) =>
     ["events", module, cursor] as const,
