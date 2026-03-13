@@ -1,7 +1,7 @@
 module armature_proposals::admin_ops;
 
 use armature::charter::Charter;
-use armature::dao::DAO;
+use armature::dao::{Self, DAO};
 use armature::proposal::{Self, Proposal, ExecutionRequest};
 use armature_proposals::disable_proposal_type::DisableProposalType;
 use armature_proposals::enable_proposal_type::EnableProposalType;
@@ -15,6 +15,7 @@ const EDaoMismatch: u64 = 0;
 const ECharterDaoMismatch: u64 = 1;
 const EUndisableableType: u64 = 2;
 const EApprovalFloorNotMet: u64 = 3;
+const ESubDAOBlockedType: u64 = 4;
 
 // === Constants ===
 
@@ -51,7 +52,8 @@ public struct MetadataUpdated has copy, drop {
 // === Handlers ===
 
 /// Execute a DisableProposalType proposal: remove a type from the enabled set.
-/// Aborts if the type is undisableable (SetBoard, EmergencyFreeze, EmergencyUnfreeze).
+/// Aborts if the type is undisableable (EnableProposalType, DisableProposalType,
+/// TransferFreezeAdmin, UnfreezeProposalType).
 public fun execute_disable_proposal_type(
     dao: &mut DAO,
     proposal: &Proposal<DisableProposalType>,
@@ -88,6 +90,11 @@ public fun execute_enable_proposal_type(
     let payload = proposal.payload();
     let type_key = payload.type_key();
     let config = *payload.config();
+
+    // SubDAOs with a controller cannot enable hierarchy-altering types
+    if (dao.controller_cap_id().is_some()) {
+        assert!(!dao::is_subdao_blocked_type(&type_key), ESubDAOBlockedType);
+    };
 
     dao.enable_proposal_type(type_key, config, &request);
 
@@ -162,9 +169,7 @@ public fun execute_update_metadata(
 
 /// Abort if the type key is one of the core undisableable types.
 fun assert_disableable(type_key: &std::ascii::String) {
-    assert!(*type_key != b"SetBoard".to_ascii_string(), EUndisableableType);
-    assert!(*type_key != b"EmergencyFreeze".to_ascii_string(), EUndisableableType);
-    assert!(*type_key != b"EmergencyUnfreeze".to_ascii_string(), EUndisableableType);
+    assert!(!dao::is_undisableable_type(type_key), EUndisableableType);
 }
 
 /// Assert that a proposal's approval rate meets the specified floor (in basis points).
