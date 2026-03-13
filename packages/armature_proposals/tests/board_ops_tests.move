@@ -3,6 +3,7 @@ module armature_proposals::board_ops_tests;
 
 use armature::board_voting;
 use armature::dao::{Self, DAO};
+use armature::emergency::EmergencyFreeze;
 use armature::governance;
 use armature::proposal::Proposal;
 use armature_proposals::board_ops;
@@ -70,11 +71,13 @@ fun test_set_board_e2e() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let mut proposal = scenario.take_shared<Proposal<set_board::SetBoard>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let request = board_voting::authorize_execution(
             &mut dao,
             &mut proposal,
+            &freeze,
             &clock,
             scenario.ctx(),
         );
@@ -88,6 +91,7 @@ fun test_set_board_e2e() {
         assert!(gov.is_board_member(MEMBER_B));
         assert!(gov.is_board_member(NEW_MEMBER));
 
+        test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
@@ -148,16 +152,19 @@ fun test_set_board_empty_members_aborts() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let mut proposal = scenario.take_shared<Proposal<set_board::SetBoard>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let request = board_voting::authorize_execution(
             &mut dao,
             &mut proposal,
+            &freeze,
             &clock,
             scenario.ctx(),
         );
         board_ops::execute_set_board(&mut dao, &proposal, request);
 
+        test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };

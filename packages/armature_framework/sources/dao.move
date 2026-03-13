@@ -621,3 +621,14 @@ public fun test_enable_type(self: &mut DAO, type_key: std::ascii::String, config
     self.enabled_proposal_types.insert(type_key);
     self.proposal_configs.insert(type_key, config);
 }
+
+#[test_only]
+/// Update the config for an already-enabled proposal type.
+public fun test_update_config(
+    self: &mut DAO,
+    type_key: std::ascii::String,
+    config: ProposalConfig,
+) {
+    let (_, _existing) = self.proposal_configs.remove(&type_key);
+    self.proposal_configs.insert(type_key, config);
+}

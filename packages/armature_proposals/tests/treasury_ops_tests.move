@@ -3,6 +3,7 @@ module armature_proposals::treasury_ops_tests;
 
 use armature::board_voting;
 use armature::dao::{Self, DAO};
+use armature::emergency::EmergencyFreeze;
 use armature::governance;
 use armature::proposal::{Self, Proposal};
 use armature::treasury_vault::TreasuryVault;
@@ -103,9 +104,11 @@ fun execute_small_payment<T: drop>(scenario: &mut test_scenario::Scenario, clock
         let mut dao = scenario.take_shared<DAO>();
         let mut vault = scenario.take_shared<TreasuryVault>();
         let mut proposal = scenario.take_shared<Proposal<SendSmallPayment<T>>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
         let request = board_voting::authorize_execution(
             &mut dao,
             &mut proposal,
+            &freeze,
             clock,
             scenario.ctx(),
         );
@@ -117,6 +120,7 @@ fun execute_small_payment<T: drop>(scenario: &mut test_scenario::Scenario, clock
             clock,
             scenario.ctx(),
         );
+        test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(dao);

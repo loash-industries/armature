@@ -5,6 +5,7 @@ use armature::board_voting;
 use armature::capability_vault::{Self, CapabilityVault};
 use armature::controller;
 use armature::dao::{Self, DAO};
+use armature::emergency::EmergencyFreeze;
 use armature::governance;
 use armature::proposal::{Self, Proposal};
 use std::string;
@@ -268,15 +269,18 @@ fun authorize_execution_blocks_when_controller_paused() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
 
         let req = board_voting::authorize_execution(
             &mut dao,
             &mut prop,
+            &freeze,
             &clock,
             scenario.ctx(),
         );
 
         proposal::consume(req);
+        test_scenario::return_shared(freeze);
         test_scenario::return_shared(prop);
         test_scenario::return_shared(dao);
     };

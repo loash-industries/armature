@@ -1,6 +1,7 @@
 module armature::board_voting;
 
 use armature::dao::{Self, DAO};
+use armature::emergency::EmergencyFreeze;
 use armature::proposal::{Self, ExecutionRequest, Proposal};
 use std::string::String;
 use sui::clock::Clock;
@@ -57,11 +58,12 @@ public fun submit_proposal<P: store>(
 // === Execute ===
 
 /// Authorize execution of a passed proposal for board governance.
-/// Validates: DAO is active, proposal belongs to this DAO.
+/// Validates: DAO is active, proposal belongs to this DAO, type not frozen.
 /// Looks up last_executed_at for cooldown, then records the execution timestamp.
 public fun authorize_execution<P: store>(
     dao: &mut DAO,
     prop: &mut Proposal<P>,
+    freeze: &EmergencyFreeze,
     clock: &Clock,
     ctx: &TxContext,
 ): ExecutionRequest<P> {
@@ -73,6 +75,7 @@ public fun authorize_execution<P: store>(
     assert!(is_active || is_migration_ok, EDAONotActive);
     assert!(prop.dao_id() == dao.id(), EDAOIdMismatch);
     assert!(!dao.is_controller_paused(), EControllerPaused);
+    freeze.assert_not_frozen(&type_key, clock);
 
     let last_executed_at = dao.last_executed_at();
     let last_ms = if (last_executed_at.contains(&type_key)) {
