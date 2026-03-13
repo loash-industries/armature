@@ -7,6 +7,8 @@ use armature::emergency::EmergencyFreeze;
 use armature::governance;
 use armature::proposal::{Self, Proposal};
 use armature::treasury_vault::TreasuryVault;
+use armature_proposals::send_coin::{Self, SendCoin};
+use armature_proposals::send_coin_to_dao::{Self, SendCoinToDAO};
 use armature_proposals::send_small_payment::{Self, SendSmallPayment};
 use armature_proposals::treasury_ops;
 use std::string;
@@ -331,6 +333,437 @@ fun zero_balance_blocks_payments() {
     // Actually, this will abort at vault.withdraw (EInsufficientBalance)
     // since there's no balance. The cap check passes trivially at 0 > 0.
     // Let's skip this test and verify via the lazy-init test instead.
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// =========================================================================
+// SendCoin tests
+// =========================================================================
+
+fun enable_send_coin_type(scenario: &mut test_scenario::Scenario) {
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+        dao.test_enable_type(b"SendCoin".to_ascii_string(), config);
+        test_scenario::return_shared(dao);
+    };
+}
+
+#[test]
+/// E2E: Fund treasury → submit SendCoin → vote → execute → verify recipient gets coin.
+fun send_coin_e2e() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_dao(&mut scenario);
+    enable_send_coin_type(&mut scenario);
+    fund_treasury_sui(&mut scenario, 1_000_000);
+
+    // Submit SendCoin proposal
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        clock.set_for_testing(1000);
+        let payload = send_coin::new<SUI>(RECIPIENT, 200_000);
+        board_voting::submit_proposal(
+            &dao,
+            b"SendCoin".to_ascii_string(),
+            string::utf8(b"Send coins to recipient"),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    // Vote yes
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<SendCoin<SUI>>>();
+        clock.set_for_testing(2000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    // Execute
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut vault = scenario.take_shared<TreasuryVault>();
+        let mut proposal = scenario.take_shared<Proposal<SendCoin<SUI>>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        clock.set_for_testing(3000);
+
+        let request = board_voting::authorize_execution(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+
+        treasury_ops::execute_send_coin<SUI>(
+            &mut vault,
+            &proposal,
+            request,
+            scenario.ctx(),
+        );
+
+        // Verify treasury was debited
+        assert!(vault.balance<SUI>() == 800_000);
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(vault);
+        test_scenario::return_shared(dao);
+    };
+
+    // Verify recipient received the coin
+    scenario.next_tx(RECIPIENT);
+    {
+        let coin = scenario.take_from_sender<sui::coin::Coin<SUI>>();
+        assert!(coin.value() == 200_000);
+        test_scenario::return_to_sender(&scenario, coin);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::treasury_vault::EInsufficientBalance)]
+/// SendCoin with insufficient balance aborts.
+fun send_coin_insufficient_balance_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_dao(&mut scenario);
+    enable_send_coin_type(&mut scenario);
+    fund_treasury_sui(&mut scenario, 100);
+
+    // Submit SendCoin for more than treasury holds
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        clock.set_for_testing(1000);
+        let payload = send_coin::new<SUI>(RECIPIENT, 500);
+        board_voting::submit_proposal(
+            &dao,
+            b"SendCoin".to_ascii_string(),
+            string::utf8(b"Overdraw"),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<SendCoin<SUI>>>();
+        clock.set_for_testing(2000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    // Execute — should abort with EInsufficientBalance
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut vault = scenario.take_shared<TreasuryVault>();
+        let mut proposal = scenario.take_shared<Proposal<SendCoin<SUI>>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        clock.set_for_testing(3000);
+
+        let request = board_voting::authorize_execution(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+
+        treasury_ops::execute_send_coin<SUI>(
+            &mut vault,
+            &proposal,
+            request,
+            scenario.ctx(),
+        );
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(vault);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// =========================================================================
+// SendCoinToDAO tests
+// =========================================================================
+
+#[test]
+/// E2E: Create two DAOs → fund source → submit SendCoinToDAO → vote → execute
+/// → verify target treasury receives coins.
+fun send_coin_to_dao_e2e() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    // Create source DAO
+    let source_dao_id;
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR]);
+        source_dao_id =
+            dao::create(
+                &init,
+                string::utf8(b"Source DAO"),
+                string::utf8(b"Source DAO"),
+                string::utf8(b"https://example.com/source.png"),
+                scenario.ctx(),
+            );
+    };
+
+    // Create target DAO
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR]);
+        dao::create(
+            &init,
+            string::utf8(b"Target DAO"),
+            string::utf8(b"Target DAO"),
+            string::utf8(b"https://example.com/target.png"),
+            scenario.ctx(),
+        );
+    };
+
+    // Get target treasury ID
+    let target_treasury_id;
+    scenario.next_tx(CREATOR);
+    {
+        let source_dao = scenario.take_shared_by_id<DAO>(source_dao_id);
+        let target_dao = scenario.take_shared<DAO>();
+        target_treasury_id = target_dao.treasury_id();
+        test_scenario::return_shared(target_dao);
+        test_scenario::return_shared(source_dao);
+    };
+
+    // Enable SendCoinToDAO on source DAO
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared_by_id<DAO>(source_dao_id);
+        let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+        dao.test_enable_type(b"SendCoinToDAO".to_ascii_string(), config);
+        test_scenario::return_shared(dao);
+    };
+
+    // Fund source treasury
+    scenario.next_tx(CREATOR);
+    {
+        let source_dao = scenario.take_shared_by_id<DAO>(source_dao_id);
+        let mut source_vault = scenario.take_shared_by_id<TreasuryVault>(source_dao.treasury_id());
+        let coin = coin::mint_for_testing<SUI>(1_000_000, scenario.ctx());
+        source_vault.deposit(coin);
+        test_scenario::return_shared(source_vault);
+        test_scenario::return_shared(source_dao);
+    };
+
+    // Submit SendCoinToDAO proposal
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared_by_id<DAO>(source_dao_id);
+        clock.set_for_testing(1000);
+        let payload = send_coin_to_dao::new<SUI>(target_treasury_id, 300_000);
+        board_voting::submit_proposal(
+            &dao,
+            b"SendCoinToDAO".to_ascii_string(),
+            string::utf8(b"Send coins to target DAO"),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    // Vote yes
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<SendCoinToDAO<SUI>>>();
+        clock.set_for_testing(2000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    // Execute
+    scenario.next_tx(CREATOR);
+    {
+        let mut source_dao = scenario.take_shared_by_id<DAO>(source_dao_id);
+        let mut source_vault = scenario.take_shared_by_id<TreasuryVault>(source_dao.treasury_id());
+        let mut target_vault = scenario.take_shared_by_id<TreasuryVault>(target_treasury_id);
+        let mut proposal = scenario.take_shared<Proposal<SendCoinToDAO<SUI>>>();
+        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(source_dao.emergency_freeze_id());
+        clock.set_for_testing(3000);
+
+        let request = board_voting::authorize_execution(
+            &mut source_dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+
+        treasury_ops::execute_send_coin_to_dao<SUI>(
+            &mut source_vault,
+            &mut target_vault,
+            &proposal,
+            request,
+            scenario.ctx(),
+        );
+
+        // Verify balances
+        assert!(source_vault.balance<SUI>() == 700_000);
+        assert!(target_vault.balance<SUI>() == 300_000);
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(target_vault);
+        test_scenario::return_shared(source_vault);
+        test_scenario::return_shared(source_dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = treasury_ops::EVaultDAOMismatch)]
+/// SendCoinToDAO with swapped source/target vaults aborts.
+fun send_coin_to_dao_target_mismatch_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    // Create two DAOs
+    let source_dao_id;
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR]);
+        source_dao_id =
+            dao::create(
+                &init,
+                string::utf8(b"Source DAO"),
+                string::utf8(b"Source DAO"),
+                string::utf8(b"https://example.com/source.png"),
+                scenario.ctx(),
+            );
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR]);
+        dao::create(
+            &init,
+            string::utf8(b"Target DAO"),
+            string::utf8(b"Target DAO"),
+            string::utf8(b"https://example.com/target.png"),
+            scenario.ctx(),
+        );
+    };
+
+    // Get target treasury ID
+    let target_treasury_id;
+    scenario.next_tx(CREATOR);
+    {
+        let target_dao = scenario.take_shared<DAO>();
+        target_treasury_id = target_dao.treasury_id();
+        test_scenario::return_shared(target_dao);
+    };
+
+    // Enable type and fund source
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared_by_id<DAO>(source_dao_id);
+        let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+        dao.test_enable_type(b"SendCoinToDAO".to_ascii_string(), config);
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let source_dao = scenario.take_shared_by_id<DAO>(source_dao_id);
+        let mut source_vault = scenario.take_shared_by_id<TreasuryVault>(source_dao.treasury_id());
+        let coin = coin::mint_for_testing<SUI>(100_000, scenario.ctx());
+        source_vault.deposit(coin);
+        test_scenario::return_shared(source_vault);
+        test_scenario::return_shared(source_dao);
+    };
+
+    // Submit proposal referencing target_treasury_id
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared_by_id<DAO>(source_dao_id);
+        clock.set_for_testing(1000);
+        let payload = send_coin_to_dao::new<SUI>(target_treasury_id, 50_000);
+        board_voting::submit_proposal(
+            &dao,
+            b"SendCoinToDAO".to_ascii_string(),
+            string::utf8(b"Mismatch test"),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<SendCoinToDAO<SUI>>>();
+        clock.set_for_testing(2000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    // Execute — pass source vault as target (wrong ID) → should abort
+    scenario.next_tx(CREATOR);
+    {
+        let mut source_dao = scenario.take_shared_by_id<DAO>(source_dao_id);
+        let mut source_vault = scenario.take_shared_by_id<TreasuryVault>(source_dao.treasury_id());
+        // Take the actual target vault — its object ID does NOT match target_treasury_id
+        // in the payload because we crafted it that way (target_treasury_id references the
+        // correct target, but we'll pass source_vault which has a different ID).
+        // We need a DIFFERENT vault that is NOT the target. Use source as both:
+        // can't double-borrow, so instead take target and pass it as source → EVaultDAOMismatch
+        let mut target_vault = scenario.take_shared_by_id<TreasuryVault>(target_treasury_id);
+        let mut proposal = scenario.take_shared<Proposal<SendCoinToDAO<SUI>>>();
+        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(source_dao.emergency_freeze_id());
+        clock.set_for_testing(3000);
+
+        let request = board_voting::authorize_execution(
+            &mut source_dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+
+        // EVaultDAOMismatch — target_vault.dao_id() won't match request.req_dao_id()
+        // because we pass target_vault as the source_vault parameter
+        treasury_ops::execute_send_coin_to_dao<SUI>(
+            &mut target_vault,
+            &mut source_vault,
+            &proposal,
+            request,
+            scenario.ctx(),
+        );
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(source_vault);
+        test_scenario::return_shared(target_vault);
+        test_scenario::return_shared(source_dao);
+    };
 
     clock.destroy_for_testing();
     scenario.end();
