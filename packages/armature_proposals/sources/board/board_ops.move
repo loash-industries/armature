@@ -5,6 +5,10 @@ use armature::proposal::{Self, Proposal, ExecutionRequest};
 use armature_proposals::set_board::SetBoard;
 use sui::event;
 
+// === Errors ===
+
+const EDaoMismatch: u64 = 0;
+
 // === Events ===
 
 /// Emitted when the board is updated via governance.
@@ -23,6 +27,7 @@ public fun execute_set_board(
     proposal: &Proposal<SetBoard>,
     request: ExecutionRequest<SetBoard>,
 ) {
+    assert!(dao.id() == request.req_dao_id(), EDaoMismatch);
     let payload = proposal.payload();
 
     dao.set_board_governance(
@@ -35,5 +40,5 @@ public fun execute_set_board(
         new_members: *payload.new_members(),
     });
 
-    proposal::consume(request);
+    proposal::finalize(request, proposal);
 }

@@ -34,10 +34,8 @@ fun create_test_dao(scenario: &mut test_scenario::Scenario) {
 /// Helper: create an ExecutionRequest for testing withdrawals.
 /// Uses a test-only function to bypass the proposal lifecycle.
 /// We create it via the package-internal constructor.
-fun create_test_execution_request<P>(
-    _scenario: &mut test_scenario::Scenario,
-): proposal::ExecutionRequest<P> {
-    let dao_id = object::id_from_address(@0x1);
+fun create_test_execution_request<P>(vault: &TreasuryVault): proposal::ExecutionRequest<P> {
+    let dao_id = vault.dao_id();
     let proposal_id = object::id_from_address(@0x2);
     proposal::new_execution_request<P>(dao_id, proposal_id)
 }
@@ -179,7 +177,7 @@ fun test_withdraw_with_valid_request_succeeds() {
         let coin = coin::mint_for_testing<SUI>(1000, scenario.ctx());
         vault.deposit(coin);
 
-        let req = create_test_execution_request<TestProposal>(&mut scenario);
+        let req = create_test_execution_request<TestProposal>(&vault);
         let withdrawn = vault.withdraw<SUI, TestProposal>(400, &req, scenario.ctx());
 
         assert!(withdrawn.value() == 400);
@@ -206,7 +204,7 @@ fun test_partial_withdraw_preserves_field() {
         let coin = coin::mint_for_testing<SUI>(1000, scenario.ctx());
         vault.deposit(coin);
 
-        let req = create_test_execution_request<TestProposal>(&mut scenario);
+        let req = create_test_execution_request<TestProposal>(&vault);
         let withdrawn = vault.withdraw<SUI, TestProposal>(300, &req, scenario.ctx());
 
         // Type still in registry, balance reduced
@@ -235,7 +233,7 @@ fun test_coin_types_reflects_non_zero_balances() {
         let coin = coin::mint_for_testing<SUI>(1000, scenario.ctx());
         vault.deposit(coin);
 
-        let req = create_test_execution_request<TestProposal>(&mut scenario);
+        let req = create_test_execution_request<TestProposal>(&vault);
         let withdrawn = vault.withdraw<SUI, TestProposal>(999, &req, scenario.ctx());
 
         // Still 1 MIST left — type stays in registry
@@ -264,7 +262,7 @@ fun test_withdraw_exact_balance_removes_field() {
         let coin = coin::mint_for_testing<SUI>(1000, scenario.ctx());
         vault.deposit(coin);
 
-        let req = create_test_execution_request<TestProposal>(&mut scenario);
+        let req = create_test_execution_request<TestProposal>(&vault);
         let withdrawn = vault.withdraw<SUI, TestProposal>(1000, &req, scenario.ctx());
 
         // Type removed from registry
@@ -293,7 +291,7 @@ fun test_withdraw_exact_balance_removes_dynamic_field() {
         let coin = coin::mint_for_testing<SUI>(500, scenario.ctx());
         vault.deposit(coin);
 
-        let req = create_test_execution_request<TestProposal>(&mut scenario);
+        let req = create_test_execution_request<TestProposal>(&vault);
         let withdrawn = vault.withdraw<SUI, TestProposal>(500, &req, scenario.ctx());
 
         // Dynamic field gone, balance is 0
@@ -319,7 +317,7 @@ fun test_withdraw_insufficient_balance_aborts() {
         let coin = coin::mint_for_testing<SUI>(100, scenario.ctx());
         vault.deposit(coin);
 
-        let req = create_test_execution_request<TestProposal>(&mut scenario);
+        let req = create_test_execution_request<TestProposal>(&vault);
         let withdrawn = vault.withdraw<SUI, TestProposal>(200, &req, scenario.ctx());
 
         // Should not reach here

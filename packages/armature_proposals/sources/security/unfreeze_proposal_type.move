@@ -1,20 +1,18 @@
 module armature_proposals::unfreeze_proposal_type;
 
-use std::type_name::TypeName;
-
 /// Governance-initiated unfreeze of a proposal type.
 /// Overrides an admin freeze without requiring the FreezeAdminCap.
 /// Cannot itself be frozen.
 public struct UnfreezeProposalType has store {
-    type_name: TypeName,
+    type_key: std::ascii::String,
 }
 
 // === Constructor ===
 
-public fun new(type_name: TypeName): UnfreezeProposalType {
-    UnfreezeProposalType { type_name }
+public fun new(type_key: std::ascii::String): UnfreezeProposalType {
+    UnfreezeProposalType { type_key }
 }
 
 // === Accessors ===
 
-public fun type_name(self: &UnfreezeProposalType): TypeName { self.type_name }
+public fun type_key(self: &UnfreezeProposalType): std::ascii::String { self.type_key }

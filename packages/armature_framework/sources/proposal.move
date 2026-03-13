@@ -21,6 +21,9 @@ const ECooldownActive: u64 = 9;
 const ENotExpired: u64 = 10;
 #[allow(unused_const)]
 const ETypeNotEnabled: u64 = 11;
+const EExecutionPaused: u64 = 12;
+const ERequestMismatch: u64 = 13;
+const ENotExecuted: u64 = 14;
 
 // === Constants ===
 
@@ -87,6 +90,7 @@ public struct ProposalCreated has copy, drop {
 
 public struct VoteCast has copy, drop {
     proposal_id: ID,
+    dao_id: ID,
     voter: address,
     approve: bool,
     weight: u64,
@@ -94,17 +98,20 @@ public struct VoteCast has copy, drop {
 
 public struct ProposalPassed has copy, drop {
     proposal_id: ID,
+    dao_id: ID,
     yes_weight: u64,
     no_weight: u64,
 }
 
 public struct ProposalExecuted has copy, drop {
     proposal_id: ID,
+    dao_id: ID,
     executor: address,
 }
 
 public struct ProposalExpired has copy, drop {
     proposal_id: ID,
+    dao_id: ID,
 }
 
 // === ProposalConfig ===
@@ -195,12 +202,17 @@ public fun yes_weight<P: store>(self: &Proposal<P>): u64 { self.yes_weight }
 /// Return the proposal's no weight.
 public fun no_weight<P: store>(self: &Proposal<P>): u64 { self.no_weight }
 
+/// Return the total snapshot weight used for quorum/threshold calculations.
+public fun total_snapshot_weight<P: store>(self: &Proposal<P>): u64 {
+    self.total_snapshot_weight
+}
+
 // === Lifecycle: create ===
 
 /// Create a new proposal and share it. Snapshots the current governance weights.
 /// The proposer must be in the snapshot (board member for Board governance).
 #[allow(lint(share_owned))]
-public fun create<P: store>(
+public(package) fun create<P: store>(
     dao_id: ID,
     type_key: std::ascii::String,
     proposer: address,
@@ -274,6 +286,7 @@ public fun vote<P: store>(self: &mut Proposal<P>, approve: bool, clock: &Clock, 
 
     event::emit(VoteCast {
         proposal_id,
+        dao_id: self.dao_id,
         voter,
         approve,
         weight,
@@ -298,6 +311,7 @@ public fun vote<P: store>(self: &mut Proposal<P>, approve: bool, clock: &Clock, 
 
         event::emit(ProposalPassed {
             proposal_id,
+            dao_id: self.dao_id,
             yes_weight: self.yes_weight,
             no_weight: self.no_weight,
         });
@@ -317,6 +331,7 @@ public fun try_expire<P: store>(self: &mut Proposal<P>, clock: &Clock) {
 
     event::emit(ProposalExpired {
         proposal_id: object::id(self),
+        dao_id: self.dao_id,
     });
 }
 
@@ -326,13 +341,15 @@ public fun try_expire<P: store>(self: &mut Proposal<P>, clock: &Clock) {
 /// The executor must be a current board member.
 /// Checks execution_delay (time since passed) and cooldown (time since last
 /// execution of this type in the DAO).
-public fun execute<P: store>(
+public(package) fun execute<P: store>(
     self: &mut Proposal<P>,
     governance: &GovernanceConfig,
     last_executed_at_ms: Option<u64>,
+    execution_paused: bool,
     clock: &Clock,
     ctx: &TxContext,
 ): ExecutionRequest<P> {
+    assert!(!execution_paused, EExecutionPaused);
     assert!(self.status.is_passed(), ENotPassed);
 
     let executor = ctx.sender();
@@ -363,6 +380,7 @@ public fun execute<P: store>(
 
     event::emit(ProposalExecuted {
         proposal_id,
+        dao_id,
         executor,
     });
 
@@ -380,7 +398,18 @@ public fun req_dao_id<P>(self: &ExecutionRequest<P>): ID { self.dao_id }
 
 public fun req_proposal_id<P>(self: &ExecutionRequest<P>): ID { self.proposal_id }
 
-/// Consume the execution request. Called by handlers to finalize execution.
-public fun consume<P>(req: ExecutionRequest<P>) {
+/// Consume the execution request. Framework-internal only.
+public(package) fun consume<P>(req: ExecutionRequest<P>) {
+    let ExecutionRequest { dao_id: _, proposal_id: _ } = req;
+}
+
+/// Consume the execution request after validating it matches the proposal.
+/// External packages (handlers) must use this instead of consume().
+/// Asserts the request was produced for the given proposal and that
+/// the proposal has been executed through the governance flow.
+public fun finalize<P: store>(req: ExecutionRequest<P>, proposal: &Proposal<P>) {
+    assert!(req.dao_id == proposal.dao_id, ERequestMismatch);
+    assert!(req.proposal_id == object::id(proposal), ERequestMismatch);
+    assert!(proposal.status.is_executed(), ENotExecuted);
     let ExecutionRequest { dao_id: _, proposal_id: _ } = req;
 }

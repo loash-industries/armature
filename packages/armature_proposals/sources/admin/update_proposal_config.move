@@ -1,13 +1,11 @@
 module armature_proposals::update_proposal_config;
 
-use std::type_name::TypeName;
-
 /// Update one or more ProposalConfig fields for a given proposal type.
 /// Fields set to none are left unchanged.
 /// When targeting UpdateProposalConfig itself, the handler enforces
 /// an 80% super-majority approval floor at execution time.
 public struct UpdateProposalConfig has store {
-    target_type: TypeName,
+    target_type_key: std::ascii::String,
     quorum: Option<u16>,
     approval_threshold: Option<u16>,
     propose_threshold: Option<u64>,
@@ -19,7 +17,7 @@ public struct UpdateProposalConfig has store {
 // === Constructor ===
 
 public fun new(
-    target_type: TypeName,
+    target_type_key: std::ascii::String,
     quorum: Option<u16>,
     approval_threshold: Option<u16>,
     propose_threshold: Option<u64>,
@@ -28,7 +26,7 @@ public fun new(
     cooldown_ms: Option<u64>,
 ): UpdateProposalConfig {
     UpdateProposalConfig {
-        target_type,
+        target_type_key,
         quorum,
         approval_threshold,
         propose_threshold,
@@ -40,7 +38,7 @@ public fun new(
 
 // === Accessors ===
 
-public fun target_type(self: &UpdateProposalConfig): TypeName { self.target_type }
+public fun target_type_key(self: &UpdateProposalConfig): std::ascii::String { self.target_type_key }
 
 public fun quorum(self: &UpdateProposalConfig): Option<u16> { self.quorum }
 
