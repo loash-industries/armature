@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useParams } from "@tanstack/react-router";
 import {
   Card,
@@ -20,6 +21,9 @@ import {
   TooltipTrigger,
   TooltipContent,
   TooltipProvider,
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
 } from "@awar.dev/ui";
 import { useDaoSummary, useGovernanceConfig } from "@/hooks/useDao";
 import type { ProposalTypeConfig } from "@/types/dao";
@@ -63,6 +67,117 @@ function TypeBadges({ item }: { item: ProposalTypeConfig }) {
   );
 }
 
+function ConfigDetail({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex justify-between py-1.5">
+      <span className="text-muted-foreground text-sm">{label}</span>
+      <span className="font-mono text-sm">{value}</span>
+    </div>
+  );
+}
+
+function TypeDetailPanel({ item }: { item: ProposalTypeConfig }) {
+  if (!item.config) {
+    return (
+      <p className="text-muted-foreground py-2 text-sm">
+        No configuration — type is disabled.
+      </p>
+    );
+  }
+
+  const { config } = item;
+
+  return (
+    <div className="divide-border grid grid-cols-2 gap-x-8 divide-y sm:grid-cols-3">
+      <div className="col-span-1">
+        <ConfigDetail label="Quorum" value={formatBps(config.quorum)} />
+      </div>
+      <div className="col-span-1">
+        <ConfigDetail
+          label="Approval Threshold"
+          value={formatBps(config.approvalThreshold)}
+        />
+      </div>
+      <div className="col-span-1">
+        <ConfigDetail
+          label="Propose Threshold"
+          value={config.proposeThreshold === 0 ? "None" : String(config.proposeThreshold)}
+        />
+      </div>
+      <div className="col-span-1">
+        <ConfigDetail
+          label="Voting Period"
+          value={formatDuration(config.expiryMs)}
+        />
+      </div>
+      <div className="col-span-1">
+        <ConfigDetail
+          label="Execution Delay"
+          value={formatDuration(config.executionDelayMs)}
+        />
+      </div>
+      <div className="col-span-1">
+        <ConfigDetail
+          label="Cooldown"
+          value={formatDuration(config.cooldownMs)}
+        />
+      </div>
+    </div>
+  );
+}
+
+function TypeRow({ item }: { item: ProposalTypeConfig }) {
+  const [open, setOpen] = useState(false);
+  const colCount = 6;
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} asChild>
+      <>
+        <CollapsibleTrigger asChild>
+          <TableRow
+            className={`cursor-pointer ${!item.enabled ? "opacity-50" : ""}`}
+          >
+            <TableCell className="font-mono text-sm">
+              <span className="mr-1.5 inline-block w-3 text-center text-xs">
+                {open ? "▾" : "▸"}
+              </span>
+              {item.typeKey}
+            </TableCell>
+            <TableCell>
+              <TypeBadges item={item} />
+            </TableCell>
+            <TableCell className="text-right font-mono text-sm">
+              {item.config ? formatBps(item.config.quorum) : "—"}
+            </TableCell>
+            <TableCell className="text-right font-mono text-sm">
+              {item.config ? formatBps(item.config.approvalThreshold) : "—"}
+            </TableCell>
+            <TableCell className="text-right font-mono text-sm">
+              {item.config ? formatDuration(item.config.expiryMs) : "—"}
+            </TableCell>
+            <TableCell className="text-right font-mono text-sm">
+              {item.config ? formatDuration(item.config.cooldownMs) : "—"}
+            </TableCell>
+          </TableRow>
+        </CollapsibleTrigger>
+        <CollapsibleContent asChild>
+          <TableRow>
+            <TableCell colSpan={colCount} className="bg-muted/30 px-6 py-4">
+              <TypeDetailPanel item={item} />
+            </TableCell>
+          </TableRow>
+        </CollapsibleContent>
+      </>
+    </Collapsible>
+  );
+}
+
 export function GovConfigPage() {
   const { daoId } = useParams({ strict: false });
   const { isError: daoError } = useDaoSummary(daoId ?? "");
@@ -97,7 +212,7 @@ export function GovConfigPage() {
           <CardTitle>Proposal Types</CardTitle>
           <CardDescription>
             {types
-              ? `${enabledCount} of ${types.length} types enabled`
+              ? `${enabledCount} of ${types.length} types enabled — click a row for details`
               : "Loading..."}
           </CardDescription>
         </CardHeader>
@@ -122,35 +237,7 @@ export function GovConfigPage() {
               </TableHeader>
               <TableBody>
                 {types.map((item) => (
-                  <TableRow
-                    key={item.typeKey}
-                    className={!item.enabled ? "opacity-50" : undefined}
-                  >
-                    <TableCell className="font-mono text-sm">
-                      {item.typeKey}
-                    </TableCell>
-                    <TableCell>
-                      <TypeBadges item={item} />
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-sm">
-                      {item.config ? formatBps(item.config.quorum) : "—"}
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-sm">
-                      {item.config
-                        ? formatBps(item.config.approvalThreshold)
-                        : "—"}
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-sm">
-                      {item.config
-                        ? formatDuration(item.config.expiryMs)
-                        : "—"}
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-sm">
-                      {item.config
-                        ? formatDuration(item.config.cooldownMs)
-                        : "—"}
-                    </TableCell>
-                  </TableRow>
+                  <TypeRow key={item.typeKey} item={item} />
                 ))}
               </TableBody>
             </Table>
