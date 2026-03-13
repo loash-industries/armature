@@ -6,17 +6,23 @@ import { RouterProvider } from "@tanstack/react-router";
 import { AWARProvider } from "@awar.dev/ui";
 import { networkConfig } from "@/config/network";
 import { queryClient } from "@/lib/query-client";
+import { WalletSignerProvider } from "@/lib/wallet-provider";
 import { router } from "@/router";
 import "./index.css";
+
+const defaultNetwork =
+  (import.meta.env.VITE_NETWORK as keyof typeof networkConfig) ?? "localnet";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <SuiClientProvider networks={networkConfig} defaultNetwork="localnet">
+      <SuiClientProvider networks={networkConfig} defaultNetwork={defaultNetwork}>
         <WalletProvider autoConnect>
-          <AWARProvider>
-            <RouterProvider router={router} />
-          </AWARProvider>
+          <WalletSignerProvider>
+            <AWARProvider>
+              <RouterProvider router={router} />
+            </AWARProvider>
+          </WalletSignerProvider>
         </WalletProvider>
       </SuiClientProvider>
     </QueryClientProvider>
