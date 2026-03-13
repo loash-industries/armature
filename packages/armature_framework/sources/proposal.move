@@ -24,6 +24,7 @@ const ETypeNotEnabled: u64 = 11;
 const EExecutionPaused: u64 = 12;
 const ERequestMismatch: u64 = 13;
 const ENotExecuted: u64 = 14;
+const EDAONotActive: u64 = 15;
 
 // === Constants ===
 
@@ -211,6 +212,7 @@ public fun total_snapshot_weight<P: store>(self: &Proposal<P>): u64 {
 
 /// Create a new proposal and share it. Snapshots the current governance weights.
 /// The proposer must be in the snapshot (board member for Board governance).
+/// `is_dao_active` must be true — prevents proposals on Migrating DAOs.
 #[allow(lint(share_owned))]
 public(package) fun create<P: store>(
     dao_id: ID,
@@ -220,9 +222,11 @@ public(package) fun create<P: store>(
     payload: P,
     config: ProposalConfig,
     governance: &GovernanceConfig,
+    is_dao_active: bool,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
+    assert!(is_dao_active, EDAONotActive);
     let (vote_snapshot, total_snapshot_weight) = governance.board_vote_snapshot();
 
     let proposal = Proposal<P> {

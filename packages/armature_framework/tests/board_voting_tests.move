@@ -70,6 +70,7 @@ fun submit_proposal_with_config(
             TestPayload { value: 42 },
             config,
             dao.governance(),
+            dao.status().is_active(),
             clock,
             scenario.ctx(),
         );

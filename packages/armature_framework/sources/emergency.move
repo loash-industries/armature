@@ -99,6 +99,18 @@ public fun frozen_types(self: &EmergencyFreeze): &VecMap<std::ascii::String, u64
     &self.frozen_types
 }
 
+/// Returns true if no types are currently frozen.
+public fun is_empty(self: &EmergencyFreeze): bool {
+    self.frozen_types.is_empty()
+}
+
+/// Destroy an EmergencyFreeze object.
+public(package) fun destroy(freeze: EmergencyFreeze) {
+    let EmergencyFreeze { id, dao_id: _, frozen_types, max_freeze_duration_ms: _ } = freeze;
+    assert!(frozen_types.is_empty());
+    id.delete();
+}
+
 /// Check if a type is currently frozen. Compares expiry against the clock.
 /// Returns true only if the type is in frozen_types AND the freeze has not expired.
 public fun is_frozen(self: &EmergencyFreeze, type_key: &std::ascii::String, clock: &Clock): bool {

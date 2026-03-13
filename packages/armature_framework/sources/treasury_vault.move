@@ -148,3 +148,15 @@ public fun balance<T>(self: &TreasuryVault): u64 {
         0
     }
 }
+
+/// Returns true if the vault holds no coin balances.
+public fun is_empty(self: &TreasuryVault): bool {
+    self.coin_types.is_empty()
+}
+
+/// Destroy an empty TreasuryVault. Aborts if the vault still holds coins.
+public(package) fun destroy_empty(vault: TreasuryVault) {
+    let TreasuryVault { id, dao_id: _, coin_types } = vault;
+    assert!(coin_types.is_empty(), EInsufficientBalance);
+    id.delete();
+}
