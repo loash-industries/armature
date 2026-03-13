@@ -15,6 +15,7 @@ import type {
   GovernanceDetail,
   GovernanceMember,
   ActivityEvent,
+  ProposalTypeConfig,
 } from "@/types/dao";
 
 /** Extract typed fields from a SuiObjectResponse's MoveStruct content. */
@@ -306,6 +307,71 @@ export function useTreasuryEvents(daoId: string, limit = 20) {
       } catch {
         return [];
       }
+    },
+    enabled: !!daoId,
+  });
+}
+
+/** All known proposal type keys in the framework. */
+const ALL_PROPOSAL_TYPES = [
+  "SetBoard",
+  "TreasuryWithdraw",
+  "CapabilityExtract",
+  "EmergencyFreeze",
+  "EmergencyUnfreeze",
+  "CharterUpdate",
+  "SpawnDAO",
+  "SpinOutSubDAO",
+  "CreateSubDAO",
+  "TransferFreezeAdmin",
+  "UnfreezeProposalType",
+] as const;
+
+const PROTECTED_TYPES = new Set(["TransferFreezeAdmin", "UnfreezeProposalType"]);
+
+/** Fetch governance config: all proposal types with their enabled/frozen/protected status and config. */
+export function useGovernanceConfig(daoId: string) {
+  const client = useSuiClient();
+
+  return useQuery({
+    queryKey: cacheKeys.governance(daoId),
+    queryFn: async (): Promise<ProposalTypeConfig[]> => {
+      const daoObj = await getObject(client, daoId);
+      const dao = moveFields<DaoFields>(daoObj);
+
+      const freezeObj = await getObject(client, dao.emergency_freeze_id);
+      const freeze = moveFields<EmergencyFreezeFields>(freezeObj);
+
+      const enabledSet = new Set(dao.enabled_proposal_types.contents);
+      const frozenSet = new Set(
+        freeze.frozen_types.contents
+          .filter((e) => Number(e.value) > Date.now())
+          .map((e) => e.key),
+      );
+
+      const configMap = new Map(
+        dao.proposal_configs.contents.map((e) => [e.key, e.value]),
+      );
+
+      return ALL_PROPOSAL_TYPES.map((typeKey) => {
+        const raw = configMap.get(typeKey);
+        return {
+          typeKey,
+          enabled: enabledSet.has(typeKey),
+          frozen: frozenSet.has(typeKey),
+          protected: PROTECTED_TYPES.has(typeKey),
+          config: raw
+            ? {
+                quorum: Number(raw.quorum),
+                approvalThreshold: Number(raw.approval_threshold),
+                proposeThreshold: Number(raw.propose_threshold),
+                expiryMs: Number(raw.expiry_ms),
+                executionDelayMs: Number(raw.execution_delay_ms),
+                cooldownMs: Number(raw.cooldown_ms),
+              }
+            : null,
+        };
+      });
     },
     enabled: !!daoId,
   });
