@@ -109,14 +109,15 @@ export function useProposals(daoId: string) {
         100,
       );
 
-      const proposalIds: string[] = [];
+      const proposalIdSet = new Set<string>();
       for (const ev of result.data) {
         const parsed = ev.parsedJson as Record<string, unknown>;
         if ((parsed.dao_id as string) === daoId && parsed.proposal_id) {
-          proposalIds.push(parsed.proposal_id as string);
+          proposalIdSet.add(parsed.proposal_id as string);
         }
       }
 
+      const proposalIds = [...proposalIdSet];
       if (proposalIds.length === 0) return [];
 
       const objects = await multiGetObjects(client, proposalIds);
