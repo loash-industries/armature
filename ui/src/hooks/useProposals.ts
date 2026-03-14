@@ -1,9 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
 import { useSuiClient } from "@mysten/dapp-kit";
 import { cacheKeys } from "@/lib/cache-keys";
-import { queryEvents, multiGetObjects } from "@/lib/sui-rpc";
+import { queryEvents, multiGetObjects, unwrapMoveStruct } from "@/lib/sui-rpc";
 import { PACKAGE_ID, MODULES } from "@/config/constants";
 import type { ProposalSummary } from "@/types/proposal";
+
+interface ProposalConfigFields {
+  quorum: number;
+  approval_threshold: number;
+  propose_threshold: string;
+  expiry_ms: string;
+  execution_delay_ms: string;
+  cooldown_ms: string;
+}
 
 interface ProposalFields {
   id: { id: string };
@@ -11,31 +20,33 @@ interface ProposalFields {
   proposer: string;
   yes_weight: string;
   no_weight: string;
-  quorum: string;
-  approval_threshold: string;
+  config: ProposalConfigFields;
   created_at_ms: string;
-  expiry_ms: string;
-  execution_delay_ms: string;
-  executed: boolean;
+  status: { variant: string };
   metadata_ipfs: string;
 }
 
 function deriveStatus(
   fields: ProposalFields,
 ): ProposalSummary["status"] {
-  if (fields.executed) return "executed";
+  const variant = fields.status.variant;
+  if (variant === "Executed") return "executed";
+  if (variant === "Expired") return "expired";
+  if (variant === "Passed") return "passed";
 
+  // Active — check if expired by time
+  const cfg = fields.config;
   const now = Date.now();
-  const expiry = Number(fields.created_at_ms) + Number(fields.expiry_ms);
+  const expiry = Number(fields.created_at_ms) + Number(cfg.expiry_ms);
 
   if (now > expiry) {
     const yes = Number(fields.yes_weight);
     const no = Number(fields.no_weight);
     const total = yes + no;
-    const quorumMet = total >= Number(fields.quorum);
+    const quorumMet = total >= cfg.quorum;
     const thresholdMet =
       total > 0 &&
-      (yes * 10000) / total >= Number(fields.approval_threshold);
+      (yes * 10000) / total >= cfg.approval_threshold;
     return quorumMet && thresholdMet ? "passed" : "expired";
   }
 
@@ -46,11 +57,12 @@ function parseProposal(obj: {
   data?: { content?: unknown } | null;
 }): ProposalSummary | null {
   const content = obj.data?.content as
-    | { fields: ProposalFields; dataType: "moveObject" }
+    | { fields: unknown; dataType: "moveObject" }
     | undefined;
   if (!content || content.dataType !== "moveObject") return null;
 
-  const f = content.fields;
+  const f = unwrapMoveStruct(content.fields) as ProposalFields;
+  const cfg = f.config;
   return {
     id: f.id.id,
     typeKey: f.type_key,
@@ -58,11 +70,11 @@ function parseProposal(obj: {
     status: deriveStatus(f),
     yesWeight: Number(f.yes_weight),
     noWeight: Number(f.no_weight),
-    quorum: Number(f.quorum),
-    approvalThreshold: Number(f.approval_threshold),
+    quorum: cfg.quorum,
+    approvalThreshold: cfg.approval_threshold,
     createdMs: Number(f.created_at_ms),
-    expiryMs: Number(f.expiry_ms),
-    executionDelayMs: Number(f.execution_delay_ms),
+    expiryMs: Number(cfg.expiry_ms),
+    executionDelayMs: Number(cfg.execution_delay_ms),
     metadataIpfs: f.metadata_ipfs,
   };
 }
@@ -74,9 +86,11 @@ export function useProposals(daoId: string) {
   return useQuery({
     queryKey: cacheKeys.proposals(daoId),
     queryFn: async (): Promise<ProposalSummary[]> => {
+      // ProposalCreated is defined in the proposal module but emitted via
+      // board_voting::submit_proposal, so Sui indexes it under board_voting.
       const result = await queryEvents(
         client,
-        { MoveModule: { package: PACKAGE_ID, module: MODULES.proposal } },
+        { MoveModule: { package: PACKAGE_ID, module: MODULES.board_voting } },
         undefined,
         100,
       );

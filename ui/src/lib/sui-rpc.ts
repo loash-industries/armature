@@ -81,6 +81,50 @@ export async function queryEvents(
   };
 }
 
+/**
+ * Recursively unwrap Sui JSON-RPC Move struct wrappers.
+ *
+ * The JSON-RPC API wraps every nested Move struct as `{ type: "...", fields: { ... } }`.
+ * This function strips those wrappers so callers can access fields directly,
+ * e.g. `dao.enabled_proposal_types.contents` instead of
+ * `dao.enabled_proposal_types.fields.contents`.
+ *
+ * Enum variants (objects with a `variant` key) are preserved as-is since
+ * `{ variant, fields }` is meaningful, but their `fields` value is still unwrapped.
+ */
+export function unwrapMoveStruct(value: unknown): unknown {
+  if (value === null || value === undefined) return value;
+  if (Array.isArray(value)) return value.map(unwrapMoveStruct);
+  if (typeof value !== "object") return value;
+
+  const obj = value as Record<string, unknown>;
+
+  // Move struct wrapper: has `type` (string) and `fields` (object), no `variant`
+  if (
+    typeof obj.type === "string" &&
+    obj.fields != null &&
+    typeof obj.fields === "object" &&
+    !("variant" in obj)
+  ) {
+    return unwrapMoveStruct(obj.fields);
+  }
+
+  // Enum variant: has `variant` and `fields` — keep variant, unwrap fields
+  if ("variant" in obj && obj.fields != null && typeof obj.fields === "object") {
+    return {
+      variant: obj.variant,
+      fields: unwrapMoveStruct(obj.fields),
+    };
+  }
+
+  // Regular object: recurse into each value
+  const result: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    result[k] = unwrapMoveStruct(v);
+  }
+  return result;
+}
+
 export async function getOwnedObjects(
   client: SuiJsonRpcClient,
   owner: string,
