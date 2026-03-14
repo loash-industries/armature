@@ -17,7 +17,19 @@ import {
 import { useSuiClient } from "@mysten/dapp-kit";
 import { useProposal } from "@/hooks/useProposals";
 import { useWalletSigner } from "@/hooks/useWalletSigner";
-import { buildVote, buildTryExpire } from "@/lib/transactions";
+import { useDaoSummary, useGovernanceDetail } from "@/hooks/useDao";
+import {
+  buildVote,
+  buildTryExpire,
+  buildExecuteSetBoard,
+  buildExecuteUpdateMetadata,
+  buildExecuteSendCoin,
+  buildExecuteDisableProposalType,
+  buildExecuteEnableProposalType,
+  buildExecuteUpdateProposalConfig,
+  buildExecuteUnfreezeProposalType,
+  buildExecuteCreateSubDAO,
+} from "@/lib/transactions";
 import { cacheKeys } from "@/lib/cache-keys";
 import { PROPOSAL_TYPE_MAP } from "@/config/proposal-types";
 
@@ -27,7 +39,7 @@ function truncAddr(addr: string): string {
 }
 
 function formatBps(bps: number): string {
-  return `${(bps / 100).toFixed(1)}%`;
+  return `${bps} bps`;
 }
 
 function formatDate(ms: number): string {
@@ -80,12 +92,15 @@ function statusVariant(
 export function ProposalDetail() {
   const { proposalId, daoId } = useParams({ strict: false });
   const { data: proposal, isLoading } = useProposal(proposalId ?? "");
+  const { data: daoSummary } = useDaoSummary(daoId ?? "");
+  const { data: governance } = useGovernanceDetail(daoId ?? "");
   const client = useSuiClient();
   const { address, signAndExecuteTransaction } = useWalletSigner();
   const queryClient = useQueryClient();
   const [actionPending, setActionPending] = useState<string | null>(null);
   const hasVoted = proposal && address ? address in proposal.votesCast : false;
   const priorVote = proposal && address ? proposal.votesCast[address] : undefined;
+  const isMember = governance?.members.some(m => m.address === address) ?? false;
 
   async function handleVote(approve: boolean) {
     if (!proposal?.payloadType) {
@@ -146,6 +161,65 @@ export function ProposalDetail() {
     }
   }
 
+  function buildExecuteTransaction() {
+    if (!proposal || !daoSummary) return null;
+    const { id: dao, treasuryId, charterId, emergencyFreezeId, capabilityVaultId } = daoSummary;
+    const base = { daoId: dao, proposalId: proposal.id, emergencyFreezeId };
+
+    switch (proposal.typeKey) {
+      case "SetBoard":
+        return buildExecuteSetBoard(base);
+      case "CharterUpdate":
+        return buildExecuteUpdateMetadata({ ...base, charterId });
+      case "TreasuryWithdraw": {
+        const pt = proposal.payloadType;
+        const coinType = pt.slice(pt.indexOf("<") + 1, pt.lastIndexOf(">"));
+        return buildExecuteSendCoin({ ...base, treasuryId, coinType });
+      }
+      case "DisableProposalType":
+        return buildExecuteDisableProposalType(base);
+      case "EnableProposalType":
+        return buildExecuteEnableProposalType(base);
+      case "UpdateProposalConfig":
+        return buildExecuteUpdateProposalConfig(base);
+      case "UnfreezeProposalType":
+        return buildExecuteUnfreezeProposalType(base);
+      case "CreateSubDAO":
+        return buildExecuteCreateSubDAO({ ...base, capabilityVaultId });
+      default:
+        return null;
+    }
+  }
+
+  async function handleExecute() {
+    const transaction = buildExecuteTransaction();
+    if (!transaction) {
+      toast.info("Execute is not yet available for this proposal type");
+      return;
+    }
+    setActionPending("execute");
+    try {
+      const result = await signAndExecuteTransaction({ transaction });
+      toast.success("Proposal executed");
+      await client.waitForTransaction({ digest: result.digest });
+      await queryClient.invalidateQueries({
+        queryKey: cacheKeys.proposal(proposal!.id),
+      });
+      if (daoId) {
+        await queryClient.invalidateQueries({
+          queryKey: cacheKeys.proposals(daoId),
+        });
+        await queryClient.invalidateQueries({
+          queryKey: cacheKeys.dao(daoId),
+        });
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Execution failed");
+    } finally {
+      setActionPending(null);
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -169,12 +243,20 @@ export function ProposalDetail() {
   const totalVotes = proposal.yesWeight + proposal.noWeight;
   const yesPercent = totalVotes > 0 ? (proposal.yesWeight / totalVotes) * 100 : 0;
   const noPercent = totalVotes > 0 ? (proposal.noWeight / totalVotes) * 100 : 0;
-  const quorumPercent =
-    proposal.quorum > 0
-      ? Math.min((totalVotes / proposal.quorum) * 100, 100)
-      : 100;
+  const totalWeight = governance
+    ? governance.type === "Board"
+      ? governance.members.length
+      : governance.totalShares ?? 0
+    : 0;
+  const participationBps = totalWeight > 0
+    ? Math.round((totalVotes / totalWeight) * 10000)
+    : 0;
+  const quorumProgress = proposal.quorum > 0
+    ? Math.min((participationBps / proposal.quorum) * 100, 100)
+    : 100;
   const expiryTimestamp = proposal.createdMs + proposal.expiryMs;
   const executableAt = expiryTimestamp + proposal.executionDelayMs;
+  const canExecute = Date.now() >= executableAt;
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -275,11 +357,10 @@ export function ProposalDetail() {
               <div className="mb-1 flex justify-between text-sm">
                 <span>Quorum</span>
                 <span className="font-mono">
-                  {totalVotes} / {proposal.quorum} (
-                  {quorumPercent.toFixed(0)}%)
+                  {participationBps} / {proposal.quorum} bps
                 </span>
               </div>
-              <Progress value={quorumPercent} className="h-2" />
+              <Progress value={quorumProgress} className="h-2" />
             </div>
 
             <Separator />
@@ -291,35 +372,58 @@ export function ProposalDetail() {
             )}
 
             {proposal.status === "active" && !hasVoted && (
-              <div className="flex gap-2">
-                <Button
-                  className="flex-1"
-                  disabled={actionPending !== null}
-                  onClick={() => handleVote(true)}
-                >
-                  {actionPending === "yes" ? "Voting..." : "Vote Yes"}
-                </Button>
-                <Button
-                  variant="destructive"
-                  className="flex-1"
-                  disabled={actionPending !== null}
-                  onClick={() => handleVote(false)}
-                >
-                  {actionPending === "no" ? "Voting..." : "Vote No"}
-                </Button>
-              </div>
+              <>
+                <div className="flex gap-2">
+                  <Button
+                    className="flex-1"
+                    disabled={actionPending !== null || !isMember}
+                    onClick={() => handleVote(true)}
+                  >
+                    {actionPending === "yes" ? "Voting..." : "Vote Yes"}
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    className="flex-1"
+                    disabled={actionPending !== null || !isMember}
+                    onClick={() => handleVote(false)}
+                  >
+                    {actionPending === "no" ? "Voting..." : "Vote No"}
+                  </Button>
+                </div>
+                {!isMember && address && (
+                  <p className="text-muted-foreground text-center text-xs">
+                    Only board members can vote
+                  </p>
+                )}
+              </>
             )}
 
             {proposal.status === "passed" && (
-              <Button
-                className="w-full"
-                disabled={actionPending !== null}
-                onClick={() =>
-                  toast.info("Execute is not yet implemented — requires DAO object IDs")
-                }
-              >
-                Execute Proposal
-              </Button>
+              <>
+                {!canExecute && proposal.executionDelayMs > 0 ? (
+                  <div className="text-center">
+                    <Button className="w-full" disabled>
+                      Execute Proposal
+                    </Button>
+                    <p className="text-muted-foreground mt-1 text-xs">
+                      Executable in: <Countdown targetMs={executableAt} />
+                    </p>
+                  </div>
+                ) : (
+                  <Button
+                    className="w-full"
+                    disabled={actionPending !== null || !isMember}
+                    onClick={() => handleExecute()}
+                  >
+                    {actionPending === "execute" ? "Executing..." : "Execute Proposal"}
+                  </Button>
+                )}
+                {!isMember && address && canExecute && (
+                  <p className="text-muted-foreground text-center text-xs">
+                    Only board members can execute
+                  </p>
+                )}
+              </>
             )}
 
             {proposal.status === "active" && (
