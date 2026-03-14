@@ -18,6 +18,7 @@ import { useSuiClient } from "@mysten/dapp-kit";
 import { useProposal } from "@/hooks/useProposals";
 import { useWalletSigner } from "@/hooks/useWalletSigner";
 import { useDaoSummary, useGovernanceDetail } from "@/hooks/useDao";
+import { useFreezeAdminCap } from "@/hooks/useFreezeAdminCap";
 import {
   buildVote,
   buildTryExpire,
@@ -29,9 +30,21 @@ import {
   buildExecuteUpdateProposalConfig,
   buildExecuteUnfreezeProposalType,
   buildExecuteCreateSubDAO,
+  buildExecuteTransferFreezeAdmin,
+  buildExecuteUpdateFreezeConfig,
+  buildExecuteUpdateFreezeExemptTypes,
+  buildExecuteSendSmallPayment,
+  buildExecuteSpawnDAO,
+  buildExecuteSendCoinToDAO,
+  buildExecuteSpinOutSubDAO,
+  buildExecutePauseSubDAOExecution,
+  buildExecuteUnpauseSubDAOExecution,
+  buildExecuteTransferCapToSubDAO,
+  buildExecuteReclaimCap,
 } from "@/lib/transactions";
 import { cacheKeys } from "@/lib/cache-keys";
 import { PROPOSAL_TYPE_MAP } from "@/config/proposal-types";
+import { PayloadSummary } from "@/components/proposals/PayloadSummary";
 
 function truncAddr(addr: string): string {
   if (addr.length <= 12) return addr;
@@ -94,6 +107,7 @@ export function ProposalDetail() {
   const { data: proposal, isLoading } = useProposal(proposalId ?? "");
   const { data: daoSummary } = useDaoSummary(daoId ?? "");
   const { data: governance } = useGovernanceDetail(daoId ?? "");
+  const { data: freezeAdminCapId } = useFreezeAdminCap(daoId ?? "");
   const client = useSuiClient();
   const { address, signAndExecuteTransaction } = useWalletSigner();
   const queryClient = useQueryClient();
@@ -186,6 +200,49 @@ export function ProposalDetail() {
         return buildExecuteUnfreezeProposalType(base);
       case "CreateSubDAO":
         return buildExecuteCreateSubDAO({ ...base, capabilityVaultId });
+      case "TransferFreezeAdmin":
+        if (!freezeAdminCapId) return null;
+        return buildExecuteTransferFreezeAdmin({
+          ...base,
+          freezeAdminCapId,
+        });
+      case "UpdateFreezeConfig":
+        return buildExecuteUpdateFreezeConfig(base);
+      case "UpdateFreezeExemptTypes":
+        return buildExecuteUpdateFreezeExemptTypes(base);
+      case "SendSmallPayment": {
+        const pt = proposal.payloadType;
+        const coinType = pt.slice(pt.indexOf("<") + 1, pt.lastIndexOf(">"));
+        return buildExecuteSendSmallPayment({ ...base, treasuryId, coinType });
+      }
+      case "SendCoinToDAO": {
+        const pt = proposal.payloadType;
+        const coinType = pt.slice(pt.indexOf("<") + 1, pt.lastIndexOf(">"));
+        const targetTreasuryId = String(proposal.payload.recipient_treasury ?? "");
+        return buildExecuteSendCoinToDAO({ ...base, sourceTreasuryId: treasuryId, targetTreasuryId, coinType });
+      }
+      case "SpawnDAO":
+        return buildExecuteSpawnDAO(base);
+      case "SpinOutSubDAO": {
+        const subdaoId = String(proposal.payload.subdao_id ?? "");
+        return buildExecuteSpinOutSubDAO({ ...base, capabilityVaultId, subdaoVaultId: subdaoId, subdaoId });
+      }
+      case "PauseSubDAOExecution": {
+        const subdaoId = String(proposal.payload.control_id ?? "");
+        return buildExecutePauseSubDAOExecution({ ...base, controllerVaultId: capabilityVaultId, subdaoId });
+      }
+      case "UnpauseSubDAOExecution": {
+        const subdaoId = String(proposal.payload.control_id ?? "");
+        return buildExecuteUnpauseSubDAOExecution({ ...base, controllerVaultId: capabilityVaultId, subdaoId });
+      }
+      case "TransferCapToSubDAO": {
+        const targetVault = String(proposal.payload.target_subdao ?? "");
+        return buildExecuteTransferCapToSubDAO({ ...base, sourceVaultId: capabilityVaultId, targetVaultId: targetVault, capType: "" });
+      }
+      case "ReclaimCapFromSubDAO": {
+        const subdaoVault = String(proposal.payload.subdao_id ?? "");
+        return buildExecuteReclaimCap({ ...base, controllerVaultId: capabilityVaultId, subdaoVaultId: subdaoVault, capType: "" });
+      }
       default:
         return null;
     }
@@ -323,6 +380,10 @@ export function ProposalDetail() {
             )}
           </CardContent>
         </Card>
+
+        {proposal.payload && Object.keys(proposal.payload).length > 0 && (
+          <PayloadSummary typeKey={proposal.typeKey} payload={proposal.payload} />
+        )}
       </div>
 
       {/* Right: voting panel */}

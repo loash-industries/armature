@@ -345,6 +345,355 @@ export function buildSubmitUnfreezeProposalType(args: {
   return tx;
 }
 
+/** Submit a SendCoinToDAO proposal. */
+export function buildSubmitSendCoinToDAO(args: {
+  daoId: string;
+  recipientTreasuryId: string;
+  amount: string;
+  coinType: string;
+  metadataIpfs: string;
+}): Transaction {
+  const tx = new Transaction();
+
+  const payload = tx.moveCall({
+    target: prop(PROPOSAL_MODULES.send_coin_to_dao, "new"),
+    arguments: [
+      tx.pure.id(args.recipientTreasuryId),
+      tx.pure.u64(args.amount),
+    ],
+    typeArguments: [args.coinType],
+  });
+
+  tx.moveCall({
+    target: fw(MODULES.board_voting, "submit_proposal"),
+    arguments: [
+      tx.object(args.daoId),
+      tx.pure.string("SendCoinToDAO"),
+      tx.pure.string(args.metadataIpfs),
+      payload,
+      tx.object(SUI_CLOCK),
+    ],
+    typeArguments: [
+      `${PROPOSALS_PACKAGE_ID}::${PROPOSAL_MODULES.send_coin_to_dao}::SendCoinToDAO<${args.coinType}>`,
+    ],
+  });
+
+  return tx;
+}
+
+/** Submit a SendSmallPayment proposal. */
+export function buildSubmitSendSmallPayment(args: {
+  daoId: string;
+  recipient: string;
+  amount: string;
+  coinType: string;
+  metadataIpfs: string;
+}): Transaction {
+  const tx = new Transaction();
+
+  const payload = tx.moveCall({
+    target: prop(PROPOSAL_MODULES.send_small_payment, "new"),
+    arguments: [
+      tx.pure.address(args.recipient),
+      tx.pure.u64(args.amount),
+    ],
+    typeArguments: [args.coinType],
+  });
+
+  tx.moveCall({
+    target: fw(MODULES.board_voting, "submit_proposal"),
+    arguments: [
+      tx.object(args.daoId),
+      tx.pure.string("SendSmallPayment"),
+      tx.pure.string(args.metadataIpfs),
+      payload,
+      tx.object(SUI_CLOCK),
+    ],
+    typeArguments: [
+      `${PROPOSALS_PACKAGE_ID}::${PROPOSAL_MODULES.send_small_payment}::SendSmallPayment<${args.coinType}>`,
+    ],
+  });
+
+  return tx;
+}
+
+/** Submit an UpdateFreezeConfig proposal. */
+export function buildSubmitUpdateFreezeConfig(args: {
+  daoId: string;
+  newMaxFreezeDurationMs: string;
+  metadataIpfs: string;
+}): Transaction {
+  const tx = new Transaction();
+
+  const payload = tx.moveCall({
+    target: prop(PROPOSAL_MODULES.update_freeze_config, "new"),
+    arguments: [tx.pure.u64(args.newMaxFreezeDurationMs)],
+  });
+
+  tx.moveCall({
+    target: fw(MODULES.board_voting, "submit_proposal"),
+    arguments: [
+      tx.object(args.daoId),
+      tx.pure.string("UpdateFreezeConfig"),
+      tx.pure.string(args.metadataIpfs),
+      payload,
+      tx.object(SUI_CLOCK),
+    ],
+    typeArguments: [
+      `${PROPOSALS_PACKAGE_ID}::${PROPOSAL_MODULES.update_freeze_config}::UpdateFreezeConfig`,
+    ],
+  });
+
+  return tx;
+}
+
+/** Submit an UpdateFreezeExemptTypes proposal. */
+export function buildSubmitUpdateFreezeExemptTypes(args: {
+  daoId: string;
+  typesToAdd: string[];
+  typesToRemove: string[];
+  metadataIpfs: string;
+}): Transaction {
+  const tx = new Transaction();
+
+  const payload = tx.moveCall({
+    target: prop(PROPOSAL_MODULES.update_freeze_exempt_types, "new"),
+    arguments: [
+      tx.pure.vector("string", args.typesToAdd),
+      tx.pure.vector("string", args.typesToRemove),
+    ],
+  });
+
+  tx.moveCall({
+    target: fw(MODULES.board_voting, "submit_proposal"),
+    arguments: [
+      tx.object(args.daoId),
+      tx.pure.string("UpdateFreezeExemptTypes"),
+      tx.pure.string(args.metadataIpfs),
+      payload,
+      tx.object(SUI_CLOCK),
+    ],
+    typeArguments: [
+      `${PROPOSALS_PACKAGE_ID}::${PROPOSAL_MODULES.update_freeze_exempt_types}::UpdateFreezeExemptTypes`,
+    ],
+  });
+
+  return tx;
+}
+
+/** Submit a TransferCapToSubDAO proposal. */
+export function buildSubmitTransferCapToSubDAO(args: {
+  daoId: string;
+  capId: string;
+  targetSubdao: string;
+  metadataIpfs: string;
+}): Transaction {
+  const tx = new Transaction();
+
+  const payload = tx.moveCall({
+    target: prop(PROPOSAL_MODULES.transfer_cap_to_subdao, "new"),
+    arguments: [
+      tx.pure.id(args.capId),
+      tx.pure.id(args.targetSubdao),
+    ],
+  });
+
+  tx.moveCall({
+    target: fw(MODULES.board_voting, "submit_proposal"),
+    arguments: [
+      tx.object(args.daoId),
+      tx.pure.string("TransferCapToSubDAO"),
+      tx.pure.string(args.metadataIpfs),
+      payload,
+      tx.object(SUI_CLOCK),
+    ],
+    typeArguments: [
+      `${PROPOSALS_PACKAGE_ID}::${PROPOSAL_MODULES.transfer_cap_to_subdao}::TransferCapToSubDAO`,
+    ],
+  });
+
+  return tx;
+}
+
+/** Submit a ReclaimCapFromSubDAO proposal. */
+export function buildSubmitReclaimCapFromSubDAO(args: {
+  daoId: string;
+  subdaoId: string;
+  capId: string;
+  controlId: string;
+  metadataIpfs: string;
+}): Transaction {
+  const tx = new Transaction();
+
+  const payload = tx.moveCall({
+    target: prop(PROPOSAL_MODULES.reclaim_cap_from_subdao, "new"),
+    arguments: [
+      tx.pure.id(args.subdaoId),
+      tx.pure.id(args.capId),
+      tx.pure.id(args.controlId),
+    ],
+  });
+
+  tx.moveCall({
+    target: fw(MODULES.board_voting, "submit_proposal"),
+    arguments: [
+      tx.object(args.daoId),
+      tx.pure.string("ReclaimCapFromSubDAO"),
+      tx.pure.string(args.metadataIpfs),
+      payload,
+      tx.object(SUI_CLOCK),
+    ],
+    typeArguments: [
+      `${PROPOSALS_PACKAGE_ID}::${PROPOSAL_MODULES.reclaim_cap_from_subdao}::ReclaimCapFromSubDAO`,
+    ],
+  });
+
+  return tx;
+}
+
+/** Submit a ProposeUpgrade proposal. */
+export function buildSubmitProposeUpgrade(args: {
+  daoId: string;
+  capId: string;
+  packageId: string;
+  digest: string;
+  policy: number;
+  metadataIpfs: string;
+}): Transaction {
+  const tx = new Transaction();
+
+  // Convert hex digest to bytes
+  const digestHex = args.digest.startsWith("0x") ? args.digest.slice(2) : args.digest;
+  const digestBytes = new Uint8Array(
+    digestHex.match(/.{1,2}/g)?.map((b) => parseInt(b, 16)) ?? [],
+  );
+
+  const payload = tx.moveCall({
+    target: prop(PROPOSAL_MODULES.propose_upgrade, "new"),
+    arguments: [
+      tx.pure.id(args.capId),
+      tx.pure.id(args.packageId),
+      tx.pure.vector("u8", Array.from(digestBytes)),
+      tx.pure.u8(args.policy),
+    ],
+  });
+
+  tx.moveCall({
+    target: fw(MODULES.board_voting, "submit_proposal"),
+    arguments: [
+      tx.object(args.daoId),
+      tx.pure.string("ProposeUpgrade"),
+      tx.pure.string(args.metadataIpfs),
+      payload,
+      tx.object(SUI_CLOCK),
+    ],
+    typeArguments: [
+      `${PROPOSALS_PACKAGE_ID}::${PROPOSAL_MODULES.propose_upgrade}::ProposeUpgrade`,
+    ],
+  });
+
+  return tx;
+}
+
+/** Submit a SpawnDAO proposal. */
+export function buildSubmitSpawnDAO(args: {
+  daoId: string;
+  name: string;
+  description: string;
+  metadataIpfs: string;
+}): Transaction {
+  const tx = new Transaction();
+
+  // SpawnDAO needs a GovernanceTypeInit — but this requires board members,
+  // so we pass the metadata as the init for now. The actual governance_init
+  // is built from the DAO's current board at execution time.
+  // For submission, we just need the payload struct fields.
+  const govInit = tx.moveCall({
+    target: fw(MODULES.governance, "init_board"),
+    arguments: [tx.pure.vector("address", [])],
+  });
+
+  const payload = tx.moveCall({
+    target: prop(PROPOSAL_MODULES.spawn_dao, "new"),
+    arguments: [
+      govInit,
+      tx.pure.string(args.name),
+      tx.pure.string(args.description),
+      tx.pure.string(args.metadataIpfs),
+    ],
+  });
+
+  tx.moveCall({
+    target: fw(MODULES.board_voting, "submit_proposal"),
+    arguments: [
+      tx.object(args.daoId),
+      tx.pure.string("SpawnDAO"),
+      tx.pure.string(args.metadataIpfs),
+      payload,
+      tx.object(SUI_CLOCK),
+    ],
+    typeArguments: [
+      `${PROPOSALS_PACKAGE_ID}::${PROPOSAL_MODULES.spawn_dao}::SpawnDAO`,
+    ],
+  });
+
+  return tx;
+}
+
+/** Submit a SpinOutSubDAO proposal. */
+export function buildSubmitSpinOutSubDAO(args: {
+  daoId: string;
+  subDaoId: string;
+  metadataIpfs: string;
+}): Transaction {
+  const tx = new Transaction();
+
+  // SpinOutSubDAO requires several IDs and configs that are complex.
+  // For the minimal submission, we need the SubDAO ID. The controlCapId
+  // and freezeAdminCapId are looked up from the DAO's capability vault.
+  // The 3 ProposalConfig objects use defaults.
+  const defaultConfig = (q: number, t: number) =>
+    tx.moveCall({
+      target: fw(MODULES.proposal, "new_config"),
+      arguments: [
+        tx.pure.u16(q),
+        tx.pure.u16(t),
+        tx.pure.u64("0"),
+        tx.pure.u64("86400000"), // 24h
+        tx.pure.u64("0"),
+        tx.pure.u64("0"),
+      ],
+    });
+
+  const payload = tx.moveCall({
+    target: prop(PROPOSAL_MODULES.spin_out_subdao, "new"),
+    arguments: [
+      tx.pure.id(args.subDaoId),
+      tx.pure.id(args.subDaoId), // placeholder for control_cap_id
+      tx.pure.id(args.subDaoId), // placeholder for freeze_admin_cap_id
+      defaultConfig(5000, 5000),
+      defaultConfig(5000, 5000),
+      defaultConfig(5000, 5000),
+    ],
+  });
+
+  tx.moveCall({
+    target: fw(MODULES.board_voting, "submit_proposal"),
+    arguments: [
+      tx.object(args.daoId),
+      tx.pure.string("SpinOutSubDAO"),
+      tx.pure.string(args.metadataIpfs),
+      payload,
+      tx.object(SUI_CLOCK),
+    ],
+    typeArguments: [
+      `${PROPOSALS_PACKAGE_ID}::${PROPOSAL_MODULES.spin_out_subdao}::SpinOutSubDAO`,
+    ],
+  });
+
+  return tx;
+}
+
 // ---------------------------------------------------------------------------
 // Vote / Execute / Expire (proposal lifecycle actions)
 // ---------------------------------------------------------------------------
@@ -713,6 +1062,293 @@ export function buildExecuteUnfreezeProposalType(args: {
   return tx;
 }
 
+/** Execute an UpdateFreezeConfig proposal. */
+export function buildExecuteUpdateFreezeConfig(args: {
+  daoId: string;
+  proposalId: string;
+  emergencyFreezeId: string;
+}): Transaction {
+  const tx = new Transaction();
+  const payloadType = `${PROPOSALS_PACKAGE_ID}::${PROPOSAL_MODULES.update_freeze_config}::UpdateFreezeConfig`;
+
+  const req = tx.moveCall({
+    target: fw(MODULES.board_voting, "authorize_execution"),
+    arguments: [
+      tx.object(args.daoId),
+      tx.object(args.proposalId),
+      tx.object(args.emergencyFreezeId),
+      tx.object(SUI_CLOCK),
+    ],
+    typeArguments: [payloadType],
+  });
+
+  tx.moveCall({
+    target: prop(PROPOSAL_MODULES.security_ops, "execute_update_freeze_config"),
+    arguments: [
+      tx.object(args.emergencyFreezeId),
+      tx.object(args.proposalId),
+      req,
+    ],
+  });
+
+  return tx;
+}
+
+/** Execute an UpdateFreezeExemptTypes proposal. */
+export function buildExecuteUpdateFreezeExemptTypes(args: {
+  daoId: string;
+  proposalId: string;
+  emergencyFreezeId: string;
+}): Transaction {
+  const tx = new Transaction();
+  const payloadType = `${PROPOSALS_PACKAGE_ID}::${PROPOSAL_MODULES.update_freeze_exempt_types}::UpdateFreezeExemptTypes`;
+
+  const req = tx.moveCall({
+    target: fw(MODULES.board_voting, "authorize_execution"),
+    arguments: [
+      tx.object(args.daoId),
+      tx.object(args.proposalId),
+      tx.object(args.emergencyFreezeId),
+      tx.object(SUI_CLOCK),
+    ],
+    typeArguments: [payloadType],
+  });
+
+  tx.moveCall({
+    target: prop(PROPOSAL_MODULES.security_ops, "execute_update_freeze_exempt_types"),
+    arguments: [
+      tx.object(args.emergencyFreezeId),
+      tx.object(args.proposalId),
+      req,
+    ],
+  });
+
+  return tx;
+}
+
+/** Execute a SendCoinToDAO proposal. Note: ProposeUpgrade execution is not supported
+ *  from the UI because it returns an UpgradeTicket that must be consumed in the same
+ *  PTB with the actual package upgrade bytes — this requires CLI tooling. */
+
+/** Execute a SendCoinToDAO proposal. */
+export function buildExecuteSendCoinToDAO(args: {
+  daoId: string;
+  proposalId: string;
+  sourceTreasuryId: string;
+  targetTreasuryId: string;
+  emergencyFreezeId: string;
+  coinType: string;
+}): Transaction {
+  const tx = new Transaction();
+  const payloadType = `${PROPOSALS_PACKAGE_ID}::${PROPOSAL_MODULES.send_coin_to_dao}::SendCoinToDAO<${args.coinType}>`;
+
+  const req = tx.moveCall({
+    target: fw(MODULES.board_voting, "authorize_execution"),
+    arguments: [
+      tx.object(args.daoId),
+      tx.object(args.proposalId),
+      tx.object(args.emergencyFreezeId),
+      tx.object(SUI_CLOCK),
+    ],
+    typeArguments: [payloadType],
+  });
+
+  tx.moveCall({
+    target: prop(PROPOSAL_MODULES.treasury_ops, "execute_send_coin_to_dao"),
+    arguments: [
+      tx.object(args.sourceTreasuryId),
+      tx.object(args.targetTreasuryId),
+      tx.object(args.proposalId),
+      req,
+    ],
+    typeArguments: [args.coinType],
+  });
+
+  return tx;
+}
+
+/** Execute a SendSmallPayment proposal. */
+export function buildExecuteSendSmallPayment(args: {
+  daoId: string;
+  proposalId: string;
+  treasuryId: string;
+  emergencyFreezeId: string;
+  coinType: string;
+}): Transaction {
+  const tx = new Transaction();
+  const payloadType = `${PROPOSALS_PACKAGE_ID}::${PROPOSAL_MODULES.send_small_payment}::SendSmallPayment<${args.coinType}>`;
+
+  const req = tx.moveCall({
+    target: fw(MODULES.board_voting, "authorize_execution"),
+    arguments: [
+      tx.object(args.daoId),
+      tx.object(args.proposalId),
+      tx.object(args.emergencyFreezeId),
+      tx.object(SUI_CLOCK),
+    ],
+    typeArguments: [payloadType],
+  });
+
+  tx.moveCall({
+    target: prop(PROPOSAL_MODULES.treasury_ops, "execute_send_small_payment"),
+    arguments: [
+      tx.object(args.daoId),
+      tx.object(args.treasuryId),
+      tx.object(args.proposalId),
+      req,
+      tx.object(SUI_CLOCK),
+    ],
+    typeArguments: [args.coinType],
+  });
+
+  return tx;
+}
+
+/** Execute a SpawnDAO proposal. */
+export function buildExecuteSpawnDAO(args: {
+  daoId: string;
+  proposalId: string;
+  emergencyFreezeId: string;
+}): Transaction {
+  const tx = new Transaction();
+  const payloadType = `${PROPOSALS_PACKAGE_ID}::${PROPOSAL_MODULES.spawn_dao}::SpawnDAO`;
+
+  const req = tx.moveCall({
+    target: fw(MODULES.board_voting, "authorize_execution"),
+    arguments: [
+      tx.object(args.daoId),
+      tx.object(args.proposalId),
+      tx.object(args.emergencyFreezeId),
+      tx.object(SUI_CLOCK),
+    ],
+    typeArguments: [payloadType],
+  });
+
+  tx.moveCall({
+    target: prop(PROPOSAL_MODULES.subdao_ops, "execute_spawn_dao"),
+    arguments: [
+      tx.object(args.daoId),
+      tx.object(args.proposalId),
+      req,
+    ],
+  });
+
+  return tx;
+}
+
+/** Submit a PauseSubDAOExecution proposal. */
+export function buildSubmitPauseSubDAOExecution(args: {
+  daoId: string;
+  controlId: string;
+  metadataIpfs: string;
+}): Transaction {
+  const tx = new Transaction();
+
+  const payload = tx.moveCall({
+    target: prop(PROPOSAL_MODULES.pause_execution, "new_pause"),
+    arguments: [tx.pure.id(args.controlId)],
+  });
+
+  tx.moveCall({
+    target: fw(MODULES.board_voting, "submit_proposal"),
+    arguments: [
+      tx.object(args.daoId),
+      tx.pure.string("PauseSubDAOExecution"),
+      tx.pure.string(args.metadataIpfs),
+      payload,
+      tx.object(SUI_CLOCK),
+    ],
+    typeArguments: [
+      `${PROPOSALS_PACKAGE_ID}::${PROPOSAL_MODULES.pause_execution}::PauseSubDAOExecution`,
+    ],
+  });
+
+  return tx;
+}
+
+/** Submit an UnpauseSubDAOExecution proposal. */
+export function buildSubmitUnpauseSubDAOExecution(args: {
+  daoId: string;
+  controlId: string;
+  metadataIpfs: string;
+}): Transaction {
+  const tx = new Transaction();
+
+  const payload = tx.moveCall({
+    target: prop(PROPOSAL_MODULES.pause_execution, "new_unpause"),
+    arguments: [tx.pure.id(args.controlId)],
+  });
+
+  tx.moveCall({
+    target: fw(MODULES.board_voting, "submit_proposal"),
+    arguments: [
+      tx.object(args.daoId),
+      tx.pure.string("UnpauseSubDAOExecution"),
+      tx.pure.string(args.metadataIpfs),
+      payload,
+      tx.object(SUI_CLOCK),
+    ],
+    typeArguments: [
+      `${PROPOSALS_PACKAGE_ID}::${PROPOSAL_MODULES.pause_execution}::UnpauseSubDAOExecution`,
+    ],
+  });
+
+  return tx;
+}
+
+/** Submit a TransferAssets proposal. */
+export function buildSubmitTransferAssets(args: {
+  daoId: string;
+  targetDaoId: string;
+  targetTreasuryId: string;
+  targetVaultId: string;
+  coinTypes: string[];
+  capIds: string[];
+  metadataIpfs: string;
+}): Transaction {
+  const tx = new Transaction();
+
+  // Build vector<TypeName> from coin type strings
+  const typeNames = args.coinTypes.map((ct) =>
+    tx.moveCall({
+      target: "0x1::type_name::get",
+      typeArguments: [ct],
+    }),
+  );
+
+  const typeNameVec = tx.makeMoveVec({
+    type: "0x1::type_name::TypeName",
+    elements: typeNames,
+  });
+
+  const payload = tx.moveCall({
+    target: prop(PROPOSAL_MODULES.transfer_assets, "new"),
+    arguments: [
+      tx.pure.id(args.targetDaoId),
+      tx.pure.id(args.targetTreasuryId),
+      tx.pure.id(args.targetVaultId),
+      typeNameVec,
+      tx.pure.vector("id", args.capIds),
+    ],
+  });
+
+  tx.moveCall({
+    target: fw(MODULES.board_voting, "submit_proposal"),
+    arguments: [
+      tx.object(args.daoId),
+      tx.pure.string("TransferAssets"),
+      tx.pure.string(args.metadataIpfs),
+      payload,
+      tx.object(SUI_CLOCK),
+    ],
+    typeArguments: [
+      `${PROPOSALS_PACKAGE_ID}::${PROPOSAL_MODULES.transfer_assets}::TransferAssets`,
+    ],
+  });
+
+  return tx;
+}
+
 /** Freeze a proposal type (direct FreezeAdminCap action, not proposal-gated). */
 export function buildFreezeType(args: {
   emergencyFreezeId: string;
@@ -843,6 +1479,116 @@ export function buildExecuteTransferCapToSubDAO(args: {
       req,
     ],
     typeArguments: [args.capType],
+  });
+
+  return tx;
+}
+
+/** Execute a SpinOutSubDAO proposal. */
+export function buildExecuteSpinOutSubDAO(args: {
+  daoId: string;
+  proposalId: string;
+  capabilityVaultId: string;
+  subdaoVaultId: string;
+  subdaoId: string;
+  emergencyFreezeId: string;
+}): Transaction {
+  const tx = new Transaction();
+  const payloadType = `${PROPOSALS_PACKAGE_ID}::${PROPOSAL_MODULES.spin_out_subdao}::SpinOutSubDAO`;
+
+  const req = tx.moveCall({
+    target: fw(MODULES.board_voting, "authorize_execution"),
+    arguments: [
+      tx.object(args.daoId),
+      tx.object(args.proposalId),
+      tx.object(args.emergencyFreezeId),
+      tx.object(SUI_CLOCK),
+    ],
+    typeArguments: [payloadType],
+  });
+
+  tx.moveCall({
+    target: prop(PROPOSAL_MODULES.subdao_ops, "execute_spin_out_subdao"),
+    arguments: [
+      tx.object(args.capabilityVaultId),
+      tx.object(args.subdaoVaultId),
+      tx.object(args.subdaoId),
+      tx.object(args.proposalId),
+      req,
+      tx.object(SUI_CLOCK),
+    ],
+  });
+
+  return tx;
+}
+
+/** Execute a PauseSubDAOExecution proposal. */
+export function buildExecutePauseSubDAOExecution(args: {
+  daoId: string;
+  proposalId: string;
+  controllerVaultId: string;
+  subdaoId: string;
+  emergencyFreezeId: string;
+}): Transaction {
+  const tx = new Transaction();
+  const payloadType = `${PROPOSALS_PACKAGE_ID}::${PROPOSAL_MODULES.pause_execution}::PauseSubDAOExecution`;
+
+  const req = tx.moveCall({
+    target: fw(MODULES.board_voting, "authorize_execution"),
+    arguments: [
+      tx.object(args.daoId),
+      tx.object(args.proposalId),
+      tx.object(args.emergencyFreezeId),
+      tx.object(SUI_CLOCK),
+    ],
+    typeArguments: [payloadType],
+  });
+
+  tx.moveCall({
+    target: prop(PROPOSAL_MODULES.subdao_ops, "execute_pause_subdao_execution"),
+    arguments: [
+      tx.object(args.controllerVaultId),
+      tx.object(args.subdaoId),
+      tx.object(args.proposalId),
+      req,
+      tx.object(SUI_CLOCK),
+    ],
+  });
+
+  return tx;
+}
+
+/** Execute an UnpauseSubDAOExecution proposal. */
+export function buildExecuteUnpauseSubDAOExecution(args: {
+  daoId: string;
+  proposalId: string;
+  controllerVaultId: string;
+  subdaoId: string;
+  emergencyFreezeId: string;
+}): Transaction {
+  const tx = new Transaction();
+  const payloadType = `${PROPOSALS_PACKAGE_ID}::${PROPOSAL_MODULES.pause_execution}::UnpauseSubDAOExecution`;
+
+  const req = tx.moveCall({
+    target: fw(MODULES.board_voting, "authorize_execution"),
+    arguments: [
+      tx.object(args.daoId),
+      tx.object(args.proposalId),
+      tx.object(args.emergencyFreezeId),
+      tx.object(SUI_CLOCK),
+    ],
+    typeArguments: [payloadType],
+  });
+
+  tx.moveCall({
+    target: prop(PROPOSAL_MODULES.subdao_ops, "execute_unpause_subdao_execution"),
+    arguments: [
+      tx.object(args.controllerVaultId),
+      tx.object(args.subdaoId),
+      tx.object(args.proposalId),
+      req,
+      tx.object(SUI_CLOCK),
+    ],
   });
 
   return tx;
