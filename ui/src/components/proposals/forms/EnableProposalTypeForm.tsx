@@ -22,11 +22,13 @@ import type { EnableProposalTypePayload } from "@/types/proposal";
 
 interface EnableProposalTypeFormProps {
   daoId: string;
+  isPending?: boolean;
   onSubmit: (data: EnableProposalTypePayload) => void;
 }
 
 export function EnableProposalTypeForm({
   daoId,
+  isPending,
   onSubmit,
 }: EnableProposalTypeFormProps) {
   const { disabledTypes } = useProposalFormOptions(daoId);
@@ -99,7 +101,9 @@ export function EnableProposalTypeForm({
           )}
         />
 
-        <Button type="submit">Create Proposal</Button>
+        <Button type="submit" disabled={isPending}>
+          {isPending ? "Submitting..." : "Create Proposal"}
+        </Button>
       </form>
     </Form>
   );

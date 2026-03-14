@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -19,10 +19,11 @@ import type { SetBoardPayload } from "@/types/proposal";
 
 interface SetBoardFormProps {
   daoId: string;
+  isPending?: boolean;
   onSubmit: (data: SetBoardPayload) => void;
 }
 
-export function SetBoardForm({ daoId, onSubmit }: SetBoardFormProps) {
+export function SetBoardForm({ daoId, isPending, onSubmit }: SetBoardFormProps) {
   const { data: govDetail } = useGovernanceDetail(daoId);
   const currentMembers = govDetail?.members.map((m) => m.address) ?? [];
 
@@ -38,6 +39,12 @@ export function SetBoardForm({ daoId, onSubmit }: SetBoardFormProps) {
     control: form.control,
     name: "members" as never,
   });
+
+  useEffect(() => {
+    if (currentMembers.length > 0) {
+      form.reset({ members: currentMembers, metadataIpfs: "" });
+    }
+  }, [govDetail]);
 
   const [newAddr, setNewAddr] = useState("");
 
@@ -59,6 +66,26 @@ export function SetBoardForm({ daoId, onSubmit }: SetBoardFormProps) {
       >
         <div>
           <FormLabel>Board Members</FormLabel>
+          <div className="mt-2 flex gap-2">
+            <Input
+              placeholder="Add address 0x..."
+              value={newAddr}
+              onChange={(e) => setNewAddr(e.target.value)}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (newAddr) {
+                  append(newAddr as never);
+                  setNewAddr("");
+                }
+              }}
+            >
+              Add
+            </Button>
+          </div>
           <div className="mt-2 space-y-2">
             {fields.map((field, index) => (
               <div key={field.id} className="flex items-center gap-2">
@@ -84,26 +111,6 @@ export function SetBoardForm({ daoId, onSubmit }: SetBoardFormProps) {
                 </Button>
               </div>
             ))}
-          </div>
-          <div className="mt-2 flex gap-2">
-            <Input
-              placeholder="Add address 0x..."
-              value={newAddr}
-              onChange={(e) => setNewAddr(e.target.value)}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                if (newAddr) {
-                  append(newAddr as never);
-                  setNewAddr("");
-                }
-              }}
-            >
-              Add
-            </Button>
           </div>
         </div>
 
@@ -139,7 +146,9 @@ export function SetBoardForm({ daoId, onSubmit }: SetBoardFormProps) {
           )}
         />
 
-        <Button type="submit">Create Proposal</Button>
+        <Button type="submit" disabled={isPending}>
+          {isPending ? "Submitting..." : "Create Proposal"}
+        </Button>
       </form>
     </Form>
   );
