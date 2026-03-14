@@ -19,10 +19,11 @@ import type { SetBoardPayload } from "@/types/proposal";
 
 interface SetBoardFormProps {
   daoId: string;
+  isPending?: boolean;
   onSubmit: (data: SetBoardPayload) => void;
 }
 
-export function SetBoardForm({ daoId, onSubmit }: SetBoardFormProps) {
+export function SetBoardForm({ daoId, isPending, onSubmit }: SetBoardFormProps) {
   const { data: govDetail } = useGovernanceDetail(daoId);
   const currentMembers = govDetail?.members.map((m) => m.address) ?? [];
 
@@ -139,7 +140,9 @@ export function SetBoardForm({ daoId, onSubmit }: SetBoardFormProps) {
           )}
         />
 
-        <Button type="submit">Create Proposal</Button>
+        <Button type="submit" disabled={isPending}>
+          {isPending ? "Submitting..." : "Create Proposal"}
+        </Button>
       </form>
     </Form>
   );
