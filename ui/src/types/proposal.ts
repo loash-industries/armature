@@ -133,4 +133,6 @@ export interface ProposalSummary {
   expiryMs: number;
   executionDelayMs: number;
   metadataIpfs: string;
+  /** Full Move type of the proposal payload, e.g. `0x...::set_board::SetBoard` */
+  payloadType: string;
 }

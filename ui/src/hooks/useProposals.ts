@@ -53,16 +53,25 @@ function deriveStatus(
   return "active";
 }
 
+/** Extract the payload type parameter from a Proposal<T> on-chain type string. */
+function extractPayloadType(objectType: string): string {
+  const start = objectType.indexOf("<");
+  const end = objectType.lastIndexOf(">");
+  if (start === -1 || end === -1) return "";
+  return objectType.slice(start + 1, end);
+}
+
 function parseProposal(obj: {
-  data?: { content?: unknown } | null;
+  data?: { content?: unknown; type?: string | null } | null;
 }): ProposalSummary | null {
   const content = obj.data?.content as
-    | { fields: unknown; dataType: "moveObject" }
+    | { fields: unknown; dataType: "moveObject"; type?: string | null }
     | undefined;
   if (!content || content.dataType !== "moveObject") return null;
 
   const f = unwrapMoveStruct(content.fields) as ProposalFields;
   const cfg = f.config;
+  const objectType = content.type ?? obj.data?.type ?? "";
   return {
     id: f.id.id,
     typeKey: f.type_key,
@@ -76,6 +85,7 @@ function parseProposal(obj: {
     expiryMs: Number(cfg.expiry_ms),
     executionDelayMs: Number(cfg.execution_delay_ms),
     metadataIpfs: f.metadata_ipfs,
+    payloadType: extractPayloadType(objectType),
   };
 }
 

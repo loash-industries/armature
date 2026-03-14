@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   Card,
   CardHeader,
@@ -12,7 +14,11 @@ import {
   Progress,
   Separator,
 } from "@awar.dev/ui";
+import { useSuiClient } from "@mysten/dapp-kit";
 import { useProposal } from "@/hooks/useProposals";
+import { useWalletSigner } from "@/hooks/useWalletSigner";
+import { buildVote, buildTryExpire } from "@/lib/transactions";
+import { cacheKeys } from "@/lib/cache-keys";
 import { PROPOSAL_TYPE_MAP } from "@/config/proposal-types";
 
 function truncAddr(addr: string): string {
@@ -72,8 +78,71 @@ function statusVariant(
 }
 
 export function ProposalDetail() {
-  const { proposalId } = useParams({ strict: false });
+  const { proposalId, daoId } = useParams({ strict: false });
   const { data: proposal, isLoading } = useProposal(proposalId ?? "");
+  const client = useSuiClient();
+  const { signAndExecuteTransaction } = useWalletSigner();
+  const queryClient = useQueryClient();
+  const [actionPending, setActionPending] = useState<string | null>(null);
+
+  async function handleVote(approve: boolean) {
+    if (!proposal?.payloadType) {
+      toast.error("Cannot determine proposal type for voting");
+      return;
+    }
+    setActionPending(approve ? "yes" : "no");
+    try {
+      const transaction = buildVote({
+        proposalId: proposal.id,
+        approve,
+        proposalType: proposal.payloadType,
+      });
+      const result = await signAndExecuteTransaction({ transaction });
+      toast.success(approve ? "Voted Yes" : "Voted No");
+      await client.waitForTransaction({ digest: result.digest });
+      await queryClient.invalidateQueries({
+        queryKey: cacheKeys.proposal(proposal.id),
+      });
+      if (daoId) {
+        await queryClient.invalidateQueries({
+          queryKey: cacheKeys.proposals(daoId),
+        });
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Vote failed");
+    } finally {
+      setActionPending(null);
+    }
+  }
+
+  async function handleExpire() {
+    if (!proposal?.payloadType) {
+      toast.error("Cannot determine proposal type");
+      return;
+    }
+    setActionPending("expire");
+    try {
+      const transaction = buildTryExpire({
+        proposalId: proposal.id,
+        proposalType: proposal.payloadType,
+      });
+      const result = await signAndExecuteTransaction({ transaction });
+      toast.success("Proposal marked as expired");
+      await client.waitForTransaction({ digest: result.digest });
+      await queryClient.invalidateQueries({
+        queryKey: cacheKeys.proposal(proposal.id),
+      });
+      if (daoId) {
+        await queryClient.invalidateQueries({
+          queryKey: cacheKeys.proposals(daoId),
+        });
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Expire failed");
+    } finally {
+      setActionPending(null);
+    }
+  }
 
   if (isLoading) {
     return (
@@ -217,20 +286,18 @@ export function ProposalDetail() {
               <div className="flex gap-2">
                 <Button
                   className="flex-1"
-                  onClick={() =>
-                    alert("Vote Yes — transaction submission coming soon")
-                  }
+                  disabled={actionPending !== null}
+                  onClick={() => handleVote(true)}
                 >
-                  Vote Yes
+                  {actionPending === "yes" ? "Voting..." : "Vote Yes"}
                 </Button>
                 <Button
                   variant="destructive"
                   className="flex-1"
-                  onClick={() =>
-                    alert("Vote No — transaction submission coming soon")
-                  }
+                  disabled={actionPending !== null}
+                  onClick={() => handleVote(false)}
                 >
-                  Vote No
+                  {actionPending === "no" ? "Voting..." : "Vote No"}
                 </Button>
               </div>
             )}
@@ -238,8 +305,9 @@ export function ProposalDetail() {
             {proposal.status === "passed" && (
               <Button
                 className="w-full"
+                disabled={actionPending !== null}
                 onClick={() =>
-                  alert("Execute — transaction submission coming soon")
+                  toast.info("Execute is not yet implemented — requires DAO object IDs")
                 }
               >
                 Execute Proposal
@@ -250,11 +318,10 @@ export function ProposalDetail() {
               <Button
                 variant="outline"
                 className="w-full"
-                onClick={() =>
-                  alert("Expire — transaction submission coming soon")
-                }
+                disabled={actionPending !== null}
+                onClick={() => handleExpire()}
               >
-                Mark Expired
+                {actionPending === "expire" ? "Processing..." : "Mark Expired"}
               </Button>
             )}
           </CardContent>
