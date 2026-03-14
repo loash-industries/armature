@@ -31,25 +31,74 @@ export interface SpinOutSubDAOPayload {
   metadataIpfs: string;
 }
 
-export interface EmergencyFreezePayload {
-  typeKey: string;
-  durationMs: number;
-  metadataIpfs: string;
-}
-
-export interface EmergencyUnfreezePayload {
-  typeKey: string;
-  metadataIpfs: string;
-}
-
-export interface CapabilityExtractPayload {
-  capObjectId: string;
-  recipient: string;
-  metadataIpfs: string;
-}
-
 export interface SpawnDAOPayload {
-  successorDaoId: string;
+  name: string;
+  description: string;
+  metadataIpfs: string;
+}
+
+export interface SendCoinToDAOPayload {
+  recipientTreasuryId: string;
+  amount: string;
+  coinType: string;
+  metadataIpfs: string;
+}
+
+export interface SendSmallPaymentPayload {
+  recipient: string;
+  amount: string;
+  coinType: string;
+  metadataIpfs: string;
+}
+
+export interface UpdateFreezeConfigPayload {
+  newMaxFreezeDurationMs: string;
+  metadataIpfs: string;
+}
+
+export interface UpdateFreezeExemptTypesPayload {
+  typesToAdd: string;
+  typesToRemove: string;
+  metadataIpfs: string;
+}
+
+export interface TransferCapToSubDAOPayload {
+  capId: string;
+  targetSubdao: string;
+  metadataIpfs: string;
+}
+
+export interface ReclaimCapFromSubDAOPayload {
+  subdaoId: string;
+  capId: string;
+  controlId: string;
+  metadataIpfs: string;
+}
+
+export interface ProposeUpgradePayload {
+  capId: string;
+  packageId: string;
+  digest: string;
+  policy: number;
+  metadataIpfs: string;
+}
+
+export interface PauseSubDAOExecutionPayload {
+  controlId: string;
+  metadataIpfs: string;
+}
+
+export interface UnpauseSubDAOExecutionPayload {
+  controlId: string;
+  metadataIpfs: string;
+}
+
+export interface TransferAssetsPayload {
+  targetDaoId: string;
+  targetTreasuryId: string;
+  targetVaultId: string;
+  coinTypes: string;
+  capIds: string;
   metadataIpfs: string;
 }
 
@@ -108,16 +157,23 @@ export type ProposalPayload =
   | { typeKey: "TransferFreezeAdmin"; data: TransferFreezeAdminPayload }
   | { typeKey: "UnfreezeProposalType"; data: UnfreezeProposalTypePayload }
   | { typeKey: "SpinOutSubDAO"; data: SpinOutSubDAOPayload }
-  | { typeKey: "EmergencyFreeze"; data: EmergencyFreezePayload }
-  | { typeKey: "EmergencyUnfreeze"; data: EmergencyUnfreezePayload }
-  | { typeKey: "CapabilityExtract"; data: CapabilityExtractPayload }
   | { typeKey: "SpawnDAO"; data: SpawnDAOPayload }
+  | { typeKey: "SendCoinToDAO"; data: SendCoinToDAOPayload }
+  | { typeKey: "SendSmallPayment"; data: SendSmallPaymentPayload }
+  | { typeKey: "UpdateFreezeConfig"; data: UpdateFreezeConfigPayload }
+  | { typeKey: "UpdateFreezeExemptTypes"; data: UpdateFreezeExemptTypesPayload }
+  | { typeKey: "TransferCapToSubDAO"; data: TransferCapToSubDAOPayload }
+  | { typeKey: "ReclaimCapFromSubDAO"; data: ReclaimCapFromSubDAOPayload }
+  | { typeKey: "ProposeUpgrade"; data: ProposeUpgradePayload }
   | { typeKey: "TreasuryWithdraw"; data: TreasuryWithdrawPayload }
   | { typeKey: "SetBoard"; data: SetBoardPayload }
   | { typeKey: "EnableProposalType"; data: EnableProposalTypePayload }
   | { typeKey: "UpdateProposalConfig"; data: UpdateProposalConfigPayload }
   | { typeKey: "CharterUpdate"; data: CharterUpdatePayload }
-  | { typeKey: "CreateSubDAO"; data: CreateSubDAOPayload };
+  | { typeKey: "CreateSubDAO"; data: CreateSubDAOPayload }
+  | { typeKey: "PauseSubDAOExecution"; data: PauseSubDAOExecutionPayload }
+  | { typeKey: "UnpauseSubDAOExecution"; data: UnpauseSubDAOExecutionPayload }
+  | { typeKey: "TransferAssets"; data: TransferAssetsPayload };
 
 /** Summary of an on-chain proposal for list views. */
 export interface ProposalSummary {
@@ -137,4 +193,6 @@ export interface ProposalSummary {
   payloadType: string;
   /** Map of voter address → approved (true=yes, false=no) */
   votesCast: Record<string, boolean>;
+  /** On-chain payload fields (e.g. new_members, recipient, amount). */
+  payload: Record<string, unknown>;
 }

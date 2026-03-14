@@ -48,25 +48,62 @@ export const spinOutSubDAOSchema = z.object({
   metadataIpfs,
 });
 
-export const emergencyFreezeSchema = z.object({
-  typeKey: z.string().min(1, "Select a type to freeze"),
-  durationMs: z.number().int().min(3600000, "Minimum freeze is 1 hour"),
-  metadataIpfs,
-});
-
-export const emergencyUnfreezeSchema = z.object({
-  typeKey: z.string().min(1, "Select a type to unfreeze"),
-  metadataIpfs,
-});
-
-export const capabilityExtractSchema = z.object({
-  capObjectId: suiObjectId,
-  recipient: suiAddress,
-  metadataIpfs,
-});
-
 export const spawnDAOSchema = z.object({
-  successorDaoId: suiObjectId,
+  name: z.string().min(1, "DAO name is required"),
+  description: z.string().min(1, "Description is required"),
+  metadataIpfs,
+});
+
+export const updateFreezeConfigSchema = z.object({
+  newMaxFreezeDurationMs: z
+    .string()
+    .min(1, "Duration is required"),
+  metadataIpfs,
+});
+
+export const updateFreezeExemptTypesSchema = z.object({
+  typesToAdd: z.string(),
+  typesToRemove: z.string(),
+  metadataIpfs,
+});
+
+export const transferCapToSubDAOSchema = z.object({
+  capId: suiObjectId,
+  targetSubdao: suiObjectId,
+  metadataIpfs,
+});
+
+export const reclaimCapFromSubDAOSchema = z.object({
+  subdaoId: suiObjectId,
+  capId: suiObjectId,
+  controlId: suiObjectId,
+  metadataIpfs,
+});
+
+export const proposeUpgradeSchema = z.object({
+  capId: suiObjectId,
+  packageId: suiObjectId,
+  digest: z.string().min(1, "Digest is required"),
+  policy: z.number().int().min(0).max(255),
+  metadataIpfs,
+});
+
+export const pauseSubDAOExecutionSchema = z.object({
+  controlId: suiObjectId,
+  metadataIpfs,
+});
+
+export const unpauseSubDAOExecutionSchema = z.object({
+  controlId: suiObjectId,
+  metadataIpfs,
+});
+
+export const transferAssetsSchema = z.object({
+  targetDaoId: suiObjectId,
+  targetTreasuryId: suiObjectId,
+  targetVaultId: suiObjectId,
+  coinTypes: z.string(),
+  capIds: z.string(),
   metadataIpfs,
 });
 
@@ -76,6 +113,20 @@ export const treasuryWithdrawSchema = z.object({
   coinType: z.string().min(1, "Select a coin type"),
   amount: z.string().min(1, "Amount is required"),
   recipient: suiAddress,
+  metadataIpfs,
+});
+
+export const sendCoinToDAOSchema = z.object({
+  recipientTreasuryId: suiObjectId,
+  amount: z.string().min(1, "Amount is required"),
+  coinType: z.string().min(1, "Select a coin type"),
+  metadataIpfs,
+});
+
+export const sendSmallPaymentSchema = z.object({
+  recipient: suiAddress,
+  amount: z.string().min(1, "Amount is required"),
+  coinType: z.string().min(1, "Select a coin type"),
   metadataIpfs,
 });
 
@@ -134,14 +185,21 @@ export const PROPOSAL_SCHEMAS: Record<string, z.ZodObject<any>> = {
   TransferFreezeAdmin: transferFreezeAdminSchema,
   UnfreezeProposalType: unfreezeProposalTypeSchema,
   SpinOutSubDAO: spinOutSubDAOSchema,
-  EmergencyFreeze: emergencyFreezeSchema,
-  EmergencyUnfreeze: emergencyUnfreezeSchema,
-  CapabilityExtract: capabilityExtractSchema,
   SpawnDAO: spawnDAOSchema,
+  UpdateFreezeConfig: updateFreezeConfigSchema,
+  UpdateFreezeExemptTypes: updateFreezeExemptTypesSchema,
+  TransferCapToSubDAO: transferCapToSubDAOSchema,
+  ReclaimCapFromSubDAO: reclaimCapFromSubDAOSchema,
+  ProposeUpgrade: proposeUpgradeSchema,
   TreasuryWithdraw: treasuryWithdrawSchema,
+  SendCoinToDAO: sendCoinToDAOSchema,
+  SendSmallPayment: sendSmallPaymentSchema,
   SetBoard: setBoardSchema,
   EnableProposalType: enableProposalTypeSchema,
   UpdateProposalConfig: updateProposalConfigSchema,
   CharterUpdate: charterUpdateSchema,
   CreateSubDAO: createSubDAOSchema,
+  PauseSubDAOExecution: pauseSubDAOExecutionSchema,
+  UnpauseSubDAOExecution: unpauseSubDAOExecutionSchema,
+  TransferAssets: transferAssetsSchema,
 };

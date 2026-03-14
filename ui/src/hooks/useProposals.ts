@@ -25,6 +25,7 @@ interface ProposalFields {
   status: { variant: string };
   metadata_ipfs: string;
   votes_cast: { contents: Array<{ key: string; value: boolean }> };
+  payload: Record<string, unknown>;
 }
 
 function deriveStatus(
@@ -90,6 +91,7 @@ function parseProposal(obj: {
     votesCast: Object.fromEntries(
       (f.votes_cast?.contents ?? []).map((e) => [e.key, e.value]),
     ),
+    payload: (f.payload && typeof f.payload === "object" ? f.payload : {}) as Record<string, unknown>,
   };
 }
 
