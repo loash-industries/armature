@@ -25,6 +25,7 @@ import type { CreateSubDAOPayload, ProposalConfigInput } from "@/types/proposal"
 
 interface CreateSubDAOWizardProps {
   daoId: string;
+  isPending?: boolean;
   onSubmit: (data: CreateSubDAOPayload) => void;
 }
 
@@ -53,6 +54,7 @@ const AVAILABLE_TYPES = ALL_PROPOSAL_TYPE_KEYS.filter(
 );
 
 export function CreateSubDAOWizard({
+  isPending,
   onSubmit,
 }: CreateSubDAOWizardProps) {
   const [step, setStep] = useState(0);
@@ -370,7 +372,9 @@ export function CreateSubDAOWizard({
               Next
             </Button>
           ) : (
-            <Button type="submit">Create SubDAO Proposal</Button>
+            <Button type="submit" disabled={isPending}>
+              {isPending ? "Submitting..." : "Create SubDAO Proposal"}
+            </Button>
           )}
         </div>
       </form>

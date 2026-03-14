@@ -22,11 +22,13 @@ import type { TreasuryWithdrawPayload } from "@/types/proposal";
 
 interface TreasuryWithdrawFormProps {
   daoId: string;
+  isPending?: boolean;
   onSubmit: (data: TreasuryWithdrawPayload) => void;
 }
 
 export function TreasuryWithdrawForm({
   daoId,
+  isPending,
   onSubmit,
 }: TreasuryWithdrawFormProps) {
   const { data: dao } = useDaoSummary(daoId);
@@ -128,7 +130,9 @@ export function TreasuryWithdrawForm({
           )}
         />
 
-        <Button type="submit">Create Proposal</Button>
+        <Button type="submit" disabled={isPending}>
+          {isPending ? "Submitting..." : "Create Proposal"}
+        </Button>
       </form>
     </Form>
   );

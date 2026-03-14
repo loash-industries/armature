@@ -23,11 +23,13 @@ import type { UpdateProposalConfigPayload } from "@/types/proposal";
 
 interface UpdateProposalConfigFormProps {
   daoId: string;
+  isPending?: boolean;
   onSubmit: (data: UpdateProposalConfigPayload) => void;
 }
 
 export function UpdateProposalConfigForm({
   daoId,
+  isPending,
   onSubmit,
 }: UpdateProposalConfigFormProps) {
   const { enabledTypes, govConfig } = useProposalFormOptions(daoId);
@@ -115,7 +117,9 @@ export function UpdateProposalConfigForm({
           )}
         />
 
-        <Button type="submit">Create Proposal</Button>
+        <Button type="submit" disabled={isPending}>
+          {isPending ? "Submitting..." : "Create Proposal"}
+        </Button>
       </form>
     </Form>
   );
