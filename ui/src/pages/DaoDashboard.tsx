@@ -93,7 +93,8 @@ export function DaoDashboard() {
         <Alert>
           <AlertTitle>Emergency Freeze Active</AlertTitle>
           <AlertDescription>
-            {dao.frozenTypes.length} proposal type(s) currently frozen.
+            {dao.frozenTypes.length} proposal type(s) currently frozen:{" "}
+            {dao.frozenTypes.join(", ")}
           </AlertDescription>
         </Alert>
       )}
