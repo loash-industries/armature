@@ -23,12 +23,14 @@ import { useProposalFormOptions } from "@/hooks/useProposalFormOptions";
 interface GenericProposalFormProps {
   typeKey: string;
   daoId: string;
+  isPending?: boolean;
   onSubmit: (data: Record<string, unknown>) => void;
 }
 
 export function GenericProposalForm({
   typeKey,
   daoId,
+  isPending,
   onSubmit,
 }: GenericProposalFormProps) {
   const schema = PROPOSAL_SCHEMAS[typeKey];
@@ -80,7 +82,9 @@ export function GenericProposalForm({
           )}
         />
 
-        <Button type="submit">Create Proposal</Button>
+        <Button type="submit" disabled={isPending}>
+          {isPending ? "Submitting..." : "Create Proposal"}
+        </Button>
       </form>
     </Form>
   );

@@ -13,6 +13,7 @@ import {
   PROPOSAL_TYPE_TIER,
 } from "@/config/proposal-types";
 import { useProposalFormOptions } from "@/hooks/useProposalFormOptions";
+import { useSubmitProposal } from "@/hooks/useSubmitProposal";
 import { ProposalTypeSelector } from "@/components/proposals/ProposalTypeSelector";
 import { GenericProposalForm } from "@/components/proposals/GenericProposalForm";
 import { TreasuryWithdrawForm } from "@/components/proposals/forms/TreasuryWithdrawForm";
@@ -21,15 +22,12 @@ import { EnableProposalTypeForm } from "@/components/proposals/forms/EnablePropo
 import { UpdateProposalConfigForm } from "@/components/proposals/forms/UpdateProposalConfigForm";
 import { CharterUpdateForm } from "@/components/proposals/forms/CharterUpdateForm";
 import { CreateSubDAOWizard } from "@/components/proposals/CreateSubDAOWizard";
-function handleSubmit(typeKey: string, data: unknown) {
-  console.log("Proposal payload:", { typeKey, data });
-  alert(`Proposal "${typeKey}" ready. Transaction submission coming soon.`);
-}
 
 export function NewProposalPage() {
   const { daoId } = useParams({ strict: false });
   const search = useSearch({ strict: false }) as Record<string, string>;
   const navigate = useNavigate();
+  const { submitProposal, isPending } = useSubmitProposal(daoId ?? "");
   const typeKey = search.type ?? "";
   const [selectorOpen, setSelectorOpen] = useState(!typeKey);
 
@@ -92,57 +90,50 @@ export function NewProposalPage() {
             <GenericProposalForm
               typeKey={typeKey}
               daoId={daoId ?? ""}
-              onSubmit={(data) =>
-                handleSubmit(typeKey, data)
-              }
+              isPending={isPending}
+              onSubmit={(data) => submitProposal(typeKey, data)}
             />
           )}
           {tier === "tier2" && typeKey === "TreasuryWithdraw" && (
             <TreasuryWithdrawForm
               daoId={daoId ?? ""}
-              onSubmit={(data) =>
-                handleSubmit("TreasuryWithdraw", data)
-              }
+              isPending={isPending}
+              onSubmit={(data) => submitProposal("TreasuryWithdraw", data)}
             />
           )}
           {tier === "tier2" && typeKey === "SetBoard" && (
             <SetBoardForm
               daoId={daoId ?? ""}
-              onSubmit={(data) =>
-                handleSubmit("SetBoard", data)
-              }
+              isPending={isPending}
+              onSubmit={(data) => submitProposal("SetBoard", data)}
             />
           )}
           {tier === "tier2" && typeKey === "EnableProposalType" && (
             <EnableProposalTypeForm
               daoId={daoId ?? ""}
-              onSubmit={(data) =>
-                handleSubmit("EnableProposalType", data)
-              }
+              isPending={isPending}
+              onSubmit={(data) => submitProposal("EnableProposalType", data)}
             />
           )}
           {tier === "tier2" && typeKey === "UpdateProposalConfig" && (
             <UpdateProposalConfigForm
               daoId={daoId ?? ""}
-              onSubmit={(data) =>
-                handleSubmit("UpdateProposalConfig", data)
-              }
+              isPending={isPending}
+              onSubmit={(data) => submitProposal("UpdateProposalConfig", data)}
             />
           )}
           {tier === "tier2" && typeKey === "CharterUpdate" && (
             <CharterUpdateForm
               daoId={daoId ?? ""}
-              onSubmit={(data) =>
-                handleSubmit("CharterUpdate", data)
-              }
+              isPending={isPending}
+              onSubmit={(data) => submitProposal("CharterUpdate", data)}
             />
           )}
           {tier === "wizard" && (
             <CreateSubDAOWizard
               daoId={daoId ?? ""}
-              onSubmit={(data) =>
-                handleSubmit("CreateSubDAO", data)
-              }
+              isPending={isPending}
+              onSubmit={(data) => submitProposal("CreateSubDAO", data)}
             />
           )}
         </CardContent>

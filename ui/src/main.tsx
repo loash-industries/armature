@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { SuiClientProvider, WalletProvider } from "@mysten/dapp-kit";
 import { RouterProvider } from "@tanstack/react-router";
-import { AWARProvider } from "@awar.dev/ui";
+import { AWARProvider, Toaster } from "@awar.dev/ui";
 import { networkConfig } from "@/config/network";
 import { queryClient } from "@/lib/query-client";
 import { WalletSignerProvider } from "@/lib/wallet-provider";
@@ -21,6 +21,7 @@ createRoot(document.getElementById("root")!).render(
           <WalletSignerProvider>
             <AWARProvider>
               <RouterProvider router={router} />
+              <Toaster />
             </AWARProvider>
           </WalletSignerProvider>
         </WalletProvider>

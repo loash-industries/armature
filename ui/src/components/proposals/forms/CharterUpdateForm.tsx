@@ -18,11 +18,13 @@ import type { CharterUpdatePayload } from "@/types/proposal";
 
 interface CharterUpdateFormProps {
   daoId: string;
+  isPending?: boolean;
   onSubmit: (data: CharterUpdatePayload) => void;
 }
 
 export function CharterUpdateForm({
   daoId,
+  isPending,
   onSubmit,
 }: CharterUpdateFormProps) {
   const { data: dao } = useDaoSummary(daoId);
@@ -101,7 +103,9 @@ export function CharterUpdateForm({
           )}
         />
 
-        <Button type="submit">Create Proposal</Button>
+        <Button type="submit" disabled={isPending}>
+          {isPending ? "Submitting..." : "Create Proposal"}
+        </Button>
       </form>
     </Form>
   );

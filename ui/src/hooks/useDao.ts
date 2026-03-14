@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useSuiClient } from "@mysten/dapp-kit";
 import { cacheKeys } from "@/lib/cache-keys";
-import { getObject, getDynamicFields, queryEvents } from "@/lib/sui-rpc";
+import { getObject, getDynamicFields, queryEvents, unwrapMoveStruct } from "@/lib/sui-rpc";
 import { PACKAGE_ID, MODULES } from "@/config/constants";
 import { ALL_PROPOSAL_TYPE_KEYS } from "@/config/proposal-types";
 import type {
@@ -22,12 +22,12 @@ import type {
 /** Extract typed fields from a SuiObjectResponse's MoveStruct content. */
 function moveFields<T>(obj: { data?: { content?: unknown } | null }): T {
   const content = obj.data?.content as
-    | { fields: T; dataType: "moveObject" }
+    | { fields: unknown; dataType: "moveObject" }
     | undefined;
   if (!content || content.dataType !== "moveObject") {
     throw new Error("Object has no Move content");
   }
-  return content.fields;
+  return unwrapMoveStruct(content.fields) as T;
 }
 
 /** Fetch and parse the DAO object into a DaoSummary. */
@@ -131,7 +131,7 @@ export function useDaoActivity(daoId: string, limit = 10) {
     queryFn: async (): Promise<ActivityEvent[]> => {
       const modules = [
         MODULES.dao,
-        MODULES.proposal,
+        MODULES.board_voting,
         MODULES.treasury_vault,
         MODULES.emergency,
       ];
