@@ -24,6 +24,7 @@ interface ProposalFields {
   created_at_ms: string;
   status: { variant: string };
   metadata_ipfs: string;
+  votes_cast: { contents: Array<{ key: string; value: boolean }> };
 }
 
 function deriveStatus(
@@ -86,6 +87,9 @@ function parseProposal(obj: {
     executionDelayMs: Number(cfg.execution_delay_ms),
     metadataIpfs: f.metadata_ipfs,
     payloadType: extractPayloadType(objectType),
+    votesCast: Object.fromEntries(
+      (f.votes_cast?.contents ?? []).map((e) => [e.key, e.value]),
+    ),
   };
 }
 

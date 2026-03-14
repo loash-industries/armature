@@ -135,4 +135,6 @@ export interface ProposalSummary {
   metadataIpfs: string;
   /** Full Move type of the proposal payload, e.g. `0x...::set_board::SetBoard` */
   payloadType: string;
+  /** Map of voter address → approved (true=yes, false=no) */
+  votesCast: Record<string, boolean>;
 }

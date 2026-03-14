@@ -81,9 +81,11 @@ export function ProposalDetail() {
   const { proposalId, daoId } = useParams({ strict: false });
   const { data: proposal, isLoading } = useProposal(proposalId ?? "");
   const client = useSuiClient();
-  const { signAndExecuteTransaction } = useWalletSigner();
+  const { address, signAndExecuteTransaction } = useWalletSigner();
   const queryClient = useQueryClient();
   const [actionPending, setActionPending] = useState<string | null>(null);
+  const hasVoted = proposal && address ? address in proposal.votesCast : false;
+  const priorVote = proposal && address ? proposal.votesCast[address] : undefined;
 
   async function handleVote(approve: boolean) {
     if (!proposal?.payloadType) {
@@ -282,7 +284,13 @@ export function ProposalDetail() {
 
             <Separator />
 
-            {proposal.status === "active" && (
+            {proposal.status === "active" && hasVoted && (
+              <div className="text-muted-foreground text-center text-sm">
+                You voted {priorVote ? "Yes" : "No"}
+              </div>
+            )}
+
+            {proposal.status === "active" && !hasVoted && (
               <div className="flex gap-2">
                 <Button
                   className="flex-1"
