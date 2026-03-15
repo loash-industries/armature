@@ -7,6 +7,7 @@ import {
   CardDescription,
   CardContent,
   Badge,
+  Button,
   Skeleton,
   Alert,
   AlertTitle,
@@ -17,8 +18,21 @@ import {
   TableBody,
   TableRow,
   TableCell,
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+  Separator,
 } from "@awar.dev/ui";
+import { useSuiClient } from "@mysten/dapp-kit";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useDaoSummary, useEmergencyFreezeDetail } from "@/hooks/useDao";
+import { useFreezeAdminCap } from "@/hooks/useFreezeAdminCap";
+import { useWalletSigner } from "@/hooks/useWalletSigner";
+import { buildFreezeType, buildUnfreezeType } from "@/lib/transactions";
+import { cacheKeys } from "@/lib/cache-keys";
 
 function formatDuration(ms: number): string {
   const hours = Math.floor(ms / 3_600_000);
@@ -59,9 +73,59 @@ export function EmergencyPage() {
   const { data: freeze, isLoading } = useEmergencyFreezeDetail(
     dao?.emergencyFreezeId,
   );
+  const { data: freezeAdminCapId } = useFreezeAdminCap(daoId ?? "");
+  const { signAndExecuteTransaction } = useWalletSigner();
+  const client = useSuiClient();
+  const queryClient = useQueryClient();
+  const [freezeTarget, setFreezeTarget] = useState("");
+  const [unfreezeTarget, setUnfreezeTarget] = useState("");
+  const [actionPending, setActionPending] = useState<string | null>(null);
 
   const activeFrozen =
     freeze?.frozenTypes.filter((t) => t.expiryMs > Date.now()) ?? [];
+  const isAdmin = !!freezeAdminCapId;
+
+  async function handleFreeze() {
+    if (!dao || !freezeAdminCapId || !freezeTarget) return;
+    setActionPending("freeze");
+    try {
+      const transaction = buildFreezeType({
+        emergencyFreezeId: dao.emergencyFreezeId,
+        freezeAdminCapId,
+        typeKey: freezeTarget,
+      });
+      const result = await signAndExecuteTransaction({ transaction });
+      toast.success(`Frozen: ${freezeTarget}`);
+      await client.waitForTransaction({ digest: result.digest });
+      await queryClient.invalidateQueries({ queryKey: cacheKeys.dao(daoId ?? "") });
+      setFreezeTarget("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Freeze failed");
+    } finally {
+      setActionPending(null);
+    }
+  }
+
+  async function handleUnfreeze() {
+    if (!dao || !freezeAdminCapId || !unfreezeTarget) return;
+    setActionPending("unfreeze");
+    try {
+      const transaction = buildUnfreezeType({
+        emergencyFreezeId: dao.emergencyFreezeId,
+        freezeAdminCapId,
+        typeKey: unfreezeTarget,
+      });
+      const result = await signAndExecuteTransaction({ transaction });
+      toast.success(`Unfrozen: ${unfreezeTarget}`);
+      await client.waitForTransaction({ digest: result.digest });
+      await queryClient.invalidateQueries({ queryKey: cacheKeys.dao(daoId ?? "") });
+      setUnfreezeTarget("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Unfreeze failed");
+    } finally {
+      setActionPending(null);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -171,6 +235,76 @@ export function EmergencyPage() {
           )}
         </CardContent>
       </Card>
+
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Admin Actions</CardTitle>
+            <CardDescription>
+              You hold the FreezeAdminCap for this DAO
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Freeze a Proposal Type</p>
+              <div className="flex gap-2">
+                <Select value={freezeTarget} onValueChange={setFreezeTarget}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Select type to freeze..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {dao?.enabledProposalTypes
+                      .filter(
+                        (t) => !activeFrozen.some((f) => f.typeKey === t),
+                      )
+                      .map((t) => (
+                        <SelectItem key={t} value={t}>
+                          {t}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="destructive"
+                  disabled={!freezeTarget || actionPending !== null}
+                  onClick={handleFreeze}
+                >
+                  {actionPending === "freeze" ? "Freezing..." : "Freeze"}
+                </Button>
+              </div>
+            </div>
+
+            <Separator />
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Unfreeze a Proposal Type</p>
+              <div className="flex gap-2">
+                <Select
+                  value={unfreezeTarget}
+                  onValueChange={setUnfreezeTarget}
+                >
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Select type to unfreeze..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activeFrozen.map((f) => (
+                      <SelectItem key={f.typeKey} value={f.typeKey}>
+                        {f.typeKey}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  disabled={!unfreezeTarget || actionPending !== null}
+                  onClick={handleUnfreeze}
+                >
+                  {actionPending === "unfreeze" ? "Unfreezing..." : "Unfreeze"}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

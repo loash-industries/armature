@@ -21,6 +21,8 @@ import { SetBoardForm } from "@/components/proposals/forms/SetBoardForm";
 import { EnableProposalTypeForm } from "@/components/proposals/forms/EnableProposalTypeForm";
 import { UpdateProposalConfigForm } from "@/components/proposals/forms/UpdateProposalConfigForm";
 import { CharterUpdateForm } from "@/components/proposals/forms/CharterUpdateForm";
+import { SendCoinToDAOForm } from "@/components/proposals/forms/SendCoinToDAOForm";
+import { SendSmallPaymentForm } from "@/components/proposals/forms/SendSmallPaymentForm";
 import { CreateSubDAOWizard } from "@/components/proposals/CreateSubDAOWizard";
 
 export function NewProposalPage() {
@@ -127,6 +129,20 @@ export function NewProposalPage() {
               daoId={daoId ?? ""}
               isPending={isPending}
               onSubmit={(data) => submitProposal("CharterUpdate", data)}
+            />
+          )}
+          {tier === "tier2" && typeKey === "SendCoinToDAO" && (
+            <SendCoinToDAOForm
+              daoId={daoId ?? ""}
+              isPending={isPending}
+              onSubmit={(data) => submitProposal("SendCoinToDAO", data)}
+            />
+          )}
+          {tier === "tier2" && typeKey === "SendSmallPayment" && (
+            <SendSmallPaymentForm
+              daoId={daoId ?? ""}
+              isPending={isPending}
+              onSubmit={(data) => submitProposal("SendSmallPayment", data)}
             />
           )}
           {tier === "wizard" && (

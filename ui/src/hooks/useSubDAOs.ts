@@ -5,6 +5,7 @@ import {
   getObject,
   getDynamicFields,
   multiGetObjects,
+  unwrapMoveStruct,
 } from "@/lib/sui-rpc";
 import type {
   DaoFields,
@@ -15,12 +16,12 @@ import type {
 
 function moveFields<T>(obj: { data?: { content?: unknown } | null }): T {
   const content = obj.data?.content as
-    | { fields: T; dataType: "moveObject" }
+    | { fields: unknown; dataType: "moveObject" }
     | undefined;
   if (!content || content.dataType !== "moveObject") {
     throw new Error("Object has no Move content");
   }
-  return content.fields;
+  return unwrapMoveStruct(content.fields) as T;
 }
 
 export function useSubDAOs(vaultId: string | undefined) {
@@ -96,7 +97,7 @@ export function useParentDAO(daoId: string) {
       const daoObj = await getObject(client, daoId);
       const dao = moveFields<DaoFields>(daoObj);
 
-      const controllerVec = dao.controller_cap_id.vec;
+      const controllerVec = dao.controller_cap_id?.vec;
       if (!controllerVec || controllerVec.length === 0) {
         return null;
       }
@@ -208,7 +209,7 @@ export function useDAOHierarchy(daoId: string, vaultId: string | undefined) {
 
       // Determine parent
       let parentId: string | null = null;
-      const controllerVec = dao.controller_cap_id.vec;
+      const controllerVec = dao.controller_cap_id?.vec;
       if (controllerVec && controllerVec.length > 0) {
         try {
           const capObj = await getObject(client, controllerVec[0], {
