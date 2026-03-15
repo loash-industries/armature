@@ -25,6 +25,7 @@ interface ProposalFields {
   status: { variant: string };
   metadata_ipfs: string;
   votes_cast: { contents: Array<{ key: string; value: boolean }> };
+  payload: Record<string, unknown>;
 }
 
 function deriveStatus(
@@ -90,6 +91,7 @@ function parseProposal(obj: {
     votesCast: Object.fromEntries(
       (f.votes_cast?.contents ?? []).map((e) => [e.key, e.value]),
     ),
+    payload: (f.payload && typeof f.payload === "object" ? f.payload : {}) as Record<string, unknown>,
   };
 }
 
@@ -109,14 +111,15 @@ export function useProposals(daoId: string) {
         100,
       );
 
-      const proposalIds: string[] = [];
+      const proposalIdSet = new Set<string>();
       for (const ev of result.data) {
         const parsed = ev.parsedJson as Record<string, unknown>;
         if ((parsed.dao_id as string) === daoId && parsed.proposal_id) {
-          proposalIds.push(parsed.proposal_id as string);
+          proposalIdSet.add(parsed.proposal_id as string);
         }
       }
 
+      const proposalIds = [...proposalIdSet];
       if (proposalIds.length === 0) return [];
 
       const objects = await multiGetObjects(client, proposalIds);

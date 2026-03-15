@@ -15,6 +15,7 @@ import { GovConfigPage } from "@/pages/GovConfigPage";
 import { EmergencyPage } from "@/pages/EmergencyPage";
 import { SubDAOListPage } from "@/pages/SubDAOListPage";
 import { NewProposalPage } from "@/pages/NewProposalPage";
+import { CreateDaoPage } from "@/pages/CreateDaoPage";
 
 const rootRoute = createRootRoute();
 
@@ -90,7 +91,14 @@ const subdaosRoute = createRoute({
   component: SubDAOListPage,
 });
 
+const createDaoRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "create",
+  component: CreateDaoPage,
+});
+
 const routeTree = rootRoute.addChildren([
+  createDaoRoute,
   daoRoute.addChildren([
     dashboardRoute,
     treasuryRoute,

@@ -46,15 +46,15 @@ export const PROPOSAL_TYPE_CATEGORIES: ProposalTypeCategory[] = [
         label: "Treasury Withdraw",
         description: "Send coins from the treasury to a recipient",
       },
-    ],
-  },
-  {
-    label: "Capabilities",
-    types: [
       {
-        key: "CapabilityExtract",
-        label: "Extract Capability",
-        description: "Extract a capability from the vault",
+        key: "SendCoinToDAO",
+        label: "Send Coin to DAO",
+        description: "Transfer coins from treasury to another DAO's treasury",
+      },
+      {
+        key: "SendSmallPayment",
+        label: "Send Small Payment",
+        description: "Rate-limited small payment from treasury",
       },
     ],
   },
@@ -73,16 +73,6 @@ export const PROPOSAL_TYPE_CATEGORIES: ProposalTypeCategory[] = [
     label: "Security",
     types: [
       {
-        key: "EmergencyFreeze",
-        label: "Emergency Freeze",
-        description: "Freeze one or more proposal types",
-      },
-      {
-        key: "EmergencyUnfreeze",
-        label: "Emergency Unfreeze",
-        description: "Unfreeze a previously frozen proposal type",
-      },
-      {
         key: "TransferFreezeAdmin",
         label: "Transfer Freeze Admin",
         description: "Transfer the freeze admin capability",
@@ -91,6 +81,16 @@ export const PROPOSAL_TYPE_CATEGORIES: ProposalTypeCategory[] = [
         key: "UnfreezeProposalType",
         label: "Unfreeze Proposal Type",
         description: "Governance-driven unfreeze of a proposal type",
+      },
+      {
+        key: "UpdateFreezeConfig",
+        label: "Update Freeze Config",
+        description: "Change the maximum freeze duration",
+      },
+      {
+        key: "UpdateFreezeExemptTypes",
+        label: "Update Freeze-Exempt Types",
+        description: "Add or remove types from the freeze-exempt set",
       },
     ],
   },
@@ -111,6 +111,41 @@ export const PROPOSAL_TYPE_CATEGORIES: ProposalTypeCategory[] = [
         key: "SpawnDAO",
         label: "Spawn DAO",
         description: "Create an independent DAO via migration",
+      },
+      {
+        key: "TransferCapToSubDAO",
+        label: "Transfer Cap to SubDAO",
+        description: "Transfer a capability from DAO vault to SubDAO vault",
+      },
+      {
+        key: "ReclaimCapFromSubDAO",
+        label: "Reclaim Cap from SubDAO",
+        description: "Reclaim a capability from a SubDAO's vault",
+      },
+      {
+        key: "PauseSubDAOExecution",
+        label: "Pause SubDAO Execution",
+        description: "Pause proposal execution on a SubDAO",
+      },
+      {
+        key: "UnpauseSubDAOExecution",
+        label: "Unpause SubDAO Execution",
+        description: "Resume proposal execution on a SubDAO",
+      },
+      {
+        key: "TransferAssets",
+        label: "Transfer Assets",
+        description: "Transfer coins and capabilities to another DAO",
+      },
+    ],
+  },
+  {
+    label: "Upgrade",
+    types: [
+      {
+        key: "ProposeUpgrade",
+        label: "Propose Upgrade",
+        description: "Authorize a package upgrade using a stored UpgradeCap",
       },
     ],
   },
@@ -137,13 +172,20 @@ export const PROPOSAL_TYPE_TIER: Record<string, ProposalTier> = {
   TransferFreezeAdmin: "tier1",
   UnfreezeProposalType: "tier1",
   SpinOutSubDAO: "tier1",
-  EmergencyFreeze: "tier1",
-  EmergencyUnfreeze: "tier1",
-  CapabilityExtract: "tier1",
   SpawnDAO: "tier1",
+  UpdateFreezeConfig: "tier1",
+  UpdateFreezeExemptTypes: "tier1",
+  TransferCapToSubDAO: "tier1",
+  ReclaimCapFromSubDAO: "tier1",
+  ProposeUpgrade: "tier1",
+  PauseSubDAOExecution: "tier1",
+  UnpauseSubDAOExecution: "tier1",
+  TransferAssets: "tier1",
 
   // Tier 2 — custom forms
   TreasuryWithdraw: "tier2",
+  SendCoinToDAO: "tier2",
+  SendSmallPayment: "tier2",
   SetBoard: "tier2",
   EnableProposalType: "tier2",
   UpdateProposalConfig: "tier2",

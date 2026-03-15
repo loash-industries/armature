@@ -1,4 +1,5 @@
 import { useParams } from "@tanstack/react-router";
+import { useState } from "react";
 import {
   Card,
   CardHeader,
@@ -6,6 +7,7 @@ import {
   CardDescription,
   CardContent,
   Badge,
+  Button,
   Skeleton,
   Alert,
   AlertTitle,
@@ -16,12 +18,30 @@ import {
   TableBody,
   TableRow,
   TableCell,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+  Label,
 } from "@awar.dev/ui";
+import { useSuiClient } from "@mysten/dapp-kit";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   useDaoSummary,
   useTreasuryBalances,
   useTreasuryEvents,
 } from "@/hooks/useDao";
+import { useWalletSigner } from "@/hooks/useWalletSigner";
+import { useWalletCoins } from "@/hooks/useWalletCoins";
+import { buildDeposit } from "@/lib/transactions";
+import { cacheKeys } from "@/lib/cache-keys";
 
 function formatBalance(raw: bigint): string {
   const sui = Number(raw) / 1_000_000_000;
@@ -57,6 +77,41 @@ export function TreasuryPage() {
   const { data: events, isLoading: eventsLoading } = useTreasuryEvents(
     daoId ?? "",
   );
+  const { address, signAndExecuteTransaction } = useWalletSigner();
+  const { data: walletCoins } = useWalletCoins();
+  const client = useSuiClient();
+  const queryClient = useQueryClient();
+  const [depositOpen, setDepositOpen] = useState(false);
+  const [selectedCoin, setSelectedCoin] = useState("");
+  const [depositPending, setDepositPending] = useState(false);
+
+  const selectedCoinObj = walletCoins?.find(
+    (c) => c.coinObjectId === selectedCoin,
+  );
+
+  async function handleDeposit() {
+    if (!dao || !selectedCoin || !selectedCoinObj) return;
+    setDepositPending(true);
+    try {
+      const transaction = buildDeposit({
+        treasuryId: dao.treasuryId,
+        coinObjectId: selectedCoin,
+        coinType: selectedCoinObj.coinType,
+      });
+      const result = await signAndExecuteTransaction({ transaction });
+      toast.success("Deposit successful");
+      await client.waitForTransaction({ digest: result.digest });
+      await queryClient.invalidateQueries({
+        queryKey: cacheKeys.dao(daoId ?? ""),
+      });
+      setDepositOpen(false);
+      setSelectedCoin("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Deposit failed");
+    } finally {
+      setDepositPending(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -71,12 +126,21 @@ export function TreasuryPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Balances</CardTitle>
-          <CardDescription>
-            {balances
-              ? `${balances.length} coin type${balances.length !== 1 ? "s" : ""}`
-              : "Loading..."}
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Balances</CardTitle>
+              <CardDescription>
+                {balances
+                  ? `${balances.length} coin type${balances.length !== 1 ? "s" : ""}`
+                  : "Loading..."}
+              </CardDescription>
+            </div>
+            {address && (
+              <Button variant="outline" size="sm" onClick={() => setDepositOpen(true)}>
+                Deposit
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {balancesLoading ? (
@@ -147,6 +211,50 @@ export function TreasuryPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={depositOpen} onOpenChange={setDepositOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Deposit to Treasury</DialogTitle>
+            <DialogDescription>
+              Select a coin from your wallet to deposit into the DAO treasury.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Coin to Deposit</Label>
+              <Select value={selectedCoin} onValueChange={setSelectedCoin}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a coin..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {walletCoins?.map((c) => (
+                    <SelectItem key={c.coinObjectId} value={c.coinObjectId}>
+                      {shortCoinType(c.coinType)} — {formatBalance(c.balance)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {selectedCoinObj && (
+              <p className="text-sm">
+                <span className="text-muted-foreground">Amount:</span>{" "}
+                <span className="font-mono">
+                  {formatBalance(selectedCoinObj.balance)}{" "}
+                  {shortCoinType(selectedCoinObj.coinType)}
+                </span>
+              </p>
+            )}
+            <Button
+              className="w-full"
+              disabled={!selectedCoin || depositPending}
+              onClick={handleDeposit}
+            >
+              {depositPending ? "Depositing..." : "Deposit"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
