@@ -263,12 +263,18 @@ export function ProposalDetail() {
         queryKey: cacheKeys.proposal(proposal!.id),
       });
       if (daoId) {
-        await queryClient.invalidateQueries({
-          queryKey: cacheKeys.proposals(daoId),
-        });
-        await queryClient.invalidateQueries({
-          queryKey: cacheKeys.dao(daoId),
-        });
+        // Execution can change any DAO state — invalidate all related caches
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: cacheKeys.proposals(daoId) }),
+          queryClient.invalidateQueries({ queryKey: cacheKeys.dao(daoId) }),
+          queryClient.invalidateQueries({ queryKey: cacheKeys.governance(daoId) }),
+          queryClient.invalidateQueries({ queryKey: cacheKeys.board(daoId) }),
+          queryClient.invalidateQueries({ queryKey: cacheKeys.charter(daoId) }),
+          queryClient.invalidateQueries({ queryKey: cacheKeys.emergency(daoId) }),
+          queryClient.invalidateQueries({ queryKey: cacheKeys.treasury(daoId) }),
+          queryClient.invalidateQueries({ queryKey: cacheKeys.hierarchy(daoId) }),
+          queryClient.invalidateQueries({ queryKey: cacheKeys.subdaos(daoId) }),
+        ]);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Execution failed");
