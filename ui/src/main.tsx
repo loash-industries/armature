@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { SuiClientProvider, WalletProvider } from "@mysten/dapp-kit";
+import "@mysten/dapp-kit/dist/index.css";
 import { RouterProvider } from "@tanstack/react-router";
 import { AWARProvider, Toaster } from "@awar.dev/ui";
 import { networkConfig } from "@/config/network";

@@ -1,11 +1,12 @@
 import {
   Badge,
+  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@awar.dev/ui";
-import { ConnectButton } from "@mysten/dapp-kit";
+import { ConnectModal, useCurrentAccount, useDisconnectWallet } from "@mysten/dapp-kit";
 import { useWalletSigner } from "@/hooks/useWalletSigner";
 
 function truncateAddress(address: string): string {
@@ -13,13 +14,47 @@ function truncateAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
+function DappKitWallet() {
+  const account = useCurrentAccount();
+  const { mutate: disconnect } = useDisconnectWallet();
+
+  if (!account) {
+    return (
+      <ConnectModal
+        trigger={
+          <Button variant="outline" size="sm">
+            Connect Wallet
+          </Button>
+        }
+      />
+    );
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className="cursor-pointer" type="button">
+          <Badge variant="outline">
+            {truncateAddress(account.address)} ▾
+          </Badge>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={() => disconnect()}>
+          Disconnect
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 /** Renders the appropriate wallet UI based on network mode. */
 export function WalletStatus() {
   const wallet = useWalletSigner();
 
-  // Testnet / mainnet: show dapp-kit ConnectButton
+  // Testnet / mainnet: dapp-kit ConnectModal with AWAR-themed trigger
   if (!wallet.isLocalnet) {
-    return <ConnectButton />;
+    return <DappKitWallet />;
   }
 
   // Localnet: no wallets configured
