@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "vite",
     "dev:testnet": "vite --mode testnet",
-    "build": "tsc -b && vite build",
-    "build:testnet": "tsc -b && vite build --mode testnet",
+    "build:localnet": "tsc -b && vite build",
+    "build": "tsc -b && vite build --mode testnet",
     "preview": "vite preview",
     "lint": "eslint .",
     "lint:check": "eslint .",
