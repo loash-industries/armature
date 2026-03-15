@@ -85,7 +85,7 @@ function PayloadRenderer({
 }
 
 function SetBoardSummary({ payload }: { payload: Record<string, unknown> }) {
-  const members = (payload.members as string[]) ?? [];
+  const members = (payload.new_members as string[] ?? payload.members as string[]) ?? [];
   return (
     <div className="space-y-2">
       <p className="text-sm">
