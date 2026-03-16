@@ -30,28 +30,28 @@ Three timing mechanisms prevent velocity-based attacks:
 
 == Layer 4: Emergency Circuit Breaker
 
-The `EmergencyFreeze` system provides a targeted response to discovered vulnerabilities or active attacks. Individual proposal types can be frozen, blocking their execution while leaving all other DAO operations unaffected.
+The `EmergencyFreeze` system provides a targeted response to discovered vulnerabilities or active attacks. Individual proposal types can be frozen, blocking their execution while leaving all other POA operations unaffected.
 
 #aside[
-  The freeze system is itself governed. The `FreezeAdminCap` is stored in the DAO's CapabilityVault, accessible only through a governance proposal that loans it temporarily. Freezes auto-expire after a configurable maximum duration. And two types --- `TransferFreezeAdmin` and `UnfreezeProposalType` --- can _never_ be frozen, ensuring that the emergency system cannot be used to permanently lock out governance.
+  The freeze system is itself governed. The `FreezeAdminCap` is stored in the POA's CapabilityVault, accessible only through a governance proposal that loans it temporarily. Freezes auto-expire after a configurable maximum duration. And two types --- `TransferFreezeAdmin` and `UnfreezeProposalType` --- can _never_ be frozen, ensuring that the emergency system cannot be used to permanently lock out governance.
 ]
 
 == Layer 5: Hierarchy Controls
 
-The SubDAO hierarchy provides organizational isolation:
+The Sub-POA hierarchy provides organizational isolation:
 
-- *Controller pause* --- a parent can halt all execution in a child DAO instantly.
+- *Controller pause* --- a parent can halt all execution in a child POA instantly.
 - *Board replacement* --- a parent can replace a compromised child board without the child's consent.
 - *Capability reclaim* --- delegated capabilities can always be recovered.
-- *Hierarchy blocklist* --- controlled SubDAOs cannot create their own SubDAOs or declare independence without the parent's explicit authorization.
+- *Hierarchy blocklist* --- controlled Sub-POAs cannot create their own Sub-POAs or declare independence without the parent's explicit authorization.
 
 These controls ensure that organizational delegation does not create uncontrollable subsidiaries.
 
 == Layer 6: Blast Radius Isolation
 
-Each DAO has its own TreasuryVault and CapabilityVault as separate shared objects. There is no shared state between DAOs at the framework level. A compromised DAO cannot access another DAO's treasury. A vulnerability in one proposal handler cannot drain another DAO's assets.
+Each POA has its own TreasuryVault and CapabilityVault as separate shared objects. There is no shared state between POAs at the framework level. A compromised POA cannot access another POA's treasury. A vulnerability in one proposal handler cannot drain another POA's assets.
 
-Cross-DAO interaction requires governance on _both_ sides: the sending DAO must authorize the outflow, and the receiving DAO's treasury accepts deposits permissionlessly. This bilateral authorization model prevents supply-chain attacks through the governance layer.
+Cross-POA interaction requires governance on _both_ sides: the sending POA must authorize the outflow, and the receiving POA's treasury accepts deposits permissionlessly. This bilateral authorization model prevents supply-chain attacks through the governance layer.
 
 == Protocol Guarantees
 
@@ -63,6 +63,6 @@ The composition of these six layers produces a set of invariants that hold uncon
 
 + *Atomic execution.* Every proposal execution is a single PTB. If any step fails, the entire transaction reverts. There are no partial state updates, no multi-transaction workflows that can be interrupted.
 
-+ *Blast radius isolation.* Cross-DAO access requires bilateral governance authorization. A vulnerability in one DAO's governance cannot propagate to other DAOs.
++ *Blast radius isolation.* Cross-POA access requires bilateral governance authorization. A vulnerability in one POA's governance cannot propagate to other POAs.
 
 + *On-chain auditability.* Every state change emits events. Every vote is recorded. Every amendment is logged. The governance history is a permanent, tamper-proof record.

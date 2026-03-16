@@ -2,7 +2,7 @@
 
 #import "../lib/template.typ": aside, principle
 
-Governance in Armature is not a monolithic mechanism but a configurable parameter of each DAO instance. The framework enforces a critical invariant: the governance _type_ is sealed at creation, but the _state_ within that type is mutable through proposals. This separation prevents governance model changes from being used as attack vectors while preserving the organization's ability to evolve its membership and parameters.
+Governance in Armature is not a monolithic mechanism but a configurable parameter of each POA instance. The framework enforces a critical invariant: the governance _type_ is sealed at creation, but the _state_ within that type is mutable through proposals. This separation prevents governance model changes from being used as attack vectors while preserving the organization's ability to evolve its membership and parameters.
 
 == Governance Models
 
@@ -29,7 +29,7 @@ Direct governance extends the model to shareholder-style voting, where each vote
 Weighted governance introduces delegation, where stakeholders can delegate their voting power to representatives. This model supports liquid democracy patterns where expertise is surfaced through voluntary delegation rather than imposed hierarchy.
 
 #principle[Governance Immutability][
-  A DAO's governance type cannot change after creation. A Board DAO cannot become a Direct DAO through a proposal. This constraint is deliberate: governance model changes are existential transformations that should require explicit migration to a new DAO instance, preserving full auditability of the transition.
+  A POA's governance type cannot change after creation. A Board POA cannot become a Direct POA through a proposal. This constraint is deliberate: governance model changes are existential transformations that should require explicit migration to a new POA instance, preserving full auditability of the transition.
 ]
 
 == Per-Type Governance Parameters
@@ -63,6 +63,6 @@ Two critical safety rails prevent governance from being weakened through its own
 
 + *Self-referential floor.* When `UpdateProposalConfig` targets its own type, an 80% approval threshold floor is enforced. This prevents a slim majority from lowering the bar for future governance changes.
 
-+ *Enable floor.* `EnableProposalType` enforces a 66% approval threshold floor. Adding new capabilities to the DAO is treated as a significant expansion of the organization's attack surface and requires supermajority consent.
++ *Enable floor.* `EnableProposalType` enforces a 66% approval threshold floor. Adding new capabilities to the POA is treated as a significant expansion of the organization's attack surface and requires supermajority consent.
 
 These floors are _framework-enforced_ --- they cannot be circumvented by governance configuration. They represent the protocol's minimal guarantees about governance integrity.

@@ -22,10 +22,10 @@ The insight that drives Armature is that the solution cannot be another DApp. It
 #import "../lib/template.typ": principle
 
 #principle[Design Principle][
-  Armature is not a product built on Frontier's primitives. It is a protocol that makes Frontier's primitives usable by organizations. The DAO is not a voting tool --- it is the organizational primitive for an entire player economy.
+  Armature is not a product built on Frontier's primitives. It is a protocol that makes Frontier's primitives usable by organizations. The POA is not a voting tool --- it is the organizational primitive for an entire player economy.
 ]
 
-A tribe creates a DAO. The DAO holds a treasury, defines a charter, and governs itself through typed proposals. As the tribe grows, it spawns Sub-DAOs as departments --- Engineering, Logistics, Diplomacy --- each with their own budgets and governance parameters. Those departments run projects. Revenue flows back through treasury vaults. The DAO framework is the governance layer; everything else --- markets, logistics networks, ticker registries, ticketing systems --- builds on top.
+A tribe creates a POA. The POA holds a treasury, defines a charter, and governs itself through typed proposals. As the tribe grows, it spawns Sub-POAs as departments --- Engineering, Logistics, Diplomacy --- each with their own budgets and governance parameters. Those departments run projects. Revenue flows back through treasury vaults. The POA framework is the governance layer; everything else --- markets, logistics networks, ticker registries, ticketing systems --- builds on top.
 
 == The Four Pillars
 
@@ -39,4 +39,4 @@ We observe that every organization, regardless of its specific purpose, can be d
 
 + *Proposals* --- the inference engine. Every state change --- spending funds, amending the charter, adding members, creating departments --- flows through the proposal system. Proposals are the only way to mutate the organization's state, and the rules governing proposals are themselves subject to proposals.
 
-These four components form a closed loop. The charter parametrizes proposals. Proposals can amend the charter. Proposals define which proposal types exist. This self-referential structure is not a bug --- it is the mechanism by which a DAO becomes self-governing and self-amending, capable of evolving its own rules without external intervention.
+These four components form a closed loop. The charter parametrizes proposals. Proposals can amend the charter. Proposals define which proposal types exist. This self-referential structure is not a bug --- it is the mechanism by which a POA becomes self-governing and self-amending, capable of evolving its own rules without external intervention.

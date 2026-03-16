@@ -11,7 +11,7 @@ The Charter is deliberately _not_ a smart contract. It is a document. This disti
 Smart contracts enforce rules mechanically. Charters express intent, define boundaries, and establish the social contract between members. A charter might state that "the treasury shall not be used for personal expenses" --- a principle that no smart contract can fully enforce but that the community can hold its governance accountable to.
 
 #principle[The Charter Principle][
-  The Charter is the DAO's highest authority. It defines what the DAO _should_ do. The proposal system defines what the DAO _can_ do. The tension between these two --- between aspiration and mechanism --- is productive. It ensures that governance operates within a framework of meaning, not merely of code.
+  The Charter is the POA's highest authority. It defines what the POA _should_ do. The proposal system defines what the POA _can_ do. The tension between these two --- between aspiration and mechanism --- is productive. It ensures that governance operates within a framework of meaning, not merely of code.
 ]
 
 == Architecture
@@ -48,16 +48,16 @@ Walrus blobs have finite lifetimes. The `RenewCharterStorage` proposal type addr
 
 == Charter as Organizational DNA
 
-The Charter is more than a policy document. It is the organization's DNA --- the axioms from which all behavior derives. A DAO's charter might define:
+The Charter is more than a policy document. It is the organization's DNA --- the axioms from which all behavior derives. A POA's charter might define:
 
 - The organization's mission and scope of operations.
-- Membership criteria and the relationship to a controller DAO.
+- Membership criteria and the relationship to a controller POA.
 - Governance procedures, including which proposal types should carry which thresholds.
 - Treasury policies: sources of funding, spending rules, revenue distribution formulas.
-- Organizational structure: SubDAO relationships, delegation patterns, reporting requirements.
+- Organizational structure: Sub-POA relationships, delegation patterns, reporting requirements.
 - Amendment procedures: how the charter itself can be changed.
 - Dissolution conditions: when and how the organization should wind down.
 
 Because the amendment history is permanent, the charter becomes a historical record --- an archaeological artifact of the organization's evolution. Future members can trace how the rules changed, which proposals drove those changes, and what the organization looked like at any point in its history.
 
-In a game world where civilizations rise and fall, this permanence has particular significance. The charter is the DAO's contribution to the historical record of Frontier. DAO archaeology --- the study of organizational evolution through on-chain constitutional history --- becomes possible.
+In a game world where civilizations rise and fall, this permanence has particular significance. The charter is the POA's contribution to the historical record of Frontier. POA archaeology --- the study of organizational evolution through on-chain constitutional history --- becomes possible.

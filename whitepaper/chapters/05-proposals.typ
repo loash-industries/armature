@@ -2,7 +2,7 @@
 
 #import "../lib/template.typ": aside, defbox
 
-Every mutation to a DAO's state flows through the proposal system. There are no administrative backdoors, no owner keys, no special-case pathways. This is not merely a design preference --- it is a security invariant. The proposal system is the DAO's sole mechanism of action.
+Every mutation to a POA's state flows through the proposal system. There are no administrative backdoors, no owner keys, no special-case pathways. This is not merely a design preference --- it is a security invariant. The proposal system is the POA's sole mechanism of action.
 
 == Proposal Lifecycle
 
@@ -45,9 +45,9 @@ Upon execution, the framework produces an `ExecutionRequest<P>` hot potato. The 
 
 == Typed Proposals as Permissions
 
-Armature does not have a role-based permission system. Instead, _the set of enabled proposal types defines the organization's capabilities_. A DAO that has not enabled `CreateSubDAO` cannot create Sub-DAOs. A DAO that has not enabled `AmendCharter` cannot modify its constitution. The enabled proposal set _is_ the permission set.
+Armature does not have a role-based permission system. Instead, _the set of enabled proposal types defines the organization's capabilities_. A POA that has not enabled `CreateSub-POA` cannot create Sub-POAs. A POA that has not enabled `AmendCharter` cannot modify its constitution. The enabled proposal set _is_ the permission set.
 
-This design has profound implications for security. Adding a new capability to the DAO requires passing an `EnableProposalType` proposal with a 66% supermajority floor. Disabling a capability is similarly governed, with safeguards preventing the disabling of critical types (`EnableProposalType` itself, `TransferFreezeAdmin`, `UnfreezeProposalType`).
+This design has profound implications for security. Adding a new capability to the POA requires passing an `EnableProposalType` proposal with a 66% supermajority floor. Disabling a capability is similarly governed, with safeguards preventing the disabling of critical types (`EnableProposalType` itself, `TransferFreezeAdmin`, `UnfreezeProposalType`).
 
 == Proposal Type Catalog
 
@@ -67,29 +67,29 @@ The framework ships with eighteen proposal types organized across five domains:
     [Admin], [`TransferFreezeAdmin`], [Enabled],
     [Admin], [`UnfreezeProposalType`], [Enabled],
     [Treasury], [`SendCoin<T>`], [Enabled],
-    [Treasury], [`SendCoinToDAO<T>`], [Opt-in],
+    [Treasury], [`SendCoinToPOA<T>`], [Opt-in],
     [Board], [`SetBoard`], [Enabled],
-    [SubDAO], [`CreateSubDAO`], [Opt-in],
-    [SubDAO], [`SpinOutSubDAO`], [Opt-in],
-    [SubDAO], [`TransferCapToSubDAO`], [Opt-in],
-    [SubDAO], [`ReclaimCapFromSubDAO`], [Opt-in],
-    [SubDAO], [`PauseSubDAOExecution`], [Privileged],
-    [SubDAO], [`UnpauseSubDAOExecution`], [Privileged],
+    [Sub-POA], [`CreateSub-POA`], [Opt-in],
+    [Sub-POA], [`SpinOutSub-POA`], [Opt-in],
+    [Sub-POA], [`TransferCapToSub-POA`], [Opt-in],
+    [Sub-POA], [`ReclaimCapFromSub-POA`], [Opt-in],
+    [Sub-POA], [`PauseSub-POAExecution`], [Privileged],
+    [Sub-POA], [`UnpauseSub-POAExecution`], [Privileged],
     [Charter], [`AmendCharter`], [Opt-in],
     [Charter], [`RenewCharterStorage`], [Opt-in],
     [Emergency], [`UpdateFreezeConfig`], [Opt-in],
   ),
-  caption: [Eighteen proposal types across five domains. "Privileged" types are only available through `privileged_submit` from a controller DAO.],
+  caption: [Eighteen proposal types across five domains. "Privileged" types are only available through `privileged_submit` from a controller POA.],
 )
 
 #aside[
-  The distinction between "Enabled" and "Opt-in" types reflects a security-first posture. A newly created DAO has the minimal set of capabilities needed to govern itself. Expanding that set is an explicit, high-threshold governance action.
+  The distinction between "Enabled" and "Opt-in" types reflects a security-first posture. A newly created POA has the minimal set of capabilities needed to govern itself. Expanding that set is an explicit, high-threshold governance action.
 ]
 
 == Open Proposal Type Set
 
 The proposal system is designed for extensibility. Because the `ExecutionRequest<P>` hot potato is parameterized by a phantom type `P`, any package can define new proposal types. The framework's treasury and capability vault APIs accept any `ExecutionRequest<P>` as authorization --- the type parameter `P` is phantom and does not constrain which resources can be accessed.
 
-A third-party developer can define a `PayBounty` proposal type, implement its handler, and any DAO that enables it via `EnableProposalType` gains access to that functionality. The framework guarantees voting, thresholds, delays, and freeze checks for _any_ type. Handler correctness is the governance's decision --- enabling a type is the trust gate.
+A third-party developer can define a `PayBounty` proposal type, implement its handler, and any POA that enables it via `EnableProposalType` gains access to that functionality. The framework guarantees voting, thresholds, delays, and freeze checks for _any_ type. Handler correctness is the governance's decision --- enabling a type is the trust gate.
 
-This extensibility transforms the DAO from a closed product into an open protocol. The governance engine is a platform; proposal types are its applications.
+This extensibility transforms the POA from a closed product into an open protocol. The governance engine is a platform; proposal types are its applications.

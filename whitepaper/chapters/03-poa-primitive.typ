@@ -1,14 +1,14 @@
-= The DAO Primitive
+= The POA Primitive
 
 #import "../lib/template.typ": defbox, aside
 
-Armature's core contribution is the DAO as a composable, self-governing primitive on the SUI blockchain. Unlike traditional DAO frameworks that treat governance as a monolithic contract, Armature decomposes the DAO into independent shared objects that can be accessed concurrently, upgraded independently, and composed in arbitrary configurations.
+Armature's core contribution is the POA as a composable, self-governing primitive on the SUI blockchain. Unlike traditional POA frameworks that treat governance as a monolithic contract, Armature decomposes the POA into independent shared objects that can be accessed concurrently, upgraded independently, and composed in arbitrary configurations.
 
 == Architecture Overview
 
-Every DAO instance comprises five shared objects, each serving a distinct function and existing independently on-chain:
+Every POA instance comprises five shared objects, each serving a distinct function and existing independently on-chain:
 
-#defbox[DAO][The governance root. Holds the governance configuration, tracks enabled proposal types with per-type parameters, records cooldown timestamps, and maintains references to all associated objects. It is the identity of the organization.]
+#defbox[POA][The governance root. Holds the governance configuration, tracks enabled proposal types with per-type parameters, records cooldown timestamps, and maintains references to all associated objects. It is the identity of the organization.]
 
 #defbox[TreasuryVault][Multi-coin asset storage under governance control. Accepts permissionless deposits of any coin type and enforces governance authorization on all withdrawals. Dynamic fields store individual coin balances, with a registry tracking which types have non-zero balances.]
 
@@ -31,8 +31,8 @@ The framework is organized into separate packages with distinct upgrade cadences
     stroke: 0.5pt + luma(200),
     inset: 8pt,
     table.header[*Package*][*Purpose*][*Stability*],
-    [`armature_framework`], [Core objects: DAO, Treasury, CapVault, Charter, Proposal engine, governance models], [Stable],
-    [`armature_proposals`], [Builtin proposal handlers (18 types across admin, treasury, board, SubDAO, charter)], [Upgradable],
+    [`armature_framework`], [Core objects: POA, Treasury, CapVault, Charter, Proposal engine, governance models], [Stable],
+    [`armature_proposals`], [Builtin proposal handlers (18 types across admin, treasury, board, Sub-POA, charter)], [Upgradable],
   ),
   caption: [Package separation enables independent upgrade cycles.],
 )
@@ -51,7 +51,7 @@ When a proposal is executed, the framework produces an `ExecutionRequest<P>` ---
 
 ```rust
 struct ExecutionRequest<phantom P> {
-    dao_id: ID,
+    poa_id: ID,
     proposal_id: ID,
 }
 // No abilities: not drop, not copy, not store
