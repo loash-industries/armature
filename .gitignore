@@ -33,3 +33,27 @@ packages/armature_packages/build/
 .env.local
 docker/.env
 .world-contracts/
+
+# Screenshots (dev artifacts)
+*.png
+
+# Playwright
+ui/playwright-report/
+ui/test-results/
+
+# Typst build output
+whitepaper/*.pdf
+
+# Claude / MCP
+.claude/
+.playwright-mcp/
+
+# Localnet ephemeral
+Pub.localnet.toml
+*.ephemeral.toml
+
+# Root lockfile (ui has its own)
+/package-lock.json
+
+# TypeScript build info
+*.tsbuildinfo
