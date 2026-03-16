@@ -24,7 +24,7 @@
     header: context {
       if counter(page).get().first() > 1 {
         set text(8pt, fill: luma(120))
-        smallcaps[Armature: A DAO Framework for Frontier]
+        smallcaps[Armature.NETWORK]
         h(1fr)
         smallcaps[Draft]
       }
@@ -109,7 +109,22 @@
     set page(numbering: none, header: none)
     set par(first-line-indent: 0em)
 
-    v(3cm)
+    v(1.5cm)
+    // Logo placeholder
+    align(center)[
+      #block(
+        width: 4cm,
+        height: 4cm,
+        stroke: 1pt + luma(200),
+        radius: 4pt,
+        inset: 8pt,
+        align(center + horizon)[
+          #text(10pt, fill: luma(160))[_Logo_]
+        ],
+      )
+    ]
+
+    v(1.5cm)
     align(center)[
       #text(28pt, weight: "bold")[#title]
       #v(0.8cm)
@@ -117,13 +132,17 @@
         text(16pt, fill: luma(80))[#subtitle]
       }
       #v(2cm)
-      #for author in authors {
-        text(12pt)[#author.name] + linebreak()
-        if "affiliation" in author {
-          text(10pt, fill: luma(100))[#author.affiliation] + linebreak()
-        }
-        v(0.3cm)
-      }
+      // Authors side by side
+      #grid(
+        columns: authors.len(),
+        column-gutter: 2cm,
+        ..authors.map(author => [
+          #text(12pt)[#author.name] \
+          #if "affiliation" in author {
+            text(10pt, fill: luma(100))[#author.affiliation]
+          }
+        ])
+      )
       #v(1cm)
       #if date != none {
         text(11pt, fill: luma(100))[#date]
