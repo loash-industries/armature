@@ -2,31 +2,31 @@
 
 #import "../lib/template.typ": defbox, aside
 
-An organization's power is measured by the resources it controls and the capabilities it can exercise. Armature provides two complementary vault systems --- the TreasuryVault for fungible assets and the CapabilityVault for arbitrary capabilities --- both governed exclusively through the proposal system.
+An organization's power comes from the resources it controls and the capabilities it can use. Armature provides two vault systems --- the TreasuryVault for fungible assets and the CapabilityVault for arbitrary capabilities. Both are governed entirely through proposals.
 
 == TreasuryVault
 
-The TreasuryVault is a multi-coin storage system that holds fungible assets under collective custody. Its design reflects a fundamental asymmetry: _deposits are permissionless; withdrawals require governance authorization_.
+The TreasuryVault holds fungible assets under collective custody. Its core rule is simple: _deposits are open to anyone; withdrawals require governance approval_.
 
-Anyone --- members, external parties, revenue-generating smart contracts --- can deposit any coin type into a POA's treasury. This permissionless intake enables revenue collection, donations, and inter-POA transfers without governance overhead. The treasury dynamically tracks which coin types have non-zero balances, maintaining a registry that reflects the current state of holdings.
+Anyone can deposit any coin type into a POA's treasury --- members, outside parties, revenue-producing smart contracts. No vote is needed. The treasury tracks which coin types have non-zero balances, keeping a live registry of current holdings.
 
-Withdrawals, by contrast, require a valid `ExecutionRequest<P>` from a passed proposal. The treasury verifies the request's `poa_id` matches its own, ensuring cross-POA withdrawal is impossible. The withdrawal amount is checked against available balance, and if a withdrawal reduces a balance to zero, the dynamic field and registry entry are cleaned up automatically.
+Withdrawals require a valid `ExecutionRequest<P>` from a passed proposal. The treasury checks that the request's `poa_id` matches its own, making cross-POA withdrawal impossible. If a withdrawal brings a balance to zero, the dynamic field and registry entry are cleaned up automatically.
 
 #aside[
   The permissionless deposit / governance-gated withdrawal pattern mirrors how real-world organizations operate. Anyone can contribute to a cause; spending from the collective fund requires authorization. This asymmetry is not a limitation but a feature --- it maximizes the organization's ability to accumulate resources while maintaining strict control over their disposition.
 ]
 
-A recovery mechanism handles the edge case where coins are sent directly to the vault's address (via `transfer::public_transfer`) rather than through the `deposit` function. The `claim_coin` function recovers these misdirected transfers using SUI's `Receiving` pattern, converting them into proper balance entries.
+Sometimes coins are sent directly to the vault's address (via `transfer::public_transfer`) instead of through the `deposit` function. The `claim_coin` function recovers these misdirected transfers using SUI's `Receiving` pattern. It converts them into proper balance entries.
 
 == CapabilityVault
 
-The CapabilityVault extends the vault concept to arbitrary SUI objects. Any object with `key + store` abilities --- gate controller capabilities, upgrade capabilities, admin tokens, access badges --- can be stored in the vault and accessed through governance.
+The CapabilityVault stores arbitrary SUI objects. Any object with `key + store` abilities --- gate controllers, upgrade capabilities, admin tokens, access badges --- can be held in the vault and accessed through governance.
 
-The vault provides four access patterns, each suited to different use cases:
+The vault provides four access patterns.
 
 #figure(
   table(
-    columns: (auto, 1fr, auto),
+    columns: (auto, 1fr, 1fr),
     align: (left, left, left),
     stroke: 0.5pt + luma(200),
     inset: 8pt,
@@ -39,7 +39,7 @@ The vault provides four access patterns, each suited to different use cases:
   caption: [Four access patterns for capabilities, from least to most permissive.],
 )
 
-The `loan_cap` pattern deserves special attention. When a capability is loaned, the vault produces both the capability and a `CapLoan` hot potato. The `CapLoan` has no abilities --- it must be consumed in the same PTB by calling `return_cap`, which verifies that the returned capability's ID matches the loan. This guarantees that loaned capabilities are always returned, even if the handler performs complex multi-step operations.
+When a capability is loaned, the vault produces both the capability and a `CapLoan` hot potato. The `CapLoan` has no abilities --- it must be consumed in the same PTB by calling `return_cap`, which checks that the returned capability's ID matches the loan. This guarantees loaned capabilities are always returned, no matter how many steps the handler takes.
 
 #aside[
   During a loan, the vault's registries are _not_ updated. The capability is considered "held" rather than "removed." This prevents a subtle attack where a loaned capability could be re-stored under a different entry, corrupting the vault's internal state.
@@ -47,12 +47,12 @@ The `loan_cap` pattern deserves special attention. When a capability is loaned, 
 
 == Inter-POA Asset Flow
 
-The combination of permissionless deposits and governance-gated withdrawals creates natural patterns for inter-POA asset flow:
+Open deposits and governed withdrawals create natural patterns for moving assets between POAs.
 
-- *Downward funding:* A parent POA passes a `SendCoinToPOA` proposal, withdrawing from its treasury and depositing into a Sub-POA's treasury. The parent's governance authorizes the expenditure; the child's treasury accepts it permissionlessly.
+- *Downward funding:* A parent POA passes a `SendCoinToPOA` proposal, withdrawing from its treasury and depositing into a Sub-POA's treasury. The parent's governance approves the spend; the child's treasury accepts it without a vote.
 
-- *Upward revenue:* A Sub-POA passes a `SendCoin` proposal, withdrawing from its treasury and transferring to the parent POA's treasury. Revenue generated by departments flows back to the parent automatically.
+- *Upward revenue:* A Sub-POA passes a `SendCoin` proposal, withdrawing from its treasury and sending to the parent. Revenue from departments flows back up naturally.
 
-- *Lateral transfer:* Any POA can fund any other POA's treasury directly, enabling donations, grants, contract payments, and alliance dues.
+- *Lateral transfer:* Any POA can fund any other POA's treasury directly. This covers donations, grants, contract payments, and alliance dues.
 
-These flows compose naturally with the Sub-POA hierarchy, enabling organizations to implement complex budgeting and revenue-sharing schemes without any special-purpose mechanisms. The protocol provides the plumbing; governance provides the policy.
+These flows work naturally with the Sub-POA hierarchy. Organizations can build budgeting and revenue-sharing structures without any special-purpose tools. The protocol provides the pipes; governance provides the policy.

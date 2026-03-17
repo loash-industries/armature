@@ -2,31 +2,33 @@
 
 #import "../lib/template.typ": aside, principle
 
-Governance in Armature is not a monolithic mechanism but a configurable parameter of each POA instance. The framework enforces a critical invariant: the governance _type_ is sealed at creation, but the _state_ within that type is mutable through proposals. This separation prevents governance model changes from being used as attack vectors while preserving the organization's ability to evolve its membership and parameters.
+Governance in Armature is a configurable parameter of each POA instance, not a single fixed mechanism.
+
+The framework enforces one key rule: the governance _type_ is locked at creation, but the _state_ within that type can change through proposals. This prevents governance model swaps from becoming attack vectors. It also preserves the organization's ability to update its membership and parameters.
 
 == Governance Models
 
-The current implementation provides Board governance, with Direct and Weighted models specified for future releases.
+The current implementation provides Board governance. Direct and Weighted models are planned for future releases.
 
 === Board Governance
 
-Board governance is the foundational model, designed for tribes and working groups where a defined set of members holds equal voting power. A board is defined by its member set and a seat count.
+Board governance is the starting model. It is built for teams and working groups where a defined set of members holds equal voting power.
 
-Each board member holds exactly one vote. Proposals are submitted by board members and voted on by the board as it existed at the moment the proposal was created --- a _snapshot_ that prevents membership changes from retroactively affecting in-flight votes.
+Each board member holds exactly one vote. Proposals are voted on by the board as it existed when the proposal was created --- a _snapshot_ that prevents membership changes from affecting votes already in progress.
 
 The pass condition for any proposal is conjunctive:
 
 $ "participation" >= "quorum" quad and quad "yes" / ("yes" + "no") >= "threshold" $
 
-Where participation and thresholds are expressed in basis points (0--10000), enabling precise fractional governance without floating-point arithmetic. A quorum of 5000 requires at least 50% of the board to cast votes. An approval threshold of 6600 requires at least 66% of cast votes to be affirmative.
+Participation and thresholds are expressed in basis points (0--10000), giving precise fractional governance without floating-point math. A quorum of 5000 means at least 50% of the board must vote. An approval threshold of 6600 means at least 66% of votes cast must be "yes."
 
 === Future: Direct Governance
 
-Direct governance extends the model to shareholder-style voting, where each voter holds a weight proportional to their share count. This model suits organizations where contribution is quantifiable and voting power should reflect stake.
+Direct governance extends the model to share-based voting, where each voter's weight matches their share count. This fits organizations where contribution is measurable and voting power should match stake.
 
 === Future: Weighted Governance
 
-Weighted governance introduces delegation, where stakeholders can delegate their voting power to representatives. This model supports liquid democracy patterns where expertise is surfaced through voluntary delegation rather than imposed hierarchy.
+Weighted governance adds delegation. Stakeholders can hand their voting power to representatives. This supports liquid democracy, where expertise rises through voluntary choice rather than fixed hierarchy.
 
 #principle[Governance Immutability][
   A POA's governance type cannot change after creation. A Board POA cannot become a Direct POA through a proposal. This constraint is deliberate: governance model changes are existential transformations that should require explicit migration to a new POA instance, preserving full auditability of the transition.
@@ -34,7 +36,7 @@ Weighted governance introduces delegation, where stakeholders can delegate their
 
 == Per-Type Governance Parameters
 
-A distinguishing feature of Armature is that governance parameters are not global --- they are configured _per proposal type_. This reflects the reality that different actions warrant different levels of scrutiny.
+Governance parameters in Armature are not global. They are configured _per proposal type_, because different actions deserve different levels of scrutiny.
 
 #figure(
   table(
@@ -53,16 +55,16 @@ A distinguishing feature of Armature is that governance parameters are not globa
   caption: [Per-type governance parameters enable fine-grained control.],
 )
 
-A routine metadata update might require a simple majority with no execution delay. A charter amendment might demand 80% approval, a 48-hour delay for review, and a 7-day cooldown to prevent rapid-fire constitutional changes. A treasury withdrawal might impose a 24-hour delay to allow the board to react if a proposal was passed hastily.
+A routine metadata update might need a simple majority with no execution delay. A charter amendment might require 80% approval, a 48-hour review window, and a 7-day cooldown to block rapid constitutional changes. A treasury withdrawal might add a 24-hour delay so the board can react if a proposal passed too quickly.
 
-This granularity means that the governance configuration itself encodes the organization's risk model. High-stakes actions carry proportionally higher bars for authorization.
+The governance configuration itself encodes the organization's risk model. High-stakes actions get higher bars.
 
 == Safety Rails
 
-Two critical safety rails prevent governance from being weakened through its own mechanisms:
+Two safety rails prevent governance from weakening itself.
 
-+ *Self-referential floor.* When `UpdateProposalConfig` targets its own type, an 80% approval threshold floor is enforced. This prevents a slim majority from lowering the bar for future governance changes.
+*Self-referential floor.* When `UpdateProposalConfig` targets its own type, an 80% approval threshold floor is enforced. A slim majority cannot lower the bar for future governance changes.
 
-+ *Enable floor.* `EnableProposalType` enforces a 66% approval threshold floor. Adding new capabilities to the POA is treated as a significant expansion of the organization's attack surface and requires supermajority consent.
+*Enable floor.* `EnableProposalType` enforces a 66% approval threshold floor. Adding new capabilities to the POA expands its attack surface and requires supermajority consent.
 
-These floors are _framework-enforced_ --- they cannot be circumvented by governance configuration. They represent the protocol's minimal guarantees about governance integrity.
+These floors are _framework-enforced_ --- they cannot be bypassed by governance configuration. They are the protocol's minimum guarantees about governance integrity.

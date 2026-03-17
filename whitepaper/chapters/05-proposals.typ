@@ -2,11 +2,11 @@
 
 #import "../lib/template.typ": aside, defbox
 
-Every mutation to a POA's state flows through the proposal system. There are no administrative backdoors, no owner keys, no special-case pathways. This is not merely a design preference --- it is a security invariant. The proposal system is the POA's sole mechanism of action.
+Every change to a POA's state goes through the proposal system. There are no admin backdoors, no owner keys, no special paths. This is not a design preference --- it is a security guarantee.
 
 == Proposal Lifecycle
 
-A proposal progresses through a strictly monotonic sequence of states. No transitions are reversible, ensuring that the governance record is an append-only log of organizational decisions.
+A proposal moves through a strict, forward-only sequence of states. No transition is reversible. The governance record is an append-only log of organizational decisions.
 
 #figure(
   table(
@@ -25,33 +25,39 @@ A proposal progresses through a strictly monotonic sequence of states. No transi
 
 === Creation
 
-A proposal is created by an eligible member (board member, in Board governance). At creation, the framework snapshots the current governance state --- the full board membership and their weights. This snapshot becomes the immutable electorate for this proposal. Members added after creation cannot vote; members removed after creation retain their vote.
+A proposal is created by an eligible member. At creation, the framework snapshots the current governance state --- the full board membership and their weights.
+
+This snapshot becomes the fixed electorate for this proposal. Members added after creation cannot vote. Members removed after creation keep their vote.
 
 === Voting
 
-Each eligible member may cast exactly one vote: yes or no. Votes are recorded in a map from address to boolean. There is no vote change mechanism --- once cast, a vote is permanent. This simplicity is intentional: it makes the governance record unambiguous and eliminates race conditions around vote manipulation.
+Each eligible member may cast exactly one vote: yes or no. Votes map from address to boolean, and there is no way to change a vote once cast.
 
-When a vote causes the approval condition to be met, the proposal transitions to `Passed` immediately. There is no separate "tallying" step.
+This keeps the governance record clear. It also removes race conditions around vote changes.
+
+When a vote pushes the result past the approval threshold, the proposal transitions to `Passed` immediately. There is no separate tallying step.
 
 === Execution
 
-Execution is a distinct step from passage. A passed proposal may be executed by any current board member, subject to three constraints:
+Execution is separate from passage. A passed proposal may be executed by any current board member, subject to three constraints:
 
 + *Execution delay* --- a mandatory waiting period after passage, giving the organization time to react to a proposal that passed unexpectedly.
-+ *Cooldown* --- a minimum interval since the last execution of the same proposal type, preventing rapid-fire actions.
++ *Cooldown* --- a minimum interval since the last execution of the same proposal type, preventing rapid repeated actions.
 + *Freeze check* --- the proposal type must not be currently frozen by the emergency system.
 
-Upon execution, the framework produces an `ExecutionRequest<P>` hot potato. The handler function for type `P` consumes this token while performing the authorized state changes. If the handler aborts, the PTB reverts, the proposal remains `Passed`, and execution can be retried.
+On execution, the framework produces an `ExecutionRequest<P>` hot potato. The handler function for type `P` consumes this token and performs the authorized state changes. If the handler aborts, the PTB reverts, the proposal stays `Passed`, and execution can be retried.
 
 == Typed Proposals as Permissions
 
-Armature does not have a role-based permission system. Instead, _the set of enabled proposal types defines the organization's capabilities_. A POA that has not enabled `CreateSub-POA` cannot create Sub-POAs. A POA that has not enabled `AmendCharter` cannot modify its constitution. The enabled proposal set _is_ the permission set.
+Armature has no role-based permission system. The set of enabled proposal types defines what the organization can do.
 
-This design has profound implications for security. Adding a new capability to the POA requires passing an `EnableProposalType` proposal with a 66% supermajority floor. Disabling a capability is similarly governed, with safeguards preventing the disabling of critical types (`EnableProposalType` itself, `TransferFreezeAdmin`, `UnfreezeProposalType`).
+A POA that has not enabled `CreateSub-POA` cannot create Sub-POAs. A POA that has not enabled `AmendCharter` cannot change its constitution. The enabled proposal set _is_ the permission set.
+
+Adding a new capability requires passing an `EnableProposalType` proposal with a 66% supermajority floor. Disabling a capability is governed the same way, with safeguards that prevent disabling critical types (`EnableProposalType` itself, `TransferFreezeAdmin`, `UnfreezeProposalType`).
 
 == Proposal Type Catalog
 
-The framework ships with eighteen proposal types organized across five domains:
+The framework ships with eighteen proposal types across five domains.
 
 #figure(
   table(
@@ -88,8 +94,10 @@ The framework ships with eighteen proposal types organized across five domains:
 
 == Open Proposal Type Set
 
-The proposal system is designed for extensibility. Because the `ExecutionRequest<P>` hot potato is parameterized by a phantom type `P`, any package can define new proposal types. The framework's treasury and capability vault APIs accept any `ExecutionRequest<P>` as authorization --- the type parameter `P` is phantom and does not constrain which resources can be accessed.
+The proposal system is extensible by design. The `ExecutionRequest<P>` hot potato is parameterized by a phantom type `P`, so any package can define new proposal types.
 
-A third-party developer can define a `PayBounty` proposal type, implement its handler, and any POA that enables it via `EnableProposalType` gains access to that functionality. The framework guarantees voting, thresholds, delays, and freeze checks for _any_ type. Handler correctness is the governance's decision --- enabling a type is the trust gate.
+The framework's treasury and capability vault APIs accept any `ExecutionRequest<P>` as authorization. The type parameter `P` is phantom and does not restrict which resources can be accessed.
 
-This extensibility transforms the POA from a closed product into an open protocol. The governance engine is a platform; proposal types are its applications.
+A third-party developer can define a `PayBounty` proposal type, implement its handler, and any POA that enables it through `EnableProposalType` gains that functionality. The framework handles voting, thresholds, delays, and freeze checks for _any_ type. Whether a handler is correct is the governance's decision --- enabling a type is the trust gate.
+
+This turns the POA from a closed product into an open protocol. The governance engine is a platform. Proposal types are its applications.
