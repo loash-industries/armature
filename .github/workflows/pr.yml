@@ -23,6 +23,7 @@ jobs:
       api: ${{ steps.filter.outputs.api }}
       indexer: ${{ steps.filter.outputs.indexer }}
       move: ${{ steps.filter.outputs.move }}
+      whitepaper: ${{ steps.filter.outputs.whitepaper }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -42,6 +43,9 @@ jobs:
               - '.github/workflows/**'
             move:
               - 'packages/**'
+              - '.github/workflows/**'
+            whitepaper:
+              - 'whitepaper/**'
               - '.github/workflows/**'
 
   # Build API Docker image
@@ -205,3 +209,25 @@ jobs:
               sui move test --path "$dir" -i 100000000 --force
             fi
           done
+
+  # Build whitepaper PDF
+  build-whitepaper:
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+    if: needs.changes.outputs.whitepaper == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Typst
+        uses: typst-community/setup-typst@v4
+
+      - name: Build whitepaper
+        working-directory: whitepaper
+        run: typst compile main.typ paper.pdf
+
+      - name: Upload whitepaper artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: whitepaper
+          path: whitepaper/paper.pdf
