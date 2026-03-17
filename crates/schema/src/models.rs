@@ -1,5 +1,4 @@
 use diesel::prelude::*;
-use serde::Serialize;
 use sui_field_count::FieldCount;
 
 #[derive(Queryable, Selectable, Insertable, Identifiable, Debug, FieldCount, Serialize)]
