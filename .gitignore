@@ -31,3 +31,5 @@ packages/armature_packages/build/
 # Environment
 .env
 .env.local
+docker/.env
+.world-contracts/

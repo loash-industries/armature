@@ -1,0 +1,137 @@
+# =============================================================================
+# Armature — Full-Stack Local Development Environment
+# =============================================================================
+#
+# Stands up:
+#   1. sui-localnet        — Sui node with faucet (port 9000/9123)
+#   2. armature-deploy     — Init: publishes Armature packages + creates test DAO
+#   3. postgres            — PostgreSQL 16 for the indexer
+#   4. ui                  — Vite dev server with hot reload (port 5173)
+#
+# Optional (requires upstream world-contracts version alignment):
+#   - world-deploy         — Init: deploys EVE Frontier world-contracts
+#
+# Usage:
+#   make dev               # or: docker compose -f docker-compose.dev.yml up
+#   make dev-reset         # wipe everything and redeploy from scratch
+#
+# To include world-contracts deployment:
+#   docker compose -f docker-compose.dev.yml --profile world up
+#
+# =============================================================================
+
+services:
+  # ── Sui Local Node ──────────────────────────────────────────────────────────
+  sui-localnet:
+    image: mysten/sui-tools:testnet-v1.67.2
+    command: >
+      sh -c "sui start --with-faucet --force-regenesis"
+    ports:
+      - "9000:9000"   # JSON-RPC
+      - "9123:9123"   # Faucet
+    healthcheck:
+      test: ["CMD-SHELL", "perl -e 'use IO::Socket::INET; exit(IO::Socket::INET->new(PeerAddr=>q(127.0.0.1:9000),Timeout=>2) ? 0 : 1)'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+    volumes:
+      - sui-data:/root/.sui
+    restart: unless-stopped
+
+  # ── World Contracts Deployment (optional, profile: world) ──────────────────
+  # Requires: make dev-deps (clones world-contracts to .world-contracts/)
+  # Keep sui-tools tag aligned with world-contracts Move.lock framework rev.
+  world-deploy:
+    profiles: ["world"]
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.sui-deploy
+    depends_on:
+      sui-localnet:
+        condition: service_healthy
+    network_mode: host
+    env_file:
+      - path: ./docker/.env
+        required: false
+    environment:
+      SUI_RPC_URL: http://127.0.0.1:9000
+      SUI_FAUCET_URL: http://127.0.0.1:9123
+      SUI_NETWORK: localnet
+    volumes:
+      - ./docker/scripts:/scripts:ro
+      - ./.world-contracts:/workspace/world-contracts
+      - shared-data:/shared
+    command: ["/scripts/deploy-world.sh"]
+    restart: "no"
+
+  # ── Armature Deployment (init container) ────────────────────────────────────
+  # Uses host networking to avoid gnutls TLS issues when Move package manager
+  # fetches Sui framework deps via git inside Docker bridge networks.
+  armature-deploy:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.sui-deploy
+    depends_on:
+      sui-localnet:
+        condition: service_healthy
+    network_mode: host
+    environment:
+      SUI_RPC_URL: http://127.0.0.1:9000
+      SUI_FAUCET_URL: http://127.0.0.1:9123
+    volumes:
+      - ./docker/scripts:/scripts:ro
+      - ./packages:/workspace/packages
+      - shared-data:/shared
+    command: ["/scripts/deploy-armature.sh"]
+    restart: "no"
+
+  # ── PostgreSQL (Indexer backend) ────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgrespw}
+      POSTGRES_DB: ${POSTGRES_DB:-armature}
+    volumes:
+      - armature_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-armature}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # ── UI Dev Server (Vite) ───────────────────────────────────────────────────
+  ui:
+    image: node:22-slim
+    depends_on:
+      armature-deploy:
+        condition: service_completed_successfully
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./ui:/app
+      - ui-node-modules:/app/node_modules
+      - shared-data:/shared:ro
+    entrypoint: ["bash", "-c"]
+    command:
+      - |
+        # Copy generated env file
+        if [ -f /shared/ui.env.local ]; then
+          cp /shared/ui.env.local /app/.env.local
+          echo "[ui] Loaded .env.local from deployment"
+        fi
+
+        npm install
+        npx vite --host 0.0.0.0
+    restart: unless-stopped
+
+volumes:
+  sui-data:
+  shared-data:
+  armature_postgres_data:
+  ui-node-modules:
