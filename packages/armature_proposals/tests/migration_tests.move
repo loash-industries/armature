@@ -650,7 +650,7 @@ fun migration_with_transfer_assets_e2e() {
     {
         let mut treasury = scenario.take_shared<TreasuryVault>();
         let coin = coin::mint_for_testing<SUI>(500_000, scenario.ctx());
-        treasury.deposit(coin);
+        treasury.deposit(coin, scenario.ctx());
         assert!(treasury.balance<SUI>() == 500_000);
         test_scenario::return_shared(treasury);
     };
@@ -797,7 +797,7 @@ fun migration_with_transfer_assets_e2e() {
             &request,
             scenario.ctx(),
         );
-        successor_treasury.deposit(coin);
+        successor_treasury.deposit(coin, scenario.ctx());
 
         // Finalize
         subdao_ops::finalize_transfer_assets(request, &proposal);

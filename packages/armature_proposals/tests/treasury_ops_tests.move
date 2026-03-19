@@ -54,7 +54,7 @@ fun fund_treasury_sui(scenario: &mut test_scenario::Scenario, amount: u64) {
     {
         let mut vault = scenario.take_shared<TreasuryVault>();
         let coin = coin::mint_for_testing<SUI>(amount, scenario.ctx());
-        vault.deposit(coin);
+        vault.deposit(coin, scenario.ctx());
         test_scenario::return_shared(vault);
     };
 }
@@ -64,7 +64,7 @@ fun fund_treasury_usdc(scenario: &mut test_scenario::Scenario, amount: u64) {
     {
         let mut vault = scenario.take_shared<TreasuryVault>();
         let coin = coin::mint_for_testing<USDC>(amount, scenario.ctx());
-        vault.deposit(coin);
+        vault.deposit(coin, scenario.ctx());
         test_scenario::return_shared(vault);
     };
 }
@@ -567,7 +567,7 @@ fun send_coin_to_dao_e2e() {
         let source_dao = scenario.take_shared_by_id<DAO>(source_dao_id);
         let mut source_vault = scenario.take_shared_by_id<TreasuryVault>(source_dao.treasury_id());
         let coin = coin::mint_for_testing<SUI>(1_000_000, scenario.ctx());
-        source_vault.deposit(coin);
+        source_vault.deposit(coin, scenario.ctx());
         test_scenario::return_shared(source_vault);
         test_scenario::return_shared(source_dao);
     };
@@ -695,7 +695,7 @@ fun send_coin_to_dao_target_mismatch_aborts() {
         let source_dao = scenario.take_shared_by_id<DAO>(source_dao_id);
         let mut source_vault = scenario.take_shared_by_id<TreasuryVault>(source_dao.treasury_id());
         let coin = coin::mint_for_testing<SUI>(100_000, scenario.ctx());
-        source_vault.deposit(coin);
+        source_vault.deposit(coin, scenario.ctx());
         test_scenario::return_shared(source_vault);
         test_scenario::return_shared(source_dao);
     };

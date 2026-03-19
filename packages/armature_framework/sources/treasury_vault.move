@@ -14,6 +14,24 @@ const EDAOIdMismatch: u64 = 1;
 
 // === Events ===
 
+/// Emitted when a coin is deposited into the vault.
+public struct CoinDeposited has copy, drop {
+    vault_id: ID,
+    dao_id: ID,
+    coin_type: std::ascii::String,
+    amount: u64,
+    depositor: address,
+}
+
+/// Emitted when a coin is withdrawn from the vault via a proposal execution.
+public struct CoinWithdrawn has copy, drop {
+    vault_id: ID,
+    dao_id: ID,
+    coin_type: std::ascii::String,
+    amount: u64,
+    recipient: address,
+}
+
 /// Emitted when a coin directly transferred to the vault is claimed.
 public struct CoinClaimed has copy, drop {
     vault_id: ID,
@@ -54,7 +72,7 @@ public(package) fun share(vault: TreasuryVault) {
 
 /// Deposit a coin into the vault. Permissionless — anyone can deposit.
 /// Zero-value coins are destroyed as a no-op.
-public fun deposit<T>(self: &mut TreasuryVault, coin: Coin<T>) {
+public fun deposit<T>(self: &mut TreasuryVault, coin: Coin<T>, ctx: &mut TxContext) {
     let amount = coin.value();
     if (amount == 0) {
         coin.destroy_zero();
@@ -72,6 +90,14 @@ public fun deposit<T>(self: &mut TreasuryVault, coin: Coin<T>) {
         df::add(&mut self.id, type_key, coin.into_balance());
         self.coin_types.insert(type_key);
     };
+
+    event::emit(CoinDeposited {
+        vault_id: object::uid_to_inner(&self.id),
+        dao_id: self.dao_id,
+        coin_type: type_key,
+        amount,
+        depositor: ctx.sender(),
+    });
 }
 
 /// Withdraw a coin from the vault. Requires an `ExecutionRequest`.
@@ -103,7 +129,17 @@ public fun withdraw<T, P>(
         self.coin_types.remove(&type_key);
     };
 
-    coin::from_balance(withdrawn, ctx)
+    let coin = coin::from_balance(withdrawn, ctx);
+
+    event::emit(CoinWithdrawn {
+        vault_id: object::uid_to_inner(&self.id),
+        dao_id: self.dao_id,
+        coin_type: type_key,
+        amount,
+        recipient: ctx.sender(),
+    });
+
+    coin
 }
 
 /// Claim a coin that was directly transferred to the vault's address.
@@ -127,7 +163,7 @@ public fun claim_coin<T>(
     });
 
     // Deposit the claimed coin
-    self.deposit(coin);
+    self.deposit(coin, ctx);
 }
 
 // === Accessors ===
