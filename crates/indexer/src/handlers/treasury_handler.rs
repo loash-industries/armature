@@ -56,42 +56,36 @@ impl Processor for TreasuryHandler {
                 }
 
                 match event.type_.name.as_str() {
-                    "CoinDeposited" => {
-                        match bcs::from_bytes::<CoinDeposited>(&event.contents) {
-                            Ok(e) => deltas.push(BalanceDelta {
-                                treasury_id: id_to_hex(&e.vault_id),
-                                coin_type: e.coin_type,
-                                delta: BigDecimal::from(e.amount),
-                            }),
-                            Err(e) => {
-                                tracing::warn!("Failed to deserialize CoinDeposited: {e}")
-                            }
+                    "CoinDeposited" => match bcs::from_bytes::<CoinDeposited>(&event.contents) {
+                        Ok(e) => deltas.push(BalanceDelta {
+                            treasury_id: id_to_hex(&e.vault_id),
+                            coin_type: e.coin_type,
+                            delta: BigDecimal::from(e.amount),
+                        }),
+                        Err(e) => {
+                            tracing::warn!("Failed to deserialize CoinDeposited: {e}")
                         }
-                    }
-                    "CoinWithdrawn" => {
-                        match bcs::from_bytes::<CoinWithdrawn>(&event.contents) {
-                            Ok(e) => deltas.push(BalanceDelta {
-                                treasury_id: id_to_hex(&e.vault_id),
-                                coin_type: e.coin_type,
-                                delta: BigDecimal::from(-(e.amount as i64)),
-                            }),
-                            Err(e) => {
-                                tracing::warn!("Failed to deserialize CoinWithdrawn: {e}")
-                            }
+                    },
+                    "CoinWithdrawn" => match bcs::from_bytes::<CoinWithdrawn>(&event.contents) {
+                        Ok(e) => deltas.push(BalanceDelta {
+                            treasury_id: id_to_hex(&e.vault_id),
+                            coin_type: e.coin_type,
+                            delta: -BigDecimal::from(e.amount),
+                        }),
+                        Err(e) => {
+                            tracing::warn!("Failed to deserialize CoinWithdrawn: {e}")
                         }
-                    }
-                    "CoinClaimed" => {
-                        match bcs::from_bytes::<CoinClaimed>(&event.contents) {
-                            Ok(e) => deltas.push(BalanceDelta {
-                                treasury_id: id_to_hex(&e.vault_id),
-                                coin_type: e.coin_type,
-                                delta: BigDecimal::from(-(e.amount as i64)),
-                            }),
-                            Err(e) => {
-                                tracing::warn!("Failed to deserialize CoinClaimed: {e}")
-                            }
+                    },
+                    "CoinClaimed" => match bcs::from_bytes::<CoinClaimed>(&event.contents) {
+                        Ok(e) => deltas.push(BalanceDelta {
+                            treasury_id: id_to_hex(&e.vault_id),
+                            coin_type: e.coin_type,
+                            delta: -BigDecimal::from(e.amount),
+                        }),
+                        Err(e) => {
+                            tracing::warn!("Failed to deserialize CoinClaimed: {e}")
                         }
-                    }
+                    },
                     _ => {}
                 }
             }

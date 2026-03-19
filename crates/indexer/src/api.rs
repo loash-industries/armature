@@ -59,7 +59,10 @@ async fn get_dao(
     Path(dao_id): Path<String>,
     State(pool): State<DbPool>,
 ) -> Result<Json<Dao>, StatusCode> {
-    let mut conn = pool.get().await.map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    let mut conn = pool
+        .get()
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
     daos::table
         .filter(daos::dao_id.eq(&dao_id))
         .first::<Dao>(&mut conn)
@@ -73,7 +76,10 @@ async fn get_proposals(
     Query(q): Query<ProposalQuery>,
     State(pool): State<DbPool>,
 ) -> Result<Json<Vec<Proposal>>, StatusCode> {
-    let mut conn = pool.get().await.map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    let mut conn = pool
+        .get()
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
 
     let rows = if let Some(status) = q.status {
         proposals::table
@@ -90,14 +96,18 @@ async fn get_proposals(
             .await
     };
 
-    rows.map(Json).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+    rows.map(Json)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 async fn get_treasury(
     Path(dao_id): Path<String>,
     State(pool): State<DbPool>,
 ) -> Result<Json<Vec<TreasuryBalance>>, StatusCode> {
-    let mut conn = pool.get().await.map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    let mut conn = pool
+        .get()
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
 
     // Look up the treasury_id for this DAO first.
     let dao = daos::table
@@ -119,7 +129,10 @@ async fn get_activity(
     Query(q): Query<ActivityQuery>,
     State(pool): State<DbPool>,
 ) -> Result<Json<Vec<ActivityRow>>, StatusCode> {
-    let mut conn = pool.get().await.map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    let mut conn = pool
+        .get()
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
     let limit = q.limit.unwrap_or(50).min(200);
 
     let rows = events::table
@@ -133,19 +146,27 @@ async fn get_activity(
             events::digest,
             events::payload_json,
         ))
-        .load::<(String, Option<String>, i64, String, Option<serde_json::Value>)>(&mut conn)
+        .load::<(
+            String,
+            Option<String>,
+            i64,
+            String,
+            Option<serde_json::Value>,
+        )>(&mut conn)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let activity = rows
         .into_iter()
-        .map(|(event_type, dao_id, timestamp_ms, tx_digest, payload)| ActivityRow {
-            event_type,
-            dao_id,
-            timestamp_ms,
-            tx_digest,
-            payload,
-        })
+        .map(
+            |(event_type, dao_id, timestamp_ms, tx_digest, payload)| ActivityRow {
+                event_type,
+                dao_id,
+                timestamp_ms,
+                tx_digest,
+                payload,
+            },
+        )
         .collect();
 
     Ok(Json(activity))
@@ -169,6 +190,7 @@ pub async fn serve(database_url: String, addr: SocketAddr) -> Result<()> {
         .route("/dao/:id/proposals", get(get_proposals))
         .route("/dao/:id/treasury", get(get_treasury))
         .route("/dao/:id/activity", get(get_activity))
+        // Permissive CORS is intentional for local dev; restrict origins before production.
         .layer(CorsLayer::permissive())
         .with_state(pool);
 
