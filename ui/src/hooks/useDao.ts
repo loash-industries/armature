@@ -373,6 +373,8 @@ function eventLabel(eventName: string): string {
     ProposalExpired: "Expired",
     TypeFrozen: "Frozen",
     TypeUnfrozen: "Unfrozen",
+    CoinDeposited: "Deposited",
+    CoinWithdrawn: "Withdrawn",
     CoinClaimed: "Claimed",
   };
   return labels[eventName] ?? eventName;
@@ -397,6 +399,10 @@ function eventDescription(
       return `Type "${parsed.type_key}" frozen`;
     case "TypeUnfrozen":
       return `Type "${parsed.type_key}" unfrozen`;
+    case "CoinDeposited":
+      return `${parsed.amount} deposited by ${truncId(parsed.depositor)}`;
+    case "CoinWithdrawn":
+      return `${parsed.amount} withdrawn to ${truncId(parsed.recipient)}`;
     case "CoinClaimed":
       return `${parsed.amount} claimed by ${truncId(parsed.claimer)}`;
     case "DAOCreated":
