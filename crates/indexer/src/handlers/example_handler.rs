@@ -16,11 +16,12 @@ use crate::ArmatureEnv;
 
 pub struct ExampleHandler {
     pub env: ArmatureEnv,
+    pub package_ids: Vec<String>,
 }
 
 impl ExampleHandler {
-    pub fn new(env: ArmatureEnv) -> Self {
-        Self { env }
+    pub fn new(env: ArmatureEnv, package_ids: Vec<String>) -> Self {
+        Self { env, package_ids }
     }
 }
 
