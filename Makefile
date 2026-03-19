@@ -15,12 +15,12 @@ WORLD_REF   = main
 
 # ── Full-Stack Dev Environment ────────────────────────────────────────────────
 
-## Start the full dev stack (sui-localnet + world + armature + ui + postgres)
-dev: dev-deps docker/.env
+## Start the full dev stack (sui-localnet + armature + indexer + ui + postgres)
+dev: docker/.env
 	$(COMPOSE_DEV) up --build
 
 ## Start in detached mode
-dev-up: dev-deps docker/.env
+dev-up: docker/.env
 	$(COMPOSE_DEV) up --build -d
 
 ## Stop all dev services
@@ -42,7 +42,7 @@ dev-ps:
 
 # ── Dependencies ──────────────────────────────────────────────────────────────
 
-## Clone world-contracts and create docker/.env if needed
+## Clone world-contracts (only needed for --profile world)
 dev-deps: $(WORLD_DIR) docker/.env
 
 $(WORLD_DIR):
