@@ -88,19 +88,17 @@ impl Processor for ProposalHandler {
                             }
                         }
                     }
-                    "ProposalPassed" => {
-                        match bcs::from_bytes::<ProposalPassed>(&event.contents) {
-                            Ok(e) => mutations.push(ProposalMutation::UpdateVotes {
-                                proposal_id: id_to_hex(&e.proposal_id),
-                                status: "Passed".to_string(),
-                                yes_votes: e.yes_weight as i64,
-                                no_votes: e.no_weight as i64,
-                            }),
-                            Err(e) => {
-                                tracing::warn!("Failed to deserialize ProposalPassed: {e}")
-                            }
+                    "ProposalPassed" => match bcs::from_bytes::<ProposalPassed>(&event.contents) {
+                        Ok(e) => mutations.push(ProposalMutation::UpdateVotes {
+                            proposal_id: id_to_hex(&e.proposal_id),
+                            status: "Passed".to_string(),
+                            yes_votes: e.yes_weight as i64,
+                            no_votes: e.no_weight as i64,
+                        }),
+                        Err(e) => {
+                            tracing::warn!("Failed to deserialize ProposalPassed: {e}")
                         }
-                    }
+                    },
                     "ProposalExecuted" => {
                         match bcs::from_bytes::<ProposalExecuted>(&event.contents) {
                             Ok(e) => mutations.push(ProposalMutation::UpdateStatus {
@@ -160,13 +158,14 @@ impl Handler for ProposalHandler {
 
         for v in values {
             match v {
-                ProposalMutation::UpdateStatus { proposal_id, status } => {
-                    diesel::update(
-                        proposals::table.filter(proposals::proposal_id.eq(proposal_id)),
-                    )
-                    .set(proposals::status.eq(status))
-                    .execute(conn)
-                    .await?;
+                ProposalMutation::UpdateStatus {
+                    proposal_id,
+                    status,
+                } => {
+                    diesel::update(proposals::table.filter(proposals::proposal_id.eq(proposal_id)))
+                        .set(proposals::status.eq(status))
+                        .execute(conn)
+                        .await?;
                     n += 1;
                 }
                 ProposalMutation::UpdateVotes {
@@ -175,16 +174,14 @@ impl Handler for ProposalHandler {
                     yes_votes,
                     no_votes,
                 } => {
-                    diesel::update(
-                        proposals::table.filter(proposals::proposal_id.eq(proposal_id)),
-                    )
-                    .set((
-                        proposals::status.eq(status),
-                        proposals::yes_votes.eq(yes_votes),
-                        proposals::no_votes.eq(no_votes),
-                    ))
-                    .execute(conn)
-                    .await?;
+                    diesel::update(proposals::table.filter(proposals::proposal_id.eq(proposal_id)))
+                        .set((
+                            proposals::status.eq(status),
+                            proposals::yes_votes.eq(yes_votes),
+                            proposals::no_votes.eq(no_votes),
+                        ))
+                        .execute(conn)
+                        .await?;
                     n += 1;
                 }
                 ProposalMutation::Insert(_) => {}

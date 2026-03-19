@@ -42,8 +42,7 @@ impl Processor for DaoHandler {
                 if !is_armature_event(&event.type_, &self.packages) {
                     continue;
                 }
-                if event.type_.module.as_str() != "dao"
-                    || event.type_.name.as_str() != "DAOCreated"
+                if event.type_.module.as_str() != "dao" || event.type_.name.as_str() != "DAOCreated"
                 {
                     continue;
                 }
@@ -59,9 +58,7 @@ impl Processor for DaoHandler {
                         created_at_ms: ts as i64,
                     }),
                     Err(e) => {
-                        tracing::warn!(
-                            "Failed to deserialize DAOCreated: {e}"
-                        );
+                        tracing::warn!("Failed to deserialize DAOCreated: {e}");
                     }
                 }
             }
