@@ -114,7 +114,7 @@ jobs:
 
   # Rust indexer: fmt, clippy, test, build
   rust-indexer:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs:
       - changes
     if: needs.changes.outputs.indexer == 'true'
@@ -125,20 +125,18 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.90.0
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.92"
           components: clippy,rustfmt
 
-      - name: Cache cargo registry & target
-        uses: actions/cache@v4
+      # On self-hosted runners the target/ dir persists between runs.
+      # Swatinem/rust-cache handles ~/.cargo/registry and prunes stale
+      # artifacts without expensive upload/download of the full target/.
+      - name: Cache cargo registry
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            cargo-${{ runner.os }}-
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install system deps
         run: |
