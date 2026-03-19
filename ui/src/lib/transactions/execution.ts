@@ -610,16 +610,18 @@ export function buildExecuteUnpauseSubDAOExecution(args: {
  * Steps 2-3 require CLI tooling (sui client upgrade). This builder handles step 4 only,
  * and must be called in the same PTB as the upgrade publish via PTB composition.
  */
-export function buildCommitUpgrade(args: {
-  capabilityVaultId: string;
-  /** UpgradeCap object ID (held in the capability vault) */
-  upgradeCapId: string;
-  /** CapLoan result from a preceding authorize_execution or vault borrow call */
-  upgradeReceipt: ReturnType<Transaction["moveCall"]>;
-  capLoan: ReturnType<Transaction["moveCall"]>;
-}): Transaction {
-  const tx = new Transaction();
-
+export function buildCommitUpgrade(
+  tx: Transaction,
+  args: {
+    capabilityVaultId: string;
+    /** UpgradeCap object ID (held in the capability vault) */
+    upgradeCapId: string;
+    /** UpgradeReceipt result from the preceding package publish command in the same PTB */
+    upgradeReceipt: ReturnType<Transaction["moveCall"]>;
+    /** CapLoan result from a preceding vault borrow call in the same PTB */
+    capLoan: ReturnType<Transaction["moveCall"]>;
+  },
+): void {
   tx.moveCall({
     target: prop(PROPOSAL_MODULES.upgrade_ops, "commit_upgrade"),
     arguments: [
@@ -629,8 +631,6 @@ export function buildCommitUpgrade(args: {
       args.capLoan,
     ],
   });
-
-  return tx;
 }
 
 /** Execute a ReclaimCapFromSubDAO proposal. */

@@ -6,11 +6,6 @@ import { Transaction, fw, MODULES } from "./helpers";
 
 /**
  * Claim a coin that was transferred directly to the treasury vault (not via proposal).
- * Uses Sui's transfer::Receiving pattern — the coinToClaimId must be the object ID
- * of a Coin<T> that was sent to the vault's address.
- */
-/**
- * Claim a coin that was transferred directly to the treasury vault (not via proposal).
  * Uses Sui's transfer::Receiving pattern — the caller must supply the full ObjectRef
  * (objectId, version, digest) for the coin object that was sent to the vault's address.
  */
