@@ -21,7 +21,7 @@ bcs = "0.1.6"
 url = "2.5.4"
 prometheus = "0.13.4"
 tokio-util = "0.7.13"
-bigdecimal = "0.4"
+bigdecimal = { version = "0.4", features = ["serde"] }
 
 sui-indexer-alt-metrics = { git = "https://github.com/MystenLabs/sui.git", rev = "072a2111619715c3348d1b83c0526c3bcfa5cdd1" }
 telemetry-subscribers = { git = "https://github.com/MystenLabs/sui.git", rev = "072a2111619715c3348d1b83c0526c3bcfa5cdd1" }

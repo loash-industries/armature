@@ -1,0 +1,5 @@
+[toolchain]
+# Must match the Sui monorepo rev used in Cargo.toml workspace dependencies.
+# See: crates/indexer/Cargo.toml → sui-indexer-alt-framework rev
+channel = "1.92"
+components = ["rustfmt", "clippy"]

@@ -104,6 +104,31 @@ services:
       retries: 20
     restart: unless-stopped
 
+  # ── Armature Indexer ────────────────────────────────────────────────────────
+  armature-indexer:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.indexer
+    depends_on:
+      postgres:
+        condition: service_healthy
+      armature-deploy:
+        condition: service_completed_successfully
+    ports:
+      - "3000:3000"   # REST API
+      - "9185:9185"   # Health check
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgrespw}@postgres:5432/${POSTGRES_DB:-armature}
+      ARMATURE_ENV: localnet
+      RPC_API_URL: http://sui-localnet:9000
+      API_PORT: "3000"
+      HEALTH_PORT: "9185"
+      FIRST_CHECKPOINT: "0"
+      # ARMATURE_PACKAGE_ID is sourced from /shared/.env.armature at runtime
+    volumes:
+      - shared-data:/shared:ro
+    restart: unless-stopped
+
   # ── UI Dev Server (Vite) ───────────────────────────────────────────────────
   ui:
     image: node:22-slim
