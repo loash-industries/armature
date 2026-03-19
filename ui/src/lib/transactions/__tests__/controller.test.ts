@@ -30,14 +30,14 @@ describe("buildPrivilegedOp", () => {
     const tx = buildTx();
     const moveCalls = tx.getData().commands.filter((c) => c.$kind === "MoveCall");
     // 1 payload call + 1 submit + 1 consume = 3 total, submit+consume are the last 2
-    expect(moveCalls.at(-2)?.MoveCall?.function).toBe("privileged_submit");
-    expect(moveCalls.at(-1)?.MoveCall?.function).toBe("privileged_consume");
+    expect(moveCalls[moveCalls.length - 2]?.MoveCall?.function).toBe("privileged_submit");
+    expect(moveCalls[moveCalls.length - 1]?.MoveCall?.function).toBe("privileged_consume");
   });
 
   it("privileged_submit targets the controller module in PACKAGE_ID", () => {
     const tx = buildTx();
     const moveCalls = tx.getData().commands.filter((c) => c.$kind === "MoveCall");
-    const submitCmd = moveCalls.at(-2);
+    const submitCmd = moveCalls[moveCalls.length - 2];
     expect(submitCmd?.MoveCall?.module).toBe("controller");
     expect(submitCmd?.MoveCall?.package).toContain(PACKAGE_ID.replace(/^0x0*/, ""));
   });
@@ -45,7 +45,7 @@ describe("buildPrivilegedOp", () => {
   it("privileged_consume uses the same proposalType type argument", () => {
     const tx = buildTx();
     const moveCalls = tx.getData().commands.filter((c) => c.$kind === "MoveCall");
-    const consumeCmd = moveCalls.at(-1);
+    const consumeCmd = moveCalls[moveCalls.length - 1];
     expect(consumeCmd?.MoveCall?.typeArguments[0]).toBe(PROPOSAL_TYPE);
   });
 

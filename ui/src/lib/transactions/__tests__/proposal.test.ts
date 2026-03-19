@@ -166,8 +166,8 @@ describe("buildSubmitUpdateProposalConfig", () => {
     // expiryMs = none (1), executionDelayMs = none (1), cooldownMs = none (1) = 6 option cmds
     // + payload (1) + submit (1) = 8 total
     expect(commands.length).toBeGreaterThanOrEqual(8);
-    expect(commands.at(-1)?.MoveCall?.function).toBe("submit_proposal");
-    expect(commands.at(-2)?.MoveCall?.module).toBe("update_proposal_config");
+    expect(commands[commands.length - 1]?.MoveCall?.function).toBe("submit_proposal");
+    expect(commands[commands.length - 2]?.MoveCall?.module).toBe("update_proposal_config");
   });
 
   it("builds Option::none for omitted fields", () => {
