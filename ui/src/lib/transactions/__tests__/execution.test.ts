@@ -8,7 +8,9 @@ import {
   buildExecuteTransferCapToSubDAO,
   buildExecutePauseSubDAOExecution,
   buildExecuteReclaimCap,
+  buildCommitUpgrade,
 } from "../execution";
+import { Transaction } from "../helpers";
 import { PACKAGE_ID, PROPOSALS_PACKAGE_ID } from "@/config/constants";
 
 const DAO_ID = "0x" + "a".repeat(64);
@@ -174,5 +176,47 @@ describe("buildExecuteReclaimCap", () => {
       emergencyFreezeId: FREEZE_ID, capType,
     });
     assertExecutePattern(tx.getData().commands, "subdao_ops", "execute_reclaim_cap", "::reclaim_cap_from_subdao::ReclaimCapFromSubDAO");
+  });
+});
+
+describe("buildCommitUpgrade", () => {
+  function buildTx() {
+    const tx = new Transaction();
+    // Simulate the PTB results that precede commit_upgrade in the same transaction
+    const upgradeReceipt = tx.moveCall({
+      target: `0x2::package::authorize_upgrade`,
+      arguments: [],
+    });
+    const capLoan = tx.moveCall({
+      target: `0x2::package::some_borrow`,
+      arguments: [],
+    });
+    buildCommitUpgrade(tx, {
+      capabilityVaultId: "0x" + "1".repeat(64),
+      upgradeCapId: "0x" + "2".repeat(64),
+      upgradeReceipt,
+      capLoan,
+    });
+    return tx;
+  }
+
+  it("appends a commit_upgrade move call to the transaction", () => {
+    const tx = buildTx();
+    const moveCalls = tx.getData().commands.filter((c) => c.$kind === "MoveCall");
+    const commitCall = moveCalls.find((c) => c.MoveCall?.function === "commit_upgrade");
+    expect(commitCall).toBeDefined();
+    expect(commitCall?.MoveCall?.module).toBe("upgrade_ops");
+  });
+
+  it("uses PROPOSALS_PACKAGE_ID for commit_upgrade", () => {
+    const tx = buildTx();
+    const commitCall = tx.getData().commands.find((c) => c.MoveCall?.function === "commit_upgrade");
+    expect(commitCall?.MoveCall?.package).toContain(PROPOSALS_PACKAGE_ID.replace(/^0x0*/, ""));
+  });
+
+  it("passes 4 arguments to commit_upgrade", () => {
+    const tx = buildTx();
+    const commitCall = tx.getData().commands.find((c) => c.MoveCall?.function === "commit_upgrade");
+    expect(commitCall?.MoveCall?.arguments).toHaveLength(4);
   });
 });

@@ -27,7 +27,13 @@ describe("buildFreezeType", () => {
 
   it("includes clock (0x6) as an input", () => {
     const tx = buildFreezeType({ emergencyFreezeId: FREEZE_ID, freezeAdminCapId: FREEZE_CAP_ID, typeKey: TYPE_KEY });
-    expect(JSON.stringify(tx.getData().inputs)).toContain("6");
+    const clockInput = tx.getData().inputs.find(
+      (i) =>
+        i.$kind === "UnresolvedObject" &&
+        i.UnresolvedObject?.objectId ===
+          "0x0000000000000000000000000000000000000000000000000000000000000006",
+    );
+    expect(clockInput).toBeDefined();
   });
 });
 

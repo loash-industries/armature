@@ -65,7 +65,7 @@ describe("buildSubmitCreateSubDAO", () => {
     expect(submitCmd.MoveCall?.typeArguments[0]).toContain("::create_subdao::CreateSubDAO");
   });
 
-  it("passes clock object to submit_proposal", () => {
+  it("passes clock (0x6) as an input", () => {
     const tx = buildSubmitCreateSubDAO({
       daoId: DAO_ID,
       name: "s",
@@ -75,10 +75,11 @@ describe("buildSubmitCreateSubDAO", () => {
     });
     const { inputs } = tx.getData();
     const clockInput = inputs.find(
-      (i) => i.$kind === "Object" && i.Object?.$kind === "ImmOrOwnedObject" ||
-             i.$kind === "Object" && "SharedObject" in (i.Object ?? {})
+      (i) =>
+        i.$kind === "UnresolvedObject" &&
+        i.UnresolvedObject?.objectId ===
+          "0x0000000000000000000000000000000000000000000000000000000000000006",
     );
-    // Clock 0x6 must appear as an input
-    expect(inputs.some((i) => JSON.stringify(i).includes("6"))).toBe(true);
+    expect(clockInput).toBeDefined();
   });
 });
