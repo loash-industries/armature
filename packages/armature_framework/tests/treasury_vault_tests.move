@@ -53,7 +53,7 @@ fun test_deposit_first_coin_adds_to_registry() {
     {
         let mut vault = scenario.take_shared<TreasuryVault>();
         let coin = coin::mint_for_testing<SUI>(1000, scenario.ctx());
-        vault.deposit(coin);
+        vault.deposit(coin, scenario.ctx());
 
         assert!(
             vault.coin_types().contains(&std::type_name::with_original_ids<SUI>().into_string()),
@@ -77,10 +77,10 @@ fun test_deposit_second_coin_type_adds_to_registry() {
         let mut vault = scenario.take_shared<TreasuryVault>();
 
         let sui_coin = coin::mint_for_testing<SUI>(1000, scenario.ctx());
-        vault.deposit(sui_coin);
+        vault.deposit(sui_coin, scenario.ctx());
 
         let usdc_coin = coin::mint_for_testing<USDC>(2000, scenario.ctx());
-        vault.deposit(usdc_coin);
+        vault.deposit(usdc_coin, scenario.ctx());
 
         assert!(
             vault.coin_types().contains(&std::type_name::with_original_ids<SUI>().into_string()),
@@ -108,10 +108,10 @@ fun test_deposit_same_type_joins_balance() {
         let mut vault = scenario.take_shared<TreasuryVault>();
 
         let coin1 = coin::mint_for_testing<SUI>(1000, scenario.ctx());
-        vault.deposit(coin1);
+        vault.deposit(coin1, scenario.ctx());
 
         let coin2 = coin::mint_for_testing<SUI>(500, scenario.ctx());
-        vault.deposit(coin2);
+        vault.deposit(coin2, scenario.ctx());
 
         // Balance joined, coin_types unchanged
         assert!(vault.balance<SUI>() == 1500);
@@ -133,7 +133,7 @@ fun test_deposit_permissionless() {
     {
         let mut vault = scenario.take_shared<TreasuryVault>();
         let coin = coin::mint_for_testing<SUI>(500, scenario.ctx());
-        vault.deposit(coin);
+        vault.deposit(coin, scenario.ctx());
 
         assert!(vault.balance<SUI>() == 500);
 
@@ -153,7 +153,7 @@ fun test_deposit_zero_amount() {
     {
         let mut vault = scenario.take_shared<TreasuryVault>();
         let coin = coin::mint_for_testing<SUI>(0, scenario.ctx());
-        vault.deposit(coin);
+        vault.deposit(coin, scenario.ctx());
 
         // No type registered, balance is 0
         assert!(vault.coin_types().length() == 0);
@@ -175,7 +175,7 @@ fun test_withdraw_with_valid_request_succeeds() {
     {
         let mut vault = scenario.take_shared<TreasuryVault>();
         let coin = coin::mint_for_testing<SUI>(1000, scenario.ctx());
-        vault.deposit(coin);
+        vault.deposit(coin, scenario.ctx());
 
         let req = create_test_execution_request<TestProposal>(&vault);
         let withdrawn = vault.withdraw<SUI, TestProposal>(400, &req, scenario.ctx());
@@ -202,7 +202,7 @@ fun test_partial_withdraw_preserves_field() {
     {
         let mut vault = scenario.take_shared<TreasuryVault>();
         let coin = coin::mint_for_testing<SUI>(1000, scenario.ctx());
-        vault.deposit(coin);
+        vault.deposit(coin, scenario.ctx());
 
         let req = create_test_execution_request<TestProposal>(&vault);
         let withdrawn = vault.withdraw<SUI, TestProposal>(300, &req, scenario.ctx());
@@ -231,7 +231,7 @@ fun test_coin_types_reflects_non_zero_balances() {
     {
         let mut vault = scenario.take_shared<TreasuryVault>();
         let coin = coin::mint_for_testing<SUI>(1000, scenario.ctx());
-        vault.deposit(coin);
+        vault.deposit(coin, scenario.ctx());
 
         let req = create_test_execution_request<TestProposal>(&vault);
         let withdrawn = vault.withdraw<SUI, TestProposal>(999, &req, scenario.ctx());
@@ -260,7 +260,7 @@ fun test_withdraw_exact_balance_removes_field() {
     {
         let mut vault = scenario.take_shared<TreasuryVault>();
         let coin = coin::mint_for_testing<SUI>(1000, scenario.ctx());
-        vault.deposit(coin);
+        vault.deposit(coin, scenario.ctx());
 
         let req = create_test_execution_request<TestProposal>(&vault);
         let withdrawn = vault.withdraw<SUI, TestProposal>(1000, &req, scenario.ctx());
@@ -289,7 +289,7 @@ fun test_withdraw_exact_balance_removes_dynamic_field() {
     {
         let mut vault = scenario.take_shared<TreasuryVault>();
         let coin = coin::mint_for_testing<SUI>(500, scenario.ctx());
-        vault.deposit(coin);
+        vault.deposit(coin, scenario.ctx());
 
         let req = create_test_execution_request<TestProposal>(&vault);
         let withdrawn = vault.withdraw<SUI, TestProposal>(500, &req, scenario.ctx());
@@ -315,7 +315,7 @@ fun test_withdraw_insufficient_balance_aborts() {
     {
         let mut vault = scenario.take_shared<TreasuryVault>();
         let coin = coin::mint_for_testing<SUI>(100, scenario.ctx());
-        vault.deposit(coin);
+        vault.deposit(coin, scenario.ctx());
 
         let req = create_test_execution_request<TestProposal>(&vault);
         let withdrawn = vault.withdraw<SUI, TestProposal>(200, &req, scenario.ctx());
@@ -355,7 +355,7 @@ fun test_balance_after_deposit_returns_correct() {
     {
         let mut vault = scenario.take_shared<TreasuryVault>();
         let coin = coin::mint_for_testing<SUI>(42_000_000, scenario.ctx());
-        vault.deposit(coin);
+        vault.deposit(coin, scenario.ctx());
 
         assert!(vault.balance<SUI>() == 42_000_000);
 
