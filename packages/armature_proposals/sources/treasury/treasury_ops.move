@@ -81,7 +81,7 @@ public fun execute_send_coin_to_dao<T>(
     assert!(object::id(target_vault) == payload.recipient_treasury(), ETargetVaultMismatch);
 
     let coin = source_vault.withdraw<T, SendCoinToDAO<T>>(payload.amount(), &request, ctx);
-    target_vault.deposit(coin);
+    target_vault.deposit(coin, ctx);
 
     event::emit(CoinSentToDAO {
         dao_id: source_vault.dao_id(),

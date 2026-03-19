@@ -80,7 +80,7 @@ fun small_startup_lifecycle() {
     {
         let mut vault = scenario.take_shared<TreasuryVault>();
         let funding = coin::mint_for_testing<SUI>(1_000_000, scenario.ctx());
-        vault.deposit(funding);
+        vault.deposit(funding, scenario.ctx());
         assert!(vault.balance<SUI>() == 1_000_000);
         test_scenario::return_shared(vault);
     };
@@ -353,7 +353,7 @@ fun medium_enterprise_lifecycle() {
     {
         let mut vault = scenario.take_shared<TreasuryVault>();
         let revenue = coin::mint_for_testing<USDC>(10_000_000, scenario.ctx());
-        vault.deposit(revenue);
+        vault.deposit(revenue, scenario.ctx());
         assert!(vault.balance<USDC>() == 10_000_000);
         test_scenario::return_shared(vault);
     };
