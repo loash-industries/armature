@@ -17,13 +17,15 @@ diesel::table! {
 
 diesel::table! {
     daos (dao_id) {
-        dao_id        -> Text,
-        treasury_id   -> Text,
-        charter_id    -> Text,
-        freeze_id     -> Text,
-        cap_vault_id  -> Text,
-        creator       -> Text,
-        created_at_ms -> Int8,
+        dao_id           -> Text,
+        treasury_id      -> Text,
+        charter_id       -> Text,
+        freeze_id        -> Text,
+        cap_vault_id     -> Text,
+        creator          -> Text,
+        created_at_ms    -> Int8,
+        destroyed_at_ms  -> Nullable<Int8>,
+        successor_dao_id -> Nullable<Text>,
     }
 }
 
@@ -45,5 +47,32 @@ diesel::table! {
         treasury_id -> Text,
         coin_type   -> Text,
         balance     -> Numeric,
+    }
+}
+
+diesel::table! {
+    votes (vote_id) {
+        vote_id      -> Text,
+        proposal_id  -> Text,
+        dao_id       -> Text,
+        voter        -> Text,
+        approve      -> Bool,
+        weight       -> Int8,
+        timestamp_ms -> Int8,
+    }
+}
+
+diesel::table! {
+    frozen_types (dao_id, type_key) {
+        dao_id          -> Text,
+        type_key        -> Text,
+        frozen_until_ms -> Int8,
+    }
+}
+
+diesel::table! {
+    freeze_exempt_types (dao_id, type_key) {
+        dao_id   -> Text,
+        type_key -> Text,
     }
 }

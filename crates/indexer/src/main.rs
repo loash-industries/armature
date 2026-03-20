@@ -12,8 +12,10 @@ use url::Url;
 
 use armature_indexer::handlers::activity_handler::ActivityHandler;
 use armature_indexer::handlers::dao_handler::DaoHandler;
+use armature_indexer::handlers::emergency_handler::EmergencyHandler;
 use armature_indexer::handlers::proposal_handler::ProposalHandler;
 use armature_indexer::handlers::treasury_handler::TreasuryHandler;
+use armature_indexer::handlers::vote_handler::VoteHandler;
 use armature_indexer::ArmatureEnv;
 use armature_schema::MIGRATIONS;
 
@@ -116,6 +118,12 @@ async fn main() -> anyhow::Result<()> {
         .await?;
     indexer
         .concurrent_pipeline(TreasuryHandler::new(ids), Default::default())
+        .await?;
+    indexer
+        .concurrent_pipeline(VoteHandler::new(ids), Default::default())
+        .await?;
+    indexer
+        .concurrent_pipeline(EmergencyHandler::new(ids), Default::default())
         .await?;
     indexer
         .concurrent_pipeline(ActivityHandler::new(ids), Default::default())

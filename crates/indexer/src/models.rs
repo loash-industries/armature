@@ -106,3 +106,27 @@ pub struct TypeUnfrozen {
     pub dao_id: SuiId,
     pub type_key: String,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct FreezeExemptTypeAdded {
+    pub dao_id: SuiId,
+    pub type_key: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FreezeExemptTypeRemoved {
+    pub dao_id: SuiId,
+    pub type_key: String,
+}
+
+// ── armature::dao (destruction) ──────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct DAODestroyed {
+    pub dao_id: SuiId,
+    pub successor_dao_id: SuiId,
+}
+
+pub fn is_zero_id(id: &SuiId) -> bool {
+    id.iter().all(|&b| b == 0)
+}
