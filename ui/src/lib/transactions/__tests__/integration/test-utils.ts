@@ -164,8 +164,8 @@ export function extractDaoCreatedFields(
       c.type === "created" &&
       c.objectType?.includes("::emergency::FreezeAdminCap") &&
       c.owner &&
-      "AddressOwner" in c.owner &&
-      c.owner.AddressOwner === creatorAddress,
+      typeof c.owner === "object" && "AddressOwner" in c.owner &&
+      (c.owner as { AddressOwner: string }).AddressOwner === creatorAddress,
   );
 
   if (!freezeAdminCapChange || freezeAdminCapChange.type !== "created") {

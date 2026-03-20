@@ -62,7 +62,7 @@ describe("buildDeposit", () => {
         c.type === "created" &&
         c.objectType === "0x2::coin::Coin<0x2::sui::SUI>" &&
         c.owner &&
-        "AddressOwner" in c.owner &&
+        typeof c.owner === "object" && "AddressOwner" in c.owner &&
         c.owner.AddressOwner === member1.toSuiAddress(),
     );
     expect(createdCoin).toBeDefined();
@@ -133,7 +133,7 @@ describe("treasury withdraw via SendCoin proposal", () => {
         c.type === "created" &&
         c.objectType === "0x2::coin::Coin<0x2::sui::SUI>" &&
         c.owner &&
-        "AddressOwner" in c.owner &&
+        typeof c.owner === "object" && "AddressOwner" in c.owner &&
         c.owner.AddressOwner === member1.toSuiAddress(),
     );
     expect(createdCoin).toBeDefined();

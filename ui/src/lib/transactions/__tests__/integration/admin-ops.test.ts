@@ -198,7 +198,7 @@ describe("TransferFreezeAdmin", () => {
         c.type === "mutated" &&
         c.objectType?.includes("::emergency::FreezeAdminCap") &&
         c.owner &&
-        "AddressOwner" in c.owner &&
+        typeof c.owner === "object" && "AddressOwner" in c.owner &&
         c.owner.AddressOwner === member2.toSuiAddress(),
     );
     expect(capTransfer).toBeDefined();
