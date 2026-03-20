@@ -18,8 +18,9 @@ use armature_schema::models::Event;
 use armature_schema::schema::events;
 
 use crate::models::{
-    id_to_hex, CoinClaimed, CoinDeposited, CoinWithdrawn, DAOCreated, ProposalCreated,
-    ProposalExecuted, ProposalExpired, ProposalPassed, TypeFrozen, TypeUnfrozen, VoteCast,
+    id_to_hex, is_zero_id, CoinClaimed, CoinDeposited, CoinWithdrawn, DAOCreated, DAODestroyed,
+    FreezeExemptTypeAdded, FreezeExemptTypeRemoved, ProposalCreated, ProposalExecuted,
+    ProposalExpired, ProposalPassed, TypeFrozen, TypeUnfrozen, VoteCast,
 };
 use crate::{is_armature_event, parse_package_addresses};
 
@@ -168,6 +169,34 @@ fn decode_event(
             if let Ok(e) = bcs::from_bytes::<TypeUnfrozen>(contents) {
                 let dao_id = id_to_hex(&e.dao_id);
                 let payload = json!({ "dao_id": dao_id, "type_key": e.type_key });
+                return (Some(dao_id), Some(payload));
+            }
+        }
+        ("emergency", "FreezeExemptTypeAdded") => {
+            if let Ok(e) = bcs::from_bytes::<FreezeExemptTypeAdded>(contents) {
+                let dao_id = id_to_hex(&e.dao_id);
+                let payload = json!({ "dao_id": dao_id, "type_key": e.type_key });
+                return (Some(dao_id), Some(payload));
+            }
+        }
+        ("emergency", "FreezeExemptTypeRemoved") => {
+            if let Ok(e) = bcs::from_bytes::<FreezeExemptTypeRemoved>(contents) {
+                let dao_id = id_to_hex(&e.dao_id);
+                let payload = json!({ "dao_id": dao_id, "type_key": e.type_key });
+                return (Some(dao_id), Some(payload));
+            }
+        }
+        ("dao", "DAODestroyed") => {
+            if let Ok(e) = bcs::from_bytes::<DAODestroyed>(contents) {
+                let dao_id = id_to_hex(&e.dao_id);
+                let payload = json!({
+                    "dao_id": dao_id,
+                    "successor_dao_id": if is_zero_id(&e.successor_dao_id) {
+                        serde_json::Value::Null
+                    } else {
+                        serde_json::Value::String(id_to_hex(&e.successor_dao_id))
+                    },
+                });
                 return (Some(dao_id), Some(payload));
             }
         }
