@@ -87,6 +87,15 @@ export async function execute(
     throw new Error(`Transaction failed: ${error}`);
   }
 
+  // Wait for the fullnode to fully index the transaction before returning.
+  // Without this, the next tx that references objects created here will fail
+  // with "Object does not exist" because the node hasn't indexed them yet.
+  await client.waitForTransaction({
+    digest: result.digest,
+    timeout: 30_000,
+    pollInterval: 300,
+  });
+
   return result;
 }
 

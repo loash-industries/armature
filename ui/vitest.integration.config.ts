@@ -26,7 +26,7 @@ export default defineConfig({
     hookTimeout: 30_000,
     // Run integration suites sequentially to avoid nonce/gas conflicts.
     pool: "forks",
-    poolOptions: { forks: { singleFork: true } },
+    singleFork: true,
     // Load .env.local so VITE_PACKAGE_ID etc. are available.
     env: {},
   },

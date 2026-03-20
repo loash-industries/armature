@@ -11,15 +11,21 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { SuiJsonRpcClient } from "@mysten/sui/jsonRpc";
 import { Ed25519Keypair } from "@mysten/sui/keypairs/ed25519";
 import {
+  PROPOSALS_PACKAGE_ID,
   createClient,
   newFundedKeypair,
   createTestDao,
   execute,
   assertEvent,
+  submitAndGetProposalId,
+  voteOnProposal,
   type TestDao,
 } from "./test-utils";
 import { buildFreezeType, buildUnfreezeType } from "../../emergency";
 import { buildSubmitSetBoard } from "../../proposal";
+import { buildExecuteSetBoard } from "../../execution";
+
+const SET_BOARD_TYPE = `${PROPOSALS_PACKAGE_ID}::set_board::SetBoard`;
 
 let client: SuiJsonRpcClient;
 let creator: Ed25519Keypair;
@@ -48,15 +54,28 @@ describe("buildFreezeType — direct FreezeAdminCap action", () => {
     assertEvent(result, "::emergency::TypeFrozen");
   });
 
-  it("frozen proposal type blocks new proposal submission", async () => {
-    // SetBoard is frozen from previous test — submission should fail
+  it("frozen proposal type still allows submission — but blocks execution", async () => {
+    // SetBoard is frozen from previous test.
+    // Freeze is enforced in authorize_execution, NOT submit_proposal.
     const submitTx = buildSubmitSetBoard({
       daoId: dao.daoId,
       newMembers: [creator.toSuiAddress()],
       metadataIpfs: "ipfs://test",
     });
 
-    await expect(execute(client, submitTx, creator)).rejects.toThrow();
+    // Submission succeeds even while frozen
+    const proposalId = await submitAndGetProposalId(client, submitTx, creator);
+
+    // Vote yes — 1-member DAO, proposal passes immediately
+    await voteOnProposal(client, proposalId, SET_BOARD_TYPE, true, creator);
+
+    // Execution must fail because SetBoard is frozen
+    const execTx = buildExecuteSetBoard({
+      daoId: dao.daoId,
+      proposalId,
+      emergencyFreezeId: dao.emergencyFreezeId,
+    });
+    await expect(execute(client, execTx, creator)).rejects.toThrow();
   });
 });
 

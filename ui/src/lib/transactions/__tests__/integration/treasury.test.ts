@@ -20,24 +20,28 @@ import {
   type TestDao,
 } from "./test-utils";
 import { buildDeposit } from "../../treasury";
-import { buildSubmitSendCoin } from "../../proposal";
-import { buildExecuteSendCoin } from "../../execution";
+import { buildSubmitSendCoin, buildSubmitEnableProposalType } from "../../proposal";
+import { buildExecuteSendCoin, buildExecuteEnableProposalType } from "../../execution";
 
 const SUI_TYPE = "0x2::sui::SUI";
-const SEND_COIN_TYPE = `${PROPOSALS_PACKAGE_ID}::send_coin::SendCoin`;
+const SEND_COIN_TYPE = `${PROPOSALS_PACKAGE_ID}::send_coin::SendCoin<${SUI_TYPE}>`;
 
 let client: SuiJsonRpcClient;
 let member1: Ed25519Keypair;
 let member2: Ed25519Keypair;
+let member3: Ed25519Keypair;
 let dao: TestDao;
 
 beforeAll(async () => {
   client = createClient();
-  [member1, member2] = await Promise.all([
+  [member1, member2, member3] = await Promise.all([
+    newFundedKeypair(client),
     newFundedKeypair(client),
     newFundedKeypair(client),
   ]);
-  dao = await createTestDao(client, member1, [member2]);
+  // 3-member DAO: 2 votes (66.7%) needed to pass quorum (50%).
+  // EnableProposalType enforces a 66% approval floor — 2/3 = 66.7% meets it.
+  dao = await createTestDao(client, member1, [member2, member3]);
 });
 
 // ---------------------------------------------------------------------------
@@ -87,6 +91,35 @@ describe("buildDeposit", () => {
 // ---------------------------------------------------------------------------
 
 describe("treasury withdraw via SendCoin proposal", () => {
+  // SendCoin is not enabled by default — enable it first via governance.
+  // EnableProposalType has a 66% approval floor: 2/3 members voting yes (66.7%) satisfies it.
+  beforeAll(async () => {
+    const ENABLE_TYPE = `${PROPOSALS_PACKAGE_ID}::enable_proposal_type::EnableProposalType`;
+
+    const submitTx = buildSubmitEnableProposalType({
+      daoId: dao.daoId,
+      typeKey: "SendCoin",
+      quorum: 5000,
+      approvalThreshold: 5000,
+      proposeThreshold: "0",
+      expiryMs: "86400000",
+      executionDelayMs: "0",
+      cooldownMs: "0",
+      metadataIpfs: "ipfs://test",
+    });
+    const proposalId = await submitAndGetProposalId(client, submitTx, member1);
+
+    // 2 votes needed: 2/3 = 66.7% meets both the 50% quorum and the 66% approval floor
+    await voteOnProposal(client, proposalId, ENABLE_TYPE, true, member1);
+    await voteOnProposal(client, proposalId, ENABLE_TYPE, true, member2);
+
+    await execute(
+      client,
+      buildExecuteEnableProposalType({ daoId: dao.daoId, proposalId, emergencyFreezeId: dao.emergencyFreezeId }),
+      member1,
+    );
+  });
+
   it("submit → 2 votes → execute SendCoin succeeds", async () => {
     const recipient = (await newFundedKeypair(client)).toSuiAddress();
 

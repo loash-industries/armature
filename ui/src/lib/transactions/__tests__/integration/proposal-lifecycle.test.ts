@@ -31,6 +31,7 @@ import { buildExecuteSetBoard, buildExecuteUpdateMetadata } from "../../executio
 let client: SuiJsonRpcClient;
 let member1: Ed25519Keypair;
 let member2: Ed25519Keypair;
+let member3: Ed25519Keypair;
 let dao: TestDao;
 
 const SET_BOARD_TYPE = `${PROPOSALS_PACKAGE_ID}::set_board::SetBoard`;
@@ -38,12 +39,14 @@ const UPDATE_METADATA_TYPE = `${PROPOSALS_PACKAGE_ID}::update_metadata::UpdateMe
 
 beforeAll(async () => {
   client = createClient();
-  [member1, member2] = await Promise.all([
+  [member1, member2, member3] = await Promise.all([
+    newFundedKeypair(client),
     newFundedKeypair(client),
     newFundedKeypair(client),
   ]);
-  // 2-member DAO: quorum=50% means both members voting yes = 100% approval
-  dao = await createTestDao(client, member1, [member2]);
+  // 3-member DAO: quorum=50% → 2 of 3 votes (66.7%) needed to pass.
+  // member1's first vote alone (33.3%) does NOT pass; member2's vote (66.7%) does.
+  dao = await createTestDao(client, member1, [member2, member3]);
 });
 
 // ---------------------------------------------------------------------------
@@ -122,7 +125,7 @@ describe("voting (scenarios 3.2–3.4)", () => {
       client, proposalId, SET_BOARD_TYPE, true, member2,
     );
     expect(result.effects?.status?.status).toBe("success");
-    // With 2/2 votes yes, quorum=100% > 50% and approval=100% > 50% → Passed
+    // With 2/3 votes yes (66.7%), quorum=50% met and approval=100% > 50% → Passed
     assertEvent(result, "::proposal::ProposalPassed");
   });
 });
@@ -133,8 +136,8 @@ describe("voting (scenarios 3.2–3.4)", () => {
 
 describe("execute passed proposal (scenario 3.5)", () => {
   it("buildExecuteSetBoard — succeeds after passing vote, emits ProposalExecuted", async () => {
-    // Submit
-    const newBoard = [member1.toSuiAddress(), member2.toSuiAddress()];
+    // Submit — keep all 3 members so subsequent tests still have 3-member quorum
+    const newBoard = [member1.toSuiAddress(), member2.toSuiAddress(), member3.toSuiAddress()];
     const submitTx = buildSubmitSetBoard({
       daoId: dao.daoId,
       newMembers: newBoard,
@@ -243,7 +246,7 @@ describe("negative: cannot execute active proposal (scenario 3.10)", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildTryExpire", () => {
-  it("transaction is correctly formed (sends to chain without abort on active proposal)", async () => {
+  it("try_expire on a non-expired active proposal aborts (contract enforces expiry)", async () => {
     const submitTx = buildSubmitSetBoard({
       daoId: dao.daoId,
       newMembers: [member1.toSuiAddress()],
@@ -253,8 +256,8 @@ describe("buildTryExpire", () => {
 
     const expireTx = buildTryExpire({ proposalId, proposalType: SET_BOARD_TYPE });
 
-    // On an active non-expired proposal, try_expire is a no-op (succeeds without error)
-    const result = await execute(client, expireTx, member1);
-    expect(result.effects?.status?.status).toBe("success");
+    // try_expire checks `now >= created_at_ms + expiry_ms` and aborts (ENotExpired)
+    // on a freshly submitted proposal — it does NOT silently no-op.
+    await expect(execute(client, expireTx, member1)).rejects.toThrow();
   });
 });
