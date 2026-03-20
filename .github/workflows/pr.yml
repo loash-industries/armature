@@ -23,6 +23,7 @@ jobs:
       api: ${{ steps.filter.outputs.api }}
       indexer: ${{ steps.filter.outputs.indexer }}
       move: ${{ steps.filter.outputs.move }}
+      whitepaper: ${{ steps.filter.outputs.whitepaper }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -42,6 +43,9 @@ jobs:
               - '.github/workflows/**'
             move:
               - 'packages/**'
+              - '.github/workflows/**'
+            whitepaper:
+              - 'whitepaper/**'
               - '.github/workflows/**'
 
   # Build API Docker image
@@ -110,7 +114,7 @@ jobs:
 
   # Rust indexer: fmt, clippy, test, build
   rust-indexer:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs:
       - changes
     if: needs.changes.outputs.indexer == 'true'
@@ -121,26 +125,25 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.90.0
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.92"
           components: clippy,rustfmt
 
-      - name: Cache cargo registry & target
-        uses: actions/cache@v4
+      # On self-hosted runners the target/ dir persists between runs.
+      # Swatinem/rust-cache handles ~/.cargo/registry and prunes stale
+      # artifacts without expensive upload/download of the full target/.
+      - name: Cache cargo registry
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            cargo-${{ runner.os }}-
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install system deps
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential pkg-config libssl-dev libpq-dev
+            build-essential pkg-config libssl-dev libpq-dev \
+            libclang-dev clang
 
       - name: cargo fmt (check)
         run: cargo fmt --all -- --check
@@ -205,3 +208,25 @@ jobs:
               sui move test --path "$dir" -i 100000000 --force
             fi
           done
+
+  # Build whitepaper PDF
+  build-whitepaper:
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+    if: needs.changes.outputs.whitepaper == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Typst
+        uses: typst-community/setup-typst@v4
+
+      - name: Build whitepaper
+        working-directory: whitepaper
+        run: typst compile main.typ paper.pdf
+
+      - name: Upload whitepaper artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: whitepaper
+          path: whitepaper/paper.pdf
