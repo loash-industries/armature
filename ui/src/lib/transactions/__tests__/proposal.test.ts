@@ -7,6 +7,21 @@ import {
   buildSubmitEnableProposalType,
   buildSubmitUpdateProposalConfig,
   buildSubmitTransferAssets,
+  buildSubmitUpdateMetadata,
+  buildSubmitDisableProposalType,
+  buildSubmitTransferFreezeAdmin,
+  buildSubmitUnfreezeProposalType,
+  buildSubmitSendCoinToDAO,
+  buildSubmitSendSmallPayment,
+  buildSubmitUpdateFreezeConfig,
+  buildSubmitUpdateFreezeExemptTypes,
+  buildSubmitTransferCapToSubDAO,
+  buildSubmitReclaimCapFromSubDAO,
+  buildSubmitProposeUpgrade,
+  buildSubmitSpawnDAO,
+  buildSubmitSpinOutSubDAO,
+  buildSubmitPauseSubDAOExecution,
+  buildSubmitUnpauseSubDAOExecution,
 } from "../proposal";
 import { PACKAGE_ID, PROPOSALS_PACKAGE_ID } from "@/config/constants";
 
@@ -201,5 +216,303 @@ describe("buildSubmitTransferAssets", () => {
     expect(getTypeCalls).toHaveLength(coinTypes.length);
     const makeMoveVecs = commands.filter((c) => "$kind" in c && c.$kind === "MakeMoveVec");
     expect(makeMoveVecs).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Previously integration-only submit builders
+// ---------------------------------------------------------------------------
+
+describe("buildSubmitUpdateMetadata", () => {
+  it("follows submit pattern with update_metadata::new + board_voting::submit_proposal", () => {
+    const tx = buildSubmitUpdateMetadata({
+      daoId: DAO_ID,
+      newIpfsCid: META,
+      metadataIpfs: META,
+    });
+    assertSubmitPattern(tx.getData().commands, "update_metadata", "::update_metadata::UpdateMetadata");
+  });
+});
+
+describe("buildSubmitDisableProposalType", () => {
+  it("follows submit pattern with disable_proposal_type::new + board_voting::submit_proposal", () => {
+    const tx = buildSubmitDisableProposalType({
+      daoId: DAO_ID,
+      typeKey: "SendCoin",
+      metadataIpfs: META,
+    });
+    assertSubmitPattern(tx.getData().commands, "disable_proposal_type", "::disable_proposal_type::DisableProposalType");
+  });
+});
+
+describe("buildSubmitTransferFreezeAdmin", () => {
+  it("follows submit pattern with transfer_freeze_admin::new + board_voting::submit_proposal", () => {
+    const tx = buildSubmitTransferFreezeAdmin({
+      daoId: DAO_ID,
+      newAdmin: "0x" + "2".repeat(64),
+      metadataIpfs: META,
+    });
+    assertSubmitPattern(tx.getData().commands, "transfer_freeze_admin", "::transfer_freeze_admin::TransferFreezeAdmin");
+  });
+});
+
+describe("buildSubmitUnfreezeProposalType", () => {
+  it("follows submit pattern with unfreeze_proposal_type::new + board_voting::submit_proposal", () => {
+    const tx = buildSubmitUnfreezeProposalType({
+      daoId: DAO_ID,
+      typeKey: "SetBoard",
+      metadataIpfs: META,
+    });
+    assertSubmitPattern(tx.getData().commands, "unfreeze_proposal_type", "::unfreeze_proposal_type::UnfreezeProposalType");
+  });
+});
+
+describe("buildSubmitSendCoinToDAO", () => {
+  it("follows submit pattern with send_coin_to_dao::new + board_voting::submit_proposal", () => {
+    const tx = buildSubmitSendCoinToDAO({
+      daoId: DAO_ID,
+      recipientTreasuryId: "0x" + "d".repeat(64),
+      amount: "1000000000",
+      coinType: SUI_TYPE,
+      metadataIpfs: META,
+    });
+    assertSubmitPattern(tx.getData().commands, "send_coin_to_dao", "::send_coin_to_dao::SendCoinToDAO");
+  });
+
+  it("includes coinType in submit_proposal type argument", () => {
+    const tx = buildSubmitSendCoinToDAO({
+      daoId: DAO_ID,
+      recipientTreasuryId: "0x" + "d".repeat(64),
+      amount: "1000000000",
+      coinType: SUI_TYPE,
+      metadataIpfs: META,
+    });
+    expect(tx.getData().commands[1].MoveCall?.typeArguments[0]).toContain(SUI_TYPE);
+  });
+});
+
+describe("buildSubmitSendSmallPayment", () => {
+  it("follows submit pattern with send_small_payment::new + board_voting::submit_proposal", () => {
+    const tx = buildSubmitSendSmallPayment({
+      daoId: DAO_ID,
+      recipient: "0x" + "2".repeat(64),
+      amount: "1000000",
+      coinType: SUI_TYPE,
+      metadataIpfs: META,
+    });
+    assertSubmitPattern(tx.getData().commands, "send_small_payment", "::send_small_payment::SendSmallPayment");
+  });
+
+  it("includes coinType in submit_proposal type argument", () => {
+    const tx = buildSubmitSendSmallPayment({
+      daoId: DAO_ID,
+      recipient: "0x" + "2".repeat(64),
+      amount: "1000000",
+      coinType: SUI_TYPE,
+      metadataIpfs: META,
+    });
+    expect(tx.getData().commands[1].MoveCall?.typeArguments[0]).toContain(SUI_TYPE);
+  });
+});
+
+describe("buildSubmitUpdateFreezeConfig", () => {
+  it("follows submit pattern with update_freeze_config::new + board_voting::submit_proposal", () => {
+    const tx = buildSubmitUpdateFreezeConfig({
+      daoId: DAO_ID,
+      newMaxFreezeDurationMs: "604800000",
+      metadataIpfs: META,
+    });
+    assertSubmitPattern(tx.getData().commands, "update_freeze_config", "::update_freeze_config::UpdateFreezeConfig");
+  });
+});
+
+describe("buildSubmitUpdateFreezeExemptTypes", () => {
+  it("follows submit pattern with update_freeze_exempt_types::new + board_voting::submit_proposal", () => {
+    const tx = buildSubmitUpdateFreezeExemptTypes({
+      daoId: DAO_ID,
+      typesToAdd: ["SetBoard"],
+      typesToRemove: [],
+      metadataIpfs: META,
+    });
+    assertSubmitPattern(tx.getData().commands, "update_freeze_exempt_types", "::update_freeze_exempt_types::UpdateFreezeExemptTypes");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Previously uncovered submit builders
+// ---------------------------------------------------------------------------
+
+describe("buildSubmitTransferCapToSubDAO", () => {
+  it("follows submit pattern with transfer_cap_to_subdao::new + board_voting::submit_proposal", () => {
+    const tx = buildSubmitTransferCapToSubDAO({
+      daoId: DAO_ID,
+      capId: "0x" + "1".repeat(64),
+      targetSubdao: "0x" + "2".repeat(64),
+      metadataIpfs: META,
+    });
+    assertSubmitPattern(tx.getData().commands, "transfer_cap_to_subdao", "::transfer_cap_to_subdao::TransferCapToSubDAO");
+  });
+});
+
+describe("buildSubmitReclaimCapFromSubDAO", () => {
+  it("follows submit pattern with reclaim_cap_from_subdao::new + board_voting::submit_proposal", () => {
+    const tx = buildSubmitReclaimCapFromSubDAO({
+      daoId: DAO_ID,
+      subdaoId: "0x" + "1".repeat(64),
+      capId: "0x" + "2".repeat(64),
+      controlId: "0x" + "3".repeat(64),
+      metadataIpfs: META,
+    });
+    assertSubmitPattern(tx.getData().commands, "reclaim_cap_from_subdao", "::reclaim_cap_from_subdao::ReclaimCapFromSubDAO");
+  });
+
+  it("passes subdaoId, capId, and controlId as three separate arguments to ::new", () => {
+    const tx = buildSubmitReclaimCapFromSubDAO({
+      daoId: DAO_ID,
+      subdaoId: "0x" + "1".repeat(64),
+      capId: "0x" + "2".repeat(64),
+      controlId: "0x" + "3".repeat(64),
+      metadataIpfs: META,
+    });
+    expect(tx.getData().commands[0].MoveCall?.arguments).toHaveLength(3);
+  });
+});
+
+describe("buildSubmitProposeUpgrade", () => {
+  const DIGEST_HEX = "deadbeef01020304";
+  const DIGEST_HEX_PREFIXED = "0x" + DIGEST_HEX;
+
+  it("follows submit pattern with propose_upgrade::new + board_voting::submit_proposal", () => {
+    const tx = buildSubmitProposeUpgrade({
+      daoId: DAO_ID,
+      capId: "0x" + "1".repeat(64),
+      packageId: "0x" + "2".repeat(64),
+      digest: DIGEST_HEX_PREFIXED,
+      policy: 0,
+      metadataIpfs: META,
+    });
+    assertSubmitPattern(tx.getData().commands, "propose_upgrade", "::propose_upgrade::ProposeUpgrade");
+  });
+
+  it("propose_upgrade::new receives 4 arguments (capId, packageId, digest bytes, policy)", () => {
+    const tx = buildSubmitProposeUpgrade({
+      daoId: DAO_ID,
+      capId: "0x" + "1".repeat(64),
+      packageId: "0x" + "2".repeat(64),
+      digest: DIGEST_HEX_PREFIXED,
+      policy: 0,
+      metadataIpfs: META,
+    });
+    expect(tx.getData().commands[0].MoveCall?.arguments).toHaveLength(4);
+  });
+
+  it("digest with 0x prefix produces same command structure as without", () => {
+    const txWith = buildSubmitProposeUpgrade({
+      daoId: DAO_ID,
+      capId: "0x" + "1".repeat(64),
+      packageId: "0x" + "2".repeat(64),
+      digest: DIGEST_HEX_PREFIXED,
+      policy: 0,
+      metadataIpfs: META,
+    });
+    const txWithout = buildSubmitProposeUpgrade({
+      daoId: DAO_ID,
+      capId: "0x" + "1".repeat(64),
+      packageId: "0x" + "2".repeat(64),
+      digest: DIGEST_HEX,
+      policy: 0,
+      metadataIpfs: META,
+    });
+    // Both should produce 2 commands with the same structure
+    expect(txWith.getData().commands).toHaveLength(2);
+    expect(txWithout.getData().commands).toHaveLength(2);
+    expect(txWith.getData().commands[0].MoveCall?.function).toBe("new");
+    expect(txWithout.getData().commands[0].MoveCall?.function).toBe("new");
+  });
+
+  it("empty digest yields empty byte vector without throwing", () => {
+    expect(() =>
+      buildSubmitProposeUpgrade({
+        daoId: DAO_ID,
+        capId: "0x" + "1".repeat(64),
+        packageId: "0x" + "2".repeat(64),
+        digest: "",
+        policy: 0,
+        metadataIpfs: META,
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe("buildSubmitSpawnDAO", () => {
+  it("produces 3 commands: governance::init_board, spawn_dao::new, board_voting::submit_proposal", () => {
+    const tx = buildSubmitSpawnDAO({
+      daoId: DAO_ID,
+      name: "Child DAO",
+      description: "Spawned in test",
+      metadataIpfs: META,
+    });
+    const { commands } = tx.getData();
+    expect(commands).toHaveLength(3);
+    expect(commands[0].MoveCall?.module).toBe("governance");
+    expect(commands[0].MoveCall?.function).toBe("init_board");
+    expect(commands[1].MoveCall?.module).toBe("spawn_dao");
+    expect(commands[1].MoveCall?.function).toBe("new");
+    expect(commands[2].MoveCall?.module).toBe("board_voting");
+    expect(commands[2].MoveCall?.function).toBe("submit_proposal");
+    expect(commands[2].MoveCall?.typeArguments[0]).toContain("::spawn_dao::SpawnDAO");
+  });
+});
+
+describe("buildSubmitSpinOutSubDAO", () => {
+  it("produces 5 commands: 3× proposal::new_config, spin_out_subdao::new, board_voting::submit_proposal", () => {
+    const tx = buildSubmitSpinOutSubDAO({
+      daoId: DAO_ID,
+      subDaoId: "0x" + "1".repeat(64),
+      metadataIpfs: META,
+    });
+    const { commands } = tx.getData();
+    expect(commands).toHaveLength(5);
+    const configCalls = commands.filter((c) => c.MoveCall?.function === "new_config");
+    expect(configCalls).toHaveLength(3);
+    expect(commands[3].MoveCall?.module).toBe("spin_out_subdao");
+    expect(commands[3].MoveCall?.function).toBe("new");
+    expect(commands[4].MoveCall?.module).toBe("board_voting");
+    expect(commands[4].MoveCall?.function).toBe("submit_proposal");
+    expect(commands[4].MoveCall?.typeArguments[0]).toContain("::spin_out_subdao::SpinOutSubDAO");
+  });
+});
+
+describe("buildSubmitPauseSubDAOExecution", () => {
+  it("produces 2 commands: pause_execution::new_pause + board_voting::submit_proposal", () => {
+    const tx = buildSubmitPauseSubDAOExecution({
+      daoId: DAO_ID,
+      controlId: "0x" + "1".repeat(64),
+      metadataIpfs: META,
+    });
+    const { commands } = tx.getData();
+    expect(commands).toHaveLength(2);
+    expect(commands[0].MoveCall?.module).toBe("pause_execution");
+    expect(commands[0].MoveCall?.function).toBe("new_pause");
+    expect(commands[1].MoveCall?.module).toBe("board_voting");
+    expect(commands[1].MoveCall?.function).toBe("submit_proposal");
+    expect(commands[1].MoveCall?.typeArguments[0]).toContain("::pause_execution::PauseSubDAOExecution");
+  });
+});
+
+describe("buildSubmitUnpauseSubDAOExecution", () => {
+  it("produces 2 commands: pause_execution::new_unpause + board_voting::submit_proposal", () => {
+    const tx = buildSubmitUnpauseSubDAOExecution({
+      daoId: DAO_ID,
+      controlId: "0x" + "1".repeat(64),
+      metadataIpfs: META,
+    });
+    const { commands } = tx.getData();
+    expect(commands).toHaveLength(2);
+    expect(commands[0].MoveCall?.module).toBe("pause_execution");
+    expect(commands[0].MoveCall?.function).toBe("new_unpause");
+    expect(commands[1].MoveCall?.module).toBe("board_voting");
+    expect(commands[1].MoveCall?.function).toBe("submit_proposal");
+    expect(commands[1].MoveCall?.typeArguments[0]).toContain("::pause_execution::UnpauseSubDAOExecution");
   });
 });

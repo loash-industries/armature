@@ -232,6 +232,8 @@ function buildTransaction(
       return buildSubmitSpinOutSubDAO({
         daoId,
         subDaoId: d.subDaoId,
+        controlCapId: d.controlCapId,
+        freezeAdminCapId: d.freezeAdminCapId,
         metadataIpfs: d.metadataIpfs,
       });
     }

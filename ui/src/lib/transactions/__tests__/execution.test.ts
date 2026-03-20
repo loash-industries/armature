@@ -1,12 +1,23 @@
 import { describe, it, expect } from "vitest";
 import {
   buildExecuteSetBoard,
+  buildExecuteUpdateMetadata,
   buildExecuteSendCoin,
+  buildExecuteDisableProposalType,
+  buildExecuteEnableProposalType,
   buildExecuteUpdateProposalConfig,
   buildExecuteTransferFreezeAdmin,
+  buildExecuteUnfreezeProposalType,
+  buildExecuteUpdateFreezeConfig,
+  buildExecuteUpdateFreezeExemptTypes,
+  buildExecuteSendCoinToDAO,
+  buildExecuteSendSmallPayment,
+  buildExecuteSpawnDAO,
   buildExecuteCreateSubDAO,
   buildExecuteTransferCapToSubDAO,
+  buildExecuteSpinOutSubDAO,
   buildExecutePauseSubDAOExecution,
+  buildExecuteUnpauseSubDAOExecution,
   buildExecuteReclaimCap,
   buildCommitUpgrade,
 } from "../execution";
@@ -218,5 +229,168 @@ describe("buildCommitUpgrade", () => {
     const tx = buildTx();
     const commitCall = tx.getData().commands.find((c) => c.MoveCall?.function === "commit_upgrade");
     expect(commitCall?.MoveCall?.arguments).toHaveLength(4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Previously integration-only execute builders
+// ---------------------------------------------------------------------------
+
+describe("buildExecuteUpdateMetadata", () => {
+  it("follows execute pattern: authorize_execution → admin_ops::execute_update_metadata", () => {
+    const tx = buildExecuteUpdateMetadata({
+      daoId: DAO_ID, proposalId: PROPOSAL_ID,
+      charterId: "0x" + "d".repeat(64),
+      emergencyFreezeId: FREEZE_ID,
+    });
+    assertExecutePattern(tx.getData().commands, "admin_ops", "execute_update_metadata", "::update_metadata::UpdateMetadata");
+  });
+});
+
+describe("buildExecuteDisableProposalType", () => {
+  it("follows execute pattern: authorize_execution → admin_ops::execute_disable_proposal_type", () => {
+    const tx = buildExecuteDisableProposalType({
+      daoId: DAO_ID, proposalId: PROPOSAL_ID, emergencyFreezeId: FREEZE_ID,
+    });
+    assertExecutePattern(tx.getData().commands, "admin_ops", "execute_disable_proposal_type", "::disable_proposal_type::DisableProposalType");
+  });
+});
+
+describe("buildExecuteEnableProposalType", () => {
+  it("follows execute pattern: authorize_execution → admin_ops::execute_enable_proposal_type", () => {
+    const tx = buildExecuteEnableProposalType({
+      daoId: DAO_ID, proposalId: PROPOSAL_ID, emergencyFreezeId: FREEZE_ID,
+    });
+    assertExecutePattern(tx.getData().commands, "admin_ops", "execute_enable_proposal_type", "::enable_proposal_type::EnableProposalType");
+  });
+});
+
+describe("buildExecuteUnfreezeProposalType", () => {
+  it("follows execute pattern: authorize_execution → security_ops::execute_unfreeze_proposal_type", () => {
+    const tx = buildExecuteUnfreezeProposalType({
+      daoId: DAO_ID, proposalId: PROPOSAL_ID, emergencyFreezeId: FREEZE_ID,
+    });
+    assertExecutePattern(tx.getData().commands, "security_ops", "execute_unfreeze_proposal_type", "::unfreeze_proposal_type::UnfreezeProposalType");
+  });
+});
+
+describe("buildExecuteUpdateFreezeConfig", () => {
+  it("follows execute pattern: authorize_execution → security_ops::execute_update_freeze_config", () => {
+    const tx = buildExecuteUpdateFreezeConfig({
+      daoId: DAO_ID, proposalId: PROPOSAL_ID, emergencyFreezeId: FREEZE_ID,
+    });
+    assertExecutePattern(tx.getData().commands, "security_ops", "execute_update_freeze_config", "::update_freeze_config::UpdateFreezeConfig");
+  });
+});
+
+describe("buildExecuteUpdateFreezeExemptTypes", () => {
+  it("follows execute pattern: authorize_execution → security_ops::execute_update_freeze_exempt_types", () => {
+    const tx = buildExecuteUpdateFreezeExemptTypes({
+      daoId: DAO_ID, proposalId: PROPOSAL_ID, emergencyFreezeId: FREEZE_ID,
+    });
+    assertExecutePattern(tx.getData().commands, "security_ops", "execute_update_freeze_exempt_types", "::update_freeze_exempt_types::UpdateFreezeExemptTypes");
+  });
+});
+
+describe("buildExecuteSendCoinToDAO", () => {
+  it("follows execute pattern: authorize_execution → treasury_ops::execute_send_coin_to_dao", () => {
+    const tx = buildExecuteSendCoinToDAO({
+      daoId: DAO_ID, proposalId: PROPOSAL_ID,
+      sourceTreasuryId: "0x" + "1".repeat(64),
+      targetTreasuryId: "0x" + "2".repeat(64),
+      emergencyFreezeId: FREEZE_ID,
+      coinType: SUI_TYPE,
+    });
+    assertExecutePattern(tx.getData().commands, "treasury_ops", "execute_send_coin_to_dao", "::send_coin_to_dao::SendCoinToDAO");
+  });
+
+  it("includes coinType in payload type argument and execute_send_coin_to_dao type argument", () => {
+    const tx = buildExecuteSendCoinToDAO({
+      daoId: DAO_ID, proposalId: PROPOSAL_ID,
+      sourceTreasuryId: "0x" + "1".repeat(64),
+      targetTreasuryId: "0x" + "2".repeat(64),
+      emergencyFreezeId: FREEZE_ID, coinType: SUI_TYPE,
+    });
+    expect(tx.getData().commands[0].MoveCall?.typeArguments[0]).toContain(SUI_TYPE);
+    expect(tx.getData().commands[1].MoveCall?.typeArguments[0]).toBe(SUI_TYPE);
+  });
+});
+
+describe("buildExecuteSendSmallPayment", () => {
+  it("follows execute pattern: authorize_execution → treasury_ops::execute_send_small_payment", () => {
+    const tx = buildExecuteSendSmallPayment({
+      daoId: DAO_ID, proposalId: PROPOSAL_ID,
+      treasuryId: "0x" + "d".repeat(64),
+      emergencyFreezeId: FREEZE_ID, coinType: SUI_TYPE,
+    });
+    assertExecutePattern(tx.getData().commands, "treasury_ops", "execute_send_small_payment", "::send_small_payment::SendSmallPayment");
+  });
+
+  it("includes coinType in payload type argument and execute_send_small_payment type argument", () => {
+    const tx = buildExecuteSendSmallPayment({
+      daoId: DAO_ID, proposalId: PROPOSAL_ID,
+      treasuryId: "0x" + "d".repeat(64),
+      emergencyFreezeId: FREEZE_ID, coinType: SUI_TYPE,
+    });
+    expect(tx.getData().commands[0].MoveCall?.typeArguments[0]).toContain(SUI_TYPE);
+    expect(tx.getData().commands[1].MoveCall?.typeArguments[0]).toBe(SUI_TYPE);
+  });
+
+  it("execute_send_small_payment receives 5 arguments (daoId, treasuryId, proposalId, req, clock)", () => {
+    const tx = buildExecuteSendSmallPayment({
+      daoId: DAO_ID, proposalId: PROPOSAL_ID,
+      treasuryId: "0x" + "d".repeat(64),
+      emergencyFreezeId: FREEZE_ID, coinType: SUI_TYPE,
+    });
+    expect(tx.getData().commands[1].MoveCall?.arguments).toHaveLength(5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Previously uncovered execute builders
+// ---------------------------------------------------------------------------
+
+describe("buildExecuteSpawnDAO", () => {
+  it("follows execute pattern: authorize_execution → subdao_ops::execute_spawn_dao", () => {
+    const tx = buildExecuteSpawnDAO({
+      daoId: DAO_ID, proposalId: PROPOSAL_ID, emergencyFreezeId: FREEZE_ID,
+    });
+    assertExecutePattern(tx.getData().commands, "subdao_ops", "execute_spawn_dao", "::spawn_dao::SpawnDAO");
+  });
+});
+
+describe("buildExecuteSpinOutSubDAO", () => {
+  it("follows execute pattern: authorize_execution → subdao_ops::execute_spin_out_subdao", () => {
+    const tx = buildExecuteSpinOutSubDAO({
+      daoId: DAO_ID, proposalId: PROPOSAL_ID,
+      capabilityVaultId: "0x" + "1".repeat(64),
+      subdaoVaultId: "0x" + "2".repeat(64),
+      subdaoId: "0x" + "3".repeat(64),
+      emergencyFreezeId: FREEZE_ID,
+    });
+    assertExecutePattern(tx.getData().commands, "subdao_ops", "execute_spin_out_subdao", "::spin_out_subdao::SpinOutSubDAO");
+  });
+
+  it("execute_spin_out_subdao receives 6 arguments (vaults, subdaoId, proposalId, req, clock)", () => {
+    const tx = buildExecuteSpinOutSubDAO({
+      daoId: DAO_ID, proposalId: PROPOSAL_ID,
+      capabilityVaultId: "0x" + "1".repeat(64),
+      subdaoVaultId: "0x" + "2".repeat(64),
+      subdaoId: "0x" + "3".repeat(64),
+      emergencyFreezeId: FREEZE_ID,
+    });
+    expect(tx.getData().commands[1].MoveCall?.arguments).toHaveLength(6);
+  });
+});
+
+describe("buildExecuteUnpauseSubDAOExecution", () => {
+  it("follows execute pattern: authorize_execution → subdao_ops::execute_unpause_subdao_execution", () => {
+    const tx = buildExecuteUnpauseSubDAOExecution({
+      daoId: DAO_ID, proposalId: PROPOSAL_ID,
+      controllerVaultId: "0x" + "1".repeat(64),
+      subdaoId: "0x" + "2".repeat(64),
+      emergencyFreezeId: FREEZE_ID,
+    });
+    assertExecutePattern(tx.getData().commands, "subdao_ops", "execute_unpause_subdao_execution", "::pause_execution::UnpauseSubDAOExecution");
   });
 });

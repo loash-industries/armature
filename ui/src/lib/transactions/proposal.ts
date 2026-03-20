@@ -537,6 +537,10 @@ export function buildSubmitSpawnDAO(args: {
 export function buildSubmitSpinOutSubDAO(args: {
   daoId: string;
   subDaoId: string;
+  /** Object ID of the SubDAOControl stored in the parent DAO's capability vault. */
+  controlCapId: string;
+  /** Object ID of the SubDAO's FreezeAdminCap stored in the parent DAO's capability vault. */
+  freezeAdminCapId: string;
   metadataIpfs: string;
 }): Transaction {
   const tx = new Transaction();
@@ -558,8 +562,8 @@ export function buildSubmitSpinOutSubDAO(args: {
     target: prop(PROPOSAL_MODULES.spin_out_subdao, "new"),
     arguments: [
       tx.pure.id(args.subDaoId),
-      tx.pure.id(args.subDaoId), // placeholder for control_cap_id
-      tx.pure.id(args.subDaoId), // placeholder for freeze_admin_cap_id
+      tx.pure.id(args.controlCapId),
+      tx.pure.id(args.freezeAdminCapId),
       defaultConfig(5000, 5000),
       defaultConfig(5000, 5000),
       defaultConfig(5000, 5000),
