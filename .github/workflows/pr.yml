@@ -142,7 +142,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential pkg-config libssl-dev libpq-dev
+            build-essential pkg-config libssl-dev libpq-dev \
+            libclang-dev clang
 
       - name: cargo fmt (check)
         run: cargo fmt --all -- --check
