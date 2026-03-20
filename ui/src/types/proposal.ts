@@ -28,6 +28,8 @@ export interface UnfreezeProposalTypePayload {
 
 export interface SpinOutSubDAOPayload {
   subDaoId: string;
+  controlCapId: string;
+  freezeAdminCapId: string;
   metadataIpfs: string;
 }
 

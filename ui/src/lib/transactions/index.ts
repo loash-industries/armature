@@ -59,6 +59,7 @@ export {
   buildExecutePauseSubDAOExecution,
   buildExecuteUnpauseSubDAOExecution,
   buildExecuteReclaimCap,
+  buildExecuteTransferAssets,
   buildCommitUpgrade,
 } from "./execution";
 
