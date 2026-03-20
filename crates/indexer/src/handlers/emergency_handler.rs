@@ -13,7 +13,9 @@ use sui_pg_db::Connection;
 
 use armature_schema::schema::{freeze_exempt_types, frozen_types};
 
-use crate::models::{id_to_hex, FreezeExemptTypeAdded, FreezeExemptTypeRemoved, TypeFrozen, TypeUnfrozen};
+use crate::models::{
+    id_to_hex, FreezeExemptTypeAdded, FreezeExemptTypeRemoved, TypeFrozen, TypeUnfrozen,
+};
 use crate::{is_armature_event, parse_package_addresses};
 
 pub enum EmergencyMutation {
