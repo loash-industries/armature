@@ -669,3 +669,80 @@ export function buildExecuteReclaimCap(args: {
 
   return tx;
 }
+
+/**
+ * Execute a TransferAssets proposal.
+ *
+ * PTB flow (mirrors Move's validate → withdraw/deposit × N → finalize):
+ *   1. authorize_execution → ExecutionRequest (hot potato)
+ *   2. validate_transfer_assets — borrows req, emits AssetsTransferInitiated
+ *   3. For each coinTransfer: source_treasury.withdraw<T> → target_treasury.deposit<T>
+ *   4. finalize_transfer_assets — consumes req
+ *
+ * Cap transfers are not yet supported (pass capIds=[] in the proposal).
+ */
+export function buildExecuteTransferAssets(args: {
+  daoId: string;
+  proposalId: string;
+  sourceTreasuryId: string;
+  sourceVaultId: string;
+  targetTreasuryId: string;
+  targetVaultId: string;
+  emergencyFreezeId: string;
+  /** Each entry withdraws `amount` of `coinType` from source and deposits to target. */
+  coinTransfers: Array<{ coinType: string; amount: string }>;
+}): Transaction {
+  const tx = new Transaction();
+  const payloadType = `${PROPOSALS_PACKAGE_ID}::${PROPOSAL_MODULES.transfer_assets}::TransferAssets`;
+
+  const req = tx.moveCall({
+    target: fw(MODULES.board_voting, "authorize_execution"),
+    arguments: [
+      tx.object(args.daoId),
+      tx.object(args.proposalId),
+      tx.object(args.emergencyFreezeId),
+      tx.object(SUI_CLOCK),
+    ],
+    typeArguments: [payloadType],
+  });
+
+  // Validate the proposal payload and emit AssetsTransferInitiated (borrows req).
+  tx.moveCall({
+    target: prop(PROPOSAL_MODULES.subdao_ops, "validate_transfer_assets"),
+    arguments: [
+      tx.object(args.sourceTreasuryId),
+      tx.object(args.sourceVaultId),
+      tx.object(args.targetTreasuryId),
+      tx.object(args.targetVaultId),
+      tx.object(args.proposalId),
+      req,
+    ],
+  });
+
+  // For each coin type: withdraw from source treasury and deposit to target.
+  for (const { coinType, amount } of args.coinTransfers) {
+    const coin = tx.moveCall({
+      target: fw(MODULES.treasury_vault, "withdraw"),
+      arguments: [
+        tx.object(args.sourceTreasuryId),
+        tx.pure.u64(amount),
+        req,
+      ],
+      typeArguments: [coinType, payloadType],
+    });
+
+    tx.moveCall({
+      target: fw(MODULES.treasury_vault, "deposit"),
+      arguments: [tx.object(args.targetTreasuryId), coin],
+      typeArguments: [coinType],
+    });
+  }
+
+  // Consume the ExecutionRequest (finalize).
+  tx.moveCall({
+    target: prop(PROPOSAL_MODULES.subdao_ops, "finalize_transfer_assets"),
+    arguments: [req, tx.object(args.proposalId)],
+  });
+
+  return tx;
+}

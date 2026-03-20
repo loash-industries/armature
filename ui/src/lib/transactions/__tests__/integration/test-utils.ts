@@ -269,3 +269,161 @@ export async function voteOnProposal(
   const tx = buildVote({ proposalId, approve, proposalType });
   return execute(client, tx, voter);
 }
+
+// ---------------------------------------------------------------------------
+// Reusable governance setup helpers
+// ---------------------------------------------------------------------------
+
+const ENABLE_TYPE_STRING = (proposalsPackageId: string) =>
+  `${proposalsPackageId}::enable_proposal_type::EnableProposalType`;
+
+/**
+ * Enable a proposal type on a DAO via a full governance vote.
+ * Requires 2 of 3 members (66.7%) to satisfy the EnableProposalType
+ * approval floor and the default 50% quorum.
+ */
+export async function enableProposalType(
+  client: SuiJsonRpcClient,
+  dao: TestDao,
+  member1: Ed25519Keypair,
+  member2: Ed25519Keypair,
+  typeKey: string,
+): Promise<void> {
+  const { buildSubmitEnableProposalType } = await import("../../proposal");
+  const { buildExecuteEnableProposalType } = await import("../../execution");
+
+  const submitTx = buildSubmitEnableProposalType({
+    daoId: dao.daoId,
+    typeKey,
+    quorum: 5000,
+    approvalThreshold: 5000,
+    proposeThreshold: "0",
+    expiryMs: "86400000",
+    executionDelayMs: "0",
+    cooldownMs: "0",
+    metadataIpfs: "ipfs://test",
+  });
+
+  const proposalId = await submitAndGetProposalId(client, submitTx, member1);
+  const enableType = ENABLE_TYPE_STRING(PROPOSALS_PACKAGE_ID);
+  await voteOnProposal(client, proposalId, enableType, true, member1);
+  await voteOnProposal(client, proposalId, enableType, true, member2);
+  await execute(
+    client,
+    buildExecuteEnableProposalType({
+      daoId: dao.daoId,
+      proposalId,
+      emergencyFreezeId: dao.emergencyFreezeId,
+    }),
+    member1,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SubDAO creation helper
+// ---------------------------------------------------------------------------
+
+export interface SubDAOInfo {
+  subdaoId: string;
+  /** Object ID of the SubDAOControl stored as a dof in the parent capability vault. */
+  controlCapId: string;
+  /** Object ID of the SubDAO's FreezeAdminCap stored in the parent capability vault. */
+  subdaoFreezeAdminCapId: string;
+  subdaoVaultId: string;
+  subdaoTreasuryId: string;
+  subdaoEmergencyFreezeId: string;
+}
+
+/**
+ * Extract SubDAOInfo from a CreateSubDAO execution result.
+ * Reads SubDAOCreated + DAOCreated events and objectChanges.
+ */
+export function extractSubDAOCreatedFields(
+  result: SuiTransactionBlockResponse,
+  parentVaultId: string,
+): SubDAOInfo {
+  // SubDAOCreated gives us subdaoId + controlCapId
+  const subdaoCreatedEvent = result.events?.find((e: SuiEvent) =>
+    e.type.includes("::subdao_ops::SubDAOCreated"),
+  );
+  if (!subdaoCreatedEvent?.parsedJson) {
+    throw new Error("SubDAOCreated event not found");
+  }
+  const sc = subdaoCreatedEvent.parsedJson as Record<string, string>;
+
+  // DAOCreated for the child DAO gives us vault, treasury, emergency freeze IDs
+  const daoCreatedEvent = result.events?.find((e: SuiEvent) =>
+    e.type.includes("::dao::DAOCreated"),
+  );
+  if (!daoCreatedEvent?.parsedJson) {
+    throw new Error("DAOCreated event not found in CreateSubDAO result");
+  }
+  const dc = daoCreatedEvent.parsedJson as Record<string, string>;
+
+  // FreezeAdminCap stored in parent vault (ObjectOwner = parentVaultId)
+  const freezeCapChange = result.objectChanges?.find(
+    (c) =>
+      c.type === "created" &&
+      c.objectType?.includes("::emergency::FreezeAdminCap") &&
+      c.owner &&
+      typeof c.owner === "object" &&
+      "ObjectOwner" in c.owner &&
+      (c.owner as { ObjectOwner: string }).ObjectOwner === parentVaultId,
+  );
+  if (!freezeCapChange || freezeCapChange.type !== "created") {
+    throw new Error("SubDAO FreezeAdminCap not found in parent vault objectChanges");
+  }
+
+  return {
+    subdaoId: sc.subdao_id,
+    controlCapId: sc.control_cap_id,
+    subdaoFreezeAdminCapId: freezeCapChange.objectId,
+    subdaoVaultId: dc.capability_vault_id,
+    subdaoTreasuryId: dc.treasury_id,
+    subdaoEmergencyFreezeId: dc.emergency_freeze_id,
+  };
+}
+
+/**
+ * Create a SubDAO under parentDao via the CreateSubDAO governance flow.
+ * Enables CreateSubDAO if not already enabled, submits + votes + executes.
+ */
+export async function createSubDAO(
+  client: SuiJsonRpcClient,
+  parentDao: TestDao,
+  member1: Ed25519Keypair,
+  member2: Ed25519Keypair,
+  opts: { name?: string; description?: string } = {},
+): Promise<SubDAOInfo> {
+  const { buildSubmitCreateSubDAO } = await import("../../proposal");
+  const { buildExecuteCreateSubDAO } = await import("../../execution");
+
+  await enableProposalType(client, parentDao, member1, member2, "CreateSubDAO");
+
+  const CREATE_SUBDAO_TYPE = `${PROPOSALS_PACKAGE_ID}::create_subdao::CreateSubDAO`;
+
+  const submitTx = buildSubmitCreateSubDAO({
+    daoId: parentDao.daoId,
+    name: opts.name ?? "Test SubDAO",
+    description: opts.description ?? "Created by integration test",
+    initialMembers: [member1.toSuiAddress(), member2.toSuiAddress()],
+    metadataIpfs: "ipfs://test",
+  });
+
+  const proposalId = await submitAndGetProposalId(client, submitTx, member1);
+  await voteOnProposal(client, proposalId, CREATE_SUBDAO_TYPE, true, member1);
+  await voteOnProposal(client, proposalId, CREATE_SUBDAO_TYPE, true, member2);
+
+  const result = await execute(
+    client,
+    buildExecuteCreateSubDAO({
+      daoId: parentDao.daoId,
+      proposalId,
+      capabilityVaultId: parentDao.capabilityVaultId,
+      emergencyFreezeId: parentDao.emergencyFreezeId,
+    }),
+    member1,
+  );
+
+  return extractSubDAOCreatedFields(result, parentDao.capabilityVaultId);
+}
