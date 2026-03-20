@@ -19,5 +19,7 @@ export default defineConfig({
     environment: "node",
     globals: true,
     alias: [{ find: "@", replacement: path.resolve(__dirname, "src") }],
+    // Exclude integration tests — those require a running localnet (yarn test:integration)
+    exclude: ["src/**/__tests__/integration/**", "node_modules/**"],
   },
 });
