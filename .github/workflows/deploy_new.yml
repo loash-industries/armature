@@ -190,7 +190,7 @@ jobs:
     if: needs.changes.outputs.indexer == 'true'
     env:
       CARGO_TERM_COLOR: always
-      CARGO_INCREMENTAL: 0
+      CARGO_INCREMENTAL: 1
     steps:
       - uses: actions/checkout@v4
 
@@ -230,6 +230,8 @@ jobs:
           tags: ghcr.io/${{ github.repository }}/indexer:${{ needs.create-tag.outputs.tag }}
           build-args: |
             GIT_REVISION=${{ needs.create-tag.outputs.tag }}
+          cache-from: type=local,src=/tmp/buildx-cache
+          cache-to: type=local,dest=/tmp/buildx-cache-new,mode=max
 
     outputs:
       image_ref: ghcr.io/${{ github.repository }}/indexer:${{ needs.create-tag.outputs.tag }}
