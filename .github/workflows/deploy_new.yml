@@ -251,10 +251,9 @@ jobs:
       environment: dev
       argocd_workload_repository: ${{ github.repository }}-workload
       workload_path: workload/dev/main
+      image_ref: ${{ needs.build-indexer.outputs.image_ref }}
       image_tag: ${{ needs.create-tag.outputs.tag }}-indexer
-      docker_build_context: .
       yaml_label: "github-workflow-managed-indexer"
-      npm_private_registry_url: "https://npm.pkg.github.com/"
     secrets:
       deploy_key: ${{ secrets.DEPLOY_KEY }}
       GH_AUTH_TOKEN: ${{ secrets.GH_AUTH_TOKEN }}
@@ -274,10 +273,9 @@ jobs:
       environment: prd
       argocd_workload_repository: ${{ github.repository }}-workload
       workload_path: workload/prd/main
+      image_ref: ${{ needs.build-indexer.outputs.image_ref }}
       image_tag: ${{ needs.create-tag.outputs.tag }}-indexer
-      docker_build_context: .
       yaml_label: "github-workflow-managed-indexer"
-      npm_private_registry_url: "https://npm.pkg.github.com/"
     secrets:
       deploy_key: ${{ secrets.DEPLOY_KEY }}
       GH_AUTH_TOKEN: ${{ secrets.GH_AUTH_TOKEN }}
