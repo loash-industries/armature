@@ -222,7 +222,8 @@ jobs:
       - name: Build & push indexer image
         uses: docker/build-push-action@v6
         with:
-          context: docker/indexer
+          context: .
+          file: docker/indexer/Dockerfile
           push: true
           tags: ghcr.io/${{ github.repository }}/indexer:${{ needs.create-tag.outputs.tag }}
           build-args: |
