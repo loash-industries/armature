@@ -17,7 +17,7 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 RUN --mount=type=secret,id=gh_token \
     git config --global url."https://x-access-token:$(cat /run/secrets/gh_token)@github.com/".insteadOf "https://github.com/" && \
-    cargo build --profile $PROFILE --bin streams-indexer --config net.git-fetch-with-cli=true
+    cargo build --profile $PROFILE --bin armature-indexer --config net.git-fetch-with-cli=true
 
 # ── Runtime ─────────────────────────────────────────────────────────────
 
@@ -27,9 +27,9 @@ RUN apt-get update && apt-get -y --no-install-recommends install \
     ca-certificates libpq-dev curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /work/target/release/streams-indexer /opt/streams/bin/
+COPY --from=builder /work/target/release/armature-indexer /opt/armature/bin/
 COPY entry.sh /entry.sh
-RUN chmod +x /opt/streams/bin/streams-indexer /entry.sh
+RUN chmod +x /opt/armature/bin/armature-indexer /entry.sh
 
 ARG BUILD_DATE
 ARG GIT_REVISION
