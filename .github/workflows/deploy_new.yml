@@ -197,17 +197,6 @@ jobs:
         with:
           components: clippy,rustfmt
 
-      - name: Cache cargo registry & target
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            cargo-${{ runner.os }}-
-
       - name: Install system deps
         run: |
           sudo apt-get update
@@ -238,8 +227,6 @@ jobs:
           tags: ghcr.io/${{ github.repository }}/indexer:${{ needs.create-tag.outputs.tag }}
           build-args: |
             GIT_REVISION=${{ needs.create-tag.outputs.tag }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
     outputs:
       image_ref: ghcr.io/${{ github.repository }}/indexer:${{ needs.create-tag.outputs.tag }}
