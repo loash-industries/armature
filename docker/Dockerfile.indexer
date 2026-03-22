@@ -1,44 +1,41 @@
-# ── Build stage ───────────────────────────────────────────────────────────────
-FROM rust:1.92-slim AS builder
+FROM rust:1.94.0-bookworm AS builder
 
-# System deps for Diesel + TLS
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    pkg-config libssl-dev libpq-dev \
-    clang libclang-dev \
-    make cmake gcc g++ \
+ARG PROFILE=release
+ARG GIT_REVISION
+ENV GIT_REVISION=$GIT_REVISION
+
+WORKDIR /work
+
+COPY Cargo.lock Cargo.toml ./
+COPY crates/ ./crates/
+
+RUN apt-get update && apt-get install -y \
+    build-essential libssl-dev pkg-config curl cmake clang ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /build
+ENV PATH="/root/.cargo/bin:${PATH}"
 
-# Copy workspace manifests first (layer-cache friendly)
-COPY Cargo.toml Cargo.lock ./
-COPY crates/indexer/Cargo.toml crates/indexer/
-COPY crates/schema/Cargo.toml  crates/schema/
+RUN --mount=type=secret,id=gh_token \
+    git config --global url."https://x-access-token:$(cat /run/secrets/gh_token)@github.com/".insteadOf "https://github.com/" && \
+    cargo build --profile $PROFILE --bin streams-indexer --config net.git-fetch-with-cli=true
 
-# Stub source so cargo can resolve the workspace without the full tree
-RUN mkdir -p crates/indexer/src crates/schema/src && \
-    echo 'fn main() {}' > crates/indexer/src/main.rs && \
-    echo '' > crates/schema/src/lib.rs
+# ── Runtime ─────────────────────────────────────────────────────────────
 
-RUN cargo build --release --bin armature-indexer 2>/dev/null || true
+FROM debian:bookworm-slim AS runtime
 
-# Now copy the real source and do the final build
-COPY crates/ crates/
-RUN touch crates/indexer/src/main.rs crates/schema/src/lib.rs && \
-    cargo build --release --bin armature-indexer
+RUN apt-get update && apt-get -y --no-install-recommends install \
+    ca-certificates libpq-dev curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# ── Runtime stage ─────────────────────────────────────────────────────────────
-FROM debian:trixie-slim
+COPY --from=builder /work/target/release/streams-indexer /opt/streams/bin/
+COPY entry.sh /entry.sh
+RUN chmod +x /opt/streams/bin/streams-indexer /entry.sh
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates libpq5 && rm -rf /var/lib/apt/lists/*
+ARG BUILD_DATE
+ARG GIT_REVISION
+LABEL build-date=$BUILD_DATE
+LABEL git-revision=$GIT_REVISION
 
-COPY --from=builder /build/target/release/armature-indexer /usr/local/bin/armature-indexer
+EXPOSE 9184 8081
 
-# Entrypoint: source deploy artifacts if available, then run the indexer
-COPY docker/scripts/run-indexer.sh /run-indexer.sh
-RUN chmod +x /run-indexer.sh
-
-EXPOSE 3000 9185
-
-ENTRYPOINT ["/run-indexer.sh"]
+CMD ["/entry.sh"]
