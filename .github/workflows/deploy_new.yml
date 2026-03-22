@@ -230,8 +230,6 @@ jobs:
           tags: ghcr.io/${{ github.repository }}-indexer:${{ needs.create-tag.outputs.tag }}
           build-args: |
             GIT_REVISION=${{ needs.create-tag.outputs.tag }}
-          cache-from: type=local,src=/tmp/buildx-cache
-          cache-to: type=local,dest=/tmp/buildx-cache-new,mode=max
 
     outputs:
       image_ref: ghcr.io/${{ github.repository }}-indexer:${{ needs.create-tag.outputs.tag }}
