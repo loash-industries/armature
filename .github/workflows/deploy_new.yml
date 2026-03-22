@@ -29,15 +29,18 @@ jobs:
           filters: |
             ui:
               - 'ui/**'
+              - 'run.md'
               - '.github/workflows/**'
             api:
               - 'api/**'
+              - 'run.md'
               - '.github/workflows/**'
             indexer:
               - 'crates/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'Dockerfile'
+              - 'run.md'
               - '.github/workflows/**'
 
   create-tag:
