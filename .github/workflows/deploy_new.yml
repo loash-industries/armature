@@ -23,6 +23,8 @@ jobs:
       indexer: ${{ steps.filter.outputs.indexer }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          clean: false
       - uses: dorny/paths-filter@v3
         id: filter
         with:
