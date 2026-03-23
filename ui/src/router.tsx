@@ -4,6 +4,9 @@ import {
   createRouter,
 } from "@tanstack/react-router";
 import { AppShell } from "@/components/AppShell";
+import { ConnectPage } from "@/pages/ConnectPage";
+import { DaoPickerPage } from "@/pages/DaoPickerPage";
+import { CreateDaoPage } from "@/pages/CreateDaoPage";
 import { DaoDashboard } from "@/pages/DaoDashboard";
 import { TreasuryPage } from "@/pages/TreasuryPage";
 import { CapVaultPage } from "@/pages/CapVaultPage";
@@ -15,10 +18,31 @@ import { GovConfigPage } from "@/pages/GovConfigPage";
 import { EmergencyPage } from "@/pages/EmergencyPage";
 import { SubDAOListPage } from "@/pages/SubDAOListPage";
 import { NewProposalPage } from "@/pages/NewProposalPage";
-import { CreateDaoPage } from "@/pages/CreateDaoPage";
 
 const rootRoute = createRootRoute();
 
+// Flow 0 — Connect & Resolve (landing page)
+const connectRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/",
+  component: ConnectPage,
+});
+
+// Flow 0.5 — DAO Picker
+const pickerRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "pick",
+  component: DaoPickerPage,
+});
+
+// Flow 0.5b — Create DAO
+const createDaoRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "create",
+  component: CreateDaoPage,
+});
+
+// Flow 1+ — DAO pages (AppShell layout)
 const daoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "dao/$daoId",
@@ -91,13 +115,9 @@ const subdaosRoute = createRoute({
   component: SubDAOListPage,
 });
 
-const createDaoRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "create",
-  component: CreateDaoPage,
-});
-
 const routeTree = rootRoute.addChildren([
+  connectRoute,
+  pickerRoute,
   createDaoRoute,
   daoRoute.addChildren([
     dashboardRoute,
