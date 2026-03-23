@@ -1,21 +1,24 @@
 import { useState } from "react";
+import { Badge } from "@/components/ui/badge";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
   Command,
   CommandInput,
   CommandList,
   CommandEmpty,
   CommandGroup,
   CommandItem,
-  Badge,
-  TooltipProvider,
+} from "@/components/ui/command";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@awar.dev/ui";
+} from "@/components/ui/tooltip";
 import { PROPOSAL_TYPE_CATEGORIES } from "@/config/proposal-types";
 
 interface ProposalTypeSelectorProps {
@@ -79,29 +82,21 @@ export function ProposalTypeSelector({
                     </CommandItem>
                   ))}
                   {frozenInCategory.map((t) => (
-                    <TooltipProvider key={t.key}>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <CommandItem
-                            value={t.key}
-                            disabled
-                            className="opacity-50"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-sm">
-                                {t.label}
-                              </span>
-                              <Badge variant="destructive" className="text-xs">
-                                Frozen
-                              </Badge>
-                            </div>
-                          </CommandItem>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          This proposal type is currently frozen
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+                    <Tooltip key={t.key}>
+                      <TooltipTrigger render={<CommandItem value={t.key} disabled className="opacity-50" />}>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-sm">
+                            {t.label}
+                          </span>
+                          <Badge variant="destructive" className="text-xs">
+                            Frozen
+                          </Badge>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        This proposal type is currently frozen
+                      </TooltipContent>
+                    </Tooltip>
                   ))}
                 </CommandGroup>
               );

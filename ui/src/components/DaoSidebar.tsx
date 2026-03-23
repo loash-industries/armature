@@ -5,6 +5,14 @@ import {
   useRouterState,
   Link,
 } from "@tanstack/react-router";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 import {
   Sidebar,
   SidebarHeader,
@@ -15,14 +23,7 @@ import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
-  LogoLockup,
-  Button,
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@awar.dev/ui";
+} from "@/components/ui/sidebar";
 import { useProposalFormOptions } from "@/hooks/useProposalFormOptions";
 import { ProposalTypeSelector } from "@/components/proposals/ProposalTypeSelector";
 
@@ -55,16 +56,16 @@ export function DaoSidebar() {
   return (
     <Sidebar>
       <SidebarHeader>
-        <LogoLockup text="Armature" />
+        <span className="text-lg font-semibold tracking-tight">Armature</span>
       </SidebarHeader>
 
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupLabel>DAO</SidebarGroupLabel>
           <Select
-            value={daoId}
+            value={daoId ?? undefined}
             onValueChange={(value) => {
-              navigate({ to: "/dao/$daoId", params: { daoId: value } });
+              if (value) navigate({ to: "/dao/$daoId", params: { daoId: value } });
             }}
           >
             <SelectTrigger className="w-full">
@@ -81,13 +82,11 @@ export function DaoSidebar() {
           <SidebarMenu>
             {NAV_ITEMS.map((item) => (
               <SidebarMenuItem key={item.label}>
-                <SidebarMenuButton asChild isActive={activePath === item.path}>
-                  <Link
-                    to={item.path ? `/dao/$daoId/${item.path}` : "/dao/$daoId"}
-                    params={{ daoId: daoId ?? "" }}
-                  >
-                    {item.label}
-                  </Link>
+                <SidebarMenuButton
+                  render={<Link to={item.path ? `/dao/$daoId/${item.path}` : "/dao/$daoId"} params={{ daoId: daoId ?? "" }} />}
+                  isActive={activePath === item.path}
+                >
+                  {item.label}
                 </SidebarMenuButton>
               </SidebarMenuItem>
             ))}

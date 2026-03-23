@@ -1,11 +1,11 @@
 import { useNavigate } from "@tanstack/react-router";
+import { Button } from "@/components/ui/button";
 import {
-  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@awar.dev/ui";
+} from "@/components/ui/dropdown-menu";
 
 const CONTROLLER_ACTIONS = [
   { label: "Pause Execution", type: "PauseExecution" },
@@ -20,10 +20,8 @@ export function ControllerActionsMenu({ daoId }: { daoId: string }) {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm">
-          Controller Actions
-        </Button>
+      <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
+        Controller Actions
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         {CONTROLLER_ACTIONS.map((action) => (

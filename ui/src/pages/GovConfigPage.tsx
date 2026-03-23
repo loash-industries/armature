@@ -1,31 +1,30 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardDescription,
   CardContent,
-  Badge,
-  Button,
-  Skeleton,
-  Alert,
-  AlertTitle,
-  AlertDescription,
+} from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
   Table,
   TableHeader,
   TableHead,
   TableBody,
   TableRow,
   TableCell,
+} from "@/components/ui/table";
+import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
   TooltipProvider,
-  Collapsible,
-  CollapsibleTrigger,
-  CollapsibleContent,
-} from "@awar.dev/ui";
+} from "@/components/ui/tooltip";
 import { useDaoSummary, useGovernanceConfig } from "@/hooks/useDao";
 import type { ProposalTypeConfig } from "@/types/dao";
 
@@ -285,53 +284,50 @@ function TypeRow({ item }: { item: ProposalTypeConfig }) {
     item.config && item.enabled && configWarnings(item).length > 0;
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen} asChild>
-      <>
-        <CollapsibleTrigger asChild>
-          <TableRow
-            className={`cursor-pointer ${!item.enabled ? "opacity-50" : ""}`}
-          >
-            <TableCell className="font-mono text-sm">
-              <span className="mr-1.5 inline-block w-3 text-center text-xs">
-                {open ? "▾" : "▸"}
-              </span>
-              {item.typeKey}
-              {hasWarning && (
-                <span className="ml-2 inline-block text-yellow-500">!</span>
-              )}
-            </TableCell>
-            <TableCell>
-              <TypeBadges item={item} />
-            </TableCell>
-            <TableCell
-              className={`text-right font-mono text-sm ${item.config ? severityColor(quorumSeverity(item.typeKey, item.config.quorum)) : ""}`}
-            >
-              {item.config ? formatBps(item.config.quorum) : "—"}
-            </TableCell>
-            <TableCell
-              className={`text-right font-mono text-sm ${item.config ? severityColor(approvalSeverity(item.typeKey, item.config.approvalThreshold)) : ""}`}
-            >
-              {item.config
-                ? formatBps(item.config.approvalThreshold)
-                : "—"}
-            </TableCell>
-            <TableCell className="text-right font-mono text-sm">
-              {item.config ? formatDuration(item.config.expiryMs) : "—"}
-            </TableCell>
-            <TableCell className="text-right font-mono text-sm">
-              {item.config ? formatDuration(item.config.cooldownMs) : "—"}
-            </TableCell>
-          </TableRow>
-        </CollapsibleTrigger>
-        <CollapsibleContent asChild>
-          <TableRow>
-            <TableCell colSpan={colCount} className="bg-muted/30 px-6 py-4">
-              <TypeDetailPanel item={item} />
-            </TableCell>
-          </TableRow>
-        </CollapsibleContent>
-      </>
-    </Collapsible>
+    <>
+      <TableRow
+        className={`cursor-pointer ${!item.enabled ? "opacity-50" : ""}`}
+        onClick={() => setOpen(!open)}
+      >
+        <TableCell className="font-mono text-sm">
+          <span className="mr-1.5 inline-block w-3 text-center text-xs">
+            {open ? "▾" : "▸"}
+          </span>
+          {item.typeKey}
+          {hasWarning && (
+            <span className="ml-2 inline-block text-yellow-500">!</span>
+          )}
+        </TableCell>
+        <TableCell>
+          <TypeBadges item={item} />
+        </TableCell>
+        <TableCell
+          className={`text-right font-mono text-sm ${item.config ? severityColor(quorumSeverity(item.typeKey, item.config.quorum)) : ""}`}
+        >
+          {item.config ? formatBps(item.config.quorum) : "—"}
+        </TableCell>
+        <TableCell
+          className={`text-right font-mono text-sm ${item.config ? severityColor(approvalSeverity(item.typeKey, item.config.approvalThreshold)) : ""}`}
+        >
+          {item.config
+            ? formatBps(item.config.approvalThreshold)
+            : "—"}
+        </TableCell>
+        <TableCell className="text-right font-mono text-sm">
+          {item.config ? formatDuration(item.config.expiryMs) : "—"}
+        </TableCell>
+        <TableCell className="text-right font-mono text-sm">
+          {item.config ? formatDuration(item.config.cooldownMs) : "—"}
+        </TableCell>
+      </TableRow>
+      {open && (
+        <TableRow>
+          <TableCell colSpan={colCount} className="bg-muted/30 px-6 py-4">
+            <TypeDetailPanel item={item} />
+          </TableCell>
+        </TableRow>
+      )}
+    </>
   );
 }
 

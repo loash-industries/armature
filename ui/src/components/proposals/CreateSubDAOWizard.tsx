@@ -1,6 +1,15 @@
 import { useState } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+} from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Form,
   FormField,
@@ -9,16 +18,9 @@ import {
   FormControl,
   FormDescription,
   FormMessage,
-  Input,
-  Textarea,
-  Button,
-  Badge,
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-  Checkbox,
-} from "@awar.dev/ui";
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { createSubDAOSchema } from "@/lib/schemas";
 import { ALL_PROPOSAL_TYPE_KEYS, PROPOSAL_TYPE_MAP } from "@/config/proposal-types";
 import type { CreateSubDAOPayload, ProposalConfigInput } from "@/types/proposal";

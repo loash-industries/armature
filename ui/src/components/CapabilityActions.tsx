@@ -1,11 +1,11 @@
 import { useNavigate } from "@tanstack/react-router";
+import { Button } from "@/components/ui/button";
 import {
-  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@awar.dev/ui";
+} from "@/components/ui/dropdown-menu";
 import type { CapabilityEntry } from "@/types/dao";
 
 export function CapabilityActions({
@@ -20,10 +20,8 @@ export function CapabilityActions({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm">
-          Actions
-        </Button>
+      <DropdownMenuTrigger render={<Button variant="ghost" size="sm" />}>
+        Actions
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem

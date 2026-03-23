@@ -1,11 +1,11 @@
 import { Link } from "@tanstack/react-router";
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardContent,
-  Badge,
-} from "@awar.dev/ui";
+} from "@/components/ui/card";
 import type { CapabilityEntry } from "@/types/dao";
 import { CapabilityActions } from "./CapabilityActions";
 

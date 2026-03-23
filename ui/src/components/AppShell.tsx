@@ -1,11 +1,7 @@
 import { Outlet } from "@tanstack/react-router";
-import {
-  SidebarProvider,
-  SidebarInset,
-  SidebarTrigger,
-  ScrollArea,
-  Separator,
-} from "@awar.dev/ui";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
 import { DaoSidebar } from "./DaoSidebar";
 import { SubDAOBreadcrumb } from "./SubDAOBreadcrumb";
 import { WalletStatus } from "./WalletStatus";

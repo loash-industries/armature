@@ -1,14 +1,16 @@
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardContent,
-  Badge,
+} from "@/components/ui/card";
+import {
   Table,
   TableBody,
   TableRow,
   TableCell,
-} from "@awar.dev/ui";
+} from "@/components/ui/table";
 import { PROPOSAL_TYPE_MAP } from "@/config/proposal-types";
 
 interface PayloadSummaryProps {

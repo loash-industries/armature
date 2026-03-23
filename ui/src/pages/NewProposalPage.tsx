@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useParams, useNavigate, useSearch } from "@tanstack/react-router";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardDescription,
   CardContent,
-  Button,
-} from "@awar.dev/ui";
+} from "@/components/ui/card";
 import {
   PROPOSAL_TYPE_MAP,
   PROPOSAL_TYPE_TIER,

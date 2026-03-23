@@ -1,23 +1,23 @@
 import { useParams, Link } from "@tanstack/react-router";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardDescription,
   CardContent,
-  Badge,
-  Button,
-  Alert,
-  AlertTitle,
-  AlertDescription,
-  Skeleton,
+} from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
   Table,
   TableHeader,
   TableHead,
   TableBody,
   TableRow,
   TableCell,
-} from "@awar.dev/ui";
+} from "@/components/ui/table";
 import {
   useDaoSummary,
   useTreasuryBalances,
@@ -134,13 +134,8 @@ export function DaoDashboard() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Treasury Balances</CardTitle>
-              <Button variant="ghost" size="sm" asChild>
-                <Link
-                  to="/dao/$daoId/treasury"
-                  params={{ daoId: daoId ?? "" }}
-                >
-                  View All
-                </Link>
+              <Button variant="ghost" size="sm" render={<Link to="/dao/$daoId/treasury" params={{ daoId: daoId ?? "" }} />}>
+                View All
               </Button>
             </div>
           </CardHeader>

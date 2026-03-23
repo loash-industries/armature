@@ -1,30 +1,32 @@
 import { useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardDescription,
   CardContent,
-  Badge,
-  Button,
-  Skeleton,
-  Alert,
-  AlertTitle,
-  AlertDescription,
+} from "@/components/ui/card";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
   Table,
   TableHeader,
   TableHead,
   TableBody,
   TableRow,
   TableCell,
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-  Separator,
-} from "@awar.dev/ui";
+} from "@/components/ui/table";
 import { useSuiClient } from "@mysten/dapp-kit";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -248,7 +250,7 @@ export function EmergencyPage() {
             <div className="space-y-2">
               <p className="text-sm font-medium">Freeze a Proposal Type</p>
               <div className="flex gap-2">
-                <Select value={freezeTarget} onValueChange={setFreezeTarget}>
+                <Select value={freezeTarget} onValueChange={(v) => setFreezeTarget(v ?? "")}>
                   <SelectTrigger className="flex-1">
                     <SelectValue placeholder="Select type to freeze..." />
                   </SelectTrigger>
@@ -281,7 +283,7 @@ export function EmergencyPage() {
               <div className="flex gap-2">
                 <Select
                   value={unfreezeTarget}
-                  onValueChange={setUnfreezeTarget}
+                  onValueChange={(v) => setUnfreezeTarget(v ?? "")}
                 >
                   <SelectTrigger className="flex-1">
                     <SelectValue placeholder="Select type to unfreeze..." />

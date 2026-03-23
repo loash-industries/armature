@@ -1,5 +1,11 @@
 import { Link } from "@tanstack/react-router";
-import { Card, CardHeader, CardTitle, CardContent, Badge } from "@awar.dev/ui";
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+} from "@/components/ui/card";
 import type { SubDAONode } from "@/types/dao";
 
 export function SubDAOCard({

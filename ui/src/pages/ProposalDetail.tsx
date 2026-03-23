@@ -2,18 +2,18 @@ import { useState, useEffect } from "react";
 import { useParams } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardDescription,
   CardContent,
-  Badge,
-  Button,
-  Skeleton,
-  Progress,
-  Separator,
-} from "@awar.dev/ui";
+} from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useSuiClient } from "@mysten/dapp-kit";
 import { useProposal } from "@/hooks/useProposals";
 import { useWalletSigner } from "@/hooks/useWalletSigner";

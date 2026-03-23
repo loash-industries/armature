@@ -1,35 +1,39 @@
 import { useParams } from "@tanstack/react-router";
 import { useState } from "react";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardDescription,
   CardContent,
-  Badge,
-  Button,
-  Skeleton,
-  Alert,
-  AlertTitle,
-  AlertDescription,
+} from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
   Table,
   TableHeader,
   TableHead,
   TableBody,
   TableRow,
   TableCell,
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-  Label,
-} from "@awar.dev/ui";
+} from "@/components/ui/table";
 import { useSuiClient } from "@mysten/dapp-kit";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -223,7 +227,7 @@ export function TreasuryPage() {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Coin to Deposit</Label>
-              <Select value={selectedCoin} onValueChange={setSelectedCoin}>
+              <Select value={selectedCoin} onValueChange={(v) => setSelectedCoin(v ?? "")}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select a coin..." />
                 </SelectTrigger>

@@ -1,5 +1,6 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Button } from "@/components/ui/button";
 import {
   Form,
   FormField,
@@ -8,10 +9,9 @@ import {
   FormControl,
   FormDescription,
   FormMessage,
-  Input,
-  Textarea,
-  Button,
-} from "@awar.dev/ui";
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { charterUpdateSchema } from "@/lib/schemas";
 import { useDaoSummary, useCharterDetail } from "@/hooks/useDao";
 import type { CharterUpdatePayload } from "@/types/proposal";

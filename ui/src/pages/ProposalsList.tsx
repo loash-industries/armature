@@ -1,24 +1,28 @@
 import { useState } from "react";
 import { useParams, Link } from "@tanstack/react-router";
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardDescription,
   CardContent,
-  Badge,
-  Skeleton,
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
+} from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
   Table,
   TableHeader,
   TableHead,
   TableBody,
   TableRow,
   TableCell,
-} from "@awar.dev/ui";
+} from "@/components/ui/table";
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from "@/components/ui/tabs";
 import { useProposals } from "@/hooks/useProposals";
 import { PROPOSAL_TYPE_MAP } from "@/config/proposal-types";
 import type { ProposalSummary } from "@/types/proposal";

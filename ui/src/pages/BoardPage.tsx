@@ -1,27 +1,29 @@
 import { useParams } from "@tanstack/react-router";
 import { useCurrentAccount } from "@mysten/dapp-kit";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardDescription,
   CardContent,
-  Badge,
-  Skeleton,
-  Alert,
-  AlertTitle,
-  AlertDescription,
+} from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
   Table,
   TableHeader,
   TableHead,
   TableBody,
   TableRow,
   TableCell,
+} from "@/components/ui/table";
+import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
   TooltipProvider,
-} from "@awar.dev/ui";
+} from "@/components/ui/tooltip";
 import { useDaoSummary, useGovernanceDetail } from "@/hooks/useDao";
 
 function truncAddr(address: string): string {

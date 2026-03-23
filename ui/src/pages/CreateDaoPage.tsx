@@ -5,6 +5,14 @@ import { z } from "zod";
 import { useNavigate } from "@tanstack/react-router";
 import { useSuiClient } from "@mysten/dapp-kit";
 import { toast } from "sonner";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   Form,
   FormField,
@@ -12,17 +20,9 @@ import {
   FormLabel,
   FormControl,
   FormMessage,
-  Input,
-  Textarea,
-  Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  LogoLockup,
-  Alert,
-  AlertDescription,
-} from "@awar.dev/ui";
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { WalletStatus } from "@/components/WalletStatus";
 import { useWalletSigner } from "@/hooks/useWalletSigner";
 import { buildCreateDao } from "@/lib/transactions";
@@ -129,7 +129,7 @@ export function CreateDaoPage() {
   return (
     <div className="bg-background min-h-screen">
       <header className="border-b-border flex items-center justify-between border-b px-6 py-4">
-        <LogoLockup text="Armature" />
+        <span className="text-lg font-semibold tracking-tight">Armature</span>
         <WalletStatus />
       </header>
 

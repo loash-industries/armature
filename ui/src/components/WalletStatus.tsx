@@ -1,11 +1,11 @@
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
-  Badge,
-  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@awar.dev/ui";
+} from "@/components/ui/dropdown-menu";
 import { ConnectModal, useCurrentAccount, useDisconnectWallet } from "@mysten/dapp-kit";
 import { useWalletSigner } from "@/hooks/useWalletSigner";
 
@@ -32,12 +32,10 @@ function DappKitWallet() {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button className="cursor-pointer" type="button">
-          <Badge variant="outline">
-            {truncateAddress(account.address)} ▾
-          </Badge>
-        </button>
+      <DropdownMenuTrigger render={<button className="cursor-pointer" type="button" />}>
+        <Badge variant="outline">
+          {truncateAddress(account.address)} ▾
+        </Badge>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem onSelect={() => disconnect()}>
@@ -81,12 +79,10 @@ export function WalletStatus() {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button className="cursor-pointer" type="button">
-          <Badge variant="outline">
-            {active.label}: {truncateAddress(active.address)} ▾
-          </Badge>
-        </button>
+      <DropdownMenuTrigger render={<button className="cursor-pointer" type="button" />}>
+        <Badge variant="outline">
+          {active.label}: {truncateAddress(active.address)} ▾
+        </Badge>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         {wallet.localWallets.map((w, i) => (

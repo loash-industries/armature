@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Form,
   FormField,
@@ -8,11 +10,9 @@ import {
   FormLabel,
   FormControl,
   FormMessage,
-  Input,
-  Textarea,
-  Button,
-  Badge,
-} from "@awar.dev/ui";
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { setBoardSchema } from "@/lib/schemas";
 import { useGovernanceDetail } from "@/hooks/useDao";
 import type { SetBoardPayload } from "@/types/proposal";

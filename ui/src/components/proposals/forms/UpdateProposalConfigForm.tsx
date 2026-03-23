@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Button } from "@/components/ui/button";
 import {
   Form,
   FormField,
@@ -8,14 +9,15 @@ import {
   FormLabel,
   FormControl,
   FormMessage,
-  Textarea,
+} from "@/components/ui/form";
+import {
   Select,
   SelectTrigger,
   SelectValue,
   SelectContent,
   SelectItem,
-  Button,
-} from "@awar.dev/ui";
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { updateProposalConfigSchema } from "@/lib/schemas";
 import { useProposalFormOptions } from "@/hooks/useProposalFormOptions";
 import { ProposalConfigForm } from "@/components/proposals/ProposalConfigForm";

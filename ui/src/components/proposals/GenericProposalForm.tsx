@@ -1,5 +1,6 @@
 import { useForm, type FieldValues } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Button } from "@/components/ui/button";
 import {
   Form,
   FormField,
@@ -7,15 +8,16 @@ import {
   FormLabel,
   FormControl,
   FormMessage,
-  Input,
-  Textarea,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import {
   Select,
   SelectTrigger,
   SelectValue,
   SelectContent,
   SelectItem,
-  Button,
-} from "@awar.dev/ui";
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { PROPOSAL_SCHEMAS } from "@/lib/schemas";
 import { TIER1_FIELD_DEFS, type FieldDef } from "./form-fields";
 import { useProposalFormOptions } from "@/hooks/useProposalFormOptions";

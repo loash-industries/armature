@@ -5,8 +5,8 @@ import {
   FormControl,
   FormDescription,
   FormMessage,
-  Input,
-} from "@awar.dev/ui";
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 import type { Control } from "react-hook-form";
 
 interface ProposalConfigFormProps {
