@@ -32,30 +32,30 @@ Three timing mechanisms prevent velocity-based attacks.
 
 == Layer 4: Emergency Circuit Breaker
 
-Individual proposal types can be frozen while all other POA operations continue unaffected. The freeze is targeted, not total.
+Individual proposal types can be frozen while all other DAO operations continue unaffected. The freeze is targeted, not total.
 
 #aside[
-  The freeze system is itself governed. The `FreezeAdminCap` is stored in the POA's CapabilityVault, accessible only through a governance proposal that loans it temporarily. Freezes auto-expire after a configurable maximum duration. And two types --- `TransferFreezeAdmin` and `UnfreezeProposalType` --- can _never_ be frozen, ensuring that the emergency system cannot be used to permanently lock out governance.
+  The freeze system is itself governed. The `FreezeAdminCap` is stored in the DAO's CapabilityVault, accessible only through a governance proposal that loans it temporarily. Freezes auto-expire after a configurable maximum duration. And two types --- `TransferFreezeAdmin` and `UnfreezeProposalType` --- can _never_ be frozen, ensuring that the emergency system cannot be used to permanently lock out governance.
 ]
 
 == Layer 5: Hierarchy Controls
 
-The Sub-POA hierarchy provides organizational isolation.
+The Sub-DAO hierarchy provides organizational isolation.
 
-- *Controller pause* --- a parent can halt all execution in a child POA instantly.
+- *Controller pause* --- a parent can halt all execution in a child DAO instantly.
 - *Board replacement* --- a parent can replace a compromised child board without the child's consent.
 - *Capability reclaim* --- delegated capabilities can always be recovered.
-- *Hierarchy blocklist* --- controlled Sub-POAs cannot create their own Sub-POAs or declare independence without explicit authorization.
+- *Hierarchy blocklist* --- controlled Sub-DAOs cannot create their own Sub-DAOs or declare independence without explicit authorization.
 
 Delegation does not mean loss of control.
 
 == Layer 6: Blast Radius Isolation
 
-Each POA has its own TreasuryVault and CapabilityVault as separate shared objects. There is no shared state between POAs at the framework level.
+Each DAO has its own TreasuryVault and CapabilityVault as separate shared objects. There is no shared state between DAOs at the framework level.
 
-A compromised POA cannot access another POA's treasury. A vulnerability in one proposal handler cannot drain another POA's assets.
+A compromised DAO cannot access another DAO's treasury. A vulnerability in one proposal handler cannot drain another DAO's assets.
 
-Cross-POA interaction requires governance on _both_ sides. The sending POA authorizes the outflow; the receiving POA accepts deposits permissionlessly. This bilateral model prevents supply-chain attacks through the governance layer.
+Cross-DAO interaction requires governance on _both_ sides. The sending DAO authorizes the outflow; the receiving DAO accepts deposits permissionlessly. This bilateral model prevents supply-chain attacks through the governance layer.
 
 == Protocol Guarantees
 
@@ -67,6 +67,6 @@ These six layers compose into unconditional invariants.
 
 + *Atomic execution.* Every proposal execution is a single PTB. If any step fails, the entire transaction reverts. No partial state updates. No interruptible workflows.
 
-+ *Blast radius isolation.* Cross-POA access requires bilateral governance authorization. A vulnerability in one POA cannot propagate to others.
++ *Blast radius isolation.* Cross-DAO access requires bilateral governance authorization. A vulnerability in one DAO cannot propagate to others.
 
 + *On-chain auditability.* Every state change emits events. Every vote is recorded. Every amendment is logged. The governance history is permanent and tamper-proof.

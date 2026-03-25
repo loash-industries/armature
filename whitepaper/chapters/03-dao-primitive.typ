@@ -1,16 +1,16 @@
-= The POA Primitive
+= The DAO Primitive
 
 #import "../lib/template.typ": defbox, aside
 
-A POA is a composable, self-governing primitive on the SUI blockchain.
+A DAO is a composable, self-governing primitive on the SUI blockchain.
 
-Traditional governance frameworks treat the organization as a single contract. Armature does the opposite: it breaks the POA into independent shared objects that can be accessed at the same time, upgraded separately, and combined in any configuration.
+Traditional governance frameworks treat the organization as a single contract. Armature does the opposite: it breaks the DAO into independent shared objects that can be accessed at the same time, upgraded separately, and combined in any configuration.
 
 == Architecture Overview
 
-Every POA is made of five shared objects. Each one exists independently on-chain.
+Every DAO is made of five shared objects. Each one exists independently on-chain.
 
-#defbox[POA][The governance root. It holds the governance configuration, tracks which proposal types are enabled, stores per-type parameters and cooldown timestamps, and keeps references to all associated objects. It is the identity of the organization.]
+#defbox[DAO][The governance root. It holds the governance configuration, tracks which proposal types are enabled, stores per-type parameters and cooldown timestamps, and keeps references to all associated objects. It is the identity of the organization.]
 
 #defbox[TreasuryVault][Multi-coin asset storage under governance control. Anyone can deposit any coin type. All withdrawals require governance approval. Dynamic fields store individual coin balances, and a registry tracks which types have non-zero balances.]
 
@@ -37,8 +37,8 @@ The framework is split into two packages with different upgrade speeds:
     stroke: 0.5pt + luma(200),
     inset: 8pt,
     table.header[*Package*][*Purpose*][*Stability*],
-    [`armature_framework`], [Core objects: POA, Treasury, CapVault, Charter, Proposal engine, governance models], [Stable],
-    [`armature_proposals`], [Built-in proposal handlers (18 types across admin, treasury, board, Sub-POA, charter)], [Upgradable],
+    [`armature_framework`], [Core objects: DAO, Treasury, CapVault, Charter, Proposal engine, governance models], [Stable],
+    [`armature_proposals`], [Built-in proposal handlers (18 types across admin, treasury, board, Sub-DAO, charter)], [Upgradable],
   ),
   caption: [Package separation enables independent upgrade cycles.],
 )
@@ -61,13 +61,7 @@ When a proposal is executed, the framework produces an `ExecutionRequest<P>` ---
 
 Treasury withdrawals, capability loans, charter amendments --- all require a valid `ExecutionRequest<P>`.
 
-```rust
-struct ExecutionRequest<phantom P> {
-    poa_id: ID,
-    proposal_id: ID,
-}
-// No abilities: not drop, not copy, not store
-```
+The `ExecutionRequest<P>` carries only the DAO and proposal identifiers, and has no abilities --- the type system enforces it cannot be stored, copied, or dropped.
 
 The handler for proposal type `P` must consume the hot potato. If it fails, the entire PTB reverts and the proposal stays in `Passed` status, ready to be retried.
 

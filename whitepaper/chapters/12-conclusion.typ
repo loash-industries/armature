@@ -4,17 +4,17 @@ Frontier's player-driven civilization cannot emerge without organizational infra
 
 We have built that machinery.
 
-The POA primitive addresses four structural barriers to collective action. Trust is codified in governance rules and enforced by the type system. Ownership is shared through treasury and capability vaults. Delegation flows through the Sub-POA hierarchy with scoped authority and atomic reclaim.
+The DAO primitive addresses four structural barriers to collective action. Trust is codified in governance rules and enforced by the type system. Ownership is shared through treasury and capability vaults. Delegation flows through the Sub-DAO hierarchy with scoped authority and atomic reclaim.
 
-Value capture completes the picture: permissionless deposits, governance-gated withdrawals, and inter-POA asset flows.
+Value capture completes the picture: permissionless deposits, governance-gated withdrawals, and inter-DAO asset flows.
 
-The design is deliberately organic. A POA is born with a charter, a treasury, and a proposal set. It self-amends, reproduces through Sub-POAs, emancipates its offspring through spinout, metabolizes resources through treasury flows, and can die deliberately through migration.
+The design is deliberately organic. A DAO is born with a charter, a treasury, and a proposal set. It self-amends, reproduces through Sub-DAOs, emancipates its offspring through spinout, metabolizes resources through treasury flows, and can die deliberately through migration.
 
 These are not metaphors bolted onto a technical system. They are structural properties that emerge from the composition of simple primitives.
 
-The security model provides six independent layers of defense: type system enforcement, governance thresholds, timing controls, emergency circuit breakers, hierarchy controls, and blast radius isolation. Together they produce unconditional guarantees --- no admin keys, no backdoors, atomic execution, cross-POA isolation, and permanent auditability.
+The security model provides six independent layers of defense: type system enforcement, governance thresholds, timing controls, emergency circuit breakers, hierarchy controls, and blast radius isolation. Together they produce unconditional guarantees --- no admin keys, no backdoors, atomic execution, cross-DAO isolation, and permanent auditability.
 
-The current implementation focuses on Board governance, Sub-POA hierarchy, and the core proposal system. The roadmap extends to federation, direct and weighted governance, proposal composition, charter parametrization, project funding, and Smart Assembly integration.
+The current implementation focuses on Board governance, Sub-DAO hierarchy, and the core proposal system. The roadmap extends to federation, direct and weighted governance, proposal composition, charter parametrization, project funding, and Smart Assembly integration.
 
 Our thesis remains: the tribe is the atom.
 
