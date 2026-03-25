@@ -24,7 +24,7 @@
     header: context {
       if counter(page).get().first() > 1 {
         set text(8pt, fill: luma(120))
-        smallcaps[Armature.NETWORK]
+        smallcaps[Armature Project]
         h(1fr)
         smallcaps[Draft]
       }
@@ -110,18 +110,8 @@
     set par(first-line-indent: 0em)
 
     v(1.5cm)
-    // Logo placeholder
     align(center)[
-      #block(
-        width: 4cm,
-        height: 4cm,
-        stroke: 1pt + luma(200),
-        radius: 4pt,
-        inset: 8pt,
-        align(center + horizon)[
-          #text(10pt, fill: luma(160))[_Logo_]
-        ],
-      )
+      #image("../../assets/armature-logo.svg", width: 4cm)
     ]
 
     v(1.5cm)
