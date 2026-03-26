@@ -2,7 +2,7 @@
 
 #import "../lib/template.typ": aside, principle
 
-Governance in Armature is a configurable parameter of each POA instance, not a single fixed mechanism.
+Governance in Armature is a configurable parameter of each DAO instance, not a single fixed mechanism.
 
 The framework enforces one key rule: the governance _type_ is locked at creation, but the _state_ within that type can change through proposals. This prevents governance model swaps from becoming attack vectors. It also preserves the organization's ability to update its membership and parameters.
 
@@ -31,7 +31,7 @@ Direct governance extends the model to share-based voting, where each voter's we
 Weighted governance adds delegation. Stakeholders can hand their voting power to representatives. This supports liquid democracy, where expertise rises through voluntary choice rather than fixed hierarchy.
 
 #principle[Governance Immutability][
-  A POA's governance type cannot change after creation. A Board POA cannot become a Direct POA through a proposal. This constraint is deliberate: governance model changes are existential transformations that should require explicit migration to a new POA instance, preserving full auditability of the transition.
+  A DAO's governance type cannot change after creation. A Board DAO cannot become a Direct DAO through a proposal. This constraint is deliberate: governance model changes are existential transformations that should require explicit migration to a new DAO instance, preserving full auditability of the transition.
 ]
 
 == Per-Type Governance Parameters
@@ -65,6 +65,6 @@ Two safety rails prevent governance from weakening itself.
 
 *Self-referential floor.* When `UpdateProposalConfig` targets its own type, an 80% approval threshold floor is enforced. A slim majority cannot lower the bar for future governance changes.
 
-*Enable floor.* `EnableProposalType` enforces a 66% approval threshold floor. Adding new capabilities to the POA expands its attack surface and requires supermajority consent.
+*Enable floor.* `EnableProposalType` enforces a 66% approval threshold floor. Adding new capabilities to the DAO expands its attack surface and requires supermajority consent.
 
 These floors are _framework-enforced_ --- they cannot be bypassed by governance configuration. They are the protocol's minimum guarantees about governance integrity.

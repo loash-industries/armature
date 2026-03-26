@@ -1,103 +1,71 @@
-= The Proposal System
+= Proposal System and Extensibility
 
-#import "../lib/template.typ": aside, defbox
+#import "../lib/template.typ": aside, principle
 
-Every change to a POA's state goes through the proposal system. There are no admin backdoors, no owner keys, no special paths. This is not a design preference --- it is a security guarantee.
+== What Is a Proposal
 
-== Proposal Lifecycle
+A proposal is a statement of intent backed by a governance vote. It is the only mechanism through which a DAO's state changes. There are no admin backdoors, no owner keys, no special paths.
 
-A proposal moves through a strict, forward-only sequence of states. No transition is reversible. The governance record is an append-only log of organizational decisions.
+Every action a DAO takes --- spending from its treasury, delegating a capability, amending its charter, creating a department, changing its own rules --- is expressed as a proposal. Members issue proposals; members vote on them; the system executes the result.
 
-#figure(
-  table(
-    columns: (auto, 1fr),
-    align: (left, left),
-    stroke: 0.5pt + luma(200),
-    inset: 8pt,
-    table.header[*State*][*Semantics*],
-    [`Active`], [Open for voting. Board members may cast one vote each. The vote snapshot (membership at creation time) is immutable.],
-    [`Passed`], [Approval threshold met. Awaiting execution. Execution delay and cooldown constraints may apply.],
-    [`Executed`], [Handler has successfully consumed the `ExecutionRequest`. State changes committed atomically.],
-    [`Expired`], [Voting window elapsed without reaching approval threshold. Terminal state.],
-  ),
-  caption: [Proposal states are monotonically ordered with no reversals.],
-)
+Proposals are the vocabulary of the DAO. Each proposal type is a word in that vocabulary --- a specific kind of action the organization knows how to perform. The set of enabled proposal types defines the full range of what the organization can do.
 
-=== Creation
+A DAO that has not enabled charter amendments cannot amend its charter. A DAO that has not enabled Sub-DAO creation cannot create departments. The vocabulary is the permission set.
 
-A proposal is created by an eligible member. At creation, the framework snapshots the current governance state --- the full board membership and their weights.
+== How Proposals Work
 
-This snapshot becomes the fixed electorate for this proposal. Members added after creation cannot vote. Members removed after creation keep their vote.
+A proposal moves through a strict, forward-only sequence: it is created, voted on, and either passes or expires. If it passes, it is executed. No transition is reversible. The governance record is an append-only log of organizational decisions.
 
-=== Voting
+=== Creation and Voting
 
-Each eligible member may cast exactly one vote: yes or no. Votes map from address to boolean, and there is no way to change a vote once cast.
+A proposal is created by an eligible member. At creation, the framework snapshots the current membership --- this becomes the fixed electorate for this proposal. Members added after creation cannot vote on it. Members removed after creation keep their vote.
 
-This keeps the governance record clear. It also removes race conditions around vote changes.
-
-When a vote pushes the result past the approval threshold, the proposal transitions to `Passed` immediately. There is no separate tallying step.
+Each member casts one vote: yes or no. Votes are final. When enough votes are cast to meet the approval threshold, the proposal passes immediately.
 
 === Execution
 
-Execution is separate from passage. A passed proposal may be executed by any current board member, subject to three constraints:
+Execution is separate from passage. A passed proposal may still be subject to timing constraints --- a mandatory waiting period, a cooldown since the last action of the same type, or a freeze check from the emergency system.
 
-+ *Execution delay* --- a mandatory waiting period after passage, giving the organization time to react to a proposal that passed unexpectedly.
-+ *Cooldown* --- a minimum interval since the last execution of the same proposal type, preventing rapid repeated actions.
-+ *Freeze check* --- the proposal type must not be currently frozen by the emergency system.
+On execution, the framework produces a one-time authorization token --- a _hot potato_. This token must be consumed in the same atomic transaction in which it was created. It cannot be stored, copied, or discarded. If anything fails, the entire transaction reverts and nothing changes.
 
-On execution, the framework produces an `ExecutionRequest<P>` hot potato. The handler function for type `P` consumes this token and performs the authorized state changes. If the handler aborts, the PTB reverts, the proposal stays `Passed`, and execution can be retried.
+There is no capability token to steal. No role to impersonate. No permission check to bypass. The type system itself is the access control layer.
 
-== Typed Proposals as Permissions
+== Per-Type Governance Parameters
 
-Armature has no role-based permission system. The set of enabled proposal types defines what the organization can do.
+Different actions deserve different levels of scrutiny. Governance parameters in Armature are configured _per proposal type_.
 
-A POA that has not enabled `CreateSub-POA` cannot create Sub-POAs. A POA that has not enabled `AmendCharter` cannot change its constitution. The enabled proposal set _is_ the permission set.
+A routine metadata update might need a simple majority with no execution delay. A charter amendment might require 80% approval, a 48-hour review window, and a 7-day cooldown to block rapid constitutional changes. A vault withdrawal might add a 24-hour delay so the organization can react if a proposal passed too quickly.
 
-Adding a new capability requires passing an `EnableProposalType` proposal with a 66% supermajority floor. Disabling a capability is governed the same way, with safeguards that prevent disabling critical types (`EnableProposalType` itself, `TransferFreezeAdmin`, `UnfreezeProposalType`).
+The governance configuration itself encodes the organization's risk model. High-stakes actions get higher bars.
 
-== Proposal Type Catalog
+== Safety Rails
 
-The framework ships with eighteen proposal types across five domains.
+Two safety rails prevent governance from weakening itself.
 
-#figure(
-  table(
-    columns: (auto, auto, auto),
-    align: (left, left, center),
-    stroke: 0.5pt + luma(200),
-    inset: 8pt,
-    table.header[*Domain*][*Type*][*Default*],
-    [Admin], [`UpdateProposalConfig`], [Enabled],
-    [Admin], [`EnableProposalType`], [Enabled],
-    [Admin], [`DisableProposalType`], [Enabled],
-    [Admin], [`UpdateMetadata`], [Enabled],
-    [Admin], [`TransferFreezeAdmin`], [Enabled],
-    [Admin], [`UnfreezeProposalType`], [Enabled],
-    [Treasury], [`SendCoin<T>`], [Enabled],
-    [Treasury], [`SendCoinToPOA<T>`], [Opt-in],
-    [Board], [`SetBoard`], [Enabled],
-    [Sub-POA], [`CreateSub-POA`], [Opt-in],
-    [Sub-POA], [`SpinOutSub-POA`], [Opt-in],
-    [Sub-POA], [`TransferCapToSub-POA`], [Opt-in],
-    [Sub-POA], [`ReclaimCapFromSub-POA`], [Opt-in],
-    [Sub-POA], [`PauseSub-POAExecution`], [Privileged],
-    [Sub-POA], [`UnpauseSub-POAExecution`], [Privileged],
-    [Charter], [`AmendCharter`], [Opt-in],
-    [Charter], [`RenewCharterStorage`], [Opt-in],
-    [Emergency], [`UpdateFreezeConfig`], [Opt-in],
-  ),
-  caption: [Eighteen proposal types across five domains. "Privileged" types are only available through `privileged_submit` from a controller POA.],
-)
+*Self-referential floor.* Changing the rules for how governance rules are changed requires near-unanimity. A slim majority cannot lower the bar for future governance changes.
 
-#aside[
-  The distinction between "Enabled" and "Opt-in" types reflects a security-first posture. A newly created POA has the minimal set of capabilities needed to govern itself. Expanding that set is an explicit, high-threshold governance action.
-]
+*Enable floor.* Adding new proposal types to the DAO's vocabulary requires a supermajority. Expanding what the organization can do expands its attack surface and requires broad consent.
 
-== Open Proposal Type Set
+These floors are _framework-enforced_ --- they cannot be bypassed by governance configuration. They are the protocol's minimum guarantees about governance integrity.
 
-The proposal system is extensible by design. The `ExecutionRequest<P>` hot potato is parameterized by a phantom type `P`, so any package can define new proposal types.
+== Extending the Vocabulary
 
-The framework's treasury and capability vault APIs accept any `ExecutionRequest<P>` as authorization. The type parameter `P` is phantom and does not restrict which resources can be accessed.
+The proposal system is open by design. Armature ships with a built-in set of proposal types covering administration, treasury operations, board management, Sub-DAO operations, charter amendments, and emergency controls. But this set is not closed.
 
-A third-party developer can define a `PayBounty` proposal type, implement its handler, and any POA that enables it through `EnableProposalType` gains that functionality. The framework handles voting, thresholds, delays, and freeze checks for _any_ type. Whether a handler is correct is the governance's decision --- enabling a type is the trust gate.
+Any developer can define new proposal types. A bounty payment, a token distribution, a custom access control action --- each can be implemented as a proposal type and adopted by any DAO that chooses to enable it. The framework handles voting, thresholds, timing, and authorization for all types equally. Enabling a new type is the trust gate; the governance decides what vocabulary it adopts.
 
-This turns the POA from a closed product into an open protocol. The governance engine is a platform. Proposal types are its applications.
+This turns the DAO from a closed product into an open protocol. The governance engine is a platform. Proposal types are its applications.
+
+== Proposal Composition
+
+Many governance operations are naturally multi-step. Creating a department, funding it, and delegating a capability to it is a single logical decision expressed as three separate votes under a simple proposal model. This fragmentation creates coordination risk: what if the funding vote fails after the department already exists?
+
+Proposal composition solves this. Taking inspiration from SUI's Programmable Transaction Blocks, composite proposals bundle a sequence of actions into a single governance decision. Members vote once on a coherent plan --- not on isolated sentences, but on a full text that describes a meaningful rotation of resources.
+
+"Create the logistics department, fund it with 1000 EVE, and delegate the gate controller capability" becomes one proposal, one vote, one atomic execution. If any step fails, everything reverts.
+
+This shifts governance from approving individual operations to approving organizational intent. The proposal becomes a document that describes what the organization wants to achieve, and the system executes it as a whole.
+
+// ? What are the composition rules --- which proposal types can be bundled, and are there ordering constraints?
+// ? How does the voting threshold work for a composite --- does it inherit the highest threshold among its parts?
+// ? How are composite proposals displayed to voters so they can understand the full scope of what they are approving?

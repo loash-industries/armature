@@ -15,7 +15,7 @@ A charter might state that "the treasury shall not be used for personal expenses
 The Charter is more than a document. Its rules will be codified directly on the Charter object itself, and those codified rules will parametrize proposals --- binding governance not just by social agreement, but by code. The Charter becomes a machine-readable constitution, not just a human-readable one.
 
 #principle[The Charter Principle][
-  The Charter is the POA's highest authority. It defines what the POA _should_ do. The proposal system defines what the POA _can_ do. The tension between these two --- between aspiration and mechanism --- is productive. It ensures that governance operates within a framework of meaning, not merely of code.
+  The Charter is the DAO's highest authority. It defines what the DAO _should_ do. The proposal system defines what the DAO _can_ do. The tension between these two --- between aspiration and mechanism --- is productive. It ensures that governance operates within a framework of meaning, not merely of code.
 ]
 
 == Architecture
@@ -33,7 +33,7 @@ The full history of an organization's constitutional evolution is permanently re
 
 == Amendment Process
 
-Amending the charter is the most consequential governance action a POA can take. The recommended configuration reflects this gravity.
+Amending the charter is the most consequential governance action a DAO can take. The recommended configuration reflects this gravity.
 
 - *80% approval threshold* --- near-unanimity, reflecting constitutional significance.
 - *48-hour execution delay* --- ensuring the full membership has time to review and respond.
@@ -56,16 +56,16 @@ A renewal updates the blob reference _without_ changing the content hash or vers
 
 The Charter is the source of truth from which all organizational behavior derives. As its rules become codified on the object itself, it will directly govern what proposals can do and how they behave. This is more than policy --- it is executable law.
 
-A POA's charter might define:
+A DAO's charter might define:
 
 - The organization's mission and scope of operations.
-- Membership criteria and the relationship to a controller POA.
+- Membership criteria and the relationship to a controller DAO.
 - Governance procedures, including which proposal types should carry which thresholds.
 - Treasury policies: sources of funding, spending rules, revenue distribution formulas.
-- Organizational structure: Sub-POA relationships, delegation patterns, reporting requirements.
+- Organizational structure: Sub-DAO relationships, delegation patterns, reporting requirements.
 - Amendment procedures: how the charter itself can be changed.
 - Dissolution conditions: when and how the organization should wind down.
 
 The amendment history is permanent. Future members can trace how the rules changed, which proposals drove those changes, and what the organization looked like at any point in its history.
 
-In a game world where civilizations rise and fall, this permanence matters. The charter is the POA's contribution to the historical record of Frontier. POA archaeology --- the study of organizational evolution through on-chain constitutional history --- becomes possible.
+In a game world where civilizations rise and fall, this permanence matters. The charter is the DAO's contribution to the historical record of Frontier. DAO archaeology --- the study of organizational evolution through on-chain constitutional history --- becomes possible.

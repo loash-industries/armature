@@ -1,4 +1,8 @@
-# armature
+<p align="center">
+  <img src="assets/armature-logo.svg" width="120" alt="Armature logo">
+</p>
+
+# Armature Project
 
 Armature service repository — a monorepo containing a Node.js API, React UI, Rust indexer, and Sui Move contracts.
 

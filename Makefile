@@ -40,6 +40,16 @@ dev-logs:
 dev-ps:
 	$(COMPOSE_DEV) ps
 
+# ── Docs ─────────────────────────────────────────────────────────────────
+
+## Watch and recompile the whitepaper on changes
+dev-docs:
+	typst watch --root . whitepaper/main.typ whitepaper/main.pdf
+
+## Build the whitepaper PDF for release
+build-docs:
+	typst compile --root . whitepaper/main.typ whitepaper/dist/armature-whitepaper.pdf
+
 # ── Dependencies ──────────────────────────────────────────────────────────────
 
 ## Clone world-contracts (only needed for --profile world)
