@@ -1,6 +1,5 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button } from "@/components/ui/button";
 import {
   Form,
   FormField,
@@ -20,18 +19,21 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { treasuryWithdrawSchema } from "@/lib/schemas";
 import { useTreasuryBalances, useDaoSummary } from "@/hooks/useDao";
+import { SubmitProposalButton } from "@/components/proposals/SubmitProposalButton";
 import type { TreasuryWithdrawPayload } from "@/types/proposal";
 
 interface TreasuryWithdrawFormProps {
   daoId: string;
   isPending?: boolean;
   onSubmit: (data: TreasuryWithdrawPayload) => void;
+  onSubmitAndVote?: (data: TreasuryWithdrawPayload) => void;
 }
 
 export function TreasuryWithdrawForm({
   daoId,
   isPending,
   onSubmit,
+  onSubmitAndVote,
 }: TreasuryWithdrawFormProps) {
   const { data: dao } = useDaoSummary(daoId);
   const { data: balances } = useTreasuryBalances(dao?.treasuryId);
@@ -132,9 +134,14 @@ export function TreasuryWithdrawForm({
           )}
         />
 
-        <Button type="submit" disabled={isPending}>
-          {isPending ? "Submitting..." : "Create Proposal"}
-        </Button>
+        <SubmitProposalButton
+          isPending={isPending}
+          onSubmit={() => form.handleSubmit((data) => onSubmit(data))()}
+          onSubmitAndVote={() => form.handleSubmit((data) => {
+            if (onSubmitAndVote) onSubmitAndVote(data);
+            else onSubmit(data);
+          })()}
+        />
       </form>
     </Form>
   );

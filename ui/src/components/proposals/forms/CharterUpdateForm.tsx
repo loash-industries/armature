@@ -1,6 +1,5 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button } from "@/components/ui/button";
 import {
   Form,
   FormField,
@@ -14,18 +13,21 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { charterUpdateSchema } from "@/lib/schemas";
 import { useDaoSummary, useCharterDetail } from "@/hooks/useDao";
+import { SubmitProposalButton } from "@/components/proposals/SubmitProposalButton";
 import type { CharterUpdatePayload } from "@/types/proposal";
 
 interface CharterUpdateFormProps {
   daoId: string;
   isPending?: boolean;
   onSubmit: (data: CharterUpdatePayload) => void;
+  onSubmitAndVote?: (data: CharterUpdatePayload) => void;
 }
 
 export function CharterUpdateForm({
   daoId,
   isPending,
   onSubmit,
+  onSubmitAndVote,
 }: CharterUpdateFormProps) {
   const { data: dao } = useDaoSummary(daoId);
   const { data: charter } = useCharterDetail(dao?.charterId);
@@ -103,9 +105,14 @@ export function CharterUpdateForm({
           )}
         />
 
-        <Button type="submit" disabled={isPending}>
-          {isPending ? "Submitting..." : "Create Proposal"}
-        </Button>
+        <SubmitProposalButton
+          isPending={isPending}
+          onSubmit={() => form.handleSubmit((data) => onSubmit(data))()}
+          onSubmitAndVote={() => form.handleSubmit((data) => {
+            if (onSubmitAndVote) onSubmitAndVote(data);
+            else onSubmit(data);
+          })()}
+        />
       </form>
     </Form>
   );

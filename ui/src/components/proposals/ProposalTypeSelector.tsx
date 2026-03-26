@@ -68,10 +68,7 @@ export function ProposalTypeSelector({
                     <CommandItem
                       key={t.key}
                       value={t.key}
-                      onSelect={() => {
-                        onSelect(t.key);
-                        onOpenChange(false);
-                      }}
+                      onSelect={() => onSelect(t.key)}
                     >
                       <div className="flex flex-col gap-0.5">
                         <span className="font-mono text-sm">{t.label}</span>

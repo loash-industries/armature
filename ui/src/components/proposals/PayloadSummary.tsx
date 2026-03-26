@@ -12,6 +12,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { PROPOSAL_TYPE_MAP } from "@/config/proposal-types";
+import { useCharacterNames } from "@/hooks/useCharacterNames";
 
 interface PayloadSummaryProps {
   typeKey: string;
@@ -88,6 +89,7 @@ function PayloadRenderer({
 
 function SetBoardSummary({ payload }: { payload: Record<string, unknown> }) {
   const members = (payload.new_members as string[] ?? payload.members as string[]) ?? [];
+  const { data: nameMap } = useCharacterNames(members);
   return (
     <div className="space-y-2">
       <p className="text-sm">
@@ -96,8 +98,13 @@ function SetBoardSummary({ payload }: { payload: Record<string, unknown> }) {
       </p>
       <div className="space-y-1">
         {members.map((m, i) => (
-          <div key={i} className="font-mono text-xs">
-            {m}
+          <div key={i} className="flex items-center gap-2">
+            <span className="font-mono text-xs">{m}</span>
+            {nameMap?.get(m) && (
+              <Badge variant="secondary" className="text-xs">
+                {nameMap.get(m)}
+              </Badge>
+            )}
           </div>
         ))}
       </div>
@@ -143,37 +150,71 @@ function CharterUpdateSummary({
   );
 }
 
+/** Extract a value from a Sui Option variant ({ variant: "Some", fields: T }). */
+function unwrapOption(val: unknown): unknown {
+  if (val != null && typeof val === "object" && "variant" in (val as Record<string, unknown>)) {
+    const opt = val as { variant: string; fields: unknown };
+    return opt.variant === "Some" ? opt.fields : undefined;
+  }
+  return val;
+}
+
 function ProposalConfigSummary({
   payload,
 }: {
   payload: Record<string, unknown>;
 }) {
-  const config = payload.config as Record<string, number> | undefined;
+  // EnableProposalType: { type_key, config: { quorum, approval_threshold, ... } }
+  // UpdateProposalConfig: { target_type_key, quorum: Option, approval_threshold: Option, ... }
+  const typeKey = String(payload.type_key ?? payload.target_type_key ?? "");
+  const nested = payload.config as Record<string, unknown> | undefined;
+
+  const quorum = Number(nested ? nested.quorum : unwrapOption(payload.quorum) ?? 0);
+  const approvalThreshold = Number(nested ? nested.approval_threshold : unwrapOption(payload.approval_threshold) ?? 0);
+  const proposeThreshold = Number(nested ? nested.propose_threshold : unwrapOption(payload.propose_threshold) ?? 0);
+  const expiryMs = Number(nested ? nested.expiry_ms : unwrapOption(payload.expiry_ms) ?? 0);
+  const executionDelayMs = Number(nested ? nested.execution_delay_ms : unwrapOption(payload.execution_delay_ms) ?? 0);
+  const cooldownMs = Number(nested ? nested.cooldown_ms : unwrapOption(payload.cooldown_ms) ?? 0);
+
   return (
     <div className="space-y-2">
       <p className="text-sm">
         <span className="text-muted-foreground">Type:</span>{" "}
-        <Badge variant="outline">{String(payload.typeKey ?? "")}</Badge>
+        <Badge variant="outline">{typeKey}</Badge>
       </p>
-      {config && (
-        <Table>
-          <TableBody>
-            <KVRow
-              label="Quorum"
-              value={`${(config.quorum / 100).toFixed(1)}%`}
-            />
-            <KVRow
-              label="Approval"
-              value={`${(config.approvalThreshold / 100).toFixed(1)}%`}
-            />
-            <KVRow label="Voting Period" value={`${config.expiryMs}ms`} />
-            <KVRow label="Exec Delay" value={`${config.executionDelayMs}ms`} />
-            <KVRow label="Cooldown" value={`${config.cooldownMs}ms`} />
-          </TableBody>
-        </Table>
-      )}
+      <Table>
+        <TableBody>
+          <KVRow
+            label="Quorum"
+            value={`${(quorum / 100).toFixed(1)}%`}
+          />
+          <KVRow
+            label="Approval"
+            value={`${(approvalThreshold / 100).toFixed(1)}%`}
+          />
+          <KVRow
+            label="Propose Threshold"
+            value={String(proposeThreshold)}
+          />
+          <KVRow label="Voting Period" value={formatDuration(expiryMs)} />
+          <KVRow label="Exec Delay" value={formatDuration(executionDelayMs)} />
+          <KVRow label="Cooldown" value={formatDuration(cooldownMs)} />
+        </TableBody>
+      </Table>
     </div>
   );
+}
+
+function formatDuration(ms: number): string {
+  if (ms === 0) return "0";
+  const hours = ms / 3_600_000;
+  if (hours >= 24) {
+    const days = Math.floor(hours / 24);
+    const rem = Math.round(hours % 24);
+    return rem > 0 ? `${days}d ${rem}h` : `${days}d`;
+  }
+  if (hours >= 1) return `${hours.toFixed(1)}h`;
+  return `${ms}ms`;
 }
 
 function CreateSubDAOSummary({

@@ -1,6 +1,6 @@
+import { useCallback, useRef } from "react";
 import { useForm, type FieldValues } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button } from "@/components/ui/button";
 import {
   Form,
   FormField,
@@ -21,12 +21,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { PROPOSAL_SCHEMAS } from "@/lib/schemas";
 import { TIER1_FIELD_DEFS, type FieldDef } from "./form-fields";
 import { useProposalFormOptions } from "@/hooks/useProposalFormOptions";
+import { SubmitProposalButton } from "./SubmitProposalButton";
 
 interface GenericProposalFormProps {
   typeKey: string;
   daoId: string;
   isPending?: boolean;
   onSubmit: (data: Record<string, unknown>) => void;
+  onSubmitAndVote?: (data: Record<string, unknown>) => void;
 }
 
 export function GenericProposalForm({
@@ -34,10 +36,25 @@ export function GenericProposalForm({
   daoId,
   isPending,
   onSubmit,
+  onSubmitAndVote,
 }: GenericProposalFormProps) {
   const schema = PROPOSAL_SCHEMAS[typeKey];
   const fieldDefs = TIER1_FIELD_DEFS[typeKey] ?? [];
   const options = useProposalFormOptions(daoId);
+  const voteRef = useRef(false);
+
+  const handleSubmit = useCallback(
+    (data: FieldValues) => {
+      const d = data as Record<string, unknown>;
+      if (voteRef.current && onSubmitAndVote) {
+        onSubmitAndVote(d);
+      } else {
+        onSubmit(d);
+      }
+      voteRef.current = false;
+    },
+    [onSubmit, onSubmitAndVote],
+  );
 
   const form = useForm<FieldValues>({
     resolver: schema ? zodResolver(schema) : undefined,
@@ -53,9 +70,8 @@ export function GenericProposalForm({
   return (
     <Form {...form}>
       <form
-        onSubmit={form.handleSubmit((data) =>
-          onSubmit(data as Record<string, unknown>),
-        )}
+        // eslint-disable-next-line react-hooks/refs
+        onSubmit={form.handleSubmit(handleSubmit)}
         className="space-y-4"
       >
         {fieldDefs.map((field) => (
@@ -84,9 +100,21 @@ export function GenericProposalForm({
           )}
         />
 
-        <Button type="submit" disabled={isPending}>
-          {isPending ? "Submitting..." : "Create Proposal"}
-        </Button>
+        <SubmitProposalButton
+          isPending={isPending}
+          onSubmit={() => {
+            voteRef.current = false;
+            form.handleSubmit((data) => onSubmit(data as Record<string, unknown>))();
+          }}
+          onSubmitAndVote={() => {
+            voteRef.current = true;
+            form.handleSubmit((data) => {
+              if (onSubmitAndVote) onSubmitAndVote(data as Record<string, unknown>);
+              else onSubmit(data as Record<string, unknown>);
+              voteRef.current = false;
+            })();
+          }}
+        />
       </form>
     </Form>
   );

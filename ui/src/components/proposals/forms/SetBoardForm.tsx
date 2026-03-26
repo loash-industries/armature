@@ -15,15 +15,18 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { setBoardSchema } from "@/lib/schemas";
 import { useGovernanceDetail } from "@/hooks/useDao";
+import { useCharacterNames } from "@/hooks/useCharacterNames";
+import { SubmitProposalButton } from "@/components/proposals/SubmitProposalButton";
 import type { SetBoardPayload } from "@/types/proposal";
 
 interface SetBoardFormProps {
   daoId: string;
   isPending?: boolean;
   onSubmit: (data: SetBoardPayload) => void;
+  onSubmitAndVote?: (data: SetBoardPayload) => void;
 }
 
-export function SetBoardForm({ daoId, isPending, onSubmit }: SetBoardFormProps) {
+export function SetBoardForm({ daoId, isPending, onSubmit, onSubmitAndVote }: SetBoardFormProps) {
   const { data: govDetail } = useGovernanceDetail(daoId);
   const currentMembers = govDetail?.members.map((m) => m.address) ?? [];
 
@@ -55,6 +58,8 @@ export function SetBoardForm({ daoId, isPending, onSubmit }: SetBoardFormProps) 
   const removed = currentMembers.filter(
     (m) => !watchedMembers.includes(m),
   );
+
+  const { data: nameMap } = useCharacterNames([...added, ...removed]);
 
   return (
     <Form {...form}>
@@ -121,12 +126,22 @@ export function SetBoardForm({ daoId, isPending, onSubmit }: SetBoardFormProps) 
               <div key={a} className="flex items-center gap-2">
                 <Badge variant="default">+ Added</Badge>
                 <span className="font-mono text-xs">{a}</span>
+                {nameMap?.get(a) && (
+                  <Badge variant="secondary" className="text-xs">
+                    {nameMap.get(a)}
+                  </Badge>
+                )}
               </div>
             ))}
             {removed.map((r) => (
               <div key={r} className="flex items-center gap-2">
                 <Badge variant="destructive">- Removed</Badge>
                 <span className="font-mono text-xs">{r}</span>
+                {nameMap?.get(r) && (
+                  <Badge variant="secondary" className="text-xs">
+                    {nameMap.get(r)}
+                  </Badge>
+                )}
               </div>
             ))}
           </div>
@@ -146,9 +161,14 @@ export function SetBoardForm({ daoId, isPending, onSubmit }: SetBoardFormProps) 
           )}
         />
 
-        <Button type="submit" disabled={isPending}>
-          {isPending ? "Submitting..." : "Create Proposal"}
-        </Button>
+        <SubmitProposalButton
+          isPending={isPending}
+          onSubmit={() => form.handleSubmit((data) => onSubmit(data as SetBoardPayload))()}
+          onSubmitAndVote={() => form.handleSubmit((data) => {
+            if (onSubmitAndVote) onSubmitAndVote(data as SetBoardPayload);
+            else onSubmit(data as SetBoardPayload);
+          })()}
+        />
       </form>
     </Form>
   );

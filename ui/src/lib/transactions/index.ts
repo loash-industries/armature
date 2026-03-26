@@ -64,7 +64,7 @@ export {
 } from "./execution";
 
 // Direct treasury actions
-export { buildDeposit, buildClaimCoin } from "./treasury";
+export { buildDeposit, buildClaimCoin, buildSplitAndDeposit } from "./treasury";
 
 // Direct emergency actions
 export { buildFreezeType, buildUnfreezeType } from "./emergency";

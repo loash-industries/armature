@@ -1,5 +1,6 @@
 import { useParams } from "@tanstack/react-router";
 import { useCurrentAccount } from "@mysten/dapp-kit";
+import { AddressName } from "@/components/AddressName";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -18,24 +19,18 @@ import {
   TableRow,
   TableCell,
 } from "@/components/ui/table";
-import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-  TooltipProvider,
-} from "@/components/ui/tooltip";
 import { useDaoSummary, useGovernanceDetail } from "@/hooks/useDao";
+import { useCharacterNames } from "@/hooks/useCharacterNames";
 
-function truncAddr(address: string): string {
-  if (address.length <= 12) return address;
-  return `${address.slice(0, 6)}...${address.slice(-4)}`;
-}
+
 
 export function BoardPage() {
   const { daoId } = useParams({ strict: false });
   const account = useCurrentAccount();
   const { isError: daoError } = useDaoSummary(daoId ?? "");
   const { data: governance, isLoading } = useGovernanceDetail(daoId ?? "");
+  const memberAddresses = governance?.members.map((m) => m.address) ?? [];
+  const { data: nameMap } = useCharacterNames(memberAddresses);
 
   const connectedAddress = account?.address;
 
@@ -79,8 +74,7 @@ export function BoardPage() {
               ))}
             </div>
           ) : governance && governance.members.length > 0 ? (
-            <TooltipProvider>
-              <Table>
+            <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Address</TableHead>
@@ -94,16 +88,7 @@ export function BoardPage() {
                   {governance.members.map((member) => (
                     <TableRow key={member.address}>
                       <TableCell>
-                        <Tooltip>
-                          <TooltipTrigger className="font-mono">
-                            {truncAddr(member.address)}
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p className="font-mono text-xs">
-                              {member.address}
-                            </p>
-                          </TooltipContent>
-                        </Tooltip>
+                        <AddressName address={member.address} charName={nameMap?.get(member.address)} />
                       </TableCell>
                       {governance.type !== "Board" && (
                         <TableCell className="text-right font-mono">
@@ -119,7 +104,6 @@ export function BoardPage() {
                   ))}
                 </TableBody>
               </Table>
-            </TooltipProvider>
           ) : (
             <p className="text-muted-foreground text-sm">No members found.</p>
           )}

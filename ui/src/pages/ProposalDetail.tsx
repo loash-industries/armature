@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams } from "@tanstack/react-router";
+import { useParams, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,6 @@ import {
   CardDescription,
   CardContent,
 } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSuiClient } from "@mysten/dapp-kit";
@@ -45,14 +44,11 @@ import {
 import { cacheKeys } from "@/lib/cache-keys";
 import { PROPOSAL_TYPE_MAP } from "@/config/proposal-types";
 import { PayloadSummary } from "@/components/proposals/PayloadSummary";
-
-function truncAddr(addr: string): string {
-  if (addr.length <= 12) return addr;
-  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
-}
+import { useCharacterNames } from "@/hooks/useCharacterNames";
+import { getAddressName } from "@/lib/address-namer";
 
 function formatBps(bps: number): string {
-  return `${bps} bps`;
+  return `${(bps / 100).toFixed(2)}%`;
 }
 
 function formatDate(ms: number): string {
@@ -87,6 +83,29 @@ function Countdown({ targetMs }: { targetMs: number }) {
   );
 }
 
+/** Execution-time approval floors enforced by admin_ops (basis points). */
+const ENABLE_APPROVAL_FLOOR_BPS = 6_600;
+const SELF_UPDATE_APPROVAL_FLOOR_BPS = 8_000;
+
+/**
+ * Returns the hardcoded execution-time approval floor (bps) for proposal types
+ * that enforce one in admin_ops, or null if no floor applies.
+ *
+ * EnableProposalType:        66% of total_snapshot_weight
+ * UpdateProposalConfig self: 80% of total_snapshot_weight
+ */
+function getApprovalFloorBps(
+  typeKey: string,
+  payload: Record<string, unknown> | undefined,
+): number | null {
+  if (typeKey === "EnableProposalType") return ENABLE_APPROVAL_FLOOR_BPS;
+  if (typeKey === "UpdateProposalConfig") {
+    const targetKey = String(payload?.target_type_key ?? "");
+    if (targetKey === "UpdateProposalConfig") return SELF_UPDATE_APPROVAL_FLOOR_BPS;
+  }
+  return null;
+}
+
 function statusVariant(
   status: string,
 ): "default" | "secondary" | "destructive" | "outline" {
@@ -104,6 +123,7 @@ function statusVariant(
 
 export function ProposalDetail() {
   const { proposalId, daoId } = useParams({ strict: false });
+  const navigate = useNavigate();
   const { data: proposal, isLoading } = useProposal(proposalId ?? "");
   const { data: daoSummary } = useDaoSummary(daoId ?? "");
   const { data: governance } = useGovernanceDetail(daoId ?? "");
@@ -115,6 +135,10 @@ export function ProposalDetail() {
   const hasVoted = proposal && address ? address in proposal.votesCast : false;
   const priorVote = proposal && address ? proposal.votesCast[address] : undefined;
   const isMember = governance?.members.some(m => m.address === address) ?? false;
+  const { data: proposerNameMap } = useCharacterNames(
+    proposal?.proposer ? [proposal.proposer] : [],
+  );
+  const proposerName = proposal ? (proposerNameMap?.get(proposal.proposer) ?? null) : null;
 
   async function handleVote(approve: boolean) {
     if (!proposal?.payloadType) {
@@ -275,6 +299,10 @@ export function ProposalDetail() {
           queryClient.invalidateQueries({ queryKey: cacheKeys.hierarchy(daoId) }),
           queryClient.invalidateQueries({ queryKey: cacheKeys.subdaos(daoId) }),
         ]);
+        navigate({
+          to: "/dao/$daoId/proposals",
+          params: { daoId },
+        });
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Execution failed");
@@ -314,15 +342,80 @@ export function ProposalDetail() {
   const participationBps = totalWeight > 0
     ? Math.round((totalVotes / totalWeight) * 10000)
     : 0;
-  const quorumProgress = proposal.quorum > 0
-    ? Math.min((participationBps / proposal.quorum) * 100, 100)
-    : 100;
+  const yesAbsolute = totalWeight > 0 ? (proposal.yesWeight / totalWeight) * 100 : 0;
+  const noAbsolute = totalWeight > 0 ? (proposal.noWeight / totalWeight) * 100 : 0;
+
+  // For types with a hardcoded execution floor, derive display threshold and floor check.
+  // The floor is: yes_weight / total_snapshot_weight >= floor_bps / 10000
+  const floorBps = getApprovalFloorBps(proposal.typeKey, proposal.payload);
+  const effectiveThresholdBps =
+    floorBps !== null
+      ? Math.max(proposal.approvalThreshold, floorBps)
+      : proposal.approvalThreshold;
+  // approvalLinePercent: position of the threshold line on the 0–100% bar.
+  // For floor-gated types the floor is expressed vs total_snapshot_weight (same denominator
+  // as the bar), so floorBps / 100 is the correct bar position.
+  const approvalLinePercent = effectiveThresholdBps / 100;
+  const floorMet =
+    floorBps === null
+      ? true
+      : proposal.totalSnapshotWeight > 0
+        ? proposal.yesWeight * 10_000 >= proposal.totalSnapshotWeight * floorBps
+        : proposal.yesWeight > 0;
+
   const expiryTimestamp = proposal.createdMs + proposal.expiryMs;
   const executableAt = expiryTimestamp + proposal.executionDelayMs;
   const canExecute = Date.now() >= executableAt;
+  const isExpired = Date.now() >= expiryTimestamp;
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      {/* Full-width vote progress bar */}
+      <div className="lg:col-span-3">
+        <Card>
+          <CardContent className="pt-4 pb-4">
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="font-medium text-blue-500">
+                  Yes &mdash; {proposal.yesWeight}{" "}
+                  <span className="font-normal text-muted-foreground">({yesPercent.toFixed(1)}%)</span>
+                </span>
+                <span className="text-xs text-muted-foreground self-center">
+                  {formatBps(participationBps)} participated{" "}
+                  {floorBps !== null ? (
+                    <>&middot; Voting: {formatBps(proposal.approvalThreshold)} &middot; Exec floor: {formatBps(floorBps)}</>
+                  ) : (
+                    <>&middot; Threshold: {formatBps(proposal.approvalThreshold)}</>
+                  )}
+                </span>
+                <span className="font-medium text-red-500">
+                  No &mdash; {proposal.noWeight}{" "}
+                  <span className="font-normal text-muted-foreground">({noPercent.toFixed(1)}%)</span>
+                </span>
+              </div>
+              <div className="relative h-3 w-full">
+                <div className="absolute inset-0 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="absolute left-0 top-0 h-full bg-blue-500 transition-all"
+                    style={{ width: `${yesAbsolute}%` }}
+                  />
+                  <div
+                    className="absolute top-0 h-full bg-red-500 transition-all"
+                    style={{ left: `${yesAbsolute}%`, width: `${noAbsolute}%` }}
+                  />
+                </div>
+                {approvalLinePercent > 0 && (
+                  <div
+                    className={`absolute z-10 w-0.5 -top-1 -bottom-1 rounded-sm ${floorBps !== null ? "bg-amber-400/90" : "bg-white/80"}`}
+                    style={{ left: `${Math.min(approvalLinePercent, 99.5)}%` }}
+                  />
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Left: content */}
       <div className="space-y-4 lg:col-span-2">
         <Card>
@@ -333,15 +426,23 @@ export function ProposalDetail() {
                   {typeDef?.label ?? proposal.typeKey}
                 </CardTitle>
                 <CardDescription>
-                  Proposed by {truncAddr(proposal.proposer)}
+                  Proposed by {proposerName ?? getAddressName(proposal.proposer)}
                 </CardDescription>
               </div>
-              <Badge variant={statusVariant(proposal.status)}>
+              <Badge
+                variant={statusVariant(proposal.status)}
+                className={floorBps !== null && !floorMet && proposal.status === "passed" ? "border-amber-500 text-amber-500" : ""}
+              >
                 {proposal.status}
               </Badge>
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
+            {proposal.metadataIpfs && (
+                <h5 className="text-md">
+                  {proposal.metadataIpfs}
+                </h5>
+            )}
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <span className="text-muted-foreground">Created:</span>{" "}
@@ -359,6 +460,15 @@ export function ProposalDetail() {
                 <span className="text-muted-foreground">Threshold:</span>{" "}
                 {formatBps(proposal.approvalThreshold)}
               </div>
+              {floorBps !== null && (
+                <div>
+                  <span className="text-muted-foreground">Exec floor:</span>{" "}
+                  {formatBps(floorBps)}
+                  {!floorMet && (
+                    <span className="text-amber-500 text-xs">{" "}(not met)</span>
+                  )}
+                </div>
+              )}
             </div>
             {proposal.status === "active" && (
               <div>
@@ -376,14 +486,6 @@ export function ProposalDetail() {
                 <Countdown targetMs={executableAt} />
               </div>
             )}
-            {proposal.metadataIpfs && (
-              <div className="text-sm">
-                <span className="text-muted-foreground">Metadata:</span>{" "}
-                <span className="font-mono text-xs">
-                  {proposal.metadataIpfs}
-                </span>
-              </div>
-            )}
           </CardContent>
         </Card>
 
@@ -399,42 +501,11 @@ export function ProposalDetail() {
             <CardTitle className="text-base">Votes</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div>
-              <div className="mb-1 flex justify-between text-sm">
-                <span>Yes</span>
-                <span className="font-mono">
-                  {proposal.yesWeight} ({yesPercent.toFixed(1)}%)
-                </span>
-              </div>
-              <Progress value={yesPercent} className="h-2" />
-            </div>
-            <div>
-              <div className="mb-1 flex justify-between text-sm">
-                <span>No</span>
-                <span className="font-mono">
-                  {proposal.noWeight} ({noPercent.toFixed(1)}%)
-                </span>
-              </div>
-              <Progress value={noPercent} className="h-2" />
-            </div>
-
-            <Separator />
-
-            <div>
-              <div className="mb-1 flex justify-between text-sm">
-                <span>Quorum</span>
-                <span className="font-mono">
-                  {participationBps} / {proposal.quorum} bps
-                </span>
-              </div>
-              <Progress value={quorumProgress} className="h-2" />
-            </div>
-
             <Separator />
 
             {proposal.status === "active" && hasVoted && (
               <div className="text-muted-foreground text-center text-sm">
-                You voted {priorVote ? "Yes" : "No"}
+                You voted `{priorVote ? "Yes" : "No"}`
               </div>
             )}
 
@@ -467,6 +538,18 @@ export function ProposalDetail() {
 
             {proposal.status === "passed" && (
               <>
+                {floorBps !== null && !floorMet && (
+                  <div className="space-y-1 text-center">
+                    <p className="text-xs text-amber-500">
+                      Execution requires {formatBps(floorBps)} of total voting weight (floor).
+                      Current yes votes ({formatBps(Math.round((proposal.yesWeight * 10_000) / Math.max(proposal.totalSnapshotWeight, 1)))}) do not meet this threshold.
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      The proposal passed its voting threshold and is now closed to new votes.
+                      It cannot be executed until the floor is met — a new proposal may be needed.
+                    </p>
+                  </div>
+                )}
                 {!canExecute && proposal.executionDelayMs > 0 ? (
                   <div className="text-center">
                     <Button className="w-full" disabled>
@@ -493,7 +576,7 @@ export function ProposalDetail() {
               </>
             )}
 
-            {proposal.status === "active" && (
+            {proposal.status === "active" && isExpired && (
               <Button
                 variant="outline"
                 className="w-full"

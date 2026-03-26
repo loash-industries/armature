@@ -185,6 +185,8 @@ export interface ProposalSummary {
   status: "active" | "passed" | "executed" | "expired";
   yesWeight: number;
   noWeight: number;
+  /** Snapshot of total governance weight at proposal creation — used for quorum/threshold checks. */
+  totalSnapshotWeight: number;
   quorum: number;
   approvalThreshold: number;
   createdMs: number;

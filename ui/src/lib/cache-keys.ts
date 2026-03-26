@@ -16,4 +16,10 @@ export const cacheKeys = {
   ownedDaos: (address: string) => ["ownedDaos", address] as const,
   events: (module: string, cursor?: string) =>
     ["events", module, cursor] as const,
+  coinMetadata: (coinType: string) => ["coinMetadata", coinType] as const,
+  characterNames: (addresses: string[]) =>
+    ["characterNames", ...addresses.slice().sort()] as const,
+  /** Live relay event streams — written by useRelayEvents, read with useQuery. */
+  relayFramework: (daoId: string) => ["relay", "framework", daoId] as const,
+  relayProposals: (daoId: string) => ["relay", "proposals", daoId] as const,
 };

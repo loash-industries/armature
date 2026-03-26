@@ -1,6 +1,5 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button } from "@/components/ui/button";
 import {
   Form,
   FormField,
@@ -20,18 +19,21 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { sendCoinToDAOSchema } from "@/lib/schemas";
 import { useTreasuryBalances, useDaoSummary } from "@/hooks/useDao";
+import { SubmitProposalButton } from "@/components/proposals/SubmitProposalButton";
 import type { SendCoinToDAOPayload } from "@/types/proposal";
 
 interface SendCoinToDAOFormProps {
   daoId: string;
   isPending?: boolean;
   onSubmit: (data: SendCoinToDAOPayload) => void;
+  onSubmitAndVote?: (data: SendCoinToDAOPayload) => void;
 }
 
 export function SendCoinToDAOForm({
   daoId,
   isPending,
   onSubmit,
+  onSubmitAndVote,
 }: SendCoinToDAOFormProps) {
   const { data: dao } = useDaoSummary(daoId);
   const { data: balances } = useTreasuryBalances(dao?.treasuryId);
@@ -132,9 +134,14 @@ export function SendCoinToDAOForm({
           )}
         />
 
-        <Button type="submit" disabled={isPending}>
-          {isPending ? "Submitting..." : "Create Proposal"}
-        </Button>
+        <SubmitProposalButton
+          isPending={isPending}
+          onSubmit={() => form.handleSubmit((data) => onSubmit(data))()}
+          onSubmitAndVote={() => form.handleSubmit((data) => {
+            if (onSubmitAndVote) onSubmitAndVote(data);
+            else onSubmit(data);
+          })()}
+        />
       </form>
     </Form>
   );

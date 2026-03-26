@@ -1,5 +1,5 @@
 import { useParams } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -39,17 +40,44 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   useDaoSummary,
-  useTreasuryBalances,
   useTreasuryEvents,
+  useCoinMetadataMap,
 } from "@/hooks/useDao";
+import { useLiveTreasury } from "@/hooks/useLiveTreasury";
+import { useLiveCoinTransfers } from "@/hooks/useLiveCoinTransfers";
+import type { TreasuryRelayEvent } from "@/hooks/useFrameworkRelay";
+import type { CoinTransferEvent } from "@/hooks/useLiveCoinTransfers";
 import { useWalletSigner } from "@/hooks/useWalletSigner";
 import { useWalletCoins } from "@/hooks/useWalletCoins";
-import { buildDeposit } from "@/lib/transactions";
+import { getAddressName } from "@/lib/address-namer";
+import { AddressName } from "@/components/AddressName";
+import { buildSplitAndDeposit } from "@/lib/transactions";
 import { cacheKeys } from "@/lib/cache-keys";
 
-function formatBalance(raw: bigint): string {
-  const sui = Number(raw) / 1_000_000_000;
-  return sui.toLocaleString(undefined, {
+function CoinIcon({ iconUrl, symbol }: { iconUrl: string | null; symbol: string }) {
+  const [imgError, setImgError] = useState(false);
+  if (iconUrl && !imgError) {
+    return (
+      <img
+        src={iconUrl}
+        alt={symbol}
+        className="h-5 w-5 rounded-full object-cover"
+        onError={() => {
+          setImgError(true);
+        }}
+      />
+    );
+  }
+  return (
+    <div className="bg-muted text-muted-foreground flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold uppercase">
+      {symbol.slice(0, 2)}
+    </div>
+  );
+}
+
+function formatBalance(raw: bigint, decimals = 9): string {
+  const val = Number(raw) / Math.pow(10, decimals);
+  return val.toLocaleString(undefined, {
     minimumFractionDigits: 0,
     maximumFractionDigits: 4,
   });
@@ -72,35 +100,311 @@ function timeAgo(timestampMs: number): string {
   return `${days}d ago`;
 }
 
+// ─── Ticking clock ───────────────────────────────────────────────────────────
+
+/** Re-renders the calling component every second so relative timestamps stay current. */
+function useNow() {
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
+  return now
+}
+
+// ─── Live Activity ────────────────────────────────────────────────────────────
+
+type LiveRow = {
+  key: string;
+  badge: string;
+  description: string;
+  timestamp: number;
+  /** True for rows that arrived via relay since page load, false for RPC history. */
+  live: boolean;
+  /** Flow direction for ingress / egress display. */
+  direction: 'ingress' | 'egress';
+  /** Fully-qualified coin type (e.g. "0x2::sui::SUI"). */
+  coinType?: string;
+  /** Raw amount string (smallest unit). */
+  amount?: string;
+  /** Counterparty address (depositor for ingress, recipient for egress). */
+  counterparty?: string;
+};
+
+function buildLiveRows(
+  relayFeed: TreasuryRelayEvent[],
+  coinTransfers: CoinTransferEvent[],
+  metadataMap: Record<string, { symbol?: string; decimals?: number }> | undefined,
+  treasuryId: string,
+): LiveRow[] {
+  function coinLabel(coinType: string) {
+    return metadataMap?.[coinType]?.symbol ?? shortCoinType(coinType);
+  }
+  function decimals(coinType: string) {
+    return metadataMap?.[coinType]?.decimals ?? 9;
+  }
+
+  const frameworkRows: LiveRow[] = relayFeed.map((e) => ({
+    key: `fw-${e.timestamp}-${e.coinType}-${e.kind}`,
+    badge:
+      e.kind === "deposited"
+        ? "Deposit"
+        : e.kind === "withdrawn"
+          ? "Withdrawal"
+          : "Claim",
+    description: `${formatBalance(e.amount, decimals(e.coinType))} ${coinLabel(e.coinType)} by ${getAddressName(e.actor)}`,
+
+    timestamp: e.timestamp,
+    live: true,
+    direction: e.kind === "withdrawn" ? "egress" : "ingress",
+    coinType: e.coinType,
+    amount: e.amount.toString(),
+    counterparty: e.actor,
+  }));
+
+  const relevantTransfers = coinTransfers.filter((e) =>
+    e.direction === "inbound"
+      ? e.toOwner === treasuryId
+      : e.fromOwner === treasuryId,
+  );
+
+  const transferRows: LiveRow[] = relevantTransfers.map((e) => ({
+    key: `xfer-${e.txDigest}-${e.objectId}`,
+    badge: e.direction === "inbound" ? "Received" : "Sent",
+    description:
+      e.direction === "inbound"
+        ? `${formatBalance(BigInt(e.amount), decimals(e.coinType))} ${coinLabel(e.coinType)} from ${getAddressName(e.fromOwner ?? e.sender)}`
+        : `${formatBalance(BigInt(e.amount), decimals(e.coinType))} ${coinLabel(e.coinType)} to ${getAddressName(e.toOwner)}`,
+
+    timestamp: e.timestamp,
+    live: true,
+    direction: e.direction === "inbound" ? "ingress" : "egress",
+    coinType: e.coinType,
+    amount: e.amount,
+    counterparty: e.direction === "inbound" ? (e.fromOwner ?? e.sender) : e.toOwner,
+  }));
+
+  return [...frameworkRows, ...transferRows].sort(
+    (a, b) => b.timestamp - a.timestamp,
+  );
+}
+
+function LiveActivitySection({
+  relayFeed,
+  coinTransfers,
+  metadataMap,
+  treasuryId,
+  daoId,
+}: {
+  relayFeed: TreasuryRelayEvent[];
+  coinTransfers: CoinTransferEvent[];
+  metadataMap: Record<string, { symbol?: string; decimals?: number }> | undefined;
+  treasuryId: string;
+  daoId: string;
+}) {
+  useNow(); // drives 1s re-renders so timeAgo() stays current — scoped here, not the whole page
+  const { data: events, isLoading: historyLoading } = useTreasuryEvents(daoId);
+
+  const liveRows = buildLiveRows(relayFeed, coinTransfers, metadataMap, treasuryId);
+
+  // Only surface relay rows that are newer than the most recent historical event.
+  // Once React Query refetches (triggered by relay invalidation) the historical
+  // list will catch up and the relay rows drop out automatically.
+  const mostRecentHistoricalTs = events?.[0]?.timestampMs ?? 0;
+  const newLiveRows = liveRows.filter((r) => r.timestamp > mostRecentHistoricalTs);
+
+  const EGRESS_EVENTS = new Set(["CoinWithdrawn", "CoinSent", "CoinSentToDAO", "SmallPaymentSent"]);
+
+  const historicalRows: LiveRow[] = (events ?? []).map((e) => ({
+    key: `hist-${e.txDigest}-${e.eventType}`,
+    badge: e.label,
+    description: e.description,
+    timestamp: e.timestampMs,
+    live: false,
+    direction: EGRESS_EVENTS.has(e.eventType) ? "egress" as const : "ingress" as const,
+    coinType: e.coinType,
+    amount: e.coinAmount,
+    counterparty: e.actor ?? e.recipient,
+  }));
+
+  const allRows = [...newLiveRows, ...historicalRows].sort(
+    (a, b) => b.timestamp - a.timestamp,
+  );
+
+  if (historyLoading && allRows.length === 0) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-6 w-full" />
+        ))}
+      </div>
+    );
+  }
+
+  if (allRows.length === 0) {
+    return (
+      <p className="text-muted-foreground text-sm">No treasury transactions yet.</p>
+    );
+  }
+
+  const hasLive = newLiveRows.length > 0;
+
+  return (
+    <div className="space-y-2">
+      {hasLive && (
+        <div className="mb-1 flex items-center gap-1.5">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
+          </span>
+          <span className="text-xs font-medium text-green-600">Live</span>
+        </div>
+      )}
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-10" />
+            <TableHead>Type</TableHead>
+            <TableHead>Coin</TableHead>
+            <TableHead className="text-right">Amount</TableHead>
+            <TableHead>Counterparty</TableHead>
+            <TableHead className="text-right">Time</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {allRows.map((row) => {
+            const isIngress = row.direction === "ingress";
+            const meta = row.coinType ? metadataMap?.[row.coinType] : undefined;
+            const symbol = row.coinType
+              ? (meta?.symbol ?? shortCoinType(row.coinType))
+              : undefined;
+            const dec = meta?.decimals ?? 9;
+            return (
+              <TableRow key={row.key}>
+                <TableCell className="text-center">
+                  <span
+                    className={isIngress ? "text-green-600" : "text-red-500"}
+                    title={isIngress ? "Ingress" : "Egress"}
+                  >
+                    {isIngress ? "\u2193" : "\u2191"}
+                  </span>
+                </TableCell>
+                <TableCell>
+                  <Badge variant={row.live ? "secondary" : "outline"}>
+                    {row.badge}
+                  </Badge>
+                </TableCell>
+                <TableCell className="font-mono text-xs">
+                  {symbol ?? "—"}
+                </TableCell>
+                <TableCell
+                  className={`text-right font-mono ${
+                    isIngress ? "text-green-600" : "text-red-500"
+                  }`}
+                >
+                  {row.amount
+                    ? `${isIngress ? "+" : "\u2212"}${formatBalance(BigInt(row.amount), dec)}`
+                    : "—"}
+                </TableCell>
+                <TableCell className="font-mono text-xs">
+                  {row.counterparty ? <AddressName address={row.counterparty} /> : "—"}
+                </TableCell>
+                <TableCell className="text-muted-foreground text-right text-xs whitespace-nowrap">
+                  {row.timestamp > 0 ? timeAgo(row.timestamp) : "—"}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export function TreasuryPage() {
   const { daoId } = useParams({ strict: false });
   const { data: dao, isError: daoError } = useDaoSummary(daoId ?? "");
-  const { data: balances, isLoading: balancesLoading } = useTreasuryBalances(
-    dao?.treasuryId,
-  );
-  const { data: events, isLoading: eventsLoading } = useTreasuryEvents(
-    daoId ?? "",
-  );
+  const {
+    data: balances,
+    isLoading: balancesLoading,
+    feed: relayFeed,
+  } = useLiveTreasury(dao?.treasuryId);
+  const coinTransfers = useLiveCoinTransfers(dao?.treasuryId);
+  const { data: treasuryEvents } = useTreasuryEvents(daoId ?? "");
+
+  // Stabilise the coin-types array identity so useCoinMetadataMap doesn't
+  // recompute its query key (and potentially refetch) on every render.
+  const coinTypes = useMemo(() => {
+    const set = new Set<string>();
+    for (const b of balances ?? []) set.add(b.coinType);
+    for (const e of relayFeed) set.add(e.coinType);
+    for (const e of coinTransfers.feed) set.add(e.coinType);
+    for (const e of treasuryEvents ?? []) if (e.coinType) set.add(e.coinType);
+    return [...set];
+  }, [balances, relayFeed, coinTransfers.feed, treasuryEvents]);
+  const { data: metadataMap } = useCoinMetadataMap(coinTypes);
   const { address, signAndExecuteTransaction } = useWalletSigner();
   const { data: walletCoins } = useWalletCoins();
   const client = useSuiClient();
   const queryClient = useQueryClient();
   const [depositOpen, setDepositOpen] = useState(false);
-  const [selectedCoin, setSelectedCoin] = useState("");
+  const [selectedCoinType, setSelectedCoinType] = useState("");
+  const [depositAmount, setDepositAmount] = useState("");
   const [depositPending, setDepositPending] = useState(false);
 
-  const selectedCoinObj = walletCoins?.find(
-    (c) => c.coinObjectId === selectedCoin,
-  );
+  // Aggregate wallet coin objects by coin type so users see a single balance per token.
+  const aggregatedCoins = useMemo(() => {
+    if (!walletCoins) return [];
+    const map = new Map<string, { coinType: string; totalBalance: bigint; objectIds: string[] }>();
+    for (const c of walletCoins) {
+      const existing = map.get(c.coinType);
+      if (existing) {
+        existing.totalBalance += c.balance;
+        existing.objectIds.push(c.coinObjectId);
+      } else {
+        map.set(c.coinType, {
+          coinType: c.coinType,
+          totalBalance: c.balance,
+          objectIds: [c.coinObjectId],
+        });
+      }
+    }
+    return [...map.values()];
+  }, [walletCoins]);
+
+  const selectedGroup = aggregatedCoins.find((c) => c.coinType === selectedCoinType);
+  const selectedMeta = selectedCoinType ? metadataMap?.[selectedCoinType] : undefined;
+  const selectedSymbol = selectedMeta?.symbol ?? (selectedCoinType ? shortCoinType(selectedCoinType) : "");
+  const selectedDecimals = selectedMeta?.decimals ?? 9;
 
   async function handleDeposit() {
-    if (!dao || !selectedCoin || !selectedCoinObj) return;
+    if (!dao || !selectedCoinType || !selectedGroup) return;
     setDepositPending(true);
+
+    let amount: bigint | undefined;
+    const trimmed = depositAmount.trim();
+    if (trimmed) {
+      const parsed = parseFloat(trimmed);
+      if (isNaN(parsed) || parsed <= 0) {
+        toast.error("Invalid amount");
+        setDepositPending(false);
+        return;
+      }
+      const rawAmount = BigInt(Math.round(parsed * Math.pow(10, selectedDecimals)));
+      // Only split if the requested amount is strictly less than the total balance.
+      if (rawAmount < selectedGroup.totalBalance) {
+        amount = rawAmount;
+      }
+    }
+
     try {
-      const transaction = buildDeposit({
+      const transaction = buildSplitAndDeposit({
         treasuryId: dao.treasuryId,
-        coinObjectId: selectedCoin,
-        coinType: selectedCoinObj.coinType,
+        coinObjectIds: selectedGroup.objectIds,
+        coinType: selectedCoinType,
+        amount,
       });
       const result = await signAndExecuteTransaction({ transaction });
       toast.success("Deposit successful");
@@ -109,7 +413,8 @@ export function TreasuryPage() {
         queryKey: cacheKeys.dao(daoId ?? ""),
       });
       setDepositOpen(false);
-      setSelectedCoin("");
+      setSelectedCoinType("");
+      setDepositAmount("");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Deposit failed");
     } finally {
@@ -162,16 +467,27 @@ export function TreasuryPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {balances.map((b) => (
-                  <TableRow key={b.coinType}>
-                    <TableCell className="font-mono">
-                      {shortCoinType(b.coinType)}
-                    </TableCell>
-                    <TableCell className="text-right font-mono">
-                      {formatBalance(b.balance)}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {balances.map((b) => {
+                  const meta = metadataMap?.[b.coinType];
+                  const symbol = meta?.symbol ?? shortCoinType(b.coinType);
+                  const decimals = meta?.decimals ?? 9;
+                  return (
+                    <TableRow key={b.coinType}>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <CoinIcon iconUrl={meta?.iconUrl ?? null} symbol={symbol} />
+                          <span className="font-mono">{symbol}</span>
+                          {meta?.name && meta.name !== symbol && (
+                            <span className="text-muted-foreground text-xs">{meta.name}</span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right font-mono">
+                        {formatBalance(b.balance, decimals)}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           ) : (
@@ -187,36 +503,20 @@ export function TreasuryPage() {
           <CardTitle>Transaction History</CardTitle>
         </CardHeader>
         <CardContent>
-          {eventsLoading ? (
-            <div className="space-y-3">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-6 w-full" />
-              ))}
-            </div>
-          ) : events && events.length > 0 ? (
-            <div className="space-y-3">
-              {events.map((ev) => (
-                <div
-                  key={`${ev.txDigest}-${ev.eventType}`}
-                  className="flex items-center gap-3 text-sm"
-                >
-                  <Badge variant="outline">{ev.label}</Badge>
-                  <span className="flex-1 truncate">{ev.description}</span>
-                  <span className="text-muted-foreground whitespace-nowrap text-xs">
-                    {ev.timestampMs > 0 ? timeAgo(ev.timestampMs) : "—"}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-muted-foreground text-sm">
-              No treasury transactions yet.
-            </p>
-          )}
+          <LiveActivitySection
+            relayFeed={relayFeed}
+            coinTransfers={coinTransfers.feed}
+            metadataMap={metadataMap}
+            treasuryId={dao?.treasuryId ?? ""}
+            daoId={daoId ?? ""}
+          />
         </CardContent>
       </Card>
 
-      <Dialog open={depositOpen} onOpenChange={setDepositOpen}>
+      <Dialog open={depositOpen} onOpenChange={(open) => {
+        setDepositOpen(open);
+        if (!open) { setSelectedCoinType(""); setDepositAmount(""); }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Deposit to Treasury</DialogTitle>
@@ -227,31 +527,73 @@ export function TreasuryPage() {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Coin to Deposit</Label>
-              <Select value={selectedCoin} onValueChange={(v) => setSelectedCoin(v ?? "")}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a coin..." />
+              <Select
+                value={selectedCoinType}
+                onValueChange={(v) => {
+                  setSelectedCoinType(v ?? "");
+                  setDepositAmount("");
+                }}
+              >
+                <SelectTrigger className="w-full overflow-hidden">
+                  <SelectValue placeholder="Select a coin..." className="truncate" />
                 </SelectTrigger>
                 <SelectContent>
-                  {walletCoins?.map((c) => (
-                    <SelectItem key={c.coinObjectId} value={c.coinObjectId}>
-                      {shortCoinType(c.coinType)} — {formatBalance(c.balance)}
-                    </SelectItem>
-                  ))}
+                  {aggregatedCoins.map((c) => {
+                    const meta = metadataMap?.[c.coinType];
+                    const sym = meta?.symbol ?? shortCoinType(c.coinType);
+                    const dec = meta?.decimals ?? 9;
+                    return (
+                      <SelectItem key={c.coinType} value={c.coinType}>
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className="font-mono">{sym}</span>
+                          <span className="text-muted-foreground">—</span>
+                          <span className="truncate font-mono">{formatBalance(c.totalBalance, dec)}</span>
+                        </span>
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
-            {selectedCoinObj && (
-              <p className="text-sm">
-                <span className="text-muted-foreground">Amount:</span>{" "}
-                <span className="font-mono">
-                  {formatBalance(selectedCoinObj.balance)}{" "}
-                  {shortCoinType(selectedCoinObj.coinType)}
-                </span>
-              </p>
+            {selectedGroup && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Amount</Label>
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-foreground truncate text-xs"
+                    onClick={() => {
+                      const max = Number(selectedGroup.totalBalance) / Math.pow(10, selectedDecimals);
+                      setDepositAmount(String(max));
+                    }}
+                  >
+                    Max: <span className="font-mono">{formatBalance(selectedGroup.totalBalance, selectedDecimals)} {selectedSymbol}</span>
+                  </button>
+                </div>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    min="0"
+                    step="any"
+                    placeholder="0.0000"
+                    value={depositAmount}
+                    onChange={(e) => setDepositAmount(e.target.value)}
+                    className="pr-14"
+                  />
+                  <span className="text-muted-foreground pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 truncate font-mono text-xs">
+                    {selectedSymbol}
+                  </span>
+                </div>
+                {selectedGroup.objectIds.length > 1 && (
+                  <p className="text-muted-foreground text-xs">
+                    {selectedGroup.objectIds.length} objects will be merged.
+                  </p>
+                )}
+              </div>
             )}
             <Button
               className="w-full"
-              disabled={!selectedCoin || depositPending}
+              disabled={!selectedCoinType || depositPending}
               onClick={handleDeposit}
             >
               {depositPending ? "Depositing..." : "Deposit"}

@@ -36,12 +36,12 @@ export type GovernanceConfigFields =
     };
 
 export interface ProposalConfigFields {
-  quorum: string;
-  approval_threshold: string;
-  propose_threshold: string;
-  expiry_ms: string;
-  execution_delay_ms: string;
-  cooldown_ms: string;
+  quorum: number;           // u16 — arrives as number from Sui JSON-RPC
+  approval_threshold: number; // u16 — arrives as number from Sui JSON-RPC
+  propose_threshold: string;  // u64 — arrives as string
+  expiry_ms: string;          // u64
+  execution_delay_ms: string; // u64
+  cooldown_ms: string;        // u64
 }
 
 /** Parsed proposal type config for the Governance page. */
@@ -160,6 +160,7 @@ export interface CapabilityEntry {
 export interface TreasuryCoinBalance {
   coinType: string;
   balance: bigint;
+  decimals: number;
 }
 
 /** Parsed event for the activity feed. */
@@ -169,4 +170,18 @@ export interface ActivityEvent {
   label: string;
   description: string;
   timestampMs: number;
+  /** Address of the actor (voter, depositor, executor, proposer, etc.) */
+  actor?: string;
+  /** Fully-qualified coin type for treasury events */
+  coinType?: string;
+  /** Raw coin amount (smallest unit, as string) for treasury events */
+  coinAmount?: string;
+  /** Recipient address for send/withdraw events */
+  recipient?: string;
+  /** Whether the vote was an approval (VoteCast only) */
+  approve?: boolean;
+  /** Proposal type key or affected type key */
+  typeKey?: string;
+  /** Proposal object ID (for vote/proposal events) */
+  proposalId?: string;
 }

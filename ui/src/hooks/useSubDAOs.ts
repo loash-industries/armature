@@ -237,7 +237,7 @@ export function useDAOHierarchy(daoId: string, vaultId: string | undefined) {
       }
 
       // Get root's own child count from vault fields
-      let rootChildCount = children.length;
+      const rootChildCount = children.length;
 
       return {
         root: {

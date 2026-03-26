@@ -29,6 +29,7 @@ export function useWalletSigner() {
       localWallets: ctx.localWallets,
       activeWalletIndex: ctx.activeWalletIndex,
       setActiveWalletIndex: ctx.setActiveWalletIndex,
+      disconnectWallet: ctx.disconnectWallet,
     };
   }
 

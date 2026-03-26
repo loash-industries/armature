@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useSuiClient } from "@mysten/dapp-kit";
 import { cacheKeys } from "@/lib/cache-keys";
 import { getObject, getDynamicFields, queryEvents, unwrapMoveStruct } from "@/lib/sui-rpc";
-import { PACKAGE_ID, MODULES } from "@/config/constants";
+import { PACKAGE_ID, PROPOSALS_PACKAGE_ID, MODULES, PROPOSAL_MODULES } from "@/config/constants";
 import { ALL_PROPOSAL_TYPE_KEYS } from "@/config/proposal-types";
 import type {
   DaoFields,
@@ -95,64 +95,122 @@ export function useTreasuryBalances(treasuryId: string | undefined) {
 
       const fields = await getDynamicFields(client, treasuryId);
 
-      const balances: TreasuryCoinBalance[] = [];
-      for (const field of fields) {
-        const fieldObj = await client.getDynamicFieldObject({
-          parentId: treasuryId,
-          name: field.name,
-        });
-        const content = fieldObj.data?.content as
-          | { fields: { value: string }; dataType: "moveObject" }
-          | undefined;
-        if (content?.dataType === "moveObject") {
+      const results = await Promise.all(
+        fields.map(async (field) => {
+          const fieldObj = await client.getDynamicFieldObject({
+            parentId: treasuryId,
+            name: field.name,
+          });
+          const content = fieldObj.data?.content as
+            | { fields: { value: string }; dataType: "moveObject" }
+            | undefined;
+          if (content?.dataType !== "moveObject") return null;
           const coinType =
             typeof field.name.value === "string"
               ? field.name.value
               : String(field.name.value);
-          balances.push({
-            coinType,
-            balance: BigInt(content.fields.value),
-          });
-        }
-      }
+          return { coinType, balance: BigInt(content.fields.value), decimals: 6 };
+        }),
+      );
 
-      return balances;
+      return results.filter((b): b is TreasuryCoinBalance => b !== null);
     },
     enabled: !!treasuryId,
   });
 }
 
+export interface CoinMeta {
+  symbol: string;
+  name: string;
+  decimals: number;
+  iconUrl: string | null;
+}
+
+/** Fetch on-chain CoinMetadata for an array of coin types. */
+export function useCoinMetadataMap(coinTypes: string[]) {
+  const client = useSuiClient();
+  const key = coinTypes.slice().sort().join(",");
+
+  return useQuery({
+    queryKey: [...cacheKeys.coinMetadata(key)],
+    queryFn: async (): Promise<Record<string, CoinMeta>> => {
+      const entries = await Promise.all(
+        coinTypes.map(async (ct) => {
+          try {
+            const normalizedCt = ct.startsWith("0x") ? ct : `0x${ct}`;
+            const meta = await client.getCoinMetadata({ coinType: normalizedCt });
+            if (!meta) return [ct, null] as const;
+            return [
+              ct,
+              {
+                symbol: meta.symbol,
+                name: meta.name,
+                decimals: meta.decimals,
+                iconUrl: meta.iconUrl ?? null,
+              } satisfies CoinMeta,
+            ] as const;
+          } catch {
+            return [ct, null] as const;
+          }
+        }),
+      );
+      return Object.fromEntries(
+        entries.filter((e): e is [string, CoinMeta] => e[1] !== null),
+      );
+    },
+    enabled: coinTypes.length > 0,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/** Extract a Sui object ID string from parsedJson field (handles bare string or {id: "0x..."} wrapper). */
+function extractId(val: unknown): string | undefined {
+  if (typeof val === "string") return val;
+  if (val && typeof val === "object" && "id" in val) return String((val as { id: unknown }).id);
+  return undefined;
+}
+
 /** Fetch recent DAO events for the activity feed. */
-export function useDaoActivity(daoId: string, limit = 10) {
+export function useDaoActivity(daoId: string, treasuryId?: string, limit = 20) {
   const client = useSuiClient();
 
   return useQuery({
     queryKey: cacheKeys.events("dao-activity", daoId),
     queryFn: async (): Promise<ActivityEvent[]> => {
-      const modules = [
-        MODULES.dao,
-        MODULES.board_voting,
-        MODULES.treasury_vault,
-        MODULES.emergency,
+      const sources = [
+        { pkg: PACKAGE_ID, mod: MODULES.dao },
+        { pkg: PACKAGE_ID, mod: MODULES.proposal },
+        { pkg: PACKAGE_ID, mod: MODULES.treasury_vault },
+        { pkg: PACKAGE_ID, mod: MODULES.emergency },
+        { pkg: PROPOSALS_PACKAGE_ID, mod: PROPOSAL_MODULES.treasury_ops },
+        { pkg: PROPOSALS_PACKAGE_ID, mod: PROPOSAL_MODULES.security_ops },
+        { pkg: PROPOSALS_PACKAGE_ID, mod: PROPOSAL_MODULES.board_ops },
       ];
+
+      const matchIds = new Set([daoId]);
+      if (treasuryId) matchIds.add(treasuryId);
 
       const allEvents: ActivityEvent[] = [];
 
-      for (const mod of modules) {
+      for (const { pkg, mod } of sources) {
         try {
           const result = await queryEvents(
             client,
-            { MoveModule: { package: PACKAGE_ID, module: mod } },
+            { MoveModule: { package: pkg, module: mod } },
             undefined,
             limit,
           );
 
           for (const ev of result.data) {
             const parsed = ev.parsedJson as Record<string, unknown>;
-            const evDaoId =
-              (parsed.dao_id as string) ?? (parsed.vault_id as string);
+            const evDaoId = extractId(parsed.dao_id);
+            const evVaultId = extractId(parsed.vault_id);
 
-            if (evDaoId && evDaoId !== daoId) continue;
+            // Match if either dao_id or vault_id matches our DAO or treasury
+            const matches =
+              (evDaoId && matchIds.has(evDaoId)) ||
+              (evVaultId && matchIds.has(evVaultId));
+            if (!matches) continue;
 
             const typeParts = ev.type.split("::");
             const eventName = typeParts[typeParts.length - 1] ?? ev.type;
@@ -163,6 +221,7 @@ export function useDaoActivity(daoId: string, limit = 10) {
               label: eventLabel(eventName),
               description: eventDescription(eventName, parsed),
               timestampMs: Number(ev.timestampMs ?? 0),
+              ...extractEventFields(eventName, parsed),
             });
           }
         } catch {
@@ -288,10 +347,9 @@ export function useTreasuryEvents(daoId: string, limit = 20) {
         return result.data
           .filter((ev) => {
             const parsed = ev.parsedJson as Record<string, unknown>;
-            return (
-              (parsed.dao_id as string) === daoId ||
-              (parsed.vault_id as string) === daoId
-            );
+            const evDaoId = extractId(parsed.dao_id);
+            const evVaultId = extractId(parsed.vault_id);
+            return evDaoId === daoId || evVaultId === daoId;
           })
           .map((ev) => {
             const parsed = ev.parsedJson as Record<string, unknown>;
@@ -303,6 +361,7 @@ export function useTreasuryEvents(daoId: string, limit = 20) {
               label: eventLabel(eventName),
               description: eventDescription(eventName, parsed),
               timestampMs: Number(ev.timestampMs ?? 0),
+              ...extractEventFields(eventName, parsed),
             };
           });
       } catch {
@@ -365,19 +424,32 @@ export function useGovernanceConfig(daoId: string) {
 
 function eventLabel(eventName: string): string {
   const labels: Record<string, string> = {
-    DAOCreated: "Created",
-    ProposalCreated: "Proposal",
-    VoteCast: "Vote",
-    ProposalPassed: "Passed",
-    ProposalExecuted: "Executed",
-    ProposalExpired: "Expired",
-    TypeFrozen: "Frozen",
-    TypeUnfrozen: "Unfrozen",
-    CoinDeposited: "Deposited",
-    CoinWithdrawn: "Withdrawn",
-    CoinClaimed: "Claimed",
+    DAOCreated: "Charter",
+    DAODestroyed: "Charter",
+    ProposalCreated: "Proposals",
+    VoteCast: "Proposals",
+    ProposalPassed: "Proposals",
+    ProposalExecuted: "Proposals",
+    ProposalExpired: "Proposals",
+    TypeFrozen: "Emergency",
+    TypeUnfrozen: "Emergency",
+    FreezeAdminTransferred: "Emergency",
+    FreezeConfigUpdated: "Emergency",
+    FreezeExemptTypeAdded: "Emergency",
+    FreezeExemptTypeRemoved: "Emergency",
+    CoinDeposited: "Treasury",
+    CoinWithdrawn: "Treasury",
+    CoinClaimed: "Treasury",
+    CoinSent: "Treasury",
+    CoinSentToDAO: "Treasury",
+    SmallPaymentSent: "Treasury",
+    BoardUpdated: "Board",
+    MetadataUpdated: "Charter",
+    ProposalTypeEnabled: "Proposals",
+    ProposalTypeDisabled: "Proposals",
+    ProposalConfigUpdated: "Proposals",
   };
-  return labels[eventName] ?? eventName;
+  return labels[eventName] ?? "Proposals";
 }
 
 function eventDescription(
@@ -386,29 +458,120 @@ function eventDescription(
 ): string {
   switch (eventName) {
     case "ProposalCreated":
-      return `Proposal ${truncId(parsed.proposal_id)} created (${parsed.type_key ?? "unknown"})`;
+      return `Created ${parsed.type_key ?? "unknown"} proposal ${truncId(parsed.proposal_id)}`;
     case "VoteCast":
-      return `${truncId(parsed.voter)} voted ${parsed.approve ? "Yes" : "No"} (weight: ${parsed.weight})`;
+      return `Voted ${parsed.approve ? "Yes" : "No"} (weight: ${parsed.weight})`;
     case "ProposalPassed":
-      return `Proposal ${truncId(parsed.proposal_id)} passed (${parsed.yes_weight}/${parsed.no_weight})`;
+      return `Proposal ${truncId(parsed.proposal_id)} passed (${parsed.yes_weight} yes / ${parsed.no_weight} no)`;
     case "ProposalExecuted":
-      return `Proposal ${truncId(parsed.proposal_id)} executed by ${truncId(parsed.executor)}`;
+      return `Executed proposal ${truncId(parsed.proposal_id)}`;
     case "ProposalExpired":
       return `Proposal ${truncId(parsed.proposal_id)} expired`;
     case "TypeFrozen":
-      return `Type "${parsed.type_key}" frozen`;
+      return `Froze ${parsed.type_key}`;
     case "TypeUnfrozen":
-      return `Type "${parsed.type_key}" unfrozen`;
+      return `Unfroze ${parsed.type_key}`;
+    case "FreezeAdminTransferred":
+      return `Freeze admin transferred to ${truncId(parsed.new_admin)}`;
+    case "FreezeConfigUpdated":
+      return `Freeze config updated`;
     case "CoinDeposited":
-      return `${parsed.amount} deposited by ${truncId(parsed.depositor)}`;
+      return `Deposited coins`;
     case "CoinWithdrawn":
-      return `${parsed.amount} withdrawn to ${truncId(parsed.recipient)}`;
+      return `Withdrew coins`;
     case "CoinClaimed":
-      return `${parsed.amount} claimed by ${truncId(parsed.claimer)}`;
+      return `Claimed coins`;
+    case "CoinSent":
+      return `Sent coins to ${truncId(parsed.recipient)}`;
+    case "CoinSentToDAO":
+      return `Sent coins to DAO treasury ${truncId(parsed.target_treasury)}`;
+    case "SmallPaymentSent":
+      return `Small payment sent to ${truncId(parsed.recipient)}`;
+    case "BoardUpdated":
+      return `Board membership updated`;
     case "DAOCreated":
-      return `DAO created by ${truncId(parsed.creator)}`;
+      return `DAO created`;
+    case "DAODestroyed":
+      return `DAO destroyed`;
+    case "MetadataUpdated":
+      return `Metadata updated`;
+    case "ProposalTypeEnabled":
+      return `Enabled proposal type ${parsed.type_key}`;
+    case "ProposalTypeDisabled":
+      return `Disabled proposal type ${parsed.type_key}`;
+    case "ProposalConfigUpdated":
+      return `Updated config for ${parsed.target_type_key}`;
     default:
       return eventName;
+  }
+}
+
+/** Extract structured fields from event data for rich rendering. */
+function extractEventFields(
+  eventName: string,
+  parsed: Record<string, unknown>,
+): Partial<ActivityEvent> {
+  switch (eventName) {
+    case "VoteCast":
+      return {
+        actor: parsed.voter as string,
+        approve: parsed.approve as boolean,
+        proposalId: parsed.proposal_id as string,
+      };
+    case "ProposalCreated":
+      return {
+        actor: parsed.proposer as string,
+        typeKey: parsed.type_key as string,
+      };
+    case "ProposalExecuted":
+      return { actor: parsed.executor as string };
+    case "TypeFrozen":
+    case "TypeUnfrozen":
+      return { typeKey: parsed.type_key as string };
+    case "CoinDeposited":
+      return {
+        actor: parsed.depositor as string,
+        coinType: parsed.coin_type as string,
+        coinAmount: String(parsed.amount ?? "0"),
+      };
+    case "CoinWithdrawn":
+      return {
+        recipient: parsed.recipient as string,
+        coinType: parsed.coin_type as string,
+        coinAmount: String(parsed.amount ?? "0"),
+      };
+    case "CoinClaimed":
+      return {
+        actor: parsed.claimer as string,
+        coinType: parsed.coin_type as string,
+        coinAmount: String(parsed.amount ?? "0"),
+      };
+    case "CoinSent":
+      return {
+        recipient: parsed.recipient as string,
+        coinType: parsed.coin_type as string,
+        coinAmount: String(parsed.amount ?? "0"),
+      };
+    case "CoinSentToDAO":
+      return {
+        recipient: parsed.target_treasury as string,
+        coinType: parsed.coin_type as string,
+        coinAmount: String(parsed.amount ?? "0"),
+      };
+    case "SmallPaymentSent":
+      return {
+        recipient: parsed.recipient as string,
+        coinType: parsed.coin_type as string,
+        coinAmount: String(parsed.amount ?? "0"),
+      };
+    case "DAOCreated":
+      return { actor: parsed.creator as string };
+    case "BoardUpdated":
+      return {};
+    case "FreezeAdminTransferred":
+      return { recipient: parsed.new_admin as string };
+    default:
+      return {};
   }
 }
 

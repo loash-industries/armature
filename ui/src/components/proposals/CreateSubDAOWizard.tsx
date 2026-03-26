@@ -23,12 +23,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { createSubDAOSchema } from "@/lib/schemas";
 import { ALL_PROPOSAL_TYPE_KEYS, PROPOSAL_TYPE_MAP } from "@/config/proposal-types";
+import { SubmitProposalButton } from "./SubmitProposalButton";
 import type { CreateSubDAOPayload, ProposalConfigInput } from "@/types/proposal";
 
 interface CreateSubDAOWizardProps {
   daoId: string;
   isPending?: boolean;
   onSubmit: (data: CreateSubDAOPayload) => void;
+  onSubmitAndVote?: (data: CreateSubDAOPayload) => void;
 }
 
 const STEPS = [
@@ -58,6 +60,7 @@ const AVAILABLE_TYPES = ALL_PROPOSAL_TYPE_KEYS.filter(
 export function CreateSubDAOWizard({
   isPending,
   onSubmit,
+  onSubmitAndVote,
 }: CreateSubDAOWizardProps) {
   const [step, setStep] = useState(0);
 
@@ -374,9 +377,15 @@ export function CreateSubDAOWizard({
               Next
             </Button>
           ) : (
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Submitting..." : "Create SubDAO Proposal"}
-            </Button>
+            <SubmitProposalButton
+              isPending={isPending}
+              onSubmit={() => form.handleSubmit((data) => onSubmit(data as CreateSubDAOPayload))()}
+              onSubmitAndVote={() => form.handleSubmit((data) => {
+                const d = data as CreateSubDAOPayload;
+                if (onSubmitAndVote) onSubmitAndVote(d);
+                else onSubmit(d);
+              })()}
+            />
           )}
         </div>
       </form>

@@ -6,24 +6,17 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { WalletStatus } from "@/components/WalletStatus";
 import { Plus } from "lucide-react";
+import { useWalletSigner } from "@/hooks/useWalletSigner";
+import { useWalletDaos } from "@/hooks/useWalletDaos";
 
 const suiAddressRegex = /^0x[a-fA-F0-9]{64}$/;
-
-interface DaoEntry {
-  daoId: string;
-  name: string;
-  treasury: string;
-  memberCount: number;
-  activeProposals: number;
-}
 
 export function DaoPickerPage() {
   const navigate = useNavigate();
   const [browseAddress, setBrowseAddress] = useState("");
-
-  // TODO: Replace with real query — fetch DAOs the connected wallet is a member of
-  const daos: DaoEntry[] = [];
-
+  const { address } = useWalletSigner();
+  const { data: daos = [] } = useWalletDaos(address);
+  console.log('[daos]:', daos)
   function handleBrowse() {
     const trimmed = browseAddress.trim();
     if (suiAddressRegex.test(trimmed)) {
@@ -49,7 +42,7 @@ export function DaoPickerPage() {
         <Card className="w-full max-w-sm">
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>Create DAO</CardTitle>
+              <CardTitle>Create Organization</CardTitle>
               <Button
                 variant="ghost"
                 size="icon"
@@ -62,7 +55,7 @@ export function DaoPickerPage() {
           <CardContent className="space-y-3">
             {daos.length === 0 ? (
               <p className="text-muted-foreground py-4 text-center text-sm">
-                No DAOs found for your wallet. Create one or browse by address.
+                No organizations found for your wallet. Create one or browse by address.
               </p>
             ) : (
               daos.map((dao) => (
@@ -95,7 +88,7 @@ export function DaoPickerPage() {
 
             <div className="space-y-2">
               <p className="text-muted-foreground text-sm">
-                Enter a DAO address to browse to
+                Enter an organization's address to browse:
               </p>
               <div className="flex gap-4">
                 <Input

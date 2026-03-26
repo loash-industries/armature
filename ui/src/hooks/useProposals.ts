@@ -6,9 +6,9 @@ import { PACKAGE_ID, MODULES } from "@/config/constants";
 import type { ProposalSummary } from "@/types/proposal";
 
 interface ProposalConfigFields {
-  quorum: number;
-  approval_threshold: number;
-  propose_threshold: string;
+  quorum: number;           // u16 — arrives as number
+  approval_threshold: number; // u16 — arrives as number
+  propose_threshold: string;  // u64 — arrives as string
   expiry_ms: string;
   execution_delay_ms: string;
   cooldown_ms: string;
@@ -20,6 +20,8 @@ interface ProposalFields {
   proposer: string;
   yes_weight: string;
   no_weight: string;
+  /** Governance weight snapshot captured at proposal creation — needed for quorum check. */
+  total_snapshot_weight: string;
   config: ProposalConfigFields;
   created_at_ms: string;
   status: { variant: string };
@@ -45,11 +47,38 @@ function deriveStatus(
     const yes = Number(fields.yes_weight);
     const no = Number(fields.no_weight);
     const total = yes + no;
-    const quorumMet = total >= cfg.quorum;
+    const snapshotWeight = Number(fields.total_snapshot_weight);
+    // Mirror on-chain utils::gte_bps(total, total_snapshot_weight, quorum):
+    //   (total / snapshotWeight) >= (quorum / 10000)
+    const quorumMet =
+      snapshotWeight > 0
+        ? (total * 10000) / snapshotWeight >= cfg.quorum
+        : total > 0;
     const thresholdMet =
       total > 0 &&
       (yes * 10000) / total >= cfg.approval_threshold;
-    return quorumMet && thresholdMet ? "passed" : "expired";
+
+    // For types with hardcoded execution floors, also enforce them here so the
+    // client-side status matches what execute_* will actually accept.
+    // EnableProposalType:        yes / total_snapshot_weight >= 66%
+    // UpdateProposalConfig self: yes / total_snapshot_weight >= 80%
+    let floorMet = true;
+    if (fields.type_key === "EnableProposalType") {
+      floorMet =
+        snapshotWeight > 0
+          ? yes * 10000 >= snapshotWeight * 6_600
+          : yes > 0;
+    } else if (fields.type_key === "UpdateProposalConfig") {
+      const targetKey = String((fields.payload as Record<string, unknown>)?.target_type_key ?? "");
+      if (targetKey === "UpdateProposalConfig") {
+        floorMet =
+          snapshotWeight > 0
+            ? yes * 10000 >= snapshotWeight * 8_000
+            : yes > 0;
+      }
+    }
+
+    return quorumMet && thresholdMet && floorMet ? "passed" : "expired";
   }
 
   return "active";
@@ -81,6 +110,7 @@ function parseProposal(obj: {
     status: deriveStatus(f),
     yesWeight: Number(f.yes_weight),
     noWeight: Number(f.no_weight),
+    totalSnapshotWeight: Number(f.total_snapshot_weight),
     quorum: cfg.quorum,
     approvalThreshold: cfg.approval_threshold,
     createdMs: Number(f.created_at_ms),
