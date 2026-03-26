@@ -43,6 +43,7 @@ ui/test-results/
 
 # Typst build output
 whitepaper/*.pdf
+whitepaper/dist/
 
 # Claude / MCP
 .claude/
