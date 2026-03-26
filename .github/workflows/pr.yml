@@ -222,8 +222,7 @@ jobs:
         uses: typst-community/setup-typst@v4
 
       - name: Build whitepaper
-        working-directory: whitepaper
-        run: typst compile main.typ paper.pdf
+        run: typst compile --root . whitepaper/main.typ whitepaper/paper.pdf
 
       - name: Upload whitepaper artifact
         uses: actions/upload-artifact@v4
