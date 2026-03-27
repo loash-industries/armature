@@ -163,6 +163,60 @@ export const PROPOSAL_TYPE_MAP: Record<string, ProposalTypeDef> =
     ),
   );
 
+/** Union of every known proposal type key. Add new keys here to enforce display-name coverage. */
+export type KnownProposalTypeKey =
+  | "SetBoard"
+  | "EnableProposalType"
+  | "DisableProposalType"
+  | "UpdateProposalConfig"
+  | "TreasuryWithdraw"
+  | "SendCoinToDAO"
+  | "SendSmallPayment"
+  | "CharterUpdate"
+  | "TransferFreezeAdmin"
+  | "UnfreezeProposalType"
+  | "UpdateFreezeConfig"
+  | "UpdateFreezeExemptTypes"
+  | "CreateSubDAO"
+  | "SpinOutSubDAO"
+  | "SpawnDAO"
+  | "TransferCapToSubDAO"
+  | "ReclaimCapFromSubDAO"
+  | "PauseSubDAOExecution"
+  | "UnpauseSubDAOExecution"
+  | "TransferAssets"
+  | "ProposeUpgrade";
+
+/**
+ * User-readable display titles for each proposal type.
+ * Typed as `Record<KnownProposalTypeKey, string>` via `satisfies` so TypeScript
+ * will error if any key is missing — add a new type key above and you must
+ * add its label here too.
+ */
+export const PROPOSAL_TYPE_DISPLAY_NAME = {
+  SetBoard: "Set Board",
+  EnableProposalType: "Enable Proposal Type",
+  DisableProposalType: "Disable Proposal Type",
+  UpdateProposalConfig: "Update Governance Config",
+  TreasuryWithdraw: "Send from Treasury",
+  SendCoinToDAO: "Send to DAO Treasury",
+  SendSmallPayment: "Small Treasury Payment",
+  CharterUpdate: "Amend Charter",
+  TransferFreezeAdmin: "Transfer Freeze Admin",
+  UnfreezeProposalType: "Unfreeze Proposal Type",
+  UpdateFreezeConfig: "Update Freeze Config",
+  UpdateFreezeExemptTypes: "Update Freeze-Exempt Types",
+  CreateSubDAO: "Create SubDAO",
+  SpinOutSubDAO: "Spin Out SubDAO",
+  SpawnDAO: "Spawn DAO",
+  TransferCapToSubDAO: "Transfer Cap to SubDAO",
+  ReclaimCapFromSubDAO: "Reclaim Cap from SubDAO",
+  PauseSubDAOExecution: "Pause SubDAO Execution",
+  UnpauseSubDAOExecution: "Unpause SubDAO Execution",
+  TransferAssets: "Transfer Assets",
+  ProposeUpgrade: "Propose Upgrade",
+} as const satisfies Record<KnownProposalTypeKey, string>;
+
 /** Tier classification: determines which form to render. */
 export type ProposalTier = "tier1" | "tier2" | "wizard";
 

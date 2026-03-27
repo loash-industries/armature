@@ -185,6 +185,8 @@ export interface ProposalSummary {
   status: "active" | "passed" | "executed" | "expired";
   yesWeight: number;
   noWeight: number;
+  /** Snapshot of total governance weight at proposal creation — used for quorum/threshold checks. */
+  totalSnapshotWeight: number;
   quorum: number;
   approvalThreshold: number;
   createdMs: number;
@@ -197,4 +199,6 @@ export interface ProposalSummary {
   votesCast: Record<string, boolean>;
   /** On-chain payload fields (e.g. new_members, recipient, amount). */
   payload: Record<string, unknown>;
+  /** Transaction digest of the execution transaction (only present when status === "executed"). */
+  executionTxHash?: string;
 }

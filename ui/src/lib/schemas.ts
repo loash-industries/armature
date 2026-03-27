@@ -6,7 +6,7 @@ const suiAddress = z
 
 const suiObjectId = suiAddress;
 
-const metadataIpfs = z.string().min(1, "Proposal description is required");
+const metadataIpfs = z.string().default("");
 
 /** Shared proposal config schema (quorum, threshold, etc.). */
 export const proposalConfigSchema = z.object({
@@ -21,7 +21,7 @@ export const proposalConfigSchema = z.object({
     .min(1, "Threshold must be at least 0.01%")
     .max(10000, "Threshold cannot exceed 100%"),
   proposeThreshold: z.number().int().min(0),
-  expiryMs: z.number().int().min(3600000, "Minimum voting period is 1 hour"),
+  expiryMs: z.number().int().min(1, "Minimum voting period is 1 hour"),
   executionDelayMs: z.number().int().min(0),
   cooldownMs: z.number().int().min(0),
 });

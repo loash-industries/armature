@@ -10,6 +10,11 @@ export const PROPOSALS_PACKAGE_ID =
   import.meta.env.VITE_PROPOSALS_PACKAGE_ID ??
   "0x0000000000000000000000000000000000000000000000000000000000000000";
 
+/** EVE Frontier world-contracts package (Character / PlayerProfile). */
+export const WORLD_PACKAGE_ID =
+  import.meta.env.VITE_WORLD_PACKAGE_ID ??
+  "0x0000000000000000000000000000000000000000000000000000000000000000";
+
 /** armature_framework modules */
 export const MODULES = {
   dao: "dao",

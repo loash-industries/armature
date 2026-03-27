@@ -77,6 +77,7 @@ export function CreateDaoPage() {
     if (wallet.address) {
       form.setValue("members.0.address", wallet.address);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wallet.address]);
 
   const [newAddr, setNewAddr] = useState("");

@@ -67,6 +67,14 @@ const DEFAULT_EXPIRY_MS: u64 = 604_800_000; // 7 days
 const DEFAULT_EXECUTION_DELAY_MS: u64 = 0;
 const DEFAULT_COOLDOWN_MS: u64 = 0;
 
+/// Minimum approval_threshold for EnableProposalType — must be >= the 66% execution floor
+/// enforced by admin_ops::execute_enable_proposal_type.
+const ENABLE_PROPOSAL_TYPE_MIN_THRESHOLD: u16 = 6_600;
+
+/// Minimum approval_threshold for UpdateProposalConfig — must be >= the 80% self-update
+/// execution floor enforced by admin_ops::execute_update_proposal_config.
+const UPDATE_PROPOSAL_CONFIG_MIN_THRESHOLD: u16 = 8_000;
+
 // === Enums ===
 
 /// DAO lifecycle status.
@@ -569,20 +577,32 @@ fun subdao_proposal_configs(): (
     build_proposal_configs(DEFAULT_PROPOSAL_TYPES, SUBDAO_BLOCKED_TYPES)
 }
 
+/// Return the per-type default ProposalConfig for a given type key.
+/// Types with hardcoded execution floors in admin_ops use a threshold that
+/// matches the floor so the config threshold is never misleadingly low.
+fun config_for_type(type_key: &std::ascii::String): ProposalConfig {
+    let approval_threshold = if (*type_key == b"EnableProposalType".to_ascii_string()) {
+        ENABLE_PROPOSAL_TYPE_MIN_THRESHOLD
+    } else if (*type_key == b"UpdateProposalConfig".to_ascii_string()) {
+        UPDATE_PROPOSAL_CONFIG_MIN_THRESHOLD
+    } else {
+        DEFAULT_APPROVAL_THRESHOLD
+    };
+    proposal::new_config(
+        DEFAULT_QUORUM,
+        approval_threshold,
+        DEFAULT_PROPOSE_THRESHOLD,
+        DEFAULT_EXPIRY_MS,
+        DEFAULT_EXECUTION_DELAY_MS,
+        DEFAULT_COOLDOWN_MS,
+    )
+}
+
 /// Build proposal config map and enabled set from a types list, excluding blocked types.
 fun build_proposal_configs(
     types: vector<vector<u8>>,
     blocked: vector<vector<u8>>,
 ): (VecMap<std::ascii::String, ProposalConfig>, VecSet<std::ascii::String>) {
-    let default_config = proposal::new_config(
-        DEFAULT_QUORUM,
-        DEFAULT_APPROVAL_THRESHOLD,
-        DEFAULT_PROPOSE_THRESHOLD,
-        DEFAULT_EXPIRY_MS,
-        DEFAULT_EXECUTION_DELAY_MS,
-        DEFAULT_COOLDOWN_MS,
-    );
-
     let mut configs = vec_map::empty<std::ascii::String, ProposalConfig>();
     let mut enabled = vec_set::empty<std::ascii::String>();
 
@@ -600,7 +620,7 @@ fun build_proposal_configs(
     while (i < types.length()) {
         let type_name = types[i].to_ascii_string();
         if (!blocked_set.contains(&type_name)) {
-            configs.insert(type_name, default_config);
+            configs.insert(type_name, config_for_type(&type_name));
             enabled.insert(type_name);
         };
         i = i + 1;

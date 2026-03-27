@@ -2,6 +2,7 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  Outlet,
 } from "@tanstack/react-router";
 import { AppShell } from "@/components/AppShell";
 import { ConnectPage } from "@/pages/ConnectPage";
@@ -67,21 +68,27 @@ const vaultRoute = createRoute({
   component: CapVaultPage,
 });
 
-const proposalsRoute = createRoute({
+const proposalsLayoutRoute = createRoute({
   getParentRoute: () => daoRoute,
   path: "proposals",
+  component: Outlet,
+});
+
+const proposalsIndexRoute = createRoute({
+  getParentRoute: () => proposalsLayoutRoute,
+  path: "/",
   component: ProposalsList,
 });
 
 const newProposalRoute = createRoute({
-  getParentRoute: () => daoRoute,
-  path: "proposals/new",
+  getParentRoute: () => proposalsLayoutRoute,
+  path: "new",
   component: NewProposalPage,
 });
 
 const proposalDetailRoute = createRoute({
-  getParentRoute: () => daoRoute,
-  path: "proposals/$proposalId",
+  getParentRoute: () => proposalsLayoutRoute,
+  path: "$proposalId",
   component: ProposalDetail,
 });
 
@@ -123,9 +130,11 @@ const routeTree = rootRoute.addChildren([
     dashboardRoute,
     treasuryRoute,
     vaultRoute,
-    proposalsRoute,
-    newProposalRoute,
-    proposalDetailRoute,
+    proposalsLayoutRoute.addChildren([
+      proposalsIndexRoute,
+      newProposalRoute,
+      proposalDetailRoute,
+    ]),
     boardRoute,
     charterRoute,
     governanceRoute,

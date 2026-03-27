@@ -1,40 +1,65 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { WalletStatus } from "@/components/WalletStatus";
 import { Plus } from "lucide-react";
+import { useWalletSigner } from "@/hooks/useWalletSigner";
+import { useWalletDaos } from "@/hooks/useWalletDaos";
+import type { DaoEntry } from "@/hooks/useWalletDaos";
+import { usePrefetchBoardMembers } from "@/hooks/usePrefetchBoardMembers";
+import { useCharacterNames } from "@/hooks/useCharacterNames";
 
 const suiAddressRegex = /^0x[a-fA-F0-9]{64}$/;
 
-interface DaoEntry {
-  daoId: string;
-  name: string;
-  treasury: string;
-  memberCount: number;
-  activeProposals: number;
+function DaoButton({
+  dao,
+  navigate,
+}: {
+  dao: DaoEntry;
+  navigate: (opts: { to: string; params: Record<string, string> }) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="bg-secondary hover:bg-secondary/80 w-full rounded-lg px-4 py-3 text-left transition-colors"
+      onClick={() =>
+        navigate({ to: "/dao/$daoId", params: { daoId: dao.daoId } })
+      }
+    >
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium">{dao.name}</span>
+        <span className="text-muted-foreground text-sm">{dao.treasury}</span>
+      </div>
+      <div className="text-muted-foreground mt-1 text-xs">
+        {dao.memberCount} Members &middot; {dao.activeProposals} active proposals
+      </div>
+    </button>
+  );
 }
 
 export function DaoPickerPage() {
   const navigate = useNavigate();
   const [browseAddress, setBrowseAddress] = useState("");
+  const { address } = useWalletSigner();
+  const { data: daos = [] } = useWalletDaos(address);
+  console.log('[daos]:', daos)
 
-  // TODO: Replace with real query — fetch DAOs the connected wallet is a member of
-  const daos: DaoEntry[] = [];
+  // Pre-populate name cache for all board members (top-level + SubDAO tree) on app start
+  const { data: boardMemberAddresses = [] } = usePrefetchBoardMembers(daos);
+  useCharacterNames(boardMemberAddresses);
+
+  const rootDaos = daos.filter((d) => !d.isSubDAO);
+  const subDaos = daos.filter((d) => d.isSubDAO);
 
   function handleBrowse() {
     const trimmed = browseAddress.trim();
     if (suiAddressRegex.test(trimmed)) {
       navigate({ to: "/dao/$daoId", params: { daoId: trimmed } });
     }
-  }
-
-  // Auto-redirect if exactly 1 DAO
-  if (daos.length === 1) {
-    navigate({ to: "/dao/$daoId", params: { daoId: daos[0].daoId } });
-    return null;
   }
 
   return (
@@ -49,7 +74,7 @@ export function DaoPickerPage() {
         <Card className="w-full max-w-sm">
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>Create DAO</CardTitle>
+              <CardTitle>Create or select an Organization</CardTitle>
               <Button
                 variant="ghost"
                 size="icon"
@@ -62,40 +87,34 @@ export function DaoPickerPage() {
           <CardContent className="space-y-3">
             {daos.length === 0 ? (
               <p className="text-muted-foreground py-4 text-center text-sm">
-                No DAOs found for your wallet. Create one or browse by address.
+                No organizations found for your wallet. Create one or browse by address.
               </p>
             ) : (
-              daos.map((dao) => (
-                <button
-                  key={dao.daoId}
-                  type="button"
-                  className="bg-secondary hover:bg-secondary/80 w-full rounded-lg px-4 py-3 text-left transition-colors"
-                  onClick={() =>
-                    navigate({
-                      to: "/dao/$daoId",
-                      params: { daoId: dao.daoId },
-                    })
-                  }
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">{dao.name}</span>
-                    <span className="text-muted-foreground text-sm">
-                      {dao.treasury}
-                    </span>
-                  </div>
-                  <div className="text-muted-foreground mt-1 text-xs">
-                    {dao.memberCount} Members &middot; {dao.activeProposals}{" "}
-                    active proposals
-                  </div>
-                </button>
-              ))
+              <>
+                {rootDaos.map((dao) => (
+                  <DaoButton key={dao.daoId} dao={dao} navigate={navigate} />
+                ))}
+                {subDaos.length > 0 && (
+                  <>
+                    <div className="flex items-center gap-2 pt-1">
+                      <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                        Organizational Units
+                      </span>
+                      <Badge variant="outline" className="text-xs">{subDaos.length}</Badge>
+                    </div>
+                    {subDaos.map((dao) => (
+                      <DaoButton key={dao.daoId} dao={dao} navigate={navigate} />
+                    ))}
+                  </>
+                )}
+              </>
             )}
 
             <Separator />
 
             <div className="space-y-2">
               <p className="text-muted-foreground text-sm">
-                Enter a DAO address to browse to
+                Enter an organization's address to browse:
               </p>
               <div className="flex gap-4">
                 <Input

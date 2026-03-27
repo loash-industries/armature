@@ -1,6 +1,5 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button } from "@/components/ui/button";
 import {
   Form,
   FormField,
@@ -20,30 +19,36 @@ import { Textarea } from "@/components/ui/textarea";
 import { enableProposalTypeSchema } from "@/lib/schemas";
 import { useProposalFormOptions } from "@/hooks/useProposalFormOptions";
 import { ProposalConfigForm } from "@/components/proposals/ProposalConfigForm";
+import { SubmitProposalButton } from "@/components/proposals/SubmitProposalButton";
+import { PROPOSAL_TYPE_DISPLAY_NAME } from "@/config/proposal-types";
 import type { EnableProposalTypePayload } from "@/types/proposal";
 
 interface EnableProposalTypeFormProps {
   daoId: string;
   isPending?: boolean;
+  defaultTypeKey?: string;
   onSubmit: (data: EnableProposalTypePayload) => void;
+  onSubmitAndVote?: (data: EnableProposalTypePayload) => void;
 }
 
 export function EnableProposalTypeForm({
   daoId,
   isPending,
+  defaultTypeKey = "",
   onSubmit,
+  onSubmitAndVote,
 }: EnableProposalTypeFormProps) {
   const { disabledTypes } = useProposalFormOptions(daoId);
 
   const form = useForm({
     resolver: zodResolver(enableProposalTypeSchema),
     defaultValues: {
-      typeKey: "",
+      typeKey: defaultTypeKey,
       config: {
         quorum: 5000,
         approvalThreshold: 5000,
         proposeThreshold: 0,
-        expiryMs: 604800000,
+        expiryMs: 168,
         executionDelayMs: 0,
         cooldownMs: 0,
       },
@@ -51,11 +56,22 @@ export function EnableProposalTypeForm({
     },
   });
 
+  const HOURS_TO_MS = 3_600_000;
+  const toMs = (data: EnableProposalTypePayload): EnableProposalTypePayload => ({
+    ...data,
+    config: {
+      ...data.config,
+      expiryMs: data.config.expiryMs * HOURS_TO_MS,
+      executionDelayMs: data.config.executionDelayMs * HOURS_TO_MS,
+      cooldownMs: data.config.cooldownMs * HOURS_TO_MS,
+    },
+  });
+
   return (
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit((data) =>
-          onSubmit(data as EnableProposalTypePayload),
+          onSubmit(toMs(data as EnableProposalTypePayload)),
         )}
         className="space-y-4"
       >
@@ -64,21 +80,25 @@ export function EnableProposalTypeForm({
           name="typeKey"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Proposal Type to Enable</FormLabel>
               <FormControl>
                 <Select value={field.value} onValueChange={field.onChange}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select type..." />
+                    <SelectValue placeholder="Select type...">
+                      {field.value
+                        ? (PROPOSAL_TYPE_DISPLAY_NAME[field.value as keyof typeof PROPOSAL_TYPE_DISPLAY_NAME] ?? field.value)
+                        : undefined}
+                    </SelectValue>
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="w-[var(--radix-select-trigger-width)]">
                     {disabledTypes.map((t) => (
                       <SelectItem key={t} value={t}>
-                        {t}
+                        {PROPOSAL_TYPE_DISPLAY_NAME[t as keyof typeof PROPOSAL_TYPE_DISPLAY_NAME] ?? t}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </FormControl>
+              <FormLabel>Proposal Type to Enable</FormLabel>
               <FormMessage />
             </FormItem>
           )}
@@ -94,7 +114,7 @@ export function EnableProposalTypeForm({
           name="metadataIpfs"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Proposal Description</FormLabel>
+              <FormLabel>Proposal Description (optional)</FormLabel>
               <FormControl>
                 <Textarea placeholder="Describe this proposal..." {...field} />
               </FormControl>
@@ -103,9 +123,15 @@ export function EnableProposalTypeForm({
           )}
         />
 
-        <Button type="submit" disabled={isPending}>
-          {isPending ? "Submitting..." : "Create Proposal"}
-        </Button>
+        <SubmitProposalButton
+          isPending={isPending}
+          onSubmit={() => form.handleSubmit((data) => onSubmit(toMs(data as EnableProposalTypePayload)))()} 
+          onSubmitAndVote={() => form.handleSubmit((data) => {
+            const d = toMs(data as EnableProposalTypePayload);
+            if (onSubmitAndVote) onSubmitAndVote(d);
+            else onSubmit(d);
+          })()}
+        />
       </form>
     </Form>
   );

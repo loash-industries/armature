@@ -30,7 +30,7 @@ export function SubDAOListPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold">Sub-DAOs</h1>
+          <h1 className="text-2xl font-bold">Organizational Units</h1>
           {!isLoading && (
             <Badge variant="outline">{children.length}</Badge>
           )}
@@ -90,7 +90,7 @@ export function SubDAOListPage() {
               </div>
             ) : (
               <div className="text-muted-foreground py-12 text-center text-sm">
-                No sub-DAOs found. This DAO has no child DAOs.
+                No organizational units found in organization.
               </div>
             )
           ) : hierarchy ? (

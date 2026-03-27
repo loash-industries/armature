@@ -63,17 +63,19 @@ export function ProposalTypeSelector({
                 return null;
 
               return (
-                <CommandGroup key={category.label} heading={category.label}>
+                <CommandGroup
+                  key={category.label}
+                  heading={category.label}
+                  className="[&_[data-slot=command-item]+[data-slot=command-item]]:mt-2"
+                >
                   {visibleTypes.map((t) => (
                     <CommandItem
                       key={t.key}
                       value={t.key}
-                      onSelect={() => {
-                        onSelect(t.key);
-                        onOpenChange(false);
-                      }}
+                      onSelect={() => onSelect(t.key)}
+                      className="py-3"
                     >
-                      <div className="flex flex-col gap-0.5">
+                      <div className="flex flex-col gap-1">
                         <span className="font-mono text-sm">{t.label}</span>
                         <span className="text-muted-foreground text-xs">
                           {t.description}
@@ -83,7 +85,7 @@ export function ProposalTypeSelector({
                   ))}
                   {frozenInCategory.map((t) => (
                     <Tooltip key={t.key}>
-                      <TooltipTrigger render={<CommandItem value={t.key} disabled className="opacity-50" />}>
+                      <TooltipTrigger render={<CommandItem value={t.key} disabled className="py-3 opacity-50" />}>
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-sm">
                             {t.label}

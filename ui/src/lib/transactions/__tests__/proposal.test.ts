@@ -469,6 +469,8 @@ describe("buildSubmitSpinOutSubDAO", () => {
     const tx = buildSubmitSpinOutSubDAO({
       daoId: DAO_ID,
       subDaoId: "0x" + "1".repeat(64),
+      controlCapId: "0x" + "2".repeat(64),
+      freezeAdminCapId: "0x" + "3".repeat(64),
       metadataIpfs: META,
     });
     const { commands } = tx.getData();

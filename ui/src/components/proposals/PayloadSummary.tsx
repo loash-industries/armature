@@ -12,13 +12,21 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { PROPOSAL_TYPE_MAP } from "@/config/proposal-types";
+import { useCharacterNames } from "@/hooks/useCharacterNames";
+import { useCoinMetadataMap } from "@/hooks/useDao";
+import { useMemo, type ReactNode } from "react";
+import { AnimatedCoinBalance } from "@/components/ui/AnimatedCoinBalance";
+import { AnimatedValue } from "@/components/ui/AnimatedValue";
+import { AddressName } from "@/components/AddressName";
 
 interface PayloadSummaryProps {
   typeKey: string;
   payload: Record<string, unknown>;
+  /** Full Move type string, e.g. "…::SendCoin<0x2::sui::SUI>". Used to extract generic coin type. */
+  payloadType?: string;
 }
 
-export function PayloadSummary({ typeKey, payload }: PayloadSummaryProps) {
+export function PayloadSummary({ typeKey, payload, payloadType }: PayloadSummaryProps) {
   const typeDef = PROPOSAL_TYPE_MAP[typeKey];
 
   return (
@@ -29,24 +37,35 @@ export function PayloadSummary({ typeKey, payload }: PayloadSummaryProps) {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <PayloadRenderer typeKey={typeKey} payload={payload} />
+        <PayloadRenderer typeKey={typeKey} payload={payload} payloadType={payloadType} />
       </CardContent>
     </Card>
   );
 }
 
+/** Extract the generic type parameter from a Move type string, e.g. "::SendCoin<0x2::sui::SUI>" → "0x2::sui::SUI". */
+function extractCoinType(payloadType: string | undefined): string | undefined {
+  if (!payloadType) return undefined;
+  const start = payloadType.indexOf("<");
+  const end = payloadType.lastIndexOf(">");
+  if (start === -1 || end === -1) return undefined;
+  return payloadType.slice(start + 1, end);
+}
+
 function PayloadRenderer({
   typeKey,
   payload,
+  payloadType,
 }: {
   typeKey: string;
   payload: Record<string, unknown>;
+  payloadType?: string;
 }) {
   switch (typeKey) {
     case "SetBoard":
       return <SetBoardSummary payload={payload} />;
     case "TreasuryWithdraw":
-      return <TreasuryWithdrawSummary payload={payload} />;
+      return <CoinProposalSummary payload={payload} payloadType={payloadType} recipientLabel="Recipient" recipientField="recipient" />;
     case "CharterUpdate":
       return <CharterUpdateSummary payload={payload} />;
     case "EnableProposalType":
@@ -60,8 +79,9 @@ function PayloadRenderer({
     case "TransferFreezeAdmin":
       return <TransferFreezeAdminSummary payload={payload} />;
     case "SendCoinToDAO":
+      return <CoinProposalSummary payload={payload} payloadType={payloadType} recipientLabel="Recipient Treasury" recipientField="recipient_treasury" />;
     case "SendSmallPayment":
-      return <CoinTransferSummary payload={payload} />;
+      return <CoinProposalSummary payload={payload} payloadType={payloadType} recipientLabel="Recipient" recipientField="recipient" />;
     case "SpinOutSubDAO":
       return <ObjectIdSummary label="SubDAO" payload={payload} field="subdao_id" />;
     case "SpawnDAO":
@@ -88,6 +108,7 @@ function PayloadRenderer({
 
 function SetBoardSummary({ payload }: { payload: Record<string, unknown> }) {
   const members = (payload.new_members as string[] ?? payload.members as string[]) ?? [];
+  const { data: nameMap } = useCharacterNames(members);
   return (
     <div className="space-y-2">
       <p className="text-sm">
@@ -96,8 +117,8 @@ function SetBoardSummary({ payload }: { payload: Record<string, unknown> }) {
       </p>
       <div className="space-y-1">
         {members.map((m, i) => (
-          <div key={i} className="font-mono text-xs">
-            {m}
+          <div key={i} className="flex items-center gap-2">
+            <AddressName address={m} charName={nameMap?.get(m)} />
           </div>
         ))}
       </div>
@@ -105,17 +126,68 @@ function SetBoardSummary({ payload }: { payload: Record<string, unknown> }) {
   );
 }
 
-function TreasuryWithdrawSummary({
+/** Shorten "0xABCDEF0123456789…::module::TYPE" → "0xABCD…6789::module::TYPE" */
+function truncateCoinType(coinType: string): string {
+  const parts = coinType.split("::");
+  if (parts.length < 3) return coinType;
+  const pkg = parts[0];
+  const rest = parts.slice(1).join("::");
+  if (pkg.length > 12) {
+    return `${pkg.slice(0, 6)}…${pkg.slice(-4)}::${rest}`;
+  }
+  return coinType;
+}
+
+/** Coin-aware summary used by TreasuryWithdraw, SendCoinToDAO, and SendSmallPayment.
+ *  Extracts the coin type from the generic payloadType, fetches on-chain metadata,
+ *  and formats the raw amount with the correct decimals and symbol. */
+function CoinProposalSummary({
   payload,
+  payloadType,
+  recipientLabel,
+  recipientField,
 }: {
   payload: Record<string, unknown>;
+  payloadType?: string;
+  recipientLabel: string;
+  recipientField: string;
 }) {
+  const coinType = extractCoinType(payloadType);
+  const coinTypes = useMemo(() => (coinType ? [coinType] : []), [coinType]);
+  const { data: metadataMap } = useCoinMetadataMap(coinTypes);
+
+  const meta = coinType ? metadataMap?.[coinType] : undefined;
+  const decimals = meta?.decimals ?? 9;
+  const symbol = meta?.symbol ?? (coinType ? coinType.split("::").pop() ?? "" : "");
+
+  const rawAmount = String(payload.amount ?? "0");
+  let formattedAmount: ReactNode;
+  try {
+    const amt = BigInt(rawAmount);
+    formattedAmount = (
+      <AnimatedCoinBalance balance={amt} decimals={decimals} symbol={symbol} />
+    );
+  } catch {
+    formattedAmount = rawAmount;
+  }
+
+  const recipient = String(payload[recipientField] ?? "");
+  const recipientAddrs = useMemo(() => (recipient ? [recipient] : []), [recipient]);
+  const { data: recipientNameMap } = useCharacterNames(recipientAddrs);
+
+  const coinDisplay = coinType ? (
+    <span className="flex items-center gap-1.5" title={coinType}>
+      <Badge variant="secondary" className="font-mono text-xs">{symbol}</Badge>
+      <span className="font-mono text-xs text-muted-foreground">{truncateCoinType(coinType)}</span>
+    </span>
+  ) : "—";
+
   return (
     <Table>
       <TableBody>
-        <KVRow label="Coin Type" value={String(payload.coinType ?? "")} />
-        <KVRow label="Amount" value={String(payload.amount ?? "")} />
-        <KVRow label="Recipient" value={String(payload.recipient ?? "")} mono />
+        <KVRow label={recipientLabel} value={recipient ? <AddressName address={recipient} charName={recipientNameMap?.get(recipient)} /> : "—"} />
+        <KVRow label="Amount" value={formattedAmount} />
+        <KVRow label="Coin" value={coinDisplay} />
       </TableBody>
     </Table>
   );
@@ -143,37 +215,71 @@ function CharterUpdateSummary({
   );
 }
 
+/** Extract a value from a Sui Option variant ({ variant: "Some", fields: T }). */
+function unwrapOption(val: unknown): unknown {
+  if (val != null && typeof val === "object" && "variant" in (val as Record<string, unknown>)) {
+    const opt = val as { variant: string; fields: unknown };
+    return opt.variant === "Some" ? opt.fields : undefined;
+  }
+  return val;
+}
+
 function ProposalConfigSummary({
   payload,
 }: {
   payload: Record<string, unknown>;
 }) {
-  const config = payload.config as Record<string, number> | undefined;
+  // EnableProposalType: { type_key, config: { quorum, approval_threshold, ... } }
+  // UpdateProposalConfig: { target_type_key, quorum: Option, approval_threshold: Option, ... }
+  const typeKey = String(payload.type_key ?? payload.target_type_key ?? "");
+  const nested = payload.config as Record<string, unknown> | undefined;
+
+  const quorum = Number(nested ? nested.quorum : unwrapOption(payload.quorum) ?? 0);
+  const approvalThreshold = Number(nested ? nested.approval_threshold : unwrapOption(payload.approval_threshold) ?? 0);
+  const proposeThreshold = Number(nested ? nested.propose_threshold : unwrapOption(payload.propose_threshold) ?? 0);
+  const expiryMs = Number(nested ? nested.expiry_ms : unwrapOption(payload.expiry_ms) ?? 0);
+  const executionDelayMs = Number(nested ? nested.execution_delay_ms : unwrapOption(payload.execution_delay_ms) ?? 0);
+  const cooldownMs = Number(nested ? nested.cooldown_ms : unwrapOption(payload.cooldown_ms) ?? 0);
+
   return (
     <div className="space-y-2">
       <p className="text-sm">
         <span className="text-muted-foreground">Type:</span>{" "}
-        <Badge variant="outline">{String(payload.typeKey ?? "")}</Badge>
+        <Badge variant="outline">{typeKey}</Badge>
       </p>
-      {config && (
-        <Table>
-          <TableBody>
-            <KVRow
-              label="Quorum"
-              value={`${(config.quorum / 100).toFixed(1)}%`}
-            />
-            <KVRow
-              label="Approval"
-              value={`${(config.approvalThreshold / 100).toFixed(1)}%`}
-            />
-            <KVRow label="Voting Period" value={`${config.expiryMs}ms`} />
-            <KVRow label="Exec Delay" value={`${config.executionDelayMs}ms`} />
-            <KVRow label="Cooldown" value={`${config.cooldownMs}ms`} />
-          </TableBody>
-        </Table>
-      )}
+      <Table>
+        <TableBody>
+          <KVRow
+            label="Quorum"
+            value={<AnimatedValue value={quorum / 100} suffix="%" />}
+          />
+          <KVRow
+            label="Approval"
+            value={<AnimatedValue value={approvalThreshold / 100} suffix="%" />}
+          />
+          <KVRow
+            label="Propose Threshold"
+            value={<AnimatedValue value={proposeThreshold} />}
+          />
+          <KVRow label="Voting Period" value={formatDuration(expiryMs)} />
+          <KVRow label="Exec Delay" value={formatDuration(executionDelayMs)} />
+          <KVRow label="Cooldown" value={formatDuration(cooldownMs)} />
+        </TableBody>
+      </Table>
     </div>
   );
+}
+
+function formatDuration(ms: number): string {
+  if (ms === 0) return "0";
+  const hours = ms / 3_600_000;
+  if (hours >= 24) {
+    const days = Math.floor(hours / 24);
+    const rem = Math.round(hours % 24);
+    return rem > 0 ? `${days}d ${rem}h` : `${days}d`;
+  }
+  if (hours >= 1) return `${hours.toFixed(1)}h`;
+  return `${ms}ms`;
 }
 
 function CreateSubDAOSummary({
@@ -221,26 +327,19 @@ function TransferFreezeAdminSummary({
 }: {
   payload: Record<string, unknown>;
 }) {
+  const newAdmin = String(payload.new_admin ?? "");
+  const addrs = useMemo(() => (newAdmin ? [newAdmin] : []), [newAdmin]);
+  const { data: nameMap } = useCharacterNames(addrs);
   return (
     <Table>
       <TableBody>
-        <KVRow label="New Admin" value={String(payload.new_admin ?? "")} mono />
+        <KVRow label="New Admin" value={newAdmin ? <AddressName address={newAdmin} charName={nameMap?.get(newAdmin)} /> : "—"} />
       </TableBody>
     </Table>
   );
 }
 
-function CoinTransferSummary({ payload }: { payload: Record<string, unknown> }) {
-  return (
-    <Table>
-      <TableBody>
-        <KVRow label="Recipient" value={String(payload.recipient ?? payload.recipient_treasury ?? "")} mono />
-        <KVRow label="Amount" value={String(payload.amount ?? "")} />
-        <KVRow label="Coin Type" value={String(payload.coin_type ?? "")} mono />
-      </TableBody>
-    </Table>
-  );
-}
+
 
 function ObjectIdSummary({ label, payload, field }: { label: string; payload: Record<string, unknown>; field: string }) {
   return (
@@ -359,23 +458,38 @@ const FIELD_LABELS: Record<string, string> = {
   coin_type: "Coin Type",
 };
 
+const SUI_ADDRESS_RE = /^0x[a-fA-F0-9]{64}$/;
+
 function GenericSummary({ payload }: { payload: Record<string, unknown> }) {
   const entries = Object.entries(payload).filter(
     ([k]) => k !== "metadataIpfs",
   );
+  const addressValues = useMemo(
+    () => entries
+      .map(([, v]) => String(v ?? ""))
+      .filter((v) => SUI_ADDRESS_RE.test(v)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [JSON.stringify(payload)],
+  );
+  const { data: nameMap } = useCharacterNames(addressValues);
+
   if (entries.length === 0) {
     return <p className="text-muted-foreground text-sm">No payload data.</p>;
   }
   return (
     <Table>
       <TableBody>
-        {entries.map(([key, value]) => (
-          <KVRow
-            key={key}
-            label={FIELD_LABELS[key] ?? key}
-            value={typeof value === "object" ? JSON.stringify(value) : String(value ?? "")}
-          />
-        ))}
+        {entries.map(([key, value]) => {
+          const strVal = typeof value === "object" ? JSON.stringify(value) : String(value ?? "");
+          const isAddress = SUI_ADDRESS_RE.test(strVal);
+          return (
+            <KVRow
+              key={key}
+              label={FIELD_LABELS[key] ?? key}
+              value={isAddress ? <AddressName address={strVal} charName={nameMap?.get(strVal)} /> : strVal}
+            />
+          );
+        })}
       </TableBody>
     </Table>
   );
@@ -387,16 +501,17 @@ function KVRow({
   mono,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   mono?: boolean;
 }) {
+  const isEmpty = value === "" || value === null || value === undefined;
   return (
     <TableRow>
       <TableCell className="text-muted-foreground text-sm">{label}</TableCell>
       <TableCell
         className={`text-sm ${mono ? "font-mono" : ""}`}
       >
-        {value || "—"}
+        {isEmpty ? "—" : value}
       </TableCell>
     </TableRow>
   );

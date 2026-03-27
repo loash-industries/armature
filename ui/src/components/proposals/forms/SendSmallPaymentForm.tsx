@@ -1,6 +1,6 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button } from "@/components/ui/button";
+import { z } from "zod";
 import {
   Form,
   FormField,
@@ -10,100 +10,149 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { sendSmallPaymentSchema } from "@/lib/schemas";
-import { useTreasuryBalances, useDaoSummary } from "@/hooks/useDao";
+import { useTreasuryBalances, useDaoSummary, useCoinMetadataMap } from "@/hooks/useDao";
+import { SubmitProposalButton } from "@/components/proposals/SubmitProposalButton";
+import { CoinAmountInput } from "@/components/ui/CoinAmountInput";
+import { CoinSelect } from "@/components/ui/CoinSelect";
+import { formatBalance } from "@/lib/coins";
 import type { SendSmallPaymentPayload } from "@/types/proposal";
+import { useMemo, useState } from "react";
+import { useCharacterNames } from "@/hooks/useCharacterNames";
+import { AddressName } from "@/components/AddressName";
+
+const formSchema = z.object({
+  recipient: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{64}$/, "Must be a valid Sui address (0x + 64 hex)"),
+  coinType: z.string().min(1, "Select a coin type"),
+  metadataIpfs: z.string().default(""),
+});
+
+type FormValues = z.infer<typeof formSchema>;
 
 interface SendSmallPaymentFormProps {
   daoId: string;
   isPending?: boolean;
   onSubmit: (data: SendSmallPaymentPayload) => void;
+  onSubmitAndVote?: (data: SendSmallPaymentPayload) => void;
 }
 
 export function SendSmallPaymentForm({
   daoId,
   isPending,
   onSubmit,
+  onSubmitAndVote,
 }: SendSmallPaymentFormProps) {
   const { data: dao } = useDaoSummary(daoId);
   const { data: balances } = useTreasuryBalances(dao?.treasuryId);
 
-  const form = useForm<SendSmallPaymentPayload>({
-    resolver: zodResolver(sendSmallPaymentSchema),
+  const coinTypes = useMemo(
+    () => balances?.map((b) => b.coinType) ?? [],
+    [balances],
+  );
+  const { data: metadataMap } = useCoinMetadataMap(coinTypes);
+
+  const [amount, setAmount] = useState<bigint | null>(null);
+  const [amountError, setAmountError] = useState<string | undefined>();
+
+  const form = useForm<FormValues>({
+    resolver: zodResolver(formSchema),
     defaultValues: {
       recipient: "",
-      amount: "",
       coinType: "",
       metadataIpfs: "",
     },
   });
 
-  const selectedCoin = form.watch("coinType");
-  const maxBalance = balances?.find(
-    (b) => b.coinType === selectedCoin,
-  )?.balance;
+  const selectedCoinType = form.watch("coinType");
+  const selectedBalance = balances?.find((b) => b.coinType === selectedCoinType);
+  const selectedMeta = selectedCoinType ? metadataMap?.[selectedCoinType] : undefined;
+  const selectedSymbol =
+    selectedMeta?.symbol ??
+    (selectedCoinType ? selectedCoinType.split("::").pop() ?? "" : "");
+  const selectedDecimals = selectedMeta?.decimals ?? 9;
+
+  const recipientValue = form.watch("recipient");
+  const isValidRecipient = /^0x[a-fA-F0-9]{64}$/.test(recipientValue);
+  const recipientAddrs = useMemo(
+    () => (isValidRecipient ? [recipientValue] : []),
+    [isValidRecipient, recipientValue],
+  );
+  const { data: recipientNameMap } = useCharacterNames(recipientAddrs);
+
+  /** Convert form values + bigint amount to on-chain payload. */
+  function toPayload(values: FormValues): SendSmallPaymentPayload | null {
+    setAmountError(undefined);
+    if (amount === null || amount <= 0n) {
+      setAmountError("Enter a valid amount greater than 0");
+      return null;
+    }
+    if (selectedBalance && amount > selectedBalance.balance) {
+      setAmountError(
+        `Amount exceeds treasury balance (${formatBalance(selectedBalance.balance, selectedDecimals)} ${selectedSymbol})`,
+      );
+      return null;
+    }
+    return {
+      recipient: values.recipient,
+      amount: amount.toString(),
+      coinType: values.coinType,
+      metadataIpfs: values.metadataIpfs,
+    };
+  }
+
+  function handleSubmit(values: FormValues) {
+    const payload = toPayload(values);
+    if (payload) onSubmit(payload);
+  }
+
+  function handleSubmitAndVote(values: FormValues) {
+    const payload = toPayload(values);
+    if (!payload) return;
+    if (onSubmitAndVote) onSubmitAndVote(payload);
+    else onSubmit(payload);
+  }
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+        {/* Coin selector */}
         <FormField
           control={form.control}
           name="coinType"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Coin Type</FormLabel>
+              <FormLabel>Coin</FormLabel>
               <FormControl>
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select coin..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {balances?.map((b) => (
-                      <SelectItem key={b.coinType} value={b.coinType}>
-                        {b.coinType} ({b.balance.toString()})
-                      </SelectItem>
-                    )) ?? (
-                      <SelectItem value="" disabled>
-                        No coins in treasury
-                      </SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
+                <CoinSelect
+                  value={field.value}
+                  onValueChange={(v) => {
+                    field.onChange(v);
+                    setAmount(null);
+                    setAmountError(undefined);
+                  }}
+                  balances={balances}
+                  metadataMap={metadataMap}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
 
-        <FormField
-          control={form.control}
-          name="amount"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>
-                Amount
-                {maxBalance !== undefined && (
-                  <span className="text-muted-foreground ml-2 text-xs">
-                    max: {maxBalance.toString()}
-                  </span>
-                )}
-              </FormLabel>
-              <FormControl>
-                <Input placeholder="0" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
+        {/* Amount */}
+        <CoinAmountInput
+          value={amount}
+          onChange={(v) => { setAmount(v); setAmountError(undefined); }}
+          symbol={selectedSymbol}
+          decimals={selectedDecimals}
+          maxBalance={selectedBalance?.balance}
+          disabled={!selectedCoinType || isPending}
+          errorMessage={amountError}
         />
 
+        {/* Recipient address */}
         <FormField
           control={form.control}
           name="recipient"
@@ -113,6 +162,11 @@ export function SendSmallPaymentForm({
               <FormControl>
                 <Input placeholder="0x..." {...field} />
               </FormControl>
+              {isValidRecipient && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  Resolved: <AddressName address={recipientValue} charName={recipientNameMap?.get(recipientValue)} />
+                </p>
+              )}
               <FormMessage />
             </FormItem>
           )}
@@ -123,7 +177,7 @@ export function SendSmallPaymentForm({
           name="metadataIpfs"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Proposal Description</FormLabel>
+              <FormLabel>Proposal Description (optional)</FormLabel>
               <FormControl>
                 <Textarea placeholder="Describe this proposal..." {...field} />
               </FormControl>
@@ -132,10 +186,14 @@ export function SendSmallPaymentForm({
           )}
         />
 
-        <Button type="submit" disabled={isPending}>
-          {isPending ? "Submitting..." : "Create Proposal"}
-        </Button>
+        <SubmitProposalButton
+          isPending={isPending}
+          onSubmit={() => form.handleSubmit(handleSubmit)()}
+          onSubmitAndVote={() => form.handleSubmit(handleSubmitAndVote)()}
+        />
       </form>
     </Form>
   );
 }
+
+

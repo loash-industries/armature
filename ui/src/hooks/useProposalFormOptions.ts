@@ -8,8 +8,10 @@ export function useProposalFormOptions(daoId: string) {
   const { data: daoSummary } = useDaoSummary(daoId);
 
   return useMemo(() => {
-    const enabledTypes =
-      govConfig?.filter((t) => t.enabled).map((t) => t.typeKey) ?? [];
+    // While governance config is loading, show all types as enabled
+    const enabledTypes = govConfig
+      ? govConfig.filter((t) => t.enabled).map((t) => t.typeKey)
+      : ALL_PROPOSAL_TYPE_KEYS;
     const frozenTypes =
       govConfig?.filter((t) => t.frozen).map((t) => t.typeKey) ?? [];
     const disabledTypes = ALL_PROPOSAL_TYPE_KEYS.filter(

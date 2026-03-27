@@ -1,9 +1,12 @@
 import { Outlet, useParams, Link } from "@tanstack/react-router";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { ChevronsUpDown } from "lucide-react";
 import { DaoSidebar } from "./DaoSidebar";
 import { WalletStatus } from "./WalletStatus";
+import { DaoRelayProvider } from "@/context/DaoRelayContext";
+import { useDaoSummary } from "@/hooks/useDao";
 
 function truncateDaoId(id: string): string {
   if (id.length <= 20) return id;
@@ -12,6 +15,7 @@ function truncateDaoId(id: string): string {
 
 export function AppShell() {
   const { daoId } = useParams({ strict: false });
+  const { data: dao } = useDaoSummary(daoId ?? "");
 
   return (
     <div className="bg-background flex h-screen w-full overflow-hidden">
@@ -21,14 +25,19 @@ export function AppShell() {
       </div>
 
       {/* Main Content Area */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col pt-4">
         {/* Topbar */}
         <header className="flex h-20 items-center justify-between px-4">
           {/* DAO Picker */}
-          <Button variant="outline" render={<Link to="/pick" />} className="gap-2">
+          <Button variant="outline" render={<Link to="/pick" />} className="gap-2 p-4">
             <span className="max-w-[165px] truncate text-sm font-bold">
-              {daoId ? truncateDaoId(daoId) : "Select DAO"}
+              {dao?.charterName ?? (daoId ? truncateDaoId(daoId) : "Select DAO")}
             </span>
+            {dao?.isSubdao && (
+              <Badge variant="secondary" className="text-xs px-1.5 py-0">
+                SubDAO
+              </Badge>
+            )}
             <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
           </Button>
 
@@ -37,9 +46,11 @@ export function AppShell() {
         </header>
 
         {/* Page Content */}
-        <ScrollArea className="flex-1">
-          <main className="p-4">
-            <Outlet />
+        <ScrollArea className="flex-1 min-h-0">
+          <main className="p-4 mx-auto max-w-3xl">
+            <DaoRelayProvider key={daoId ?? ""} daoId={daoId ?? ""}>
+              <Outlet />
+            </DaoRelayProvider>
           </main>
         </ScrollArea>
       </div>

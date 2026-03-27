@@ -11,19 +11,23 @@ import {
   FormControl,
   FormMessage,
 } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { RecipientCombobox } from "@/components/ui/RecipientCombobox";
 import { setBoardSchema } from "@/lib/schemas";
 import { useGovernanceDetail } from "@/hooks/useDao";
+import { useCharacterNames } from "@/hooks/useCharacterNames";
+import { SubmitProposalButton } from "@/components/proposals/SubmitProposalButton";
+import { BoardSizeImpact } from "@/components/proposals/BoardSizeImpact";
 import type { SetBoardPayload } from "@/types/proposal";
 
 interface SetBoardFormProps {
   daoId: string;
   isPending?: boolean;
   onSubmit: (data: SetBoardPayload) => void;
+  onSubmitAndVote?: (data: SetBoardPayload) => void;
 }
 
-export function SetBoardForm({ daoId, isPending, onSubmit }: SetBoardFormProps) {
+export function SetBoardForm({ daoId, isPending, onSubmit, onSubmitAndVote }: SetBoardFormProps) {
   const { data: govDetail } = useGovernanceDetail(daoId);
   const currentMembers = govDetail?.members.map((m) => m.address) ?? [];
 
@@ -44,6 +48,7 @@ export function SetBoardForm({ daoId, isPending, onSubmit }: SetBoardFormProps) 
     if (currentMembers.length > 0) {
       form.reset({ members: currentMembers, metadataIpfs: "" });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [govDetail]);
 
   const [newAddr, setNewAddr] = useState("");
@@ -56,6 +61,8 @@ export function SetBoardForm({ daoId, isPending, onSubmit }: SetBoardFormProps) 
     (m) => !watchedMembers.includes(m),
   );
 
+  const { data: nameMap } = useCharacterNames([...added, ...removed]);
+
   return (
     <Form {...form}>
       <form
@@ -67,10 +74,9 @@ export function SetBoardForm({ daoId, isPending, onSubmit }: SetBoardFormProps) 
         <div>
           <FormLabel>Board Members</FormLabel>
           <div className="mt-2 flex gap-2">
-            <Input
-              placeholder="Add address 0x..."
+            <RecipientCombobox
               value={newAddr}
-              onChange={(e) => setNewAddr(e.target.value)}
+              onChange={setNewAddr}
             />
             <Button
               type="button"
@@ -95,7 +101,11 @@ export function SetBoardForm({ daoId, isPending, onSubmit }: SetBoardFormProps) 
                   render={({ field }) => (
                     <FormItem className="flex-1">
                       <FormControl>
-                        <Input placeholder="0x..." {...field} />
+                        <RecipientCombobox
+                          value={field.value as string}
+                          onChange={field.onChange}
+                          onBlur={field.onBlur}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -121,15 +131,33 @@ export function SetBoardForm({ daoId, isPending, onSubmit }: SetBoardFormProps) 
               <div key={a} className="flex items-center gap-2">
                 <Badge variant="default">+ Added</Badge>
                 <span className="font-mono text-xs">{a}</span>
+                {nameMap?.get(a) && (
+                  <Badge variant="secondary" className="text-xs">
+                    {nameMap.get(a)}
+                  </Badge>
+                )}
               </div>
             ))}
             {removed.map((r) => (
               <div key={r} className="flex items-center gap-2">
                 <Badge variant="destructive">- Removed</Badge>
                 <span className="font-mono text-xs">{r}</span>
+                {nameMap?.get(r) && (
+                  <Badge variant="secondary" className="text-xs">
+                    {nameMap.get(r)}
+                  </Badge>
+                )}
               </div>
             ))}
           </div>
+        )}
+
+        {watchedMembers.filter(Boolean).length !== currentMembers.length && (
+          <BoardSizeImpact
+            daoId={daoId}
+            currentSize={currentMembers.length}
+            newSize={watchedMembers.filter(Boolean).length}
+          />
         )}
 
         <FormField
@@ -137,7 +165,7 @@ export function SetBoardForm({ daoId, isPending, onSubmit }: SetBoardFormProps) 
           name="metadataIpfs"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Proposal Description</FormLabel>
+              <FormLabel>Proposal Description (optional)</FormLabel>
               <FormControl>
                 <Textarea placeholder="Describe this proposal..." {...field} />
               </FormControl>
@@ -146,9 +174,14 @@ export function SetBoardForm({ daoId, isPending, onSubmit }: SetBoardFormProps) 
           )}
         />
 
-        <Button type="submit" disabled={isPending}>
-          {isPending ? "Submitting..." : "Create Proposal"}
-        </Button>
+        <SubmitProposalButton
+          isPending={isPending}
+          onSubmit={() => form.handleSubmit((data) => onSubmit(data as SetBoardPayload))()}
+          onSubmitAndVote={() => form.handleSubmit((data) => {
+            if (onSubmitAndVote) onSubmitAndVote(data as SetBoardPayload);
+            else onSubmit(data as SetBoardPayload);
+          })()}
+        />
       </form>
     </Form>
   );
