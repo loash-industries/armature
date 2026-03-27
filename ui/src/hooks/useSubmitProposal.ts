@@ -5,6 +5,7 @@ import { useSuiClient } from "@mysten/dapp-kit";
 import { toast } from "sonner";
 import { useWalletSigner } from "@/hooks/useWalletSigner";
 import { cacheKeys } from "@/lib/cache-keys";
+import { getObject } from "@/lib/sui-rpc";
 import {
   buildSubmitSetBoard,
   buildSubmitSendCoin,
@@ -27,6 +28,7 @@ import {
   buildSubmitPauseSubDAOExecution,
   buildSubmitUnpauseSubDAOExecution,
   buildSubmitTransferAssets,
+  buildVote,
 } from "@/lib/transactions";
 import type {
   SetBoardPayload,
@@ -279,7 +281,7 @@ export function useSubmitProposal(daoId: string) {
   const navigate = useNavigate();
   const [isPending, setIsPending] = useState(false);
 
-  async function submitProposal(typeKey: string, data: unknown) {
+  async function submitProposal(typeKey: string, data: unknown, andVoteYes = false) {
     if (NOT_IMPLEMENTED_TYPES.has(typeKey)) {
       toast.info(`${typeKey} is not yet implemented`);
       return;
@@ -299,8 +301,10 @@ export function useSubmitProposal(daoId: string) {
         queryKey: cacheKeys.proposals(daoId),
       });
 
-      // Extract proposal ID from transaction events to redirect to detail page
+      // Extract proposal ID from transaction events, then fetch the on-chain
+      // object to determine the full payload type (needed for voting).
       let proposalId: string | null = null;
+      let proposalType: string | null = null;
       try {
         const txDetail = await client.waitForTransaction({
           digest: result.digest,
@@ -315,6 +319,46 @@ export function useSubmitProposal(daoId: string) {
         }
       } catch {
         // Fall back to proposals list if event extraction fails
+      }
+
+      // Fetch the proposal object to extract the full Move type (e.g.
+      // 0x...::proposal::Proposal<0x...::set_board::SetBoard>)
+      if (proposalId) {
+        try {
+          const proposalObj = await getObject(client, proposalId, { showType: true });
+          const objType = proposalObj.data?.type ?? "";
+          const start = objType.indexOf("<");
+          const end = objType.lastIndexOf(">");
+          if (start !== -1 && end !== -1) {
+            proposalType = objType.slice(start + 1, end);
+          }
+        } catch {
+          // proposalType remains null — vote step will show an error
+        }
+      }
+
+      // Cast a Yes vote if requested
+      if (andVoteYes && proposalId) {
+        if (!proposalType) {
+          toast.error("Proposal created but could not determine proposal type for voting");
+        } else {
+          try {
+            const voteTx = buildVote({
+              proposalId,
+              approve: true,
+              proposalType,
+            });
+            await signAndExecuteTransaction({ transaction: voteTx });
+            toast.success("Voted Yes");
+            await queryClient.invalidateQueries({
+              queryKey: cacheKeys.proposal(proposalId),
+            });
+          } catch (err) {
+            toast.error(
+              `Proposal created but vote failed: ${err instanceof Error ? err.message : "Unknown error"}`,
+            );
+          }
+        }
       }
 
       if (proposalId) {

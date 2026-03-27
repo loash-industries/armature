@@ -1,30 +1,32 @@
 import { useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardDescription,
   CardContent,
-  Badge,
-  Button,
-  Skeleton,
-  Alert,
-  AlertTitle,
-  AlertDescription,
+} from "@/components/ui/card";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
   Table,
   TableHeader,
   TableHead,
   TableBody,
   TableRow,
   TableCell,
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-  Separator,
-} from "@awar.dev/ui";
+} from "@/components/ui/table";
 import { useSuiClient } from "@mysten/dapp-kit";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -42,7 +44,7 @@ function formatDuration(ms: number): string {
 }
 
 function CountdownTimer({ expiryMs }: { expiryMs: number }) {
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(Date.now);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -97,7 +99,9 @@ export function EmergencyPage() {
       const result = await signAndExecuteTransaction({ transaction });
       toast.success(`Frozen: ${freezeTarget}`);
       await client.waitForTransaction({ digest: result.digest });
-      await queryClient.invalidateQueries({ queryKey: cacheKeys.dao(daoId ?? "") });
+      await queryClient.invalidateQueries({
+        queryKey: cacheKeys.dao(daoId ?? ""),
+      });
       setFreezeTarget("");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Freeze failed");
@@ -118,7 +122,9 @@ export function EmergencyPage() {
       const result = await signAndExecuteTransaction({ transaction });
       toast.success(`Unfrozen: ${unfreezeTarget}`);
       await client.waitForTransaction({ digest: result.digest });
-      await queryClient.invalidateQueries({ queryKey: cacheKeys.dao(daoId ?? "") });
+      await queryClient.invalidateQueries({
+        queryKey: cacheKeys.dao(daoId ?? ""),
+      });
       setUnfreezeTarget("");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Unfreeze failed");
@@ -248,15 +254,16 @@ export function EmergencyPage() {
             <div className="space-y-2">
               <p className="text-sm font-medium">Freeze a Proposal Type</p>
               <div className="flex gap-2">
-                <Select value={freezeTarget} onValueChange={setFreezeTarget}>
+                <Select
+                  value={freezeTarget}
+                  onValueChange={(v) => setFreezeTarget(v ?? "")}
+                >
                   <SelectTrigger className="flex-1">
                     <SelectValue placeholder="Select type to freeze..." />
                   </SelectTrigger>
                   <SelectContent>
                     {dao?.enabledProposalTypes
-                      .filter(
-                        (t) => !activeFrozen.some((f) => f.typeKey === t),
-                      )
+                      .filter((t) => !activeFrozen.some((f) => f.typeKey === t))
                       .map((t) => (
                         <SelectItem key={t} value={t}>
                           {t}
@@ -281,7 +288,7 @@ export function EmergencyPage() {
               <div className="flex gap-2">
                 <Select
                   value={unfreezeTarget}
-                  onValueChange={setUnfreezeTarget}
+                  onValueChange={(v) => setUnfreezeTarget(v ?? "")}
                 >
                   <SelectTrigger className="flex-1">
                     <SelectValue placeholder="Select type to unfreeze..." />

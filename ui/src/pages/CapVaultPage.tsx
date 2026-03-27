@@ -1,13 +1,9 @@
 import { useState } from "react";
 import { useParams } from "@tanstack/react-router";
-import {
-  Badge,
-  Skeleton,
-  Alert,
-  AlertTitle,
-  AlertDescription,
-  Button,
-} from "@awar.dev/ui";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useDaoSummary } from "@/hooks/useDao";
 import { useCapabilityVaultEntries } from "@/hooks/useCapabilityVault";
 import { CapabilityCard } from "@/components/CapabilityCard";

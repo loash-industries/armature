@@ -1,6 +1,15 @@
 import { useState } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+} from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Form,
   FormField,
@@ -9,24 +18,20 @@ import {
   FormControl,
   FormDescription,
   FormMessage,
-  Input,
-  Textarea,
-  Button,
-  Badge,
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-  Checkbox,
-} from "@awar.dev/ui";
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { RecipientCombobox } from "@/components/ui/RecipientCombobox";
 import { createSubDAOSchema } from "@/lib/schemas";
 import { ALL_PROPOSAL_TYPE_KEYS, PROPOSAL_TYPE_MAP } from "@/config/proposal-types";
+import { SubmitProposalButton } from "./SubmitProposalButton";
 import type { CreateSubDAOPayload, ProposalConfigInput } from "@/types/proposal";
 
 interface CreateSubDAOWizardProps {
   daoId: string;
   isPending?: boolean;
   onSubmit: (data: CreateSubDAOPayload) => void;
+  onSubmitAndVote?: (data: CreateSubDAOPayload) => void;
 }
 
 const STEPS = [
@@ -49,13 +54,11 @@ const DEFAULT_CONFIG: ProposalConfigInput = {
 
 // Types blocked from SubDAOs
 const SUBDAO_BLOCKED = new Set(["SpawnDAO", "SpinOutSubDAO", "CreateSubDAO"]);
-const AVAILABLE_TYPES = ALL_PROPOSAL_TYPE_KEYS.filter(
-  (k) => !SUBDAO_BLOCKED.has(k),
-);
 
 export function CreateSubDAOWizard({
   isPending,
   onSubmit,
+  onSubmitAndVote,
 }: CreateSubDAOWizardProps) {
   const [step, setStep] = useState(0);
 
@@ -86,6 +89,7 @@ export function CreateSubDAOWizard({
     name: "proposalTypes" as never,
   });
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const watchedTypes = form.watch("proposalTypes") as Array<{
     typeKey: string;
     config: ProposalConfigInput;
@@ -176,7 +180,12 @@ export function CreateSubDAOWizard({
                   render={({ field }) => (
                     <FormItem className="flex-1">
                       <FormControl>
-                        <Input placeholder="0x..." {...field} />
+                        <RecipientCombobox
+                          value={field.value as string}
+                          onChange={field.onChange}
+                          onBlur={field.onBlur}
+                          disabled={isPending}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -255,24 +264,35 @@ export function CreateSubDAOWizard({
         {step === 3 && (
           <div className="space-y-4">
             <p className="text-sm">
-              Select which proposal types to enable for the SubDAO.
+              Select which proposal types to enable for the organizational unit.
             </p>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {AVAILABLE_TYPES.map((typeKey) => {
+              {ALL_PROPOSAL_TYPE_KEYS.map((typeKey) => {
                 const def = PROPOSAL_TYPE_MAP[typeKey];
+                const isBlocked = SUBDAO_BLOCKED.has(typeKey);
                 return (
                   <label
                     key={typeKey}
-                    className="flex cursor-pointer items-center gap-2 rounded border p-2"
+                    className={`flex items-center gap-2 rounded border p-2 ${
+                      isBlocked
+                        ? "cursor-not-allowed opacity-50"
+                        : "cursor-pointer"
+                    }`}
                   >
                     <Checkbox
                       checked={selectedTypeKeys.has(typeKey)}
                       onCheckedChange={() => toggleType(typeKey)}
+                      disabled={isBlocked}
                     />
-                    <div>
+                    <div className="flex items-center gap-1.5">
                       <span className="font-mono text-sm">
                         {def?.label ?? typeKey}
                       </span>
+                      {isBlocked && (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                          Parent only
+                        </Badge>
+                      )}
                     </div>
                   </label>
                 );
@@ -372,9 +392,15 @@ export function CreateSubDAOWizard({
               Next
             </Button>
           ) : (
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Submitting..." : "Create SubDAO Proposal"}
-            </Button>
+            <SubmitProposalButton
+              isPending={isPending}
+              onSubmit={() => form.handleSubmit((data) => onSubmit(data as CreateSubDAOPayload))()}
+              onSubmitAndVote={() => form.handleSubmit((data) => {
+                const d = data as CreateSubDAOPayload;
+                if (onSubmitAndVote) onSubmitAndVote(d);
+                else onSubmit(d);
+              })()}
+            />
           )}
         </div>
       </form>

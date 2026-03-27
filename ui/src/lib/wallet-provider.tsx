@@ -38,8 +38,11 @@ export interface WalletSignerContextValue {
   activeWalletIndex: number;
   /** Switch the active localnet wallet by index. */
   setActiveWalletIndex: (index: number) => void;
+  /** Disconnect the current localnet wallet (no-op on testnet/mainnet). */
+  disconnectWallet: () => void;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const WalletSignerContext = createContext<WalletSignerContextValue>({
   address: null,
   isConnected: false,
@@ -49,6 +52,7 @@ export const WalletSignerContext = createContext<WalletSignerContextValue>({
   localWallets: [],
   activeWalletIndex: 0,
   setActiveWalletIndex: () => {},
+  disconnectWallet: () => {},
 });
 
 /** Parse VITE_WALLET_KEY_N env vars into Ed25519Keypair instances. */
@@ -89,9 +93,21 @@ export function WalletSignerProvider({ children }: { children: ReactNode }) {
     () => (isLocalnet ? loadLocalWallets() : []),
     [isLocalnet],
   );
-  const [activeWalletIndex, setActiveWalletIndex] = useState(0);
+  const [activeWalletIndex, _setActiveWalletIndex] = useState(0);
+  const [localnetDisconnected, setLocalnetDisconnected] = useState(false);
 
-  const activeWallet = localWallets[activeWalletIndex] ?? null;
+  const setActiveWalletIndex = useCallback((index: number) => {
+    _setActiveWalletIndex(index);
+    setLocalnetDisconnected(false);
+  }, []);
+
+  const disconnectWallet = useCallback(() => {
+    setLocalnetDisconnected(true);
+  }, []);
+
+  const activeWallet = isLocalnet && localnetDisconnected
+    ? null
+    : (localWallets[activeWalletIndex] ?? null);
 
   const signAndExecuteTransaction = useCallback(
     async (args: { transaction: Transaction }): Promise<SignAndExecuteResult> => {
@@ -126,6 +142,7 @@ export function WalletSignerProvider({ children }: { children: ReactNode }) {
       localWallets,
       activeWalletIndex,
       setActiveWalletIndex,
+      disconnectWallet,
     }),
     [
       activeWallet,
@@ -133,6 +150,8 @@ export function WalletSignerProvider({ children }: { children: ReactNode }) {
       signAndExecuteTransaction,
       localWallets,
       activeWalletIndex,
+      setActiveWalletIndex,
+      disconnectWallet,
     ],
   );
 

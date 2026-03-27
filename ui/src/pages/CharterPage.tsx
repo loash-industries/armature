@@ -1,14 +1,12 @@
 import { useParams } from "@tanstack/react-router";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardContent,
-  Skeleton,
-  Alert,
-  AlertTitle,
-  AlertDescription,
-} from "@awar.dev/ui";
+} from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useDaoSummary, useCharterDetail } from "@/hooks/useDao";
 
 export function CharterPage() {

@@ -5,8 +5,8 @@ import {
   FormControl,
   FormDescription,
   FormMessage,
-  Input,
-} from "@awar.dev/ui";
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 import type { Control } from "react-hook-form";
 
 interface ProposalConfigFormProps {
@@ -41,19 +41,19 @@ export function ProposalConfigForm({
     },
     {
       name: `${prefix}.expiryMs`,
-      label: "Voting Period (ms)",
-      description: "e.g. 604800000 = 7 days",
-      placeholder: "604800000",
+      label: "Voting Period (hours)",
+      description: "e.g. 168 = 7 days",
+      placeholder: "168",
     },
     {
       name: `${prefix}.executionDelayMs`,
-      label: "Execution Delay (ms)",
+      label: "Execution Delay (hours)",
       description: "Timelock after passing before execution",
       placeholder: "0",
     },
     {
       name: `${prefix}.cooldownMs`,
-      label: "Cooldown (ms)",
+      label: "Cooldown (hours)",
       description: "Minimum time between executions of this type",
       placeholder: "0",
     },

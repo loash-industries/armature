@@ -4,7 +4,7 @@ import {
   BreadcrumbList,
   BreadcrumbItem,
   BreadcrumbSeparator,
-} from "@awar.dev/ui";
+} from "@/components/ui/breadcrumb";
 import { useParentDAO } from "@/hooks/useSubDAOs";
 import { useDaoSummary } from "@/hooks/useDao";
 

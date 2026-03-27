@@ -2,8 +2,12 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  Outlet,
 } from "@tanstack/react-router";
 import { AppShell } from "@/components/AppShell";
+import { ConnectPage } from "@/pages/ConnectPage";
+import { DaoPickerPage } from "@/pages/DaoPickerPage";
+import { CreateDaoPage } from "@/pages/CreateDaoPage";
 import { DaoDashboard } from "@/pages/DaoDashboard";
 import { TreasuryPage } from "@/pages/TreasuryPage";
 import { CapVaultPage } from "@/pages/CapVaultPage";
@@ -15,10 +19,31 @@ import { GovConfigPage } from "@/pages/GovConfigPage";
 import { EmergencyPage } from "@/pages/EmergencyPage";
 import { SubDAOListPage } from "@/pages/SubDAOListPage";
 import { NewProposalPage } from "@/pages/NewProposalPage";
-import { CreateDaoPage } from "@/pages/CreateDaoPage";
 
 const rootRoute = createRootRoute();
 
+// Flow 0 — Connect & Resolve (landing page)
+const connectRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/",
+  component: ConnectPage,
+});
+
+// Flow 0.5 — DAO Picker
+const pickerRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "pick",
+  component: DaoPickerPage,
+});
+
+// Flow 0.5b — Create DAO
+const createDaoRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "create",
+  component: CreateDaoPage,
+});
+
+// Flow 1+ — DAO pages (AppShell layout)
 const daoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "dao/$daoId",
@@ -43,21 +68,27 @@ const vaultRoute = createRoute({
   component: CapVaultPage,
 });
 
-const proposalsRoute = createRoute({
+const proposalsLayoutRoute = createRoute({
   getParentRoute: () => daoRoute,
   path: "proposals",
+  component: Outlet,
+});
+
+const proposalsIndexRoute = createRoute({
+  getParentRoute: () => proposalsLayoutRoute,
+  path: "/",
   component: ProposalsList,
 });
 
 const newProposalRoute = createRoute({
-  getParentRoute: () => daoRoute,
-  path: "proposals/new",
+  getParentRoute: () => proposalsLayoutRoute,
+  path: "new",
   component: NewProposalPage,
 });
 
 const proposalDetailRoute = createRoute({
-  getParentRoute: () => daoRoute,
-  path: "proposals/$proposalId",
+  getParentRoute: () => proposalsLayoutRoute,
+  path: "$proposalId",
   component: ProposalDetail,
 });
 
@@ -91,21 +122,19 @@ const subdaosRoute = createRoute({
   component: SubDAOListPage,
 });
 
-const createDaoRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "create",
-  component: CreateDaoPage,
-});
-
 const routeTree = rootRoute.addChildren([
+  connectRoute,
+  pickerRoute,
   createDaoRoute,
   daoRoute.addChildren([
     dashboardRoute,
     treasuryRoute,
     vaultRoute,
-    proposalsRoute,
-    newProposalRoute,
-    proposalDetailRoute,
+    proposalsLayoutRoute.addChildren([
+      proposalsIndexRoute,
+      newProposalRoute,
+      proposalDetailRoute,
+    ]),
     boardRoute,
     charterRoute,
     governanceRoute,
