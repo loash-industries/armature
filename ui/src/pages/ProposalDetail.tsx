@@ -490,7 +490,7 @@ export function ProposalDetail() {
         </Card>
 
         {proposal.payload && Object.keys(proposal.payload).length > 0 && (
-          <PayloadSummary typeKey={proposal.typeKey} payload={proposal.payload} />
+          <PayloadSummary typeKey={proposal.typeKey} payload={proposal.payload} payloadType={proposal.payloadType} />
         )}
       </div>
 

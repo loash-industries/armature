@@ -17,7 +17,6 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -53,6 +52,8 @@ import { getAddressName } from "@/lib/address-namer";
 import { AddressName } from "@/components/AddressName";
 import { buildSplitAndDeposit } from "@/lib/transactions";
 import { cacheKeys } from "@/lib/cache-keys";
+import { CoinAmountInput } from "@/components/ui/CoinAmountInput";
+import { formatBalance, parseAmount } from "@/lib/coins";
 
 function CoinIcon({ iconUrl, symbol }: { iconUrl: string | null; symbol: string }) {
   const [imgError, setImgError] = useState(false);
@@ -75,9 +76,12 @@ function CoinIcon({ iconUrl, symbol }: { iconUrl: string | null; symbol: string 
   );
 }
 
-function formatBalance(raw: bigint, decimals = 9): string {
-  const val = Number(raw) / Math.pow(10, decimals);
-  return val.toLocaleString(undefined, {
+function formatBalanceLocale(raw: bigint, decimals = 9): string {
+  // Use the shared formatBalance for precision, then apply locale formatting.
+  const base = formatBalance(raw, decimals);
+  const num = parseFloat(base);
+  if (isNaN(num)) return base;
+  return num.toLocaleString(undefined, {
     minimumFractionDigits: 0,
     maximumFractionDigits: 4,
   });
@@ -86,6 +90,19 @@ function formatBalance(raw: bigint, decimals = 9): string {
 function shortCoinType(coinType: string): string {
   const parts = coinType.split("::");
   return parts[parts.length - 1] ?? coinType;
+}
+
+/** Shorten a full coin type to "0xABCD…EFGH::module::TYPE" */
+function truncateCoinType(coinType: string): string {
+  const parts = coinType.split("::");
+  if (parts.length < 3) return coinType;
+  const pkg = parts[0];
+  const rest = parts.slice(1).join("::");
+  if (pkg.length > 12) {
+    const short = `${pkg.slice(0, 6)}…${pkg.slice(-4)}`;
+    return `${short}::${rest}`;
+  }
+  return coinType;
 }
 
 function timeAgo(timestampMs: number): string {
@@ -152,8 +169,7 @@ function buildLiveRows(
         : e.kind === "withdrawn"
           ? "Withdrawal"
           : "Claim",
-    description: `${formatBalance(e.amount, decimals(e.coinType))} ${coinLabel(e.coinType)} by ${getAddressName(e.actor)}`,
-
+    description: `${formatBalanceLocale(e.amount, decimals(e.coinType))} ${coinLabel(e.coinType)} by ${getAddressName(e.actor)}`,
     timestamp: e.timestamp,
     live: true,
     direction: e.kind === "withdrawn" ? "egress" : "ingress",
@@ -173,9 +189,8 @@ function buildLiveRows(
     badge: e.direction === "inbound" ? "Received" : "Sent",
     description:
       e.direction === "inbound"
-        ? `${formatBalance(BigInt(e.amount), decimals(e.coinType))} ${coinLabel(e.coinType)} from ${getAddressName(e.fromOwner ?? e.sender)}`
-        : `${formatBalance(BigInt(e.amount), decimals(e.coinType))} ${coinLabel(e.coinType)} to ${getAddressName(e.toOwner)}`,
-
+        ? `${formatBalanceLocale(BigInt(e.amount), decimals(e.coinType))} ${coinLabel(e.coinType)} from ${getAddressName(e.fromOwner ?? e.sender)}`
+        : `${formatBalanceLocale(BigInt(e.amount), decimals(e.coinType))} ${coinLabel(e.coinType)} to ${getAddressName(e.toOwner)}`,
     timestamp: e.timestamp,
     live: true,
     direction: e.direction === "inbound" ? "ingress" : "egress",
@@ -203,7 +218,7 @@ function LiveActivitySection({
   daoId: string;
 }) {
   useNow(); // drives 1s re-renders so timeAgo() stays current — scoped here, not the whole page
-  const { data: events, isLoading: historyLoading } = useTreasuryEvents(daoId);
+  const { data: events, isLoading: historyLoading } = useTreasuryEvents(daoId, treasuryId);
 
   const liveRows = buildLiveRows(relayFeed, coinTransfers, metadataMap, treasuryId);
 
@@ -303,7 +318,7 @@ function LiveActivitySection({
                   }`}
                 >
                   {row.amount
-                    ? `${isIngress ? "+" : "\u2212"}${formatBalance(BigInt(row.amount), dec)}`
+                    ? `${isIngress ? "+" : "\u2212"}${formatBalanceLocale(BigInt(row.amount), dec)}`
                     : "—"}
                 </TableCell>
                 <TableCell className="font-mono text-xs">
@@ -332,21 +347,25 @@ export function TreasuryPage() {
     feed: relayFeed,
   } = useLiveTreasury(dao?.treasuryId);
   const coinTransfers = useLiveCoinTransfers(dao?.treasuryId);
-  const { data: treasuryEvents } = useTreasuryEvents(daoId ?? "");
+  const { data: treasuryEvents } = useTreasuryEvents(daoId ?? "", dao?.treasuryId);
+
+  const { address, signAndExecuteTransaction } = useWalletSigner();
+  const { data: walletCoins } = useWalletCoins();
 
   // Stabilise the coin-types array identity so useCoinMetadataMap doesn't
   // recompute its query key (and potentially refetch) on every render.
+  // Include wallet coin types so the deposit dialog gets correct decimals
+  // even for coins not yet held in the treasury.
   const coinTypes = useMemo(() => {
     const set = new Set<string>();
     for (const b of balances ?? []) set.add(b.coinType);
     for (const e of relayFeed) set.add(e.coinType);
     for (const e of coinTransfers.feed) set.add(e.coinType);
     for (const e of treasuryEvents ?? []) if (e.coinType) set.add(e.coinType);
+    for (const c of walletCoins ?? []) set.add(c.coinType);
     return [...set];
-  }, [balances, relayFeed, coinTransfers.feed, treasuryEvents]);
+  }, [balances, relayFeed, coinTransfers.feed, treasuryEvents, walletCoins]);
   const { data: metadataMap } = useCoinMetadataMap(coinTypes);
-  const { address, signAndExecuteTransaction } = useWalletSigner();
-  const { data: walletCoins } = useWalletCoins();
   const client = useSuiClient();
   const queryClient = useQueryClient();
   const [depositOpen, setDepositOpen] = useState(false);
@@ -386,13 +405,12 @@ export function TreasuryPage() {
     let amount: bigint | undefined;
     const trimmed = depositAmount.trim();
     if (trimmed) {
-      const parsed = parseFloat(trimmed);
-      if (isNaN(parsed) || parsed <= 0) {
+      const rawAmount = parseAmount(trimmed, selectedDecimals);
+      if (rawAmount === null || rawAmount <= 0n) {
         toast.error("Invalid amount");
         setDepositPending(false);
         return;
       }
-      const rawAmount = BigInt(Math.round(parsed * Math.pow(10, selectedDecimals)));
       // Only split if the requested amount is strictly less than the total balance.
       if (rawAmount < selectedGroup.totalBalance) {
         amount = rawAmount;
@@ -483,7 +501,7 @@ export function TreasuryPage() {
                         </div>
                       </TableCell>
                       <TableCell className="text-right font-mono">
-                        {formatBalance(b.balance, decimals)}
+                        {formatBalanceLocale(b.balance, decimals)}
                       </TableCell>
                     </TableRow>
                   );
@@ -534,8 +552,18 @@ export function TreasuryPage() {
                   setDepositAmount("");
                 }}
               >
-                <SelectTrigger className="w-full overflow-hidden">
-                  <SelectValue placeholder="Select a coin..." className="truncate" />
+                <SelectTrigger className="w-full">
+                  {selectedCoinType ? (
+                    <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+                      <span className="font-mono font-medium">{selectedSymbol}</span>
+                      <span className="text-muted-foreground">—</span>
+                      <span className="text-muted-foreground truncate font-mono text-xs">
+                        {truncateCoinType(selectedCoinType)}
+                      </span>
+                    </span>
+                  ) : (
+                    <SelectValue placeholder="Select a coin..." />
+                  )}
                 </SelectTrigger>
                 <SelectContent>
                   {aggregatedCoins.map((c) => {
@@ -545,9 +573,13 @@ export function TreasuryPage() {
                     return (
                       <SelectItem key={c.coinType} value={c.coinType}>
                         <span className="flex min-w-0 items-center gap-1.5">
-                          <span className="font-mono">{sym}</span>
+                          <span className="font-mono font-medium">{sym}</span>
                           <span className="text-muted-foreground">—</span>
-                          <span className="truncate font-mono">{formatBalance(c.totalBalance, dec)}</span>
+                          <span className="text-muted-foreground font-mono text-xs">
+                            {truncateCoinType(c.coinType)}
+                          </span>
+                          <span className="text-muted-foreground">·</span>
+                          <span className="font-mono text-xs">{formatBalanceLocale(c.totalBalance, dec)}</span>
                         </span>
                       </SelectItem>
                     );
@@ -557,33 +589,15 @@ export function TreasuryPage() {
             </div>
             {selectedGroup && (
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label>Amount</Label>
-                  <button
-                    type="button"
-                    className="text-muted-foreground hover:text-foreground truncate text-xs"
-                    onClick={() => {
-                      const max = Number(selectedGroup.totalBalance) / Math.pow(10, selectedDecimals);
-                      setDepositAmount(String(max));
-                    }}
-                  >
-                    Max: <span className="font-mono">{formatBalance(selectedGroup.totalBalance, selectedDecimals)} {selectedSymbol}</span>
-                  </button>
-                </div>
-                <div className="relative">
-                  <Input
-                    type="number"
-                    min="0"
-                    step="any"
-                    placeholder="0.0000"
-                    value={depositAmount}
-                    onChange={(e) => setDepositAmount(e.target.value)}
-                    className="pr-14"
-                  />
-                  <span className="text-muted-foreground pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 truncate font-mono text-xs">
-                    {selectedSymbol}
-                  </span>
-                </div>
+                <CoinAmountInput
+                  value={depositAmount}
+                  onChange={setDepositAmount}
+                  symbol={selectedSymbol}
+                  decimals={selectedDecimals}
+                  maxBalance={selectedGroup.totalBalance}
+                  label="Amount"
+                  disabled={depositPending}
+                />
                 {selectedGroup.objectIds.length > 1 && (
                   <p className="text-muted-foreground text-xs">
                     {selectedGroup.objectIds.length} objects will be merged.

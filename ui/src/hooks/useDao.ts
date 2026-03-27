@@ -324,49 +324,77 @@ export function useEmergencyFreezeDetail(freezeId: string | undefined) {
   });
 }
 
-/** Fetch treasury-specific events (CoinClaimed). */
-export function useTreasuryEvents(daoId: string, limit = 20) {
+/** Fetch treasury-specific events for a DAO.
+ *
+ * Because the Sui RPC `queryEvents` filter only supports module-level granularity
+ * (no field-value matching), we paginate through pages of up to `PAGE_SIZE` events
+ * and filter client-side until we have collected `limit` matching events or we run
+ * out of pages (capped at `MAX_PAGES` to prevent unbounded fetching).
+ *
+ * Accepts an optional `treasuryId` (vault object ID) so we can match against
+ * `vault_id` in event data as well — guarding against any DAO-ID format mismatch.
+ * Both IDs are normalised to lowercase before comparison.
+ */
+export function useTreasuryEvents(daoId: string, treasuryId?: string, limit = 20) {
   const client = useSuiClient();
 
   return useQuery({
     queryKey: cacheKeys.events("treasury", daoId),
     queryFn: async (): Promise<ActivityEvent[]> => {
-      try {
-        const result = await queryEvents(
-          client,
-          {
-            MoveModule: {
-              package: PACKAGE_ID,
-              module: MODULES.treasury_vault,
-            },
-          },
-          undefined,
-          limit,
-        );
+      const PAGE_SIZE = 50;
+      const MAX_PAGES = 10;
+      const filter = {
+        MoveModule: {
+          package: PACKAGE_ID,
+          module: MODULES.treasury_vault,
+        },
+      };
 
-        return result.data
-          .filter((ev) => {
+      // Normalise to lowercase so hex-case differences don't break matching.
+      const normDaoId = daoId.toLowerCase();
+      const normVaultId = treasuryId?.toLowerCase();
+
+      const matched: ActivityEvent[] = [];
+      let cursor: string | undefined;
+      let pages = 0;
+
+      try {
+        while (matched.length < limit && pages < MAX_PAGES) {
+          const result = await queryEvents(client, filter, cursor, PAGE_SIZE);
+          pages++;
+
+          for (const ev of result.data) {
             const parsed = ev.parsedJson as Record<string, unknown>;
-            const evDaoId = extractId(parsed.dao_id);
-            const evVaultId = extractId(parsed.vault_id);
-            return evDaoId === daoId || evVaultId === daoId;
-          })
-          .map((ev) => {
-            const parsed = ev.parsedJson as Record<string, unknown>;
+            const evDaoId = extractId(parsed.dao_id)?.toLowerCase();
+            const evVaultId = extractId(parsed.vault_id)?.toLowerCase();
+
+            const matchesDaoId = evDaoId === normDaoId;
+            const matchesVaultId = normVaultId !== undefined && evVaultId === normVaultId;
+            if (!matchesDaoId && !matchesVaultId) continue;
+
             const typeParts = ev.type.split("::");
             const eventName = typeParts[typeParts.length - 1] ?? ev.type;
-            return {
+            matched.push({
               txDigest: ev.id.txDigest,
               eventType: eventName,
               label: eventLabel(eventName),
               description: eventDescription(eventName, parsed),
               timestampMs: Number(ev.timestampMs ?? 0),
               ...extractEventFields(eventName, parsed),
-            };
-          });
-      } catch {
-        return [];
+            });
+
+            if (matched.length >= limit) break;
+          }
+
+          if (!result.hasNextPage || !result.nextCursor) break;
+          cursor = result.nextCursor ?? undefined;
+        }
+      } catch (err) {
+        console.error("[useTreasuryEvents] RPC error:", err);
+        return matched;
       }
+
+      return matched;
     },
     enabled: !!daoId,
   });

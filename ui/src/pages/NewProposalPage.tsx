@@ -94,7 +94,7 @@ export function NewProposalPage() {
               <CardTitle>{typeDef.label}</CardTitle>
               <CardDescription>{typeDef.description}</CardDescription>
             </div>
-            <Button variant="outline" size="sm" onClick={() => selectType("")}>
+            <Button variant="outline" size="sm" onClick={() => navigate({ to: "/dao/$daoId/proposals", params: { daoId: daoId ?? "" } })}>
               Change Type
             </Button>
           </div>

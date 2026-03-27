@@ -13,13 +13,18 @@ import {
 } from "@/components/ui/table";
 import { PROPOSAL_TYPE_MAP } from "@/config/proposal-types";
 import { useCharacterNames } from "@/hooks/useCharacterNames";
+import { useCoinMetadataMap } from "@/hooks/useDao";
+import { formatBalance } from "@/lib/coins";
+import { useMemo, type ReactNode } from "react";
 
 interface PayloadSummaryProps {
   typeKey: string;
   payload: Record<string, unknown>;
+  /** Full Move type string, e.g. "…::SendCoin<0x2::sui::SUI>". Used to extract generic coin type. */
+  payloadType?: string;
 }
 
-export function PayloadSummary({ typeKey, payload }: PayloadSummaryProps) {
+export function PayloadSummary({ typeKey, payload, payloadType }: PayloadSummaryProps) {
   const typeDef = PROPOSAL_TYPE_MAP[typeKey];
 
   return (
@@ -30,24 +35,35 @@ export function PayloadSummary({ typeKey, payload }: PayloadSummaryProps) {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <PayloadRenderer typeKey={typeKey} payload={payload} />
+        <PayloadRenderer typeKey={typeKey} payload={payload} payloadType={payloadType} />
       </CardContent>
     </Card>
   );
 }
 
+/** Extract the generic type parameter from a Move type string, e.g. "::SendCoin<0x2::sui::SUI>" → "0x2::sui::SUI". */
+function extractCoinType(payloadType: string | undefined): string | undefined {
+  if (!payloadType) return undefined;
+  const start = payloadType.indexOf("<");
+  const end = payloadType.lastIndexOf(">");
+  if (start === -1 || end === -1) return undefined;
+  return payloadType.slice(start + 1, end);
+}
+
 function PayloadRenderer({
   typeKey,
   payload,
+  payloadType,
 }: {
   typeKey: string;
   payload: Record<string, unknown>;
+  payloadType?: string;
 }) {
   switch (typeKey) {
     case "SetBoard":
       return <SetBoardSummary payload={payload} />;
     case "TreasuryWithdraw":
-      return <TreasuryWithdrawSummary payload={payload} />;
+      return <CoinProposalSummary payload={payload} payloadType={payloadType} recipientLabel="Recipient" recipientField="recipient" />;
     case "CharterUpdate":
       return <CharterUpdateSummary payload={payload} />;
     case "EnableProposalType":
@@ -61,8 +77,9 @@ function PayloadRenderer({
     case "TransferFreezeAdmin":
       return <TransferFreezeAdminSummary payload={payload} />;
     case "SendCoinToDAO":
+      return <CoinProposalSummary payload={payload} payloadType={payloadType} recipientLabel="Recipient Treasury" recipientField="recipient_treasury" />;
     case "SendSmallPayment":
-      return <CoinTransferSummary payload={payload} />;
+      return <CoinProposalSummary payload={payload} payloadType={payloadType} recipientLabel="Recipient" recipientField="recipient" />;
     case "SpinOutSubDAO":
       return <ObjectIdSummary label="SubDAO" payload={payload} field="subdao_id" />;
     case "SpawnDAO":
@@ -112,17 +129,63 @@ function SetBoardSummary({ payload }: { payload: Record<string, unknown> }) {
   );
 }
 
-function TreasuryWithdrawSummary({
+/** Shorten "0xABCDEF0123456789…::module::TYPE" → "0xABCD…6789::module::TYPE" */
+function truncateCoinType(coinType: string): string {
+  const parts = coinType.split("::");
+  if (parts.length < 3) return coinType;
+  const pkg = parts[0];
+  const rest = parts.slice(1).join("::");
+  if (pkg.length > 12) {
+    return `${pkg.slice(0, 6)}…${pkg.slice(-4)}::${rest}`;
+  }
+  return coinType;
+}
+
+/** Coin-aware summary used by TreasuryWithdraw, SendCoinToDAO, and SendSmallPayment.
+ *  Extracts the coin type from the generic payloadType, fetches on-chain metadata,
+ *  and formats the raw amount with the correct decimals and symbol. */
+function CoinProposalSummary({
   payload,
+  payloadType,
+  recipientLabel,
+  recipientField,
 }: {
   payload: Record<string, unknown>;
+  payloadType?: string;
+  recipientLabel: string;
+  recipientField: string;
 }) {
+  const coinType = extractCoinType(payloadType);
+  const coinTypes = useMemo(() => (coinType ? [coinType] : []), [coinType]);
+  const { data: metadataMap } = useCoinMetadataMap(coinTypes);
+
+  const meta = coinType ? metadataMap?.[coinType] : undefined;
+  const decimals = meta?.decimals ?? 9;
+  const symbol = meta?.symbol ?? (coinType ? coinType.split("::").pop() ?? "" : "");
+
+  const rawAmount = String(payload.amount ?? "0");
+  let formattedAmount: string;
+  try {
+    formattedAmount = `${formatBalance(BigInt(rawAmount), decimals)} ${symbol}`;
+  } catch {
+    formattedAmount = rawAmount;
+  }
+
+  const recipient = String(payload[recipientField] ?? "");
+
+  const coinDisplay = coinType ? (
+    <span className="flex items-center gap-1.5" title={coinType}>
+      <Badge variant="secondary" className="font-mono text-xs">{symbol}</Badge>
+      <span className="font-mono text-xs text-muted-foreground">{truncateCoinType(coinType)}</span>
+    </span>
+  ) : "—";
+
   return (
     <Table>
       <TableBody>
-        <KVRow label="Coin Type" value={String(payload.coinType ?? "")} />
-        <KVRow label="Amount" value={String(payload.amount ?? "")} />
-        <KVRow label="Recipient" value={String(payload.recipient ?? "")} mono />
+        <KVRow label={recipientLabel} value={recipient} mono />
+        <KVRow label="Amount" value={formattedAmount} />
+        <KVRow label="Coin" value={coinDisplay} />
       </TableBody>
     </Table>
   );
@@ -271,17 +334,7 @@ function TransferFreezeAdminSummary({
   );
 }
 
-function CoinTransferSummary({ payload }: { payload: Record<string, unknown> }) {
-  return (
-    <Table>
-      <TableBody>
-        <KVRow label="Recipient" value={String(payload.recipient ?? payload.recipient_treasury ?? "")} mono />
-        <KVRow label="Amount" value={String(payload.amount ?? "")} />
-        <KVRow label="Coin Type" value={String(payload.coin_type ?? "")} mono />
-      </TableBody>
-    </Table>
-  );
-}
+
 
 function ObjectIdSummary({ label, payload, field }: { label: string; payload: Record<string, unknown>; field: string }) {
   return (
@@ -428,16 +481,17 @@ function KVRow({
   mono,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   mono?: boolean;
 }) {
+  const isEmpty = value === "" || value === null || value === undefined;
   return (
     <TableRow>
       <TableCell className="text-muted-foreground text-sm">{label}</TableCell>
       <TableCell
         className={`text-sm ${mono ? "font-mono" : ""}`}
       >
-        {value || "—"}
+        {isEmpty ? "—" : value}
       </TableCell>
     </TableRow>
   );
