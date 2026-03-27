@@ -54,6 +54,7 @@ export function UpdateProposalConfigForm({
     },
   });
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const selectedType = form.watch("typeKey");
 
   const HOURS_TO_MS = 3_600_000;
@@ -128,7 +129,7 @@ export function UpdateProposalConfigForm({
           name="metadataIpfs"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Proposal Description</FormLabel>
+              <FormLabel>Proposal Description (optional)</FormLabel>
               <FormControl>
                 <Textarea placeholder="Describe this proposal..." {...field} />
               </FormControl>

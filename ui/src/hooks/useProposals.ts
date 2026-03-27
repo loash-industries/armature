@@ -174,7 +174,30 @@ export function useProposal(proposalId: string) {
     queryKey: cacheKeys.proposal(proposalId),
     queryFn: async (): Promise<ProposalSummary | null> => {
       const objects = await multiGetObjects(client, [proposalId]);
-      return objects[0] ? parseProposal(objects[0]) : null;
+      const proposal = objects[0] ? parseProposal(objects[0]) : null;
+      if (!proposal || proposal.status !== "executed") return proposal;
+
+      // Look up the execution tx hash via ProposalExecuted events (best-effort)
+      try {
+        const eventsResult = await client.queryEvents({
+          query: { MoveEventType: `${PACKAGE_ID}::${MODULES.proposal}::ProposalExecuted` },
+          limit: 100,
+          order: "descending",
+        });
+        const executedEvent = eventsResult.data.find((ev) => {
+          const parsed = ev.parsedJson as Record<string, unknown>;
+          const evProposalId =
+            typeof parsed.proposal_id === "string" ? parsed.proposal_id : undefined;
+          return evProposalId === proposalId;
+        });
+        if (executedEvent) {
+          return { ...proposal, executionTxHash: executedEvent.id.txDigest };
+        }
+      } catch {
+        // Ignore event query errors — tx hash is best-effort
+      }
+
+      return proposal;
     },
     enabled: !!proposalId,
   });

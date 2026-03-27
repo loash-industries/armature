@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useDaoSummary, useGovernanceConfig } from "@/hooks/useDao";
 import type { ProposalTypeConfig } from "@/types/dao";
+import { AnimatedValue } from "@/components/ui/AnimatedValue";
 
 // --- Warning thresholds (#54) ---
 
@@ -100,10 +101,6 @@ function formatDuration(ms: number): string {
   return rem > 0 ? `${days}d ${rem}h` : `${days}d`;
 }
 
-function formatBps(bps: number): string {
-  return `${(bps / 100).toFixed(1)}%`;
-}
-
 // --- Components ---
 
 function TypeBadges({ item }: { item: ProposalTypeConfig }) {
@@ -137,7 +134,7 @@ function ConfigDetail({
   className,
 }: {
   label: string;
-  value: string;
+  value: React.ReactNode;
   className?: string;
 }) {
   return (
@@ -200,14 +197,14 @@ function TypeDetailPanel({ item }: { item: ProposalTypeConfig }) {
         <div className="col-span-1">
           <ConfigDetail
             label="Quorum"
-            value={formatBps(config.quorum)}
+            value={<AnimatedValue value={config.quorum / 100} suffix="%" />}
             className={severityColor(qs)}
           />
         </div>
         <div className="col-span-1">
           <ConfigDetail
             label="Approval Threshold"
-            value={formatBps(config.approvalThreshold)}
+            value={<AnimatedValue value={config.approvalThreshold / 100} suffix="%" />}
             className={severityColor(as_)}
           />
         </div>
@@ -304,13 +301,13 @@ function TypeRow({ item }: { item: ProposalTypeConfig }) {
         <TableCell
           className={`text-right font-mono text-sm ${item.config ? severityColor(quorumSeverity(item.typeKey, item.config.quorum)) : ""}`}
         >
-          {item.config ? formatBps(item.config.quorum) : "—"}
+          {item.config ? <AnimatedValue value={item.config.quorum / 100} suffix="%" /> : "—"}
         </TableCell>
         <TableCell
           className={`text-right font-mono text-sm ${item.config ? severityColor(approvalSeverity(item.typeKey, item.config.approvalThreshold)) : ""}`}
         >
           {item.config
-            ? formatBps(item.config.approvalThreshold)
+            ? <AnimatedValue value={item.config.approvalThreshold / 100} suffix="%" />
             : "—"}
         </TableCell>
         <TableCell className="text-right font-mono text-sm">

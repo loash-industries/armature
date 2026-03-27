@@ -1,8 +1,9 @@
-import { useParams } from "@tanstack/react-router";
+import { useParams, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useMemo } from "react";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Plus, Minus, RefreshCw } from "lucide-react";
 import {
   Card,
   CardHeader,
@@ -53,7 +54,8 @@ import { AddressName } from "@/components/AddressName";
 import { buildSplitAndDeposit } from "@/lib/transactions";
 import { cacheKeys } from "@/lib/cache-keys";
 import { CoinAmountInput } from "@/components/ui/CoinAmountInput";
-import { formatBalance, parseAmount } from "@/lib/coins";
+import { AnimatedCoinBalance } from "@/components/ui/AnimatedCoinBalance";
+import { formatBalance } from "@/lib/coins";
 
 function CoinIcon({ iconUrl, symbol }: { iconUrl: string | null; symbol: string }) {
   const [imgError, setImgError] = useState(false);
@@ -318,7 +320,7 @@ function LiveActivitySection({
                   }`}
                 >
                   {row.amount
-                    ? `${isIngress ? "+" : "\u2212"}${formatBalanceLocale(BigInt(row.amount), dec)}`
+                    ? <><span>{isIngress ? "+" : "\u2212"}</span><AnimatedCoinBalance balance={BigInt(row.amount)} decimals={dec} className="font-mono inline-flex" /></>
                     : "—"}
                 </TableCell>
                 <TableCell className="font-mono text-xs">
@@ -340,6 +342,7 @@ function LiveActivitySection({
 
 export function TreasuryPage() {
   const { daoId } = useParams({ strict: false });
+  const navigate = useNavigate();
   const { data: dao, isError: daoError } = useDaoSummary(daoId ?? "");
   const {
     data: balances,
@@ -370,8 +373,22 @@ export function TreasuryPage() {
   const queryClient = useQueryClient();
   const [depositOpen, setDepositOpen] = useState(false);
   const [selectedCoinType, setSelectedCoinType] = useState("");
-  const [depositAmount, setDepositAmount] = useState("");
+  const [depositAmount, setDepositAmount] = useState<bigint | null>(null);
   const [depositPending, setDepositPending] = useState(false);
+  const [balancesRefreshing, setBalancesRefreshing] = useState(false);
+
+  async function handleRefreshBalances() {
+    if (!dao?.treasuryId) return;
+    setBalancesRefreshing(true);
+    try {
+      await queryClient.invalidateQueries({
+        queryKey: cacheKeys.treasury(dao.treasuryId),
+        refetchType: "all",
+      });
+    } finally {
+      setBalancesRefreshing(false);
+    }
+  }
 
   // Aggregate wallet coin objects by coin type so users see a single balance per token.
   const aggregatedCoins = useMemo(() => {
@@ -403,18 +420,15 @@ export function TreasuryPage() {
     setDepositPending(true);
 
     let amount: bigint | undefined;
-    const trimmed = depositAmount.trim();
-    if (trimmed) {
-      const rawAmount = parseAmount(trimmed, selectedDecimals);
-      if (rawAmount === null || rawAmount <= 0n) {
-        toast.error("Invalid amount");
-        setDepositPending(false);
-        return;
-      }
-      // Only split if the requested amount is strictly less than the total balance.
-      if (rawAmount < selectedGroup.totalBalance) {
-        amount = rawAmount;
-      }
+    if (depositAmount !== null && depositAmount > 0n) {
+      // Always pass an explicit amount so a split happens.
+      // For SUI this is required to leave gas behind; for other coins
+      // it avoids depositing more than intended when balance == amount.
+      amount = depositAmount;
+    } else if (depositAmount !== null) {
+      toast.error("Invalid amount");
+      setDepositPending(false);
+      return;
     }
 
     try {
@@ -432,7 +446,7 @@ export function TreasuryPage() {
       });
       setDepositOpen(false);
       setSelectedCoinType("");
-      setDepositAmount("");
+      setDepositAmount(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Deposit failed");
     } finally {
@@ -462,11 +476,23 @@ export function TreasuryPage() {
                   : "Loading..."}
               </CardDescription>
             </div>
-            {address && (
-              <Button variant="outline" size="sm" onClick={() => setDepositOpen(true)}>
-                Deposit
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                title="Refresh balances"
+                disabled={balancesRefreshing || !dao?.treasuryId}
+                onClick={handleRefreshBalances}
+              >
+                <RefreshCw className={`h-4 w-4 ${balancesRefreshing ? "animate-spin" : ""}`} />
               </Button>
-            )}
+              {address && (
+                <Button variant="outline" size="sm" onClick={() => setDepositOpen(true)}>
+                  Deposit
+                </Button>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -482,6 +508,7 @@ export function TreasuryPage() {
                 <TableRow>
                   <TableHead>Coin Type</TableHead>
                   <TableHead className="text-right">Balance</TableHead>
+                  {address && <TableHead className="w-20" />}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -501,8 +528,42 @@ export function TreasuryPage() {
                         </div>
                       </TableCell>
                       <TableCell className="text-right font-mono">
-                        {formatBalanceLocale(b.balance, decimals)}
+                        <AnimatedCoinBalance balance={b.balance} decimals={decimals} className="font-mono justify-end" />
                       </TableCell>
+                      {address && (
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              title="Deposit this coin"
+                              onClick={() => {
+                                setSelectedCoinType(b.coinType);
+                                setDepositAmount(null);
+                                setDepositOpen(true);
+                              }}
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              title="Propose withdrawal of this coin"
+                              onClick={() =>
+                                navigate({
+                                  to: "/dao/$daoId/proposals/new",
+                                  params: { daoId: daoId ?? "" },
+                                  search: { type: "TreasuryWithdraw" },
+                                })
+                              }
+                            >
+                              <Minus className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      )}
                     </TableRow>
                   );
                 })}
@@ -533,7 +594,7 @@ export function TreasuryPage() {
 
       <Dialog open={depositOpen} onOpenChange={(open) => {
         setDepositOpen(open);
-        if (!open) { setSelectedCoinType(""); setDepositAmount(""); }
+        if (!open) { setSelectedCoinType(""); setDepositAmount(null); }
       }}>
         <DialogContent>
           <DialogHeader>
@@ -549,7 +610,7 @@ export function TreasuryPage() {
                 value={selectedCoinType}
                 onValueChange={(v) => {
                   setSelectedCoinType(v ?? "");
-                  setDepositAmount("");
+                  setDepositAmount(null);
                 }}
               >
                 <SelectTrigger className="w-full">
@@ -565,7 +626,7 @@ export function TreasuryPage() {
                     <SelectValue placeholder="Select a coin..." />
                   )}
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent alignItemWithTrigger={false}>
                   {aggregatedCoins.map((c) => {
                     const meta = metadataMap?.[c.coinType];
                     const sym = meta?.symbol ?? shortCoinType(c.coinType);

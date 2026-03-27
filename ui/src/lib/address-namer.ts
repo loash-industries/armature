@@ -1,46 +1,51 @@
 /**
- * Session-scoped fake name cache.
+ * Address → display name utilities.
  *
- * Assigns a human-readable display name to every address the first time it is
- * encountered.  The mapping is kept only in memory — it resets on each page
- * load, which is intentional.  No address ever falls back to a truncated hex.
+ * Names are derived deterministically from the address bytes so that the same
+ * address always maps to the same name regardless of encounter order or page
+ * reload.  No address ever falls back to a truncated hex.
+ *
+ * Uses `unique-names-generator` (adjective + animal, ~427k unique combos).
  */
-
-const DISPLAY_NAMES: readonly string[] = [
-  "Amber Fox",      "Azure Wolf",     "Brave Hawk",     "Bright Lynx",
-  "Bronze Eagle",   "Calm Raven",     "Coral Bear",     "Crisp Falcon",
-  "Dark Otter",     "Dawn Crane",     "Deep Stag",      "Deft Heron",
-  "Dusk Badger",    "Ember Drake",    "Fair Mink",      "Fierce Wren",
-  "Firm Vixen",     "Fleet Finch",    "Frost Panda",    "Gold Kite",
-  "Grand Ibis",     "Grey Stoat",     "Iron Merlin",    "Jade Egret",
-  "Just Lark",      "Keen Marten",    "Lithe Puffin",   "Lone Shrike",
-  "Misty Quail",    "Noble Swift",    "North Robin",    "Oak Thrush",
-  "Pale Pigeon",    "Pine Dove",      "Quick Snipe",    "Quiet Grouse",
-  "Red Plover",     "Rich Curlew",    "Rock Bunting",   "Rose Martin",
-  "Royal Starling", "Ruby Swallow",   "Sage Harrier",   "Salt Kestrel",
-  "Sand Hobby",     "Sharp Osprey",   "Silver Buzzard", "Slim Condor",
-  "Smoke Petrel",   "Snow Albatross", "Soft Gannet",    "Solar Tern",
-  "Stone Booby",    "Storm Avocet",   "Sunlit Stilt",   "Swift Godwit",
-  "Tawny Dunlin",   "Tide Bittern",   "True Snipe",     "Warm Plover",
-  "Wild Curlew",    "Wind Sanderling","Wise Redshank",  "Young Turnstone",
-];
-
-const cache = new Map<string, string>();
-let counter = 0;
+import {
+  uniqueNamesGenerator,
+  adjectives,
+  animals,
+} from "unique-names-generator";
 
 /**
- * Returns the `@Name` display string assigned to `address`.  If the address
- * has never been seen before, the next name in the list is assigned and cached.
- * Names cycle if more unique addresses are seen than names in the list.
+ * Fold all 32 address bytes (64 hex chars after "0x") into a 32-bit seed
+ * by accumulating with a multiply-xor step for good avalanche behaviour.
+ */
+function addressToSeed(address: string): number {
+  const hex = address.startsWith("0x") ? address.slice(2) : address;
+  let seed = 0;
+  for (let i = 0; i < hex.length - 1; i += 2) {
+    const byte = parseInt(hex.slice(i, i + 2), 16);
+    seed = (Math.imul(seed, 31) ^ byte) >>> 0;
+  }
+  return seed;
+}
+
+/**
+ * Returns the generated name for `address` (no `@` prefix).
+ * The result is fully deterministic — the same address always produces the
+ * same name regardless of call order or session state.
+ */
+export function getAddressNameRaw(address: string): string {
+  return uniqueNamesGenerator({
+    dictionaries: [adjectives, animals],
+    separator: " ",
+    style: "capital",
+    seed: addressToSeed(address),
+  });
+}
+
+/**
+ * Returns the `@Name` display string for `address`.
  */
 export function getAddressName(address: string): string {
-  const cached = cache.get(address);
-  if (cached !== undefined) return `@${cached}`;
-
-  const name = DISPLAY_NAMES[counter % DISPLAY_NAMES.length]!;
-  counter++;
-  cache.set(address, name);
-  return `@${name}`;
+  return `@${getAddressNameRaw(address)}`;
 }
 
 /**

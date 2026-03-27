@@ -199,4 +199,6 @@ export interface ProposalSummary {
   votesCast: Record<string, boolean>;
   /** On-chain payload fields (e.g. new_members, recipient, amount). */
   payload: Record<string, unknown>;
+  /** Transaction digest of the execution transaction (only present when status === "executed"). */
+  executionTxHash?: string;
 }

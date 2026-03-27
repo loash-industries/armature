@@ -15,18 +15,16 @@ import { useTreasuryBalances, useDaoSummary, useCoinMetadataMap } from "@/hooks/
 import { SubmitProposalButton } from "@/components/proposals/SubmitProposalButton";
 import { CoinAmountInput } from "@/components/ui/CoinAmountInput";
 import { CoinSelect } from "@/components/ui/CoinSelect";
-import { formatBalance, parseAmount } from "@/lib/coins";
+import { formatBalance } from "@/lib/coins";
 import type { SendCoinToDAOPayload } from "@/types/proposal";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
-// Internal form schema — amount is human-readable; we convert to base units on submit.
 const formSchema = z.object({
   recipientTreasuryId: z
     .string()
     .regex(/^0x[a-fA-F0-9]{64}$/, "Must be a valid Sui object ID (0x + 64 hex)"),
-  amount: z.string().min(1, "Amount is required"),
   coinType: z.string().min(1, "Select a coin type"),
-  metadataIpfs: z.string().min(1, "Proposal description is required"),
+  metadataIpfs: z.string().default(""),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -53,11 +51,13 @@ export function SendCoinToDAOForm({
   );
   const { data: metadataMap } = useCoinMetadataMap(coinTypes);
 
+  const [amount, setAmount] = useState<bigint | null>(null);
+  const [amountError, setAmountError] = useState<string | undefined>();
+
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       recipientTreasuryId: "",
-      amount: "",
       coinType: "",
       metadataIpfs: "",
     },
@@ -71,22 +71,22 @@ export function SendCoinToDAOForm({
     (selectedCoinType ? selectedCoinType.split("::").pop() ?? "" : "");
   const selectedDecimals = selectedMeta?.decimals ?? 9;
 
-  /** Convert human-readable form values to on-chain payload before calling onSubmit. */
+  /** Convert form values + bigint amount to on-chain payload. */
   function toPayload(values: FormValues): SendCoinToDAOPayload | null {
-    const raw = parseAmount(values.amount, selectedDecimals);
-    if (raw === null || raw <= 0n) {
-      form.setError("amount", { message: "Enter a valid amount greater than 0" });
+    setAmountError(undefined);
+    if (amount === null || amount <= 0n) {
+      setAmountError("Enter a valid amount greater than 0");
       return null;
     }
-    if (selectedBalance && raw > selectedBalance.balance) {
-      form.setError("amount", {
-        message: `Amount exceeds treasury balance (${formatBalance(selectedBalance.balance, selectedDecimals)} ${selectedSymbol})`,
-      });
+    if (selectedBalance && amount > selectedBalance.balance) {
+      setAmountError(
+        `Amount exceeds treasury balance (${formatBalance(selectedBalance.balance, selectedDecimals)} ${selectedSymbol})`,
+      );
       return null;
     }
     return {
       recipientTreasuryId: values.recipientTreasuryId,
-      amount: raw.toString(),
+      amount: amount.toString(),
       coinType: values.coinType,
       metadataIpfs: values.metadataIpfs,
     };
@@ -119,7 +119,8 @@ export function SendCoinToDAOForm({
                   value={field.value}
                   onValueChange={(v) => {
                     field.onChange(v);
-                    form.setValue("amount", "");
+                    setAmount(null);
+                    setAmountError(undefined);
                   }}
                   balances={balances}
                   metadataMap={metadataMap}
@@ -130,23 +131,15 @@ export function SendCoinToDAOForm({
           )}
         />
 
-        {/* Decimal-aware amount with Max shortcut */}
-        <FormField
-          control={form.control}
-          name="amount"
-          render={({ field, fieldState }) => (
-            <FormItem>
-              <CoinAmountInput
-                value={field.value}
-                onChange={field.onChange}
-                symbol={selectedSymbol}
-                decimals={selectedDecimals}
-                maxBalance={selectedBalance?.balance}
-                disabled={!selectedCoinType || isPending}
-                errorMessage={fieldState.error?.message}
-              />
-            </FormItem>
-          )}
+        {/* Amount */}
+        <CoinAmountInput
+          value={amount}
+          onChange={(v) => { setAmount(v); setAmountError(undefined); }}
+          symbol={selectedSymbol}
+          decimals={selectedDecimals}
+          maxBalance={selectedBalance?.balance}
+          disabled={!selectedCoinType || isPending}
+          errorMessage={amountError}
         />
 
         {/* Recipient treasury */}
@@ -169,7 +162,7 @@ export function SendCoinToDAOForm({
           name="metadataIpfs"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Proposal Description</FormLabel>
+              <FormLabel>Proposal Description (optional)</FormLabel>
               <FormControl>
                 <Textarea placeholder="Describe this proposal..." {...field} />
               </FormControl>

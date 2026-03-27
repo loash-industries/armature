@@ -1,6 +1,8 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { TriangleAlert } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import {
   Form,
   FormField,
@@ -9,24 +11,25 @@ import {
   FormControl,
   FormMessage,
 } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Textarea } from "@/components/ui/textarea";
+import { RecipientCombobox } from "@/components/ui/RecipientCombobox";
 import { useTreasuryBalances, useDaoSummary, useCoinMetadataMap } from "@/hooks/useDao";
 import { SubmitProposalButton } from "@/components/proposals/SubmitProposalButton";
 import { CoinAmountInput } from "@/components/ui/CoinAmountInput";
 import { CoinSelect } from "@/components/ui/CoinSelect";
-import { formatBalance, parseAmount } from "@/lib/coins";
+import { formatBalance } from "@/lib/coins";
 import type { TreasuryWithdrawPayload } from "@/types/proposal";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { useCharacterNames } from "@/hooks/useCharacterNames";
+import { AddressName } from "@/components/AddressName";
 
-// Internal form schema — amount is human-readable; converted to base units on submit.
 const formSchema = z.object({
   coinType: z.string().min(1, "Select a coin type"),
-  amount: z.string().min(1, "Amount is required"),
   recipient: z
     .string()
     .regex(/^0x[a-fA-F0-9]{64}$/, "Must be a valid Sui address (0x + 64 hex)"),
-  metadataIpfs: z.string().min(1, "Proposal description is required"),
+  metadataIpfs: z.string().default(""),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -34,6 +37,7 @@ type FormValues = z.infer<typeof formSchema>;
 interface TreasuryWithdrawFormProps {
   daoId: string;
   isPending?: boolean;
+  isTypeEnabled?: boolean;
   onSubmit: (data: TreasuryWithdrawPayload) => void;
   onSubmitAndVote?: (data: TreasuryWithdrawPayload) => void;
 }
@@ -41,6 +45,7 @@ interface TreasuryWithdrawFormProps {
 export function TreasuryWithdrawForm({
   daoId,
   isPending,
+  isTypeEnabled = true,
   onSubmit,
   onSubmitAndVote,
 }: TreasuryWithdrawFormProps) {
@@ -53,11 +58,13 @@ export function TreasuryWithdrawForm({
   );
   const { data: metadataMap } = useCoinMetadataMap(coinTypes);
 
+  const [amount, setAmount] = useState<bigint | null>(null);
+  const [amountError, setAmountError] = useState<string | undefined>();
+
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       coinType: "",
-      amount: "",
       recipient: "",
       metadataIpfs: "",
     },
@@ -71,21 +78,29 @@ export function TreasuryWithdrawForm({
     (selectedCoinType ? selectedCoinType.split("::").pop() ?? "" : "");
   const selectedDecimals = selectedMeta?.decimals ?? 9;
 
+  const recipientValue = form.watch("recipient");
+  const isValidRecipient = /^0x[a-fA-F0-9]{64}$/.test(recipientValue);
+  const recipientAddrs = useMemo(
+    () => (isValidRecipient ? [recipientValue] : []),
+    [isValidRecipient, recipientValue],
+  );
+  const { data: recipientNameMap } = useCharacterNames(recipientAddrs);
+
   function toPayload(values: FormValues): TreasuryWithdrawPayload | null {
-    const raw = parseAmount(values.amount, selectedDecimals);
-    if (raw === null || raw <= 0n) {
-      form.setError("amount", { message: "Enter a valid amount greater than 0" });
+    setAmountError(undefined);
+    if (amount === null || amount <= 0n) {
+      setAmountError("Enter a valid amount greater than 0");
       return null;
     }
-    if (selectedBalance && raw > selectedBalance.balance) {
-      form.setError("amount", {
-        message: `Amount exceeds treasury balance (${formatBalance(selectedBalance.balance, selectedDecimals)} ${selectedSymbol})`,
-      });
+    if (selectedBalance && amount > selectedBalance.balance) {
+      setAmountError(
+        `Amount exceeds treasury balance (${formatBalance(selectedBalance.balance, selectedDecimals)} ${selectedSymbol})`,
+      );
       return null;
     }
     return {
       coinType: values.coinType,
-      amount: raw.toString(),
+      amount: amount.toString(),
       recipient: values.recipient,
       metadataIpfs: values.metadataIpfs,
     };
@@ -106,6 +121,24 @@ export function TreasuryWithdrawForm({
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+        {!isTypeEnabled && (
+          <Alert className="border-yellow-500/50 text-yellow-700 dark:text-yellow-400 [&>svg]:text-yellow-600 dark:[&>svg]:text-yellow-400">
+            <TriangleAlert />
+            <AlertTitle>Proposal type disabled</AlertTitle>
+            <AlertDescription>
+              Treasury Withdraw is not enabled for this DAO. You must{" "}
+              <Link
+                to="/dao/$daoId/proposals/new"
+                params={{ daoId }}
+                search={{ type: "EnableProposalType", prefill: "TreasuryWithdraw" }}
+                className="font-medium underline underline-offset-2 hover:opacity-80"
+              >
+                enable treasury withdrawals
+              </Link>{" "}
+              before creating this proposal.
+            </AlertDescription>
+          </Alert>
+        )}
         {/* Coin selector */}
         <FormField
           control={form.control}
@@ -118,7 +151,8 @@ export function TreasuryWithdrawForm({
                   value={field.value}
                   onValueChange={(v) => {
                     field.onChange(v);
-                    form.setValue("amount", "");
+                    setAmount(null);
+                    setAmountError(undefined);
                   }}
                   balances={balances}
                   metadataMap={metadataMap}
@@ -129,23 +163,15 @@ export function TreasuryWithdrawForm({
           )}
         />
 
-        {/* Decimal-aware amount with Max shortcut */}
-        <FormField
-          control={form.control}
-          name="amount"
-          render={({ field, fieldState }) => (
-            <FormItem>
-              <CoinAmountInput
-                value={field.value}
-                onChange={field.onChange}
-                symbol={selectedSymbol}
-                decimals={selectedDecimals}
-                maxBalance={selectedBalance?.balance}
-                disabled={!selectedCoinType || isPending}
-                errorMessage={fieldState.error?.message}
-              />
-            </FormItem>
-          )}
+        {/* Amount */}
+        <CoinAmountInput
+          value={amount}
+          onChange={(v) => { setAmount(v); setAmountError(undefined); }}
+          symbol={selectedSymbol}
+          decimals={selectedDecimals}
+          maxBalance={selectedBalance?.balance}
+          disabled={!selectedCoinType || isPending}
+          errorMessage={amountError}
         />
 
         {/* Recipient address */}
@@ -156,8 +182,18 @@ export function TreasuryWithdrawForm({
             <FormItem>
               <FormLabel>Recipient Address</FormLabel>
               <FormControl>
-                <Input placeholder="0x..." {...field} />
+                <RecipientCombobox
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  disabled={isPending}
+                />
               </FormControl>
+              {isValidRecipient && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  Resolved: <AddressName address={recipientValue} charName={recipientNameMap?.get(recipientValue)} />
+                </p>
+              )}
               <FormMessage />
             </FormItem>
           )}
@@ -168,7 +204,7 @@ export function TreasuryWithdrawForm({
           name="metadataIpfs"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Proposal Description</FormLabel>
+              <FormLabel>Proposal Description (optional)</FormLabel>
               <FormControl>
                 <Textarea placeholder="Describe this proposal..." {...field} />
               </FormControl>
@@ -178,7 +214,7 @@ export function TreasuryWithdrawForm({
         />
 
         <SubmitProposalButton
-          isPending={isPending}
+          isPending={isPending || !isTypeEnabled}
           onSubmit={() => form.handleSubmit(handleSubmit)()}
           onSubmitAndVote={() => form.handleSubmit(handleSubmitAndVote)()}
         />

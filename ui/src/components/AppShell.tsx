@@ -1,6 +1,7 @@
 import { Outlet, useParams, Link } from "@tanstack/react-router";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { ChevronsUpDown } from "lucide-react";
 import { DaoSidebar } from "./DaoSidebar";
 import { WalletStatus } from "./WalletStatus";
@@ -32,6 +33,11 @@ export function AppShell() {
             <span className="max-w-[165px] truncate text-sm font-bold">
               {dao?.charterName ?? (daoId ? truncateDaoId(daoId) : "Select DAO")}
             </span>
+            {dao?.isSubdao && (
+              <Badge variant="secondary" className="text-xs px-1.5 py-0">
+                SubDAO
+              </Badge>
+            )}
             <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
           </Button>
 
@@ -42,7 +48,7 @@ export function AppShell() {
         {/* Page Content */}
         <ScrollArea className="flex-1 min-h-0">
           <main className="p-4 mx-auto max-w-3xl">
-            <DaoRelayProvider daoId={daoId ?? ""}>
+            <DaoRelayProvider key={daoId ?? ""} daoId={daoId ?? ""}>
               <Outlet />
             </DaoRelayProvider>
           </main>

@@ -11,12 +11,13 @@ import {
   FormControl,
   FormMessage,
 } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { RecipientCombobox } from "@/components/ui/RecipientCombobox";
 import { setBoardSchema } from "@/lib/schemas";
 import { useGovernanceDetail } from "@/hooks/useDao";
 import { useCharacterNames } from "@/hooks/useCharacterNames";
 import { SubmitProposalButton } from "@/components/proposals/SubmitProposalButton";
+import { BoardSizeImpact } from "@/components/proposals/BoardSizeImpact";
 import type { SetBoardPayload } from "@/types/proposal";
 
 interface SetBoardFormProps {
@@ -47,6 +48,7 @@ export function SetBoardForm({ daoId, isPending, onSubmit, onSubmitAndVote }: Se
     if (currentMembers.length > 0) {
       form.reset({ members: currentMembers, metadataIpfs: "" });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [govDetail]);
 
   const [newAddr, setNewAddr] = useState("");
@@ -72,10 +74,9 @@ export function SetBoardForm({ daoId, isPending, onSubmit, onSubmitAndVote }: Se
         <div>
           <FormLabel>Board Members</FormLabel>
           <div className="mt-2 flex gap-2">
-            <Input
-              placeholder="Add address 0x..."
+            <RecipientCombobox
               value={newAddr}
-              onChange={(e) => setNewAddr(e.target.value)}
+              onChange={setNewAddr}
             />
             <Button
               type="button"
@@ -100,7 +101,11 @@ export function SetBoardForm({ daoId, isPending, onSubmit, onSubmitAndVote }: Se
                   render={({ field }) => (
                     <FormItem className="flex-1">
                       <FormControl>
-                        <Input placeholder="0x..." {...field} />
+                        <RecipientCombobox
+                          value={field.value as string}
+                          onChange={field.onChange}
+                          onBlur={field.onBlur}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -147,12 +152,20 @@ export function SetBoardForm({ daoId, isPending, onSubmit, onSubmitAndVote }: Se
           </div>
         )}
 
+        {watchedMembers.filter(Boolean).length !== currentMembers.length && (
+          <BoardSizeImpact
+            daoId={daoId}
+            currentSize={currentMembers.length}
+            newSize={watchedMembers.filter(Boolean).length}
+          />
+        )}
+
         <FormField
           control={form.control}
           name="metadataIpfs"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Proposal Description</FormLabel>
+              <FormLabel>Proposal Description (optional)</FormLabel>
               <FormControl>
                 <Textarea placeholder="Describe this proposal..." {...field} />
               </FormControl>

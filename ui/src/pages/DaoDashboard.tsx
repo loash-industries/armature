@@ -27,6 +27,7 @@ import {
   HandCoins,
   Send,
   ArrowRightLeft,
+  ArrowRight,
   Banknote,
   UserPlus,
   FilePenLine,
@@ -45,8 +46,14 @@ import type { CoinMeta } from "@/hooks/useDao";
 import { useCharacterNames } from "@/hooks/useCharacterNames";
 import { useLiveTreasury } from "@/hooks/useLiveTreasury";
 import { useLiveProposals } from "@/hooks/useLiveProposals";
+import { VoteBar } from "@/components/VoteBar";
+import {
+  PROPOSAL_TYPE_DISPLAY_NAME,
+  type KnownProposalTypeKey,
+} from "@/config/proposal-types";
 import type { ActivityEvent } from "@/types/dao";
 import type { LucideIcon } from "lucide-react";
+import { AnimatedCoinBalance } from "@/components/ui/AnimatedCoinBalance";
 
 function shortCoinType(coinType: string): string {
   const parts = coinType.split("::");
@@ -160,14 +167,15 @@ function formatActivityDisplay(
     case "VoteCast": {
       const pid = ev.proposalId;
       const short = pid && pid.length > 10 ? `${pid.slice(0, 6)}\u2026${pid.slice(-4)}` : pid ?? "";
+      const typeLabel = ev.typeKey ? ` (${ev.typeKey})` : "";
       return {
-        action: <>{actor} voted `{ev.approve ? "Yes" : "No"}` on proposal {short}</>,
+        action: <>{actor} voted '{ev.approve ? "Yes" : "No"}' on proposal {short}{typeLabel}</>,
         context: ev.label,
       };
     }
     case "ProposalCreated":
       return {
-        action: <>{actor} created {ev.typeKey ?? ""} proposal</>,
+        action: <>{actor} created '{ev.typeKey ?? ""}' proposal</>,
         context: ev.label,
       };
     case "ProposalExecuted":
@@ -251,7 +259,7 @@ function StatCard({
   children?: React.ReactNode;
 }) {
   return (
-    <Card className="flex-1">
+    <Card className="flex-1 p-0">
       <CardContent className="flex items-start justify-between p-6">
         <div className="space-y-2">
           <div className="flex items-center gap-2">
@@ -290,14 +298,18 @@ function ActivityRow({
   action,
   context,
   timestamp,
+  daoId,
+  proposalId,
 }: {
   icon: LucideIcon;
   action: React.ReactNode;
   context: string;
   timestamp: string;
+  daoId?: string;
+  proposalId?: string;
 }) {
-  return (
-    <div className="flex items-center gap-2 border-b py-4 last:border-b-0">
+  const inner = (
+    <div className="flex items-center gap-2 py-4">
       <div className="flex ml-4 h-8 w-8 flex-shrink-0 items-center justify-center">
         <Icon className="h-5 w-5 text-muted-foreground" />
       </div>
@@ -310,6 +322,19 @@ function ActivityRow({
       </span>
     </div>
   );
+
+  if (daoId && proposalId) {
+    return (
+      <Link
+        to="/dao/$daoId/proposals/$proposalId"
+        params={{ daoId, proposalId }}
+        className="block border-b last:border-b-0 hover:bg-muted/40 transition-colors"
+      >
+        {inner}
+      </Link>
+    );
+  }
+  return <div className="border-b last:border-b-0">{inner}</div>;
 }
 
 // --- Dashboard ---
@@ -440,9 +465,12 @@ export function DaoDashboard() {
                 return (
                   <div key={b.coinType} className="flex items-center gap-2">
                     <CoinIcon iconUrl={meta?.iconUrl ?? null} symbol={symbol} />
-                    <span className="text-lg text-muted-foreground">
-                      {formatCoinBalance(b.balance, symbol, decimals)}
-                    </span>
+                    <AnimatedCoinBalance
+                      balance={b.balance}
+                      decimals={decimals}
+                      symbol={symbol}
+                      className="text-lg text-muted-foreground"
+                    />
                   </div>
                 );
               })}
@@ -460,6 +488,8 @@ export function DaoDashboard() {
 
       {/* Needs Your Vote (Proposal Items) */}
       <div className="space-y-3">
+        {}
+        <h2 className="text-lg font-semibold">Proposals Awaiting Your Vote</h2>
         {proposalsLoading ? (
           Array.from({ length: 3 }).map((_, i) => (
             <Skeleton key={i} className="h-[76px] w-full rounded-md" />
@@ -483,34 +513,62 @@ export function DaoDashboard() {
                 className="block"
               >
                 <Card className="transition-colors hover:bg-muted/50">
-                  <CardContent className="flex items-center justify-between p-4">
-                    <div className="space-y-1 overflow-hidden">
-                      <p className="truncate text-sm font-medium">
-                        {p.typeKey}
+                  <CardContent className="flex items-center gap-4 p-4">
+                    {/* Title + description */}
+                    <div className="w-48 flex-shrink-0 space-y-0.5 overflow-hidden">
+                      <p className="truncate font-semibold">
+                        {PROPOSAL_TYPE_DISPLAY_NAME[
+                          p.typeKey as KnownProposalTypeKey
+                        ] ?? p.typeKey}
                       </p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {p.id.slice(0, 10)}…
+                      <p className="truncate text-sm text-muted-foreground">
+                        {p.metadataIpfs || `${p.id.slice(0, 10)}…`}
                       </p>
                     </div>
-                    <span className="ml-4 flex-shrink-0 text-xs text-muted-foreground">
-                      {timeLabel}
-                    </span>
+                    {/* Vote bar — fills remaining space */}
+                    <div className="min-w-0 flex-1">
+                      <VoteBar
+                        yesWeight={p.yesWeight}
+                        noWeight={p.noWeight}
+                        totalSnapshotWeight={p.totalSnapshotWeight}
+                        quorum={p.quorum}
+                        approvalThreshold={p.approvalThreshold}
+                        className="w-full space-y-1"
+                      />
+                    </div>
+                    {/* Time + arrow */}
+                    <div className="flex flex-shrink-0 flex-col items-end gap-1">
+                      <span className="text-xs text-muted-foreground">{timeLabel}</span>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                    </div>
                   </CardContent>
                 </Card>
               </Link>
             );
           })
         ) : (
+          !account ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              Connect your wallet to see proposals requiring your vote.
+            </p>
+          ) : (
           <p className="py-8 text-center text-sm text-muted-foreground">
-            {!account
-              ? "Connect your wallet to see proposals requiring your vote."
-              : "No proposals requiring your vote."}
+            No votes pending! Check out the{" "}<Link
+              to="/dao/$daoId/proposals"
+              params={{ daoId: daoId ?? "" }}
+              className="font-medium underline underline-offset-2 hover:opacity-80"
+            >
+             proposals history
+            </Link>{" "}
+            or explore the treasury and board.
           </p>
+          )
         )}
       </div>
 
       {/* Activity Feed */}
       <div className="space-y-4">
+        <h2 className="text-lg font-semibold">Activity</h2>
         <div className="flex items-center justify-between">
           <Input
             placeholder="Filter keywords ..."
@@ -544,6 +602,8 @@ export function DaoDashboard() {
                   action={action}
                   context={context}
                   timestamp={ev.timestampMs > 0 ? timeAgo(ev.timestampMs) : "—"}
+                  daoId={ev.proposalId ? daoId : undefined}
+                  proposalId={ev.proposalId}
                 />
               );
             })

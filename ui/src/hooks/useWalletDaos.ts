@@ -2,15 +2,18 @@ import { useQuery } from "@tanstack/react-query";
 import { useSuiClient } from "@mysten/dapp-kit";
 import { cacheKeys } from "@/lib/cache-keys";
 import { multiGetObjects, queryEvents, unwrapMoveStruct } from "@/lib/sui-rpc";
-import { PACKAGE_ID, MODULES } from "@/config/constants";
+import { PACKAGE_ID, PROPOSALS_PACKAGE_ID, MODULES, PROPOSAL_MODULES } from "@/config/constants";
 import type { DaoFields, CharterFields } from "@/types/dao";
 
-interface DaoEntry {
+export interface DaoEntry {
   daoId: string;
   name: string;
   treasury: string;
   memberCount: number;
   activeProposals: number;
+  isSubDAO?: boolean;
+  memberAddresses: string[];
+  capabilityVaultId: string;
 }
 
 function moveFields<T>(obj: { data?: { content?: unknown } | null }): T {
@@ -82,17 +85,41 @@ export function useWalletDaos(address: string | null | undefined) {
         pages++;
       }
 
-      if (daoIds.length === 0) return [];
+      // 2. Also collect sub-DAO IDs from SubDAOCreated events
+      const subDaoIds: string[] = [];
+      let subCursor: string | undefined;
+      let subHasNext = true;
+      let subPages = 0;
 
-      // 2. Batch fetch DAO objects in chunks of 50
+      while (subHasNext && subPages < 5) {
+        const subResult = await queryEvents(
+          client,
+          { MoveModule: { package: PROPOSALS_PACKAGE_ID, module: PROPOSAL_MODULES.subdao_ops } },
+          subCursor,
+          50,
+        );
+        for (const ev of subResult.data) {
+          if (!ev.type.endsWith("::SubDAOCreated")) continue;
+          const parsed = ev.parsedJson as { subdao_id?: string };
+          if (parsed.subdao_id) subDaoIds.push(parsed.subdao_id);
+        }
+        subCursor = subResult.nextCursor ?? undefined;
+        subHasNext = subResult.hasNextPage;
+        subPages++;
+      }
+
+      const allIds = [...new Set([...daoIds, ...subDaoIds])];
+      if (allIds.length === 0) return [];
+
+      // 3. Batch fetch all DAO objects in chunks of 50
       const allDaoObjs = [];
-      for (let i = 0; i < daoIds.length; i += 50) {
-        const chunk = daoIds.slice(i, i + 50);
+      for (let i = 0; i < allIds.length; i += 50) {
+        const chunk = allIds.slice(i, i + 50);
         const objs = await multiGetObjects(client, chunk);
         allDaoObjs.push(...objs);
       }
 
-      // 3. Filter to DAOs where the wallet is a member, then enrich with charter name
+      // 4. Filter to DAOs where the wallet is a member, then enrich with charter name
       const memberDaos: DaoEntry[] = [];
 
       for (const daoObj of allDaoObjs) {
@@ -110,6 +137,9 @@ export function useWalletDaos(address: string | null | undefined) {
           console.log("[useWalletDaos] members:", members, "wallet:", address, "match:", members.includes(address));
           if (!isMemberOf(dao, address)) continue;
 
+          const objectId = daoObj.data!.objectId;
+          const isSubDAO = subDaoIds.includes(objectId) && !daoIds.includes(objectId);
+
           // Fetch charter for the DAO name
           let name = truncId(dao.charter_id);
           try {
@@ -124,11 +154,14 @@ export function useWalletDaos(address: string | null | undefined) {
           }
 
           memberDaos.push({
-            daoId: daoObj.data!.objectId,
+            daoId: objectId,
             name,
             treasury: truncId(dao.treasury_id),
             memberCount: memberCount(dao),
             activeProposals: 0,
+            isSubDAO,
+            memberAddresses: members,
+            capabilityVaultId: dao.capability_vault_id,
           });
         } catch (err) {
           console.error("[useWalletDaos] failed to process DAO object:", err, daoObj);

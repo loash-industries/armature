@@ -20,11 +20,13 @@ import { enableProposalTypeSchema } from "@/lib/schemas";
 import { useProposalFormOptions } from "@/hooks/useProposalFormOptions";
 import { ProposalConfigForm } from "@/components/proposals/ProposalConfigForm";
 import { SubmitProposalButton } from "@/components/proposals/SubmitProposalButton";
+import { PROPOSAL_TYPE_DISPLAY_NAME } from "@/config/proposal-types";
 import type { EnableProposalTypePayload } from "@/types/proposal";
 
 interface EnableProposalTypeFormProps {
   daoId: string;
   isPending?: boolean;
+  defaultTypeKey?: string;
   onSubmit: (data: EnableProposalTypePayload) => void;
   onSubmitAndVote?: (data: EnableProposalTypePayload) => void;
 }
@@ -32,6 +34,7 @@ interface EnableProposalTypeFormProps {
 export function EnableProposalTypeForm({
   daoId,
   isPending,
+  defaultTypeKey = "",
   onSubmit,
   onSubmitAndVote,
 }: EnableProposalTypeFormProps) {
@@ -40,7 +43,7 @@ export function EnableProposalTypeForm({
   const form = useForm({
     resolver: zodResolver(enableProposalTypeSchema),
     defaultValues: {
-      typeKey: "",
+      typeKey: defaultTypeKey,
       config: {
         quorum: 5000,
         approvalThreshold: 5000,
@@ -77,21 +80,25 @@ export function EnableProposalTypeForm({
           name="typeKey"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Proposal Type to Enable</FormLabel>
               <FormControl>
                 <Select value={field.value} onValueChange={field.onChange}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select type..." />
+                    <SelectValue placeholder="Select type...">
+                      {field.value
+                        ? (PROPOSAL_TYPE_DISPLAY_NAME[field.value as keyof typeof PROPOSAL_TYPE_DISPLAY_NAME] ?? field.value)
+                        : undefined}
+                    </SelectValue>
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="w-[var(--radix-select-trigger-width)]">
                     {disabledTypes.map((t) => (
                       <SelectItem key={t} value={t}>
-                        {t}
+                        {PROPOSAL_TYPE_DISPLAY_NAME[t as keyof typeof PROPOSAL_TYPE_DISPLAY_NAME] ?? t}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </FormControl>
+              <FormLabel>Proposal Type to Enable</FormLabel>
               <FormMessage />
             </FormItem>
           )}
@@ -107,7 +114,7 @@ export function EnableProposalTypeForm({
           name="metadataIpfs"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Proposal Description</FormLabel>
+              <FormLabel>Proposal Description (optional)</FormLabel>
               <FormControl>
                 <Textarea placeholder="Describe this proposal..." {...field} />
               </FormControl>

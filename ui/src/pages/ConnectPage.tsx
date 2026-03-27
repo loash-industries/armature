@@ -16,11 +16,7 @@ export function ConnectPage() {
   const account = useCurrentAccount();
   const [browseAddress, setBrowseAddress] = useState("");
 
-  // If wallet is connected, redirect to picker
-  if (account || (wallet.isLocalnet && wallet.isConnected)) {
-    navigate({ to: "/pick" });
-    return null;
-  }
+  const isConnected = account || (wallet.isLocalnet && wallet.isConnected);
 
   function handleBrowse() {
     const trimmed = browseAddress.trim();
@@ -35,7 +31,14 @@ export function ConnectPage() {
         <CardContent className="flex flex-col items-center gap-6 pt-6">
           <ArmatureLogo className="h-48 w-44 text-foreground" />
 
-          {wallet.isLocalnet ? (
+          {isConnected ? (
+            <Button
+              className="w-full"
+              onClick={() => navigate({ to: "/pick" })}
+            >
+              Continue
+            </Button>
+          ) : wallet.isLocalnet ? (
             <Button
               className="w-full"
               onClick={() => navigate({ to: "/pick" })}

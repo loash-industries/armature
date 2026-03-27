@@ -14,8 +14,10 @@ import {
 import { PROPOSAL_TYPE_MAP } from "@/config/proposal-types";
 import { useCharacterNames } from "@/hooks/useCharacterNames";
 import { useCoinMetadataMap } from "@/hooks/useDao";
-import { formatBalance } from "@/lib/coins";
 import { useMemo, type ReactNode } from "react";
+import { AnimatedCoinBalance } from "@/components/ui/AnimatedCoinBalance";
+import { AnimatedValue } from "@/components/ui/AnimatedValue";
+import { AddressName } from "@/components/AddressName";
 
 interface PayloadSummaryProps {
   typeKey: string;
@@ -116,12 +118,7 @@ function SetBoardSummary({ payload }: { payload: Record<string, unknown> }) {
       <div className="space-y-1">
         {members.map((m, i) => (
           <div key={i} className="flex items-center gap-2">
-            <span className="font-mono text-xs">{m}</span>
-            {nameMap?.get(m) && (
-              <Badge variant="secondary" className="text-xs">
-                {nameMap.get(m)}
-              </Badge>
-            )}
+            <AddressName address={m} charName={nameMap?.get(m)} />
           </div>
         ))}
       </div>
@@ -164,14 +161,19 @@ function CoinProposalSummary({
   const symbol = meta?.symbol ?? (coinType ? coinType.split("::").pop() ?? "" : "");
 
   const rawAmount = String(payload.amount ?? "0");
-  let formattedAmount: string;
+  let formattedAmount: ReactNode;
   try {
-    formattedAmount = `${formatBalance(BigInt(rawAmount), decimals)} ${symbol}`;
+    const amt = BigInt(rawAmount);
+    formattedAmount = (
+      <AnimatedCoinBalance balance={amt} decimals={decimals} symbol={symbol} />
+    );
   } catch {
     formattedAmount = rawAmount;
   }
 
   const recipient = String(payload[recipientField] ?? "");
+  const recipientAddrs = useMemo(() => (recipient ? [recipient] : []), [recipient]);
+  const { data: recipientNameMap } = useCharacterNames(recipientAddrs);
 
   const coinDisplay = coinType ? (
     <span className="flex items-center gap-1.5" title={coinType}>
@@ -183,7 +185,7 @@ function CoinProposalSummary({
   return (
     <Table>
       <TableBody>
-        <KVRow label={recipientLabel} value={recipient} mono />
+        <KVRow label={recipientLabel} value={recipient ? <AddressName address={recipient} charName={recipientNameMap?.get(recipient)} /> : "—"} />
         <KVRow label="Amount" value={formattedAmount} />
         <KVRow label="Coin" value={coinDisplay} />
       </TableBody>
@@ -249,15 +251,15 @@ function ProposalConfigSummary({
         <TableBody>
           <KVRow
             label="Quorum"
-            value={`${(quorum / 100).toFixed(1)}%`}
+            value={<AnimatedValue value={quorum / 100} suffix="%" />}
           />
           <KVRow
             label="Approval"
-            value={`${(approvalThreshold / 100).toFixed(1)}%`}
+            value={<AnimatedValue value={approvalThreshold / 100} suffix="%" />}
           />
           <KVRow
             label="Propose Threshold"
-            value={String(proposeThreshold)}
+            value={<AnimatedValue value={proposeThreshold} />}
           />
           <KVRow label="Voting Period" value={formatDuration(expiryMs)} />
           <KVRow label="Exec Delay" value={formatDuration(executionDelayMs)} />
@@ -325,10 +327,13 @@ function TransferFreezeAdminSummary({
 }: {
   payload: Record<string, unknown>;
 }) {
+  const newAdmin = String(payload.new_admin ?? "");
+  const addrs = useMemo(() => (newAdmin ? [newAdmin] : []), [newAdmin]);
+  const { data: nameMap } = useCharacterNames(addrs);
   return (
     <Table>
       <TableBody>
-        <KVRow label="New Admin" value={String(payload.new_admin ?? "")} mono />
+        <KVRow label="New Admin" value={newAdmin ? <AddressName address={newAdmin} charName={nameMap?.get(newAdmin)} /> : "—"} />
       </TableBody>
     </Table>
   );
@@ -453,23 +458,38 @@ const FIELD_LABELS: Record<string, string> = {
   coin_type: "Coin Type",
 };
 
+const SUI_ADDRESS_RE = /^0x[a-fA-F0-9]{64}$/;
+
 function GenericSummary({ payload }: { payload: Record<string, unknown> }) {
   const entries = Object.entries(payload).filter(
     ([k]) => k !== "metadataIpfs",
   );
+  const addressValues = useMemo(
+    () => entries
+      .map(([, v]) => String(v ?? ""))
+      .filter((v) => SUI_ADDRESS_RE.test(v)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [JSON.stringify(payload)],
+  );
+  const { data: nameMap } = useCharacterNames(addressValues);
+
   if (entries.length === 0) {
     return <p className="text-muted-foreground text-sm">No payload data.</p>;
   }
   return (
     <Table>
       <TableBody>
-        {entries.map(([key, value]) => (
-          <KVRow
-            key={key}
-            label={FIELD_LABELS[key] ?? key}
-            value={typeof value === "object" ? JSON.stringify(value) : String(value ?? "")}
-          />
-        ))}
+        {entries.map(([key, value]) => {
+          const strVal = typeof value === "object" ? JSON.stringify(value) : String(value ?? "");
+          const isAddress = SUI_ADDRESS_RE.test(strVal);
+          return (
+            <KVRow
+              key={key}
+              label={FIELD_LABELS[key] ?? key}
+              value={isAddress ? <AddressName address={strVal} charName={nameMap?.get(strVal)} /> : strVal}
+            />
+          );
+        })}
       </TableBody>
     </Table>
   );

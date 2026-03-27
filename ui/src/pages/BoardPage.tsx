@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/table";
 import { useDaoSummary, useGovernanceDetail } from "@/hooks/useDao";
 import { useCharacterNames } from "@/hooks/useCharacterNames";
+import { AnimatedValue } from "@/components/ui/AnimatedValue";
 
 
 
@@ -58,8 +59,8 @@ export function BoardPage() {
                     </Badge>
                     {governance.members.length} member
                     {governance.members.length !== 1 ? "s" : ""}
-                    {governance.totalShares != null &&
-                      ` · ${governance.totalShares.toLocaleString()} total shares`}
+                    {governance.totalShares != null && (
+                      <>{" · "}<AnimatedValue value={governance.totalShares} /> total shares</>)}
                   </>
                 )}
               </CardDescription>
@@ -92,7 +93,7 @@ export function BoardPage() {
                       </TableCell>
                       {governance.type !== "Board" && (
                         <TableCell className="text-right font-mono">
-                          {member.weight?.toLocaleString() ?? "—"}
+                          {member.weight != null ? <AnimatedValue value={member.weight} /> : "—"}
                         </TableCell>
                       )}
                       <TableCell className="text-right">

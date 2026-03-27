@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,8 +19,9 @@ export function SubmitProposalButton({
   onSubmit,
   onSubmitAndVote,
 }: SubmitProposalButtonProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   return (
-    <div className="flex">
+    <div ref={containerRef} className="flex">
       <Button
         type="button"
         disabled={isPending}
@@ -40,7 +42,7 @@ export function SubmitProposalButton({
         >
           <ChevronDown className="h-4 w-4" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="start" anchor={containerRef}>
           <DropdownMenuItem onClick={onSubmitAndVote}>
             Create & Vote Yes
           </DropdownMenuItem>

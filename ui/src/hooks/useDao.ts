@@ -61,6 +61,7 @@ export function useDaoSummary(daoId: string) {
       return {
         id: daoId,
         status: statusVariant as "Active" | "Migrating",
+        isSubdao: (dao.controller_cap_id?.vec?.length ?? 0) > 0,
         boardMemberCount,
         treasuryId: dao.treasury_id,
         charterId: dao.charter_id,
@@ -105,10 +106,11 @@ export function useTreasuryBalances(treasuryId: string | undefined) {
             | { fields: { value: string }; dataType: "moveObject" }
             | undefined;
           if (content?.dataType !== "moveObject") return null;
-          const coinType =
+          const rawCoinType =
             typeof field.name.value === "string"
               ? field.name.value
               : String(field.name.value);
+          const coinType = rawCoinType.startsWith("0x") ? rawCoinType : `0x${rawCoinType}`;
           return { coinType, balance: BigInt(content.fields.value), decimals: 6 };
         }),
       );
@@ -146,7 +148,9 @@ export function useCoinMetadataMap(coinTypes: string[]) {
                 symbol: meta.symbol,
                 name: meta.name,
                 decimals: meta.decimals,
-                iconUrl: meta.iconUrl ?? null,
+                // Normalize empty string to null; provide SUI's well-known icon
+                // since the on-chain metadata has iconUrl: "" on all networks.
+                iconUrl: (meta.iconUrl || SUI_ICON_FALLBACKS[normalizedCt] || null) as string | null,
               } satisfies CoinMeta,
             ] as const;
           } catch {
@@ -162,6 +166,14 @@ export function useCoinMetadataMap(coinTypes: string[]) {
     staleTime: 5 * 60 * 1000,
   });
 }
+
+/** Well-known icon URLs for coins whose on-chain metadata has no iconUrl. */
+const SUI_ICON_FALLBACKS: Record<string, string> = {
+  "0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI":
+    "https://s2.coinmarketcap.com/static/img/coins/64x64/20947.png",
+  "0x2::sui::SUI":
+    "https://s2.coinmarketcap.com/static/img/coins/64x64/20947.png",
+};
 
 /** Extract a Sui object ID string from parsedJson field (handles bare string or {id: "0x..."} wrapper). */
 function extractId(val: unknown): string | undefined {
@@ -180,6 +192,9 @@ export function useDaoActivity(daoId: string, treasuryId?: string, limit = 20) {
       const sources = [
         { pkg: PACKAGE_ID, mod: MODULES.dao },
         { pkg: PACKAGE_ID, mod: MODULES.proposal },
+        // ProposalCreated is emitted via board_voting::submit_proposal, so Sui
+        // indexes it under board_voting rather than the proposal module.
+        { pkg: PACKAGE_ID, mod: MODULES.board_voting },
         { pkg: PACKAGE_ID, mod: MODULES.treasury_vault },
         { pkg: PACKAGE_ID, mod: MODULES.emergency },
         { pkg: PROPOSALS_PACKAGE_ID, mod: PROPOSAL_MODULES.treasury_ops },
@@ -550,9 +565,17 @@ function extractEventFields(
       return {
         actor: parsed.proposer as string,
         typeKey: parsed.type_key as string,
+        proposalId: parsed.proposal_id as string,
       };
     case "ProposalExecuted":
-      return { actor: parsed.executor as string };
+      return {
+        actor: parsed.executor as string,
+        proposalId: parsed.proposal_id as string,
+      };
+    case "ProposalPassed":
+      return { proposalId: parsed.proposal_id as string };
+    case "ProposalExpired":
+      return { proposalId: parsed.proposal_id as string };
     case "TypeFrozen":
     case "TypeUnfrozen":
       return { typeKey: parsed.type_key as string };

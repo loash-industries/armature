@@ -91,7 +91,7 @@ export function buildSubmitSendCoin(args: {
     target: fw(MODULES.board_voting, "submit_proposal"),
     arguments: [
       tx.object(args.daoId),
-      tx.pure.string("SendCoin"),
+      tx.pure.string("TreasuryWithdraw"),
       tx.pure.string(args.metadataIpfs),
       payload,
       tx.object(SUI_CLOCK),

@@ -45,6 +45,7 @@ export function NewProposalPage() {
   const navigate = useNavigate();
   const { submitProposal, isPending } = useSubmitProposal(daoId ?? "");
   const typeKey = search.type ?? "";
+  const prefill = search.prefill ?? "";
   const [selectorOpen, setSelectorOpen] = useState(!typeKey);
 
   const { enabledTypes, frozenTypes } = useProposalFormOptions(daoId ?? "");
@@ -113,6 +114,7 @@ export function NewProposalPage() {
             <TreasuryWithdrawForm
               daoId={daoId ?? ""}
               isPending={isPending}
+              isTypeEnabled={enabledTypes.includes("TreasuryWithdraw")}
               onSubmit={(data) => submitProposal("TreasuryWithdraw", data)}
               onSubmitAndVote={(data) => submitProposal("TreasuryWithdraw", data, true)}
             />
@@ -129,6 +131,7 @@ export function NewProposalPage() {
             <EnableProposalTypeForm
               daoId={daoId ?? ""}
               isPending={isPending}
+              defaultTypeKey={prefill}
               onSubmit={(data) => submitProposal("EnableProposalType", data)}
               onSubmitAndVote={(data) => submitProposal("EnableProposalType", data, true)}
             />

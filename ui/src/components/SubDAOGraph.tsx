@@ -19,7 +19,7 @@ export function SubDAOGraph({ hierarchy }: { hierarchy: DAOHierarchy }) {
         </div>
         {hierarchy.root.childCount > 0 && (
           <span className="text-muted-foreground text-sm">
-            {hierarchy.root.childCount} sub-DAO{hierarchy.root.childCount !== 1 ? "s" : ""}
+            {hierarchy.root.childCount} organizational unit{hierarchy.root.childCount !== 1 ? "s" : ""}
           </span>
         )}
       </Card>

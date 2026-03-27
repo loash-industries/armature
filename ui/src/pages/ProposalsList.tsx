@@ -27,20 +27,24 @@ import { useCharacterNames } from "@/hooks/useCharacterNames";
 import { PROPOSAL_TYPE_MAP } from "@/config/proposal-types";
 import { AddressName } from "@/components/AddressName";
 import type { ProposalSummary } from "@/types/proposal";
+import { VoteBar } from "@/components/VoteBar";
 
 type StatusFilter = "all" | "active" | "passed" | "executed" | "expired";
 
 function statusBadge(status: ProposalSummary["status"]) {
-  const variants: Record<
-    string,
-    "default" | "secondary" | "destructive" | "outline"
-  > = {
-    active: "default",
-    passed: "outline",
-    executed: "secondary",
-    expired: "destructive",
+  if (status === "expired") {
+    return <Badge variant="destructive">{status}</Badge>;
+  }
+  const classMap: Record<string, string> = {
+    active: "border-primary/60 text-primary",
+    passed: "border-blue-500/70 text-blue-500",
+    executed: "border-emerald-500/70 text-emerald-500",
   };
-  return <Badge variant={variants[status] ?? "outline"}>{status}</Badge>;
+  return (
+    <Badge variant="outline" className={classMap[status] ?? ""}>
+      {status}
+    </Badge>
+  );
 }
 
 function formatDate(ms: number): string {
@@ -49,66 +53,6 @@ function formatDate(ms: number): string {
     day: "numeric",
     year: "numeric",
   });
-}
-
-function VoteBar({
-  yesWeight,
-  noWeight,
-  totalSnapshotWeight,
-  // quorum: @todo add when weighted votes are implemented
-  approvalThreshold,
-}: {
-  yesWeight: number;
-  noWeight: number;
-  totalSnapshotWeight: number;
-  quorum: number;
-  approvalThreshold: number;
-}) {
-  const total = yesWeight + noWeight;
-  const yesAbsolute =
-    totalSnapshotWeight > 0 ? (yesWeight / totalSnapshotWeight) * 100 : 0;
-  const noAbsolute =
-    totalSnapshotWeight > 0 ? (noWeight / totalSnapshotWeight) * 100 : 0;
-  const yesPercent = total > 0 ? (yesWeight / total) * 100 : 0;
-  const noPercent = total > 0 ? (noWeight / total) * 100 : 0;
-  const approvalLinePercent = approvalThreshold / 100; // bps → fixed % of bar
-
-  return (
-    <div className="w-32 space-y-1">
-      <div className="flex justify-between text-xs">
-        <span className="font-medium text-blue-500">
-          {yesWeight}{" "}
-          <span className="text-muted-foreground">
-            ({yesPercent.toFixed(0)}%)
-          </span>
-        </span>
-        <span className="font-medium text-red-500">
-          {noWeight}{" "}
-          <span className="text-muted-foreground">
-            ({noPercent.toFixed(0)}%)
-          </span>
-        </span>
-      </div>
-      <div className="relative h-2 w-full">
-        <div className="absolute inset-0 overflow-hidden rounded-full bg-muted">
-          <div
-            className="absolute left-0 top-0 h-full bg-blue-500 transition-all"
-            style={{ width: `${yesAbsolute}%` }}
-          />
-          <div
-            className="absolute top-0 h-full bg-red-500 transition-all"
-            style={{ left: `${yesAbsolute}%`, width: `${noAbsolute}%` }}
-          />
-        </div>
-        {approvalLinePercent > 0 && (
-          <div
-            className="absolute z-10 w-0.5 -top-1 -bottom-1 rounded-sm bg-white/80"
-            style={{ left: `${Math.min(approvalLinePercent, 99.5)}%` }}
-          />
-        )}
-      </div>
-    </div>
-  );
 }
 
 function ProposalTable({
@@ -153,9 +97,17 @@ function ProposalTable({
             }
           >
             <TableCell>
-              <Badge variant="outline">
-                {PROPOSAL_TYPE_MAP[p.typeKey]?.label ?? p.typeKey}
-              </Badge>
+              <div className="space-y-1">
+                <div>
+                  {PROPOSAL_TYPE_MAP[p.typeKey]?.label ?? p.typeKey}
+                </div>
+                <p className="text-xs text-muted-foreground">({p.id.slice(0, 6)}…{p.id.slice(-4)})</p>
+                {p.metadataIpfs && (
+                  <p className="text-xs text-muted-foreground truncate max-w-[200px]">
+                    {p.metadataIpfs}
+                  </p>
+                )}
+              </div>
             </TableCell>
             <TableCell className="font-mono text-xs">
               <AddressName address={p.proposer} charName={nameMap?.get(p.proposer)} />

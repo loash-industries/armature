@@ -112,6 +112,7 @@ export interface EmergencyFreezeDetail {
 export interface DaoSummary {
   id: string;
   status: "Active" | "Migrating";
+  isSubdao: boolean;
   boardMemberCount: number;
   treasuryId: string;
   charterId: string;

@@ -65,11 +65,13 @@ export function DaoRelayProvider({ daoId, children }: DaoRelayProviderProps) {
 }
 
 /** Returns the live armature_framework state for the current DAO. */
+// eslint-disable-next-line react-refresh/only-export-components
 export function useDaoRelayFramework(): FrameworkRelayState {
   return useContext(DaoRelayContext).framework
 }
 
 /** Returns the live armature_proposals execution state for the current DAO. */
+// eslint-disable-next-line react-refresh/only-export-components
 export function useDaoRelayProposals(): ProposalRelayState {
   return useContext(DaoRelayContext).proposals
 }

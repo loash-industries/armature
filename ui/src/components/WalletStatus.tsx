@@ -1,5 +1,7 @@
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { ChevronsUpDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,8 +32,9 @@ function DappKitWallet() {
     return (
       <ConnectModal
         trigger={
-          <Button variant="outline" size="sm">
-            Connect Wallet
+          <Button variant="outline" className="gap-2 p-4">
+            <span className="text-sm font-bold">Connect Wallet</span>
+            <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
           </Button>
         }
       />
@@ -40,10 +43,14 @@ function DappKitWallet() {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<button className="cursor-pointer" type="button" />}>
-        <Badge variant="outline">
-          {resolveDisplayName(account.address, charName)} ▾
-        </Badge>
+      <DropdownMenuTrigger
+        render={<button type="button" />}
+        className={cn(buttonVariants({ variant: "outline" }), "gap-2 p-4")}
+      >
+        <span className="max-w-[165px] truncate text-sm font-bold">
+          {resolveDisplayName(account.address, charName)}
+        </span>
+        <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         {charName && (
@@ -75,17 +82,20 @@ function LocalnetWallet() {
   if (!wallet.isConnected) {
     if (wallet.localWallets.length === 1) {
       return (
-        <Button variant="outline" size="sm" onClick={() => wallet.setActiveWalletIndex(0)}>
-          Connect Wallet
+        <Button variant="outline" className="gap-2 p-4" onClick={() => wallet.setActiveWalletIndex(0)}>
+          <span className="text-sm font-bold">Connect Wallet</span>
+          <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
         </Button>
       );
     }
     return (
       <DropdownMenu>
-        <DropdownMenuTrigger render={<button className="cursor-pointer" type="button" />}>
-          <Button variant="outline" size="sm">
-            Connect Wallet ▾
-          </Button>
+      <DropdownMenuTrigger
+          render={<button type="button" />}
+          className={cn(buttonVariants({ variant: "outline" }), "gap-2 p-4")}
+        >
+          <span className="text-sm font-bold">Connect Wallet</span>
+          <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           {wallet.localWallets.map((w, i) => {
@@ -106,10 +116,14 @@ function LocalnetWallet() {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<button className="cursor-pointer" type="button" />}>
-        <Badge variant="outline">
-          {resolveDisplayName(active.address, activeName)} ▾
-        </Badge>
+      <DropdownMenuTrigger
+        render={<button type="button" />}
+        className={cn(buttonVariants({ variant: "outline" }), "gap-2 p-4")}
+      >
+        <span className="max-w-[165px] truncate text-sm font-bold">
+          {resolveDisplayName(active.address, activeName)}
+        </span>
+        <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         {wallet.localWallets.length > 1 &&

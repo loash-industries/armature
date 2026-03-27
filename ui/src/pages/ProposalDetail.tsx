@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { Copy, Check, ExternalLink, ChevronDown } from "lucide-react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -42,14 +43,22 @@ import {
   buildExecuteReclaimCap,
 } from "@/lib/transactions";
 import { cacheKeys } from "@/lib/cache-keys";
-import { PROPOSAL_TYPE_MAP } from "@/config/proposal-types";
+import {
+  PROPOSAL_TYPE_MAP,
+  PROPOSAL_TYPE_DISPLAY_NAME,
+  type KnownProposalTypeKey,
+} from "@/config/proposal-types";
 import { PayloadSummary } from "@/components/proposals/PayloadSummary";
+import { VoteBar } from "@/components/VoteBar";
 import { useCharacterNames } from "@/hooks/useCharacterNames";
 import { getAddressName } from "@/lib/address-namer";
-
-function formatBps(bps: number): string {
-  return `${(bps / 100).toFixed(2)}%`;
-}
+import { AnimatedValue } from "@/components/ui/AnimatedValue";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 function formatDate(ms: number): string {
   return new Date(ms).toLocaleString();
@@ -109,16 +118,16 @@ function getApprovalFloorBps(
 function statusVariant(
   status: string,
 ): "default" | "secondary" | "destructive" | "outline" {
-  const map: Record<
-    string,
-    "default" | "secondary" | "destructive" | "outline"
-  > = {
-    active: "default",
-    passed: "outline",
-    executed: "secondary",
-    expired: "destructive",
+  return status === "expired" ? "destructive" : "outline";
+}
+
+function statusClassName(status: string): string {
+  const map: Record<string, string> = {
+    active: "border-primary/60 text-primary",
+    passed: "border-blue-500/70 text-blue-500",
+    executed: "border-emerald-500/70 text-emerald-500",
   };
-  return map[status] ?? "outline";
+  return map[status] ?? "";
 }
 
 export function ProposalDetail() {
@@ -132,6 +141,8 @@ export function ProposalDetail() {
   const { address, signAndExecuteTransaction } = useWalletSigner();
   const queryClient = useQueryClient();
   const [actionPending, setActionPending] = useState<string | null>(null);
+  const [txCopied, setTxCopied] = useState(false);
+  const voteButtonRef = useRef<HTMLDivElement>(null);
   const hasVoted = proposal && address ? address in proposal.votesCast : false;
   const priorVote = proposal && address ? proposal.votesCast[address] : undefined;
   const isMember = governance?.members.some(m => m.address === address) ?? false;
@@ -272,6 +283,60 @@ export function ProposalDetail() {
     }
   }
 
+  async function handleVoteAndExecute() {
+    if (!proposal?.payloadType) {
+      toast.error("Cannot determine proposal type for voting");
+      return;
+    }
+    setActionPending("vote-execute");
+    try {
+      const voteTx = buildVote({
+        proposalId: proposal.id,
+        approve: true,
+        proposalType: proposal.payloadType,
+      });
+      const voteResult = await signAndExecuteTransaction({ transaction: voteTx });
+      toast.success("Voted Yes");
+      await client.waitForTransaction({ digest: voteResult.digest });
+      await queryClient.invalidateQueries({
+        queryKey: cacheKeys.proposal(proposal.id),
+      });
+
+      const executeTx = buildExecuteTransaction();
+      if (!executeTx) {
+        toast.info("Voted but execute is not available for this proposal type");
+        return;
+      }
+      const execResult = await signAndExecuteTransaction({ transaction: executeTx });
+      toast.success("Proposal executed");
+      await client.waitForTransaction({ digest: execResult.digest });
+      await queryClient.invalidateQueries({
+        queryKey: cacheKeys.proposal(proposal.id),
+      });
+      if (daoId) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: cacheKeys.proposals(daoId) }),
+          queryClient.invalidateQueries({ queryKey: cacheKeys.dao(daoId) }),
+          queryClient.invalidateQueries({ queryKey: cacheKeys.governance(daoId) }),
+          queryClient.invalidateQueries({ queryKey: cacheKeys.board(daoId) }),
+          queryClient.invalidateQueries({ queryKey: cacheKeys.charter(daoId) }),
+          queryClient.invalidateQueries({ queryKey: cacheKeys.emergency(daoId) }),
+          queryClient.invalidateQueries({ queryKey: cacheKeys.treasury(daoId) }),
+          queryClient.invalidateQueries({ queryKey: cacheKeys.hierarchy(daoId) }),
+          queryClient.invalidateQueries({ queryKey: cacheKeys.subdaos(daoId) }),
+        ]);
+        navigate({
+          to: "/dao/$daoId/proposals",
+          params: { daoId },
+        });
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Vote & Execute failed");
+    } finally {
+      setActionPending(null);
+    }
+  }
+
   async function handleExecute() {
     const transaction = buildExecuteTransaction();
     if (!transaction) {
@@ -331,31 +396,13 @@ export function ProposalDetail() {
   }
 
   const typeDef = PROPOSAL_TYPE_MAP[proposal.typeKey];
-  const totalVotes = proposal.yesWeight + proposal.noWeight;
-  const yesPercent = totalVotes > 0 ? (proposal.yesWeight / totalVotes) * 100 : 0;
-  const noPercent = totalVotes > 0 ? (proposal.noWeight / totalVotes) * 100 : 0;
-  const totalWeight = governance
-    ? governance.type === "Board"
-      ? governance.members.length
-      : governance.totalShares ?? 0
-    : 0;
-  const participationBps = totalWeight > 0
-    ? Math.round((totalVotes / totalWeight) * 10000)
-    : 0;
-  const yesAbsolute = totalWeight > 0 ? (proposal.yesWeight / totalWeight) * 100 : 0;
-  const noAbsolute = totalWeight > 0 ? (proposal.noWeight / totalWeight) * 100 : 0;
+  // Use the proposal's own snapshot weight — the governance weight captured at creation
+  // time — so the bar always reflects the denominator the on-chain logic used.
+  const totalWeight = proposal.totalSnapshotWeight;
 
   // For types with a hardcoded execution floor, derive display threshold and floor check.
   // The floor is: yes_weight / total_snapshot_weight >= floor_bps / 10000
   const floorBps = getApprovalFloorBps(proposal.typeKey, proposal.payload);
-  const effectiveThresholdBps =
-    floorBps !== null
-      ? Math.max(proposal.approvalThreshold, floorBps)
-      : proposal.approvalThreshold;
-  // approvalLinePercent: position of the threshold line on the 0–100% bar.
-  // For floor-gated types the floor is expressed vs total_snapshot_weight (same denominator
-  // as the bar), so floorBps / 100 is the correct bar position.
-  const approvalLinePercent = effectiveThresholdBps / 100;
   const floorMet =
     floorBps === null
       ? true
@@ -368,50 +415,54 @@ export function ProposalDetail() {
   const canExecute = Date.now() >= executableAt;
   const isExpired = Date.now() >= expiryTimestamp;
 
+  // Determine if the current user's yes vote would push this proposal over threshold,
+  // enabling the "Vote Yes & Execute" shortcut when executionDelayMs === 0.
+  const userWeight =
+    isMember && address
+      ? governance?.type === "Board"
+        ? 1
+        : (governance?.members.find((m) => m.address === address)?.weight ?? 0)
+      : 0;
+  const newYesWeight = proposal.yesWeight + userWeight;
+  const newTotalVoted = proposal.yesWeight + proposal.noWeight + userWeight;
+  const quorumWouldBeMet =
+    totalWeight > 0
+      ? (newTotalVoted * 10_000) / totalWeight >= proposal.quorum
+      : newTotalVoted > 0;
+  const thresholdWouldBeMet =
+    newTotalVoted > 0 &&
+    (newYesWeight * 10_000) / newTotalVoted >= proposal.approvalThreshold;
+  const floorWouldBeMet =
+    floorBps === null
+      ? true
+      : totalWeight > 0
+        ? newYesWeight * 10_000 >= totalWeight * floorBps
+        : newYesWeight > 0;
+  const wouldPassWithMyVote = quorumWouldBeMet && thresholdWouldBeMet && floorWouldBeMet;
+  const canVoteAndExecute =
+    proposal.status === "active" &&
+    !hasVoted &&
+    isMember &&
+    proposal.executionDelayMs === 0 &&
+    wouldPassWithMyVote &&
+    buildExecuteTransaction() !== null;
+
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
       {/* Full-width vote progress bar */}
       <div className="lg:col-span-3">
         <Card>
-          <CardContent className="pt-4 pb-4">
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="font-medium text-blue-500">
-                  Yes &mdash; {proposal.yesWeight}{" "}
-                  <span className="font-normal text-muted-foreground">({yesPercent.toFixed(1)}%)</span>
-                </span>
-                <span className="text-xs text-muted-foreground self-center">
-                  {formatBps(participationBps)} participated{" "}
-                  {floorBps !== null ? (
-                    <>&middot; Voting: {formatBps(proposal.approvalThreshold)} &middot; Exec floor: {formatBps(floorBps)}</>
-                  ) : (
-                    <>&middot; Threshold: {formatBps(proposal.approvalThreshold)}</>
-                  )}
-                </span>
-                <span className="font-medium text-red-500">
-                  No &mdash; {proposal.noWeight}{" "}
-                  <span className="font-normal text-muted-foreground">({noPercent.toFixed(1)}%)</span>
-                </span>
-              </div>
-              <div className="relative h-3 w-full">
-                <div className="absolute inset-0 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="absolute left-0 top-0 h-full bg-blue-500 transition-all"
-                    style={{ width: `${yesAbsolute}%` }}
-                  />
-                  <div
-                    className="absolute top-0 h-full bg-red-500 transition-all"
-                    style={{ left: `${yesAbsolute}%`, width: `${noAbsolute}%` }}
-                  />
-                </div>
-                {approvalLinePercent > 0 && (
-                  <div
-                    className={`absolute z-10 w-0.5 -top-1 -bottom-1 rounded-sm ${floorBps !== null ? "bg-amber-400/90" : "bg-white/80"}`}
-                    style={{ left: `${Math.min(approvalLinePercent, 99.5)}%` }}
-                  />
-                )}
-              </div>
-            </div>
+          <CardContent className="py-4">
+            <VoteBar
+              yesWeight={proposal.yesWeight}
+              noWeight={proposal.noWeight}
+              totalSnapshotWeight={proposal.totalSnapshotWeight}
+              quorum={proposal.quorum}
+              approvalThreshold={proposal.approvalThreshold}
+              floorBps={floorBps}
+              showParticipation
+              className="w-full space-y-2"
+            />
           </CardContent>
         </Card>
       </div>
@@ -423,7 +474,9 @@ export function ProposalDetail() {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>
-                  {typeDef?.label ?? proposal.typeKey}
+                  {PROPOSAL_TYPE_DISPLAY_NAME[
+                    proposal.typeKey as KnownProposalTypeKey
+                  ] ?? typeDef?.label ?? proposal.typeKey}
                 </CardTitle>
                 <CardDescription>
                   Proposed by {proposerName ?? getAddressName(proposal.proposer)}
@@ -431,7 +484,11 @@ export function ProposalDetail() {
               </div>
               <Badge
                 variant={statusVariant(proposal.status)}
-                className={floorBps !== null && !floorMet && proposal.status === "passed" ? "border-amber-500 text-amber-500" : ""}
+                className={
+                  floorBps !== null && !floorMet && proposal.status === "passed"
+                    ? "border-amber-500 text-amber-500"
+                    : statusClassName(proposal.status)
+                }
               >
                 {proposal.status}
               </Badge>
@@ -454,16 +511,16 @@ export function ProposalDetail() {
               </div>
               <div>
                 <span className="text-muted-foreground">Quorum:</span>{" "}
-                {formatBps(proposal.quorum)}
+                <AnimatedValue value={proposal.quorum / 100} suffix="%" />
               </div>
               <div>
                 <span className="text-muted-foreground">Threshold:</span>{" "}
-                {formatBps(proposal.approvalThreshold)}
+                <AnimatedValue value={proposal.approvalThreshold / 100} suffix="%" />
               </div>
               {floorBps !== null && (
                 <div>
                   <span className="text-muted-foreground">Exec floor:</span>{" "}
-                  {formatBps(floorBps)}
+                  <AnimatedValue value={floorBps / 100} suffix="%" />
                   {!floorMet && (
                     <span className="text-amber-500 text-xs">{" "}(not met)</span>
                   )}
@@ -486,6 +543,39 @@ export function ProposalDetail() {
                 <Countdown targetMs={executableAt} />
               </div>
             )}
+            {proposal.status === "executed" && proposal.executionTxHash && (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground shrink-0">Executed tx:</span>
+                <span className="font-mono text-xs truncate">
+                  {proposal.executionTxHash.slice(0, 8)}&hellip;{proposal.executionTxHash.slice(-6)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(proposal.executionTxHash!);
+                    setTxCopied(true);
+                    setTimeout(() => setTxCopied(false), 2000);
+                  }}
+                  className="rounded p-0.5 hover:bg-muted transition-colors"
+                  title="Copy transaction hash"
+                >
+                  {txCopied ? (
+                    <Check className="h-3.5 w-3.5 text-green-500" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+                  )}
+                </button>
+                <a
+                  href={`http://suiscan.xyz/testnet/tx/${proposal.executionTxHash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded p-0.5 hover:bg-muted transition-colors"
+                  title="View on SuiScan"
+                >
+                  <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+                </a>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -503,22 +593,57 @@ export function ProposalDetail() {
           <CardContent className="space-y-4">
             <Separator />
 
-            {proposal.status === "active" && hasVoted && (
+            {['active','executed'].includes(proposal.status) && hasVoted && (
               <div className="text-muted-foreground text-center text-sm">
-                You voted `{priorVote ? "Yes" : "No"}`
+                You voted '{priorVote ? "Yes" : "No"}' on this proposal.
               </div>
             )}
 
-            {proposal.status === "active" && !hasVoted && (
+            {['active','executed'].includes(proposal.status) && !hasVoted && (
               <>
                 <div className="flex gap-2">
-                  <Button
-                    className="flex-1"
-                    disabled={actionPending !== null || !isMember}
-                    onClick={() => handleVote(true)}
-                  >
-                    {actionPending === "yes" ? "Voting..." : "Vote Yes"}
-                  </Button>
+                  {canVoteAndExecute ? (
+                    <div ref={voteButtonRef} className="flex flex-1">
+                      <Button
+                        className="flex-1 rounded-r-none"
+                        disabled={actionPending !== null || !isMember}
+                        onClick={() => handleVote(true)}
+                      >
+                        {actionPending === "yes" || actionPending === "vote-execute"
+                          ? "Voting..."
+                          : "Vote Yes"}
+                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          disabled={actionPending !== null}
+                          render={
+                            <button
+                              type="button"
+                              className="inline-flex h-8 items-center rounded-r-lg border-l border-primary-foreground/20 bg-primary px-1.5 text-primary-foreground hover:bg-primary/80 disabled:pointer-events-none disabled:opacity-50"
+                            />
+                          }
+                        >
+                          <ChevronDown className="h-4 w-4" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" anchor={voteButtonRef}>
+                          <DropdownMenuItem
+                            disabled={actionPending !== null}
+                            onClick={() => handleVoteAndExecute()}
+                          >
+                            Vote Yes & Execute
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  ) : (
+                    <Button
+                      className="flex-1"
+                      disabled={actionPending !== null || !isMember}
+                      onClick={() => handleVote(true)}
+                    >
+                      {actionPending === "yes" ? "Voting..." : "Vote Yes"}
+                    </Button>
+                  )}
                   <Button
                     variant="destructive"
                     className="flex-1"
@@ -541,8 +666,8 @@ export function ProposalDetail() {
                 {floorBps !== null && !floorMet && (
                   <div className="space-y-1 text-center">
                     <p className="text-xs text-amber-500">
-                      Execution requires {formatBps(floorBps)} of total voting weight (floor).
-                      Current yes votes ({formatBps(Math.round((proposal.yesWeight * 10_000) / Math.max(proposal.totalSnapshotWeight, 1)))}) do not meet this threshold.
+                      Execution requires <AnimatedValue value={floorBps / 100} suffix="%" /> of total voting weight (floor).
+                      Current yes votes (<AnimatedValue value={Math.round((proposal.yesWeight * 10_000) / Math.max(proposal.totalSnapshotWeight, 1)) / 100} suffix="%" />) do not meet this threshold.
                     </p>
                     <p className="text-xs text-muted-foreground">
                       The proposal passed its voting threshold and is now closed to new votes.
@@ -586,6 +711,7 @@ export function ProposalDetail() {
                 {actionPending === "expire" ? "Processing..." : "Mark Expired"}
               </Button>
             )}
+            {}
           </CardContent>
         </Card>
       </div>

@@ -65,10 +65,34 @@ export function buildSplitAndDeposit(args: {
   if (args.coinObjectIds.length === 0) throw new Error("No coin objects provided");
 
   const tx = new Transaction();
+  const isSui = args.coinType === "0x2::sui::SUI" ||
+    args.coinType === "0x0000000000000000000000000000000000000000000000000000000000000002::sui::SUI";
+
+  if (isSui) {
+    // For SUI, just split from tx.gas. The Sui SDK automatically selects
+    // and consolidates all of the sender's SUI coins into the gas payment,
+    // so we must NOT manually merge wallet objects into tx.gas — doing so
+    // would double-reference the coin the SDK already picked for gas,
+    // making it unavailable for gas selection.
+    if (args.amount === undefined) {
+      throw new Error("An explicit amount is required when depositing SUI (cannot deposit entire balance — gas must be reserved).");
+    }
+
+    const coinToDeposit = tx.splitCoins(tx.gas, [tx.pure.u64(args.amount)])[0];
+
+    tx.moveCall({
+      target: fw(MODULES.treasury_vault, "deposit"),
+      arguments: [tx.object(args.treasuryId), coinToDeposit],
+      typeArguments: [args.coinType],
+    });
+
+    return tx;
+  }
+
+  // Non-SUI path: merge all objects into the first, then optionally split.
   const [primaryId, ...restIds] = args.coinObjectIds;
   const primaryCoin = tx.object(primaryId);
 
-  // Merge any additional objects of the same type into the primary coin.
   if (restIds.length > 0) {
     tx.mergeCoins(primaryCoin, restIds.map((id) => tx.object(id)));
   }

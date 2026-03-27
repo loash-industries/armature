@@ -36,7 +36,7 @@ export function SubDAOCard({
         <CardContent>
           <div className="text-muted-foreground flex items-center gap-4 text-sm">
             {node.childCount > 0 && (
-              <span>{node.childCount} sub-DAO{node.childCount !== 1 ? "s" : ""}</span>
+              <span>{node.childCount} organizational unit{node.childCount !== 1 ? "s" : ""}</span>
             )}
             {node.controllerPaused && (
               <span className="text-destructive">Controller paused</span>

@@ -42,6 +42,7 @@ export interface WalletSignerContextValue {
   disconnectWallet: () => void;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const WalletSignerContext = createContext<WalletSignerContextValue>({
   address: null,
   isConnected: false,
