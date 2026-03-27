@@ -7,7 +7,7 @@ COPY package.json package-lock.json ./
 
 ARG NPM_PRIVATE_REGISTRY_URL
     
-RUN npm config set registry ${NPM_PRIVATE_REGISTRY_URL}
+RUN npm config set @loash-industries:registry ${NPM_PRIVATE_REGISTRY_URL}
 RUN --mount=type=secret,id=GH_AUTH_TOKEN \
     npm config set ${NPM_PRIVATE_REGISTRY_URL#http*:}:_authToken "$(cat /run/secrets/GH_AUTH_TOKEN)" \
     && echo "always-auth=true" >> ~/.npmrc
