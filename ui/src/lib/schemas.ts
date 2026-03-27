@@ -6,7 +6,7 @@ const suiAddress = z
 
 const suiObjectId = suiAddress;
 
-const metadataIpfs = z.string().default("");
+const metadataIpfs = z.string();
 
 /** Shared proposal config schema (quorum, threshold, etc.). */
 export const proposalConfigSchema = z.object({

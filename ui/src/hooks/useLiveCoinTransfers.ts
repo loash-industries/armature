@@ -129,6 +129,7 @@ export function useLiveCoinTransfers(
   useEffect(() => {
     if (!enabled || !treasuryId || !RELAY_TOKEN) return
 
+    const vaultId = treasuryId
     const client = new RelayClient(RELAY_NETWORK, { token: RELAY_TOKEN })
     let cancelled = false
     const subscriptions: Subscription[] = []
@@ -143,7 +144,7 @@ export function useLiveCoinTransfers(
           packageId: PACKAGE_ID,
           module: MODULES.treasury_vault,
           eventName: 'CoinDeposited',
-          match: { vault_id: treasuryId },
+          match: { vault_id: vaultId },
           onEvent: (ev) => {
             const f = ev.decoded_fields as unknown as CoinDepositedFields | null
             if (!f) return
@@ -156,12 +157,12 @@ export function useLiveCoinTransfers(
                 direction: 'inbound',
                 sender: f.depositor,
                 fromOwner: f.depositor,
-                toOwner: treasuryId,
+                toOwner: vaultId,
                 txDigest: '',
                 timestamp: ev.timestamp,
               },
             })
-            queryClient.invalidateQueries({ queryKey: cacheKeys.treasury(treasuryId) })
+            queryClient.invalidateQueries({ queryKey: cacheKeys.treasury(vaultId) })
           },
         }),
       )
@@ -174,7 +175,7 @@ export function useLiveCoinTransfers(
           packageId: PACKAGE_ID,
           module: MODULES.treasury_vault,
           eventName: 'CoinWithdrawn',
-          match: { vault_id: treasuryId },
+          match: { vault_id: vaultId },
           onEvent: (ev) => {
             const f = ev.decoded_fields as unknown as CoinWithdrawnFields | null
             if (!f) return
@@ -185,14 +186,14 @@ export function useLiveCoinTransfers(
                 coinType: f.coin_type,
                 amount: f.amount,
                 direction: 'outbound',
-                sender: treasuryId,
-                fromOwner: treasuryId,
+                sender: vaultId,
+                fromOwner: vaultId,
                 toOwner: f.recipient,
                 txDigest: '',
                 timestamp: ev.timestamp,
               },
             })
-            queryClient.invalidateQueries({ queryKey: cacheKeys.treasury(treasuryId) })
+            queryClient.invalidateQueries({ queryKey: cacheKeys.treasury(vaultId) })
           },
         }),
       )

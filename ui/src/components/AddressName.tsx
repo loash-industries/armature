@@ -13,10 +13,8 @@ interface AddressNameProps {
 export function AddressName({ address, charName }: AddressNameProps) {
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="text-sky-500 dark:text-sky-400 font-medium cursor-default">
-          {resolveDisplayName(address, charName)}
-        </span>
+      <TooltipTrigger render={<span className="text-sky-500 dark:text-sky-400 font-medium cursor-default" />}>
+        {resolveDisplayName(address, charName)}
       </TooltipTrigger>
       <TooltipContent>
         <p className="font-mono text-xs break-all">{address}</p>

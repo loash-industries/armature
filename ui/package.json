@@ -8,6 +8,7 @@
     "dev:testnet": "vite --mode testnet",
     "build:localnet": "tsc -b && vite build",
     "build": "tsc -b && vite build --mode testnet",
+    "tscheck": "tsc --noEmit",
     "preview": "vite preview",
     "lint": "eslint .",
     "lint:check": "eslint .",

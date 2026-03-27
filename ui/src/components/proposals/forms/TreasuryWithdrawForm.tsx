@@ -29,7 +29,7 @@ const formSchema = z.object({
   recipient: z
     .string()
     .regex(/^0x[a-fA-F0-9]{64}$/, "Must be a valid Sui address (0x + 64 hex)"),
-  metadataIpfs: z.string().default(""),
+  metadataIpfs: z.string(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
