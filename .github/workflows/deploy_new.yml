@@ -72,6 +72,7 @@ jobs:
     with:
       image_tag: ${{ needs.create-tag.outputs.tag }}
       docker_build_context: ui
+      npm_private_registry_url: "https://npm.pkg.github.com/"
     secrets:
       GH_AUTH_TOKEN: ${{ secrets.GH_AUTH_TOKEN }}
 
