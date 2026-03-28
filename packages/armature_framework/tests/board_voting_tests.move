@@ -66,7 +66,7 @@ fun submit_proposal_with_config(
             dao.id(),
             b"SetBoard".to_ascii_string(),
             CREATOR,
-            string::utf8(b"ipfs://test"),
+            option::some(string::utf8(b"ipfs://test")),
             TestPayload { value: 42 },
             config,
             dao.governance(),

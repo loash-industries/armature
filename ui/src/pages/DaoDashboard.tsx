@@ -65,7 +65,10 @@ function formatCoinBalance(raw: bigint, symbol: string, decimals = 6): string {
   const formatted =
     val >= 1_000_000
       ? `${(val / 1_000_000).toFixed(1)}M`
-      : val.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+      : val.toLocaleString(undefined, {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 2,
+        });
   return `${formatted} ${symbol}`;
 }
 
@@ -81,7 +84,13 @@ function timeAgo(timestampMs: number): string {
   return `${days}d ago`;
 }
 
-function CoinIcon({ iconUrl, symbol }: { iconUrl: string | null; symbol: string }) {
+function CoinIcon({
+  iconUrl,
+  symbol,
+}: {
+  iconUrl: string | null;
+  symbol: string;
+}) {
   const [imgError, setImgError] = useState(false);
   if (iconUrl && !imgError) {
     return (
@@ -156,26 +165,38 @@ function formatActivityDisplay(
   metaMap: Record<string, CoinMeta> | undefined,
 ): { action: React.ReactNode; context: string } {
   const coin = formatRawCoin(ev.coinAmount, ev.coinType, metaMap);
-  const actor = ev.actor
-    ? <AddressName address={ev.actor} charName={nameMap?.get(ev.actor)} />
-    : null;
-  const recipient = ev.recipient
-    ? <AddressName address={ev.recipient} charName={nameMap?.get(ev.recipient)} />
-    : null;
+  const actor = ev.actor ? (
+    <AddressName address={ev.actor} charName={nameMap?.get(ev.actor)} />
+  ) : null;
+  const recipient = ev.recipient ? (
+    <AddressName address={ev.recipient} charName={nameMap?.get(ev.recipient)} />
+  ) : null;
 
   switch (ev.eventType) {
     case "VoteCast": {
       const pid = ev.proposalId;
-      const short = pid && pid.length > 10 ? `${pid.slice(0, 6)}\u2026${pid.slice(-4)}` : pid ?? "";
+      const short =
+        pid && pid.length > 10
+          ? `${pid.slice(0, 6)}\u2026${pid.slice(-4)}`
+          : (pid ?? "");
       const typeLabel = ev.typeKey ? ` (${ev.typeKey})` : "";
       return {
-        action: <>{actor} voted '{ev.approve ? "Yes" : "No"}' on proposal {short}{typeLabel}</>,
+        action: (
+          <>
+            {actor} voted '{ev.approve ? "Yes" : "No"}' on proposal {short}
+            {typeLabel}
+          </>
+        ),
         context: ev.label,
       };
     }
     case "ProposalCreated":
       return {
-        action: <>{actor} created '{ev.typeKey ?? ""}' proposal</>,
+        action: (
+          <>
+            {actor} created '{ev.typeKey ?? ""}' proposal
+          </>
+        ),
         context: ev.label,
       };
     case "ProposalExecuted":
@@ -189,32 +210,52 @@ function formatActivityDisplay(
       return { action: ev.description, context: ev.label };
     case "CoinDeposited":
       return {
-        action: <>{actor} deposited {coin}</>,
+        action: (
+          <>
+            {actor} deposited {coin}
+          </>
+        ),
         context: ev.label,
       };
     case "CoinWithdrawn":
       return {
-        action: <>Withdrew {coin} to {recipient}</>,
+        action: (
+          <>
+            Withdrew {coin} to {recipient}
+          </>
+        ),
         context: ev.label,
       };
     case "CoinClaimed":
       return {
-        action: <>{actor} claimed {coin}</>,
+        action: (
+          <>
+            {actor} claimed {coin}
+          </>
+        ),
         context: ev.label,
       };
     case "CoinSent":
       return {
-        action: <>Sent {coin} to {recipient}</>,
+        action: (
+          <>
+            Sent {coin} to {recipient}
+          </>
+        ),
         context: ev.label,
       };
     case "CoinSentToDAO":
       return {
-        action: <>Sent {coin} to DAO treasury</>,
+        action: <>Sent {coin} to Organization or OU treasury</>,
         context: ev.label,
       };
     case "SmallPaymentSent":
       return {
-        action: <>Small payment {coin} to {recipient}</>,
+        action: (
+          <>
+            Small payment {coin} to {recipient}
+          </>
+        ),
         context: ev.label,
       };
     case "TypeFrozen":
@@ -348,9 +389,11 @@ export function DaoDashboard() {
     isLoading: daoLoading,
     isError: daoError,
   } = useDaoSummary(daoId ?? "");
-  const { data: balances, isLoading: balancesLoading, feed: treasuryFeed } = useLiveTreasury(
-    dao?.treasuryId,
-  );
+  const {
+    data: balances,
+    isLoading: balancesLoading,
+    feed: treasuryFeed,
+  } = useLiveTreasury(dao?.treasuryId);
   const { data: activity, isLoading: activityLoading } = useDaoActivity(
     daoId ?? "",
     dao?.treasuryId,
@@ -358,15 +401,22 @@ export function DaoDashboard() {
 
   // Merge coin types from treasury balances + activity events for a single metadata lookup
   const treasuryCoinTypes = balances?.map((b) => b.coinType) ?? [];
-  const activityCoinTypes = activity
-    ?.map((ev) => ev.coinType)
-    .filter((ct): ct is string => !!ct) ?? [];
-  const allCoinTypes = [...new Set([...treasuryCoinTypes, ...activityCoinTypes])];
+  const activityCoinTypes =
+    activity?.map((ev) => ev.coinType).filter((ct): ct is string => !!ct) ?? [];
+  const allCoinTypes = [
+    ...new Set([...treasuryCoinTypes, ...activityCoinTypes]),
+  ];
   const { data: metadataMap } = useCoinMetadataMap(allCoinTypes);
 
   // Resolve character names for all actors/recipients in activity events
   const activityAddresses = activity
-    ? [...new Set(activity.flatMap((ev) => [ev.actor, ev.recipient].filter(Boolean) as string[]))]
+    ? [
+        ...new Set(
+          activity.flatMap(
+            (ev) => [ev.actor, ev.recipient].filter(Boolean) as string[],
+          ),
+        ),
+      ]
     : [];
   const { data: activityNameMap } = useCharacterNames(activityAddresses);
 
@@ -374,8 +424,12 @@ export function DaoDashboard() {
   const filteredActivity = activity?.filter((ev) => {
     if (!activityFilter) return true;
     const q = activityFilter.toLowerCase();
-    const actorName = ev.actor ? resolveDisplayName(ev.actor, activityNameMap?.get(ev.actor)) : "";
-    const recipientName = ev.recipient ? resolveDisplayName(ev.recipient, activityNameMap?.get(ev.recipient)) : "";
+    const actorName = ev.actor
+      ? resolveDisplayName(ev.actor, activityNameMap?.get(ev.actor))
+      : "";
+    const recipientName = ev.recipient
+      ? resolveDisplayName(ev.recipient, activityNameMap?.get(ev.recipient))
+      : "";
     return (
       actorName.toLowerCase().includes(q) ||
       recipientName.toLowerCase().includes(q) ||
@@ -390,12 +444,11 @@ export function DaoDashboard() {
     daoId ?? "",
   );
   const account = useCurrentAccount();
-  const unvotedProposals = proposals?.filter(
-    (p) =>
-      p.status === "active" &&
-      !!account &&
-      !(account.address in p.votesCast),
-  ) ?? [];
+  const unvotedProposals =
+    proposals?.filter(
+      (p) =>
+        p.status === "active" && !!account && !(account.address in p.votesCast),
+    ) ?? [];
 
   const treasuryLoading = daoLoading || balancesLoading;
   const treasuryValue = !dao
@@ -403,9 +456,19 @@ export function DaoDashboard() {
     : !balances || balances.length === 0
       ? "Empty"
       : balances.length === 1
-        ? formatCoinBalance(balances[0].balance, shortCoinType(balances[0].coinType), balances[0].decimals)
+        ? formatCoinBalance(
+            balances[0].balance,
+            shortCoinType(balances[0].coinType),
+            balances[0].decimals,
+          )
         : balances
-            .map((b) => formatCoinBalance(b.balance, shortCoinType(b.coinType), b.decimals))
+            .map((b) =>
+              formatCoinBalance(
+                b.balance,
+                shortCoinType(b.coinType),
+                b.decimals,
+              ),
+            )
             .join(" · ");
   const hasLiveTreasuryActivity = treasuryFeed.length > 0;
 
@@ -424,7 +487,8 @@ export function DaoDashboard() {
         <Alert variant="destructive">
           <AlertTitle>DAO Migrating</AlertTitle>
           <AlertDescription>
-            This DAO is currently in migration mode. Some actions may be restricted.
+            This DAO is currently in migration mode. Some actions may be
+            restricted.
           </AlertDescription>
         </Alert>
       )}
@@ -516,11 +580,11 @@ export function DaoDashboard() {
                   <CardContent className="flex items-center gap-4 p-4">
                     {/* Title + description */}
                     <div className="w-48 flex-shrink-0 space-y-0.5 overflow-hidden">
-                      <p className="truncate font-semibold">
+                      <div className="truncate text-lg">
                         {PROPOSAL_TYPE_DISPLAY_NAME[
                           p.typeKey as KnownProposalTypeKey
                         ] ?? p.typeKey}
-                      </p>
+                      </div>
                       <p className="truncate text-sm text-muted-foreground">
                         {p.metadataIpfs || `${p.id.slice(0, 10)}…`}
                       </p>
@@ -538,7 +602,9 @@ export function DaoDashboard() {
                     </div>
                     {/* Time + arrow */}
                     <div className="flex flex-shrink-0 flex-col items-end gap-1">
-                      <span className="text-xs text-muted-foreground">{timeLabel}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {timeLabel}
+                      </span>
                       <ArrowRight className="h-4 w-4 text-muted-foreground" />
                     </div>
                   </CardContent>
@@ -546,23 +612,22 @@ export function DaoDashboard() {
               </Link>
             );
           })
-        ) : (
-          !account ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              Connect your wallet to see proposals requiring your vote.
-            </p>
-          ) : (
+        ) : !account ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
-            No votes pending! Check out the{" "}<Link
+            Connect your wallet to see proposals requiring your vote.
+          </p>
+        ) : (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            No votes pending! Check out the{" "}
+            <Link
               to="/dao/$daoId/proposals"
               params={{ daoId: daoId ?? "" }}
               className="font-medium underline underline-offset-2 hover:opacity-80"
             >
-             proposals history
+              proposals history
             </Link>{" "}
             or explore the treasury and board.
           </p>
-          )
         )}
       </div>
 

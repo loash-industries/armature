@@ -29,7 +29,7 @@ export function ConnectPage() {
     <div className="bg-background flex min-h-screen items-center justify-center">
       <Card className="w-full max-w-sm">
         <CardContent className="flex flex-col items-center gap-6 pt-6">
-          <ArmatureLogo className="h-48 w-44 text-foreground" />
+          <ArmatureLogo className="h-64 w-64 text-foreground" />
 
           {isConnected ? (
             <Button
@@ -59,7 +59,7 @@ export function ConnectPage() {
 
           <div className="w-full space-y-3">
             <p className="text-muted-foreground text-sm">
-              Enter a DAO address to browse to
+              Enter a Organization's address to view
             </p>
             <div className="flex gap-4">
               <Input

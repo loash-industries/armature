@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Plus, Minus, RefreshCw } from "lucide-react";
+import { Plus, Minus, RefreshCw, Copy, Check, ExternalLink } from "lucide-react";
 import {
   Card,
   CardHeader,
@@ -44,9 +44,8 @@ import {
   useCoinMetadataMap,
 } from "@/hooks/useDao";
 import { useLiveTreasury } from "@/hooks/useLiveTreasury";
-import { useLiveCoinTransfers } from "@/hooks/useLiveCoinTransfers";
 import type { TreasuryRelayEvent } from "@/hooks/useFrameworkRelay";
-import type { CoinTransferEvent } from "@/hooks/useLiveCoinTransfers";
+import { useCharacterNames } from "@/hooks/useCharacterNames";
 import { useWalletSigner } from "@/hooks/useWalletSigner";
 import { useWalletCoins } from "@/hooks/useWalletCoins";
 import { getAddressName } from "@/lib/address-namer";
@@ -56,6 +55,7 @@ import { cacheKeys } from "@/lib/cache-keys";
 import { CoinAmountInput } from "@/components/ui/CoinAmountInput";
 import { AnimatedCoinBalance } from "@/components/ui/AnimatedCoinBalance";
 import { formatBalance } from "@/lib/coins";
+import { TreasuryWorkerToggle } from "@/components/TreasuryWorkerPanel";
 
 function CoinIcon({ iconUrl, symbol }: { iconUrl: string | null; symbol: string }) {
   const [imgError, setImgError] = useState(false);
@@ -148,13 +148,13 @@ type LiveRow = {
   amount?: string;
   /** Counterparty address (depositor for ingress, recipient for egress). */
   counterparty?: string;
+  /** On-chain transaction digest (available for historical rows). */
+  txDigest?: string;
 };
 
 function buildLiveRows(
   relayFeed: TreasuryRelayEvent[],
-  coinTransfers: CoinTransferEvent[],
   metadataMap: Record<string, { symbol?: string; decimals?: number }> | undefined,
-  treasuryId: string,
 ): LiveRow[] {
   function coinLabel(coinType: string) {
     return metadataMap?.[coinType]?.symbol ?? shortCoinType(coinType);
@@ -180,41 +180,18 @@ function buildLiveRows(
     counterparty: e.actor,
   }));
 
-  const relevantTransfers = coinTransfers.filter((e) =>
-    e.direction === "inbound"
-      ? e.toOwner === treasuryId
-      : e.fromOwner === treasuryId,
-  );
-
-  const transferRows: LiveRow[] = relevantTransfers.map((e) => ({
-    key: `xfer-${e.txDigest}-${e.objectId}`,
-    badge: e.direction === "inbound" ? "Received" : "Sent",
-    description:
-      e.direction === "inbound"
-        ? `${formatBalanceLocale(BigInt(e.amount), decimals(e.coinType))} ${coinLabel(e.coinType)} from ${getAddressName(e.fromOwner ?? e.sender)}`
-        : `${formatBalanceLocale(BigInt(e.amount), decimals(e.coinType))} ${coinLabel(e.coinType)} to ${getAddressName(e.toOwner)}`,
-    timestamp: e.timestamp,
-    live: true,
-    direction: e.direction === "inbound" ? "ingress" : "egress",
-    coinType: e.coinType,
-    amount: e.amount,
-    counterparty: e.direction === "inbound" ? (e.fromOwner ?? e.sender) : e.toOwner,
-  }));
-
-  return [...frameworkRows, ...transferRows].sort(
+  return frameworkRows.sort(
     (a, b) => b.timestamp - a.timestamp,
   );
 }
 
 function LiveActivitySection({
   relayFeed,
-  coinTransfers,
   metadataMap,
   treasuryId,
   daoId,
 }: {
   relayFeed: TreasuryRelayEvent[];
-  coinTransfers: CoinTransferEvent[];
   metadataMap: Record<string, { symbol?: string; decimals?: number }> | undefined;
   treasuryId: string;
   daoId: string;
@@ -222,14 +199,21 @@ function LiveActivitySection({
   useNow(); // drives 1s re-renders so timeAgo() stays current — scoped here, not the whole page
   const { data: events, isLoading: historyLoading } = useTreasuryEvents(daoId, treasuryId);
 
-  const liveRows = buildLiveRows(relayFeed, coinTransfers, metadataMap, treasuryId);
+  const liveRows = buildLiveRows(relayFeed, metadataMap);
 
-  // Only surface relay rows that are newer than the most recent historical event.
-  // Once React Query refetches (triggered by relay invalidation) the historical
-  // list will catch up and the relay rows drop out automatically.
-  const mostRecentHistoricalTs = events?.[0]?.timestampMs ?? 0;
-  const newLiveRows = liveRows.filter((r) => r.timestamp > mostRecentHistoricalTs);
-
+  // Deduplicate: once the RPC history refetches and contains an event that
+  // matches a live relay row, drop the relay row.  We match on coinType +
+  // amount + counterparty within a 10-second window (relay gateway timestamp
+  // is always slightly later than the on-chain timestamp_ms).
+  const historicalFingerprints = new Set(
+    (events ?? []).map((e) =>
+      `${e.coinType}|${e.coinAmount}|${(e.actor ?? e.recipient ?? '').toLowerCase()}`,
+    ),
+  );
+  const newLiveRows = liveRows.filter((r) => {
+    const fp = `${r.coinType}|${r.amount}|${(r.counterparty ?? '').toLowerCase()}`;
+    return !historicalFingerprints.has(fp);
+  });
   const EGRESS_EVENTS = new Set(["CoinWithdrawn", "CoinSent", "CoinSentToDAO", "SmallPaymentSent"]);
 
   const historicalRows: LiveRow[] = (events ?? []).map((e) => ({
@@ -242,11 +226,18 @@ function LiveActivitySection({
     coinType: e.coinType,
     amount: e.coinAmount,
     counterparty: e.actor ?? e.recipient,
+    txDigest: e.txDigest,
   }));
 
   const allRows = [...newLiveRows, ...historicalRows].sort(
     (a, b) => b.timestamp - a.timestamp,
   );
+
+  const counterpartyAddresses = useMemo(
+    () => allRows.map((r) => r.counterparty).filter(Boolean) as string[],
+    [allRows],
+  );
+  const { data: nameMap } = useCharacterNames(counterpartyAddresses);
 
   if (historyLoading && allRows.length === 0) {
     return (
@@ -264,11 +255,11 @@ function LiveActivitySection({
     );
   }
 
-  const hasLive = newLiveRows.length > 0;
+  // const hasLive = newLiveRows.length > 0;
 
   return (
     <div className="space-y-2">
-      {hasLive && (
+      {/* {hasLive && (
         <div className="mb-1 flex items-center gap-1.5">
           <span className="relative flex h-2 w-2">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
@@ -276,7 +267,7 @@ function LiveActivitySection({
           </span>
           <span className="text-xs font-medium text-green-600">Live</span>
         </div>
-      )}
+      )} */}
       <Table>
         <TableHeader>
           <TableRow>
@@ -286,6 +277,7 @@ function LiveActivitySection({
             <TableHead className="text-right">Amount</TableHead>
             <TableHead>Counterparty</TableHead>
             <TableHead className="text-right">Time</TableHead>
+            <TableHead className="w-8" />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -324,10 +316,24 @@ function LiveActivitySection({
                     : "—"}
                 </TableCell>
                 <TableCell className="font-mono text-xs">
-                  {row.counterparty ? <AddressName address={row.counterparty} /> : "—"}
+                  {row.counterparty ? <AddressName address={row.counterparty} charName={nameMap?.get(row.counterparty)} /> : "—"}
                 </TableCell>
                 <TableCell className="text-muted-foreground text-right text-xs whitespace-nowrap">
                   {row.timestamp > 0 ? timeAgo(row.timestamp) : "—"}
+                </TableCell>
+                <TableCell className="text-center">
+                  {row.txDigest ? (
+                    <a
+                      href={`http://suiscan.xyz/testnet/tx/${row.txDigest}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="View on SUI explorer"
+                    >
+                      <Button variant="ghost" size="icon" className="h-6 w-6">
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </Button>
+                    </a>
+                  ) : null}
                 </TableCell>
               </TableRow>
             );
@@ -349,8 +355,11 @@ export function TreasuryPage() {
     isLoading: balancesLoading,
     feed: relayFeed,
   } = useLiveTreasury(dao?.treasuryId);
-  const coinTransfers = useLiveCoinTransfers(dao?.treasuryId);
   const { data: treasuryEvents } = useTreasuryEvents(daoId ?? "", dao?.treasuryId);
+
+  console.log('[TreasuryPage] daoId=%s, treasuryId=%s, balances=%o, relayFeed=%d, treasuryEvents=%d',
+    daoId, dao?.treasuryId, balances?.map(b => ({ type: b.coinType, bal: b.balance.toString() })),
+    relayFeed.length, treasuryEvents?.length ?? 0)
 
   const { address, signAndExecuteTransaction } = useWalletSigner();
   const { data: walletCoins } = useWalletCoins();
@@ -363,11 +372,10 @@ export function TreasuryPage() {
     const set = new Set<string>();
     for (const b of balances ?? []) set.add(b.coinType);
     for (const e of relayFeed) set.add(e.coinType);
-    for (const e of coinTransfers.feed) set.add(e.coinType);
     for (const e of treasuryEvents ?? []) if (e.coinType) set.add(e.coinType);
     for (const c of walletCoins ?? []) set.add(c.coinType);
     return [...set];
-  }, [balances, relayFeed, coinTransfers.feed, treasuryEvents, walletCoins]);
+  }, [balances, relayFeed, treasuryEvents, walletCoins]);
   const { data: metadataMap } = useCoinMetadataMap(coinTypes);
   const client = useSuiClient();
   const queryClient = useQueryClient();
@@ -376,6 +384,15 @@ export function TreasuryPage() {
   const [depositAmount, setDepositAmount] = useState<bigint | null>(null);
   const [depositPending, setDepositPending] = useState(false);
   const [balancesRefreshing, setBalancesRefreshing] = useState(false);
+  const [vaultIdCopied, setVaultIdCopied] = useState(false);
+
+  function handleCopyVaultId() {
+    if (!dao?.treasuryId) return;
+    navigator.clipboard.writeText(dao.treasuryId).then(() => {
+      setVaultIdCopied(true);
+      setTimeout(() => setVaultIdCopied(false), 2000);
+    });
+  }
 
   async function handleRefreshBalances() {
     if (!dao?.treasuryId) return;
@@ -469,12 +486,25 @@ export function TreasuryPage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Balances</CardTitle>
+              <CardTitle>Treasury</CardTitle>
               <CardDescription>
                 {balances
                   ? `${balances.length} coin type${balances.length !== 1 ? "s" : ""}`
                   : "Loading..."}
               </CardDescription>
+              {dao?.treasuryId && (
+                <button
+                  type="button"
+                  onClick={handleCopyVaultId}
+                  className="mt-1 flex items-center gap-1.5 font-mono text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  title="Copy vault object ID"
+                >
+                  <span>{dao.treasuryId.slice(0, 6)}…{dao.treasuryId.slice(-4)}</span>
+                  {vaultIdCopied
+                    ? <Check className="h-3 w-3 text-green-500" />
+                    : <Copy className="h-3 w-3" />}
+                </button>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <Button
@@ -487,6 +517,9 @@ export function TreasuryPage() {
               >
                 <RefreshCw className={`h-4 w-4 ${balancesRefreshing ? "animate-spin" : ""}`} />
               </Button>
+              {dao?.treasuryId && (
+                <TreasuryWorkerToggle treasuryVaultObjectId={dao.treasuryId} />
+              )}
               {address && (
                 <Button variant="outline" size="sm" onClick={() => setDepositOpen(true)}>
                   Deposit
@@ -506,7 +539,7 @@ export function TreasuryPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Coin Type</TableHead>
+                  <TableHead>Asset</TableHead>
                   <TableHead className="text-right">Balance</TableHead>
                   {address && <TableHead className="w-20" />}
                 </TableRow>
@@ -584,7 +617,6 @@ export function TreasuryPage() {
         <CardContent>
           <LiveActivitySection
             relayFeed={relayFeed}
-            coinTransfers={coinTransfers.feed}
             metadataMap={metadataMap}
             treasuryId={dao?.treasuryId ?? ""}
             daoId={daoId ?? ""}

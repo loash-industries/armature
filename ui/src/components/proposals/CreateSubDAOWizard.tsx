@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Badge } from "@/components/ui/badge";
@@ -25,11 +25,14 @@ import { RecipientCombobox } from "@/components/ui/RecipientCombobox";
 import { createSubDAOSchema } from "@/lib/schemas";
 import { ALL_PROPOSAL_TYPE_KEYS, PROPOSAL_TYPE_MAP } from "@/config/proposal-types";
 import { SubmitProposalButton } from "./SubmitProposalButton";
+import { useGovernanceDetail, useTreasuryEvents } from "@/hooks/useDao";
+import { useCharacterNames } from "@/hooks/useCharacterNames";
 import type { CreateSubDAOPayload, ProposalConfigInput } from "@/types/proposal";
 
 interface CreateSubDAOWizardProps {
   daoId: string;
   isPending?: boolean;
+  pendingStep?: "creating" | "voting" | null;
   onSubmit: (data: CreateSubDAOPayload) => void;
   onSubmitAndVote?: (data: CreateSubDAOPayload) => void;
 }
@@ -44,22 +47,58 @@ const STEPS = [
 ] as const;
 
 const DEFAULT_CONFIG: ProposalConfigInput = {
-  quorum: 5000,
-  approvalThreshold: 5000,
+  quorum: 50,
+  approvalThreshold: 50,
   proposeThreshold: 0,
-  expiryMs: 604800000,
+  expiryMs: 168,
   executionDelayMs: 0,
   cooldownMs: 0,
 };
+
+const HOURS_TO_MS = 3_600_000;
+
+/** Convert form values (percentages, hours) to on-chain values (basis points, ms). */
+function toOnChain(data: CreateSubDAOPayload): CreateSubDAOPayload {
+  return {
+    ...data,
+    proposalTypes: data.proposalTypes.map((pt) => ({
+      ...pt,
+      config: {
+        ...pt.config,
+        quorum: Math.round(pt.config.quorum * 100),
+        approvalThreshold: Math.round(pt.config.approvalThreshold * 100),
+        expiryMs: pt.config.expiryMs * HOURS_TO_MS,
+        executionDelayMs: pt.config.executionDelayMs * HOURS_TO_MS,
+        cooldownMs: pt.config.cooldownMs * HOURS_TO_MS,
+      },
+    })),
+  };
+}
 
 // Types blocked from SubDAOs
 const SUBDAO_BLOCKED = new Set(["SpawnDAO", "SpinOutSubDAO", "CreateSubDAO"]);
 
 export function CreateSubDAOWizard({
+  daoId,
   isPending,
+  pendingStep,
   onSubmit,
   onSubmitAndVote,
 }: CreateSubDAOWizardProps) {
+  // Prime character-name cache so RecipientCombobox has names even on cold navigation.
+  const { data: governance } = useGovernanceDetail(daoId);
+  const { data: treasuryEvents } = useTreasuryEvents(daoId);
+  const primeAddresses = useMemo(() => {
+    const addrs = new Set<string>();
+    for (const m of governance?.members ?? []) addrs.add(m.address);
+    for (const ev of treasuryEvents ?? []) {
+      if (ev.actor) addrs.add(ev.actor);
+      if (ev.recipient) addrs.add(ev.recipient);
+    }
+    return [...addrs];
+  }, [governance, treasuryEvents]);
+  useCharacterNames(primeAddresses);
+
   const [step, setStep] = useState(0);
 
   const form = useForm({
@@ -115,7 +154,7 @@ export function CreateSubDAOWizard({
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit((data) =>
-          onSubmit(data as CreateSubDAOPayload),
+          onSubmit(toOnChain(data as CreateSubDAOPayload)),
         )}
         className="space-y-6"
       >
@@ -141,9 +180,9 @@ export function CreateSubDAOWizard({
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>SubDAO Name</FormLabel>
+                  <FormLabel>Organizational Unit Name</FormLabel>
                   <FormControl>
-                    <Input placeholder="My SubDAO" {...field} />
+                    <Input placeholder="Rum Buyers" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -154,10 +193,10 @@ export function CreateSubDAOWizard({
               name="metadataIpfs"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Description / Metadata CID</FormLabel>
+                  <FormLabel>Description</FormLabel>
                   <FormControl>
                     <Textarea
-                      placeholder="Describe the purpose of this SubDAO..."
+                      placeholder="We buy rum for the crew"
                       {...field}
                     />
                   </FormControl>
@@ -290,7 +329,7 @@ export function CreateSubDAOWizard({
                       </span>
                       {isBlocked && (
                         <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                          Parent only
+                          Organization only
                         </Badge>
                       )}
                     </div>
@@ -335,7 +374,7 @@ export function CreateSubDAOWizard({
           <div className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Review SubDAO</CardTitle>
+                <CardTitle className="text-base">Review Organizational Unit</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
                 <div>
@@ -369,6 +408,23 @@ export function CreateSubDAOWizard({
                   <span className="text-muted-foreground">Funding:</span>{" "}
                   {form.getValues("fundingAmount") || "0"} MIST
                 </div>
+                {Object.keys(form.formState.errors).length > 0 && (
+                  <div className="mt-4 rounded border border-destructive/50 bg-destructive/10 p-3">
+                    <p className="text-destructive text-sm font-medium mb-1">
+                      Please fix the following errors:
+                    </p>
+                    <ul className="list-disc list-inside text-destructive text-xs space-y-0.5">
+                      {Object.entries(form.formState.errors).map(
+                        ([field, error]) => (
+                          <li key={field}>
+                            <span className="font-medium">{field}:</span>{" "}
+                            {error?.message?.toString() ?? "Invalid value"}
+                          </li>
+                        ),
+                      )}
+                    </ul>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -394,9 +450,11 @@ export function CreateSubDAOWizard({
           ) : (
             <SubmitProposalButton
               isPending={isPending}
-              onSubmit={() => form.handleSubmit((data) => onSubmit(data as CreateSubDAOPayload))()}
+              pendingStep={pendingStep}
+              actionType="Create Organizational Unit"
+              onSubmit={() => form.handleSubmit((data) => onSubmit(toOnChain(data as CreateSubDAOPayload)))()}
               onSubmitAndVote={() => form.handleSubmit((data) => {
-                const d = data as CreateSubDAOPayload;
+                const d = toOnChain(data as CreateSubDAOPayload);
                 if (onSubmitAndVote) onSubmitAndVote(d);
                 else onSubmit(d);
               })()}

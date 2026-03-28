@@ -82,7 +82,7 @@ fun submit_small_payment<T: drop>(
         board_voting::submit_proposal(
             &dao,
             b"SendSmallPayment".to_ascii_string(),
-            string::utf8(b"Small payment"),
+            option::some(string::utf8(b"Small payment")),
             payload,
             clock,
             scenario.ctx(),
@@ -371,7 +371,7 @@ fun send_coin_e2e() {
         board_voting::submit_proposal(
             &dao,
             b"SendCoin".to_ascii_string(),
-            string::utf8(b"Send coins to recipient"),
+            option::some(string::utf8(b"Send coins to recipient")),
             payload,
             &clock,
             scenario.ctx(),
@@ -452,7 +452,7 @@ fun send_coin_insufficient_balance_aborts() {
         board_voting::submit_proposal(
             &dao,
             b"SendCoin".to_ascii_string(),
-            string::utf8(b"Overdraw"),
+            option::some(string::utf8(b"Overdraw")),
             payload,
             &clock,
             scenario.ctx(),
@@ -581,7 +581,7 @@ fun send_coin_to_dao_e2e() {
         board_voting::submit_proposal(
             &dao,
             b"SendCoinToDAO".to_ascii_string(),
-            string::utf8(b"Send coins to target DAO"),
+            option::some(string::utf8(b"Send coins to target DAO")),
             payload,
             &clock,
             scenario.ctx(),
@@ -709,7 +709,7 @@ fun send_coin_to_dao_target_mismatch_aborts() {
         board_voting::submit_proposal(
             &dao,
             b"SendCoinToDAO".to_ascii_string(),
-            string::utf8(b"Mismatch test"),
+            option::some(string::utf8(b"Mismatch test")),
             payload,
             &clock,
             scenario.ctx(),

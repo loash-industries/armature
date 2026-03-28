@@ -15,6 +15,17 @@ export const WORLD_PACKAGE_ID =
   import.meta.env.VITE_WORLD_PACKAGE_ID ??
   "0x0000000000000000000000000000000000000000000000000000000000000000";
 
+/**
+ * DAO IDs to hide from the DaoPickerPage.
+ * Add a full Sui address (0x…) to suppress it from the org list.
+ */
+export const HIDDEN_DAO_IDS: string[] = [
+  // "0x<dao_id_to_hide>"
+  "0x726da7e4d7e9e62a46b680ca34f7533e9327275dc9b06dc513e592691b0f4780",
+  "0x838b95c2a9b78cdef7c4fd8d370aac7b6dc84c971e1e1bf15252e051bb8fb8ba",
+  "0x7ce1c99cc3079d3abdeb27dc5b2308dc5bd66d03751ef026c1e873c0c3873b4d",
+];
+
 /** armature_framework modules */
 export const MODULES = {
   dao: "dao",

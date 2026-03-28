@@ -27,7 +27,7 @@ export function VoteBar({
   yesWeight,
   noWeight,
   totalSnapshotWeight,
-  // quorum: @todo add when weighted votes are implemented
+  quorum,
   approvalThreshold,
   floorBps,
   showParticipation,
@@ -41,18 +41,22 @@ export function VoteBar({
   const yesPercent = total > 0 ? (yesWeight / total) * 100 : 0;
   const noPercent = total > 0 ? (noWeight / total) * 100 : 0;
   const hasFloor = floorBps != null && floorBps > 0;
-  // When a floor is present use the stricter of the two as the line position
-  const effectiveThresholdBps = hasFloor
-    ? Math.max(approvalThreshold, floorBps!)
-    : approvalThreshold;
-  const approvalLinePercent = effectiveThresholdBps / 100; // bps → fixed % of bar
+  const quorumPct = quorum / 100; // bps → %
   const thresholdPct = approvalThreshold / 100;
   const participationPct =
     totalSnapshotWeight > 0 ? (total / totalSnapshotWeight) * 100 : 0;
-  const passing = total > 0 && yesPercent >= thresholdPct;
+  // On-chain: threshold = yes / totalVoted, quorum = totalVoted / totalSnapshotWeight
+  const quorumMet = participationPct >= quorumPct;
+  const thresholdMet = total > 0 && yesPercent >= thresholdPct;
+  const passing = quorumMet && thresholdMet;
+
+  // Quorum line position (% of total weight bar)
+  const quorumLinePercent = quorumPct;
+  // Floor line position (% of total weight bar) — only when a floor applies
+  const floorLinePercent = hasFloor ? floorBps! / 100 : 0;
 
   const tooltipContent = (
-    <div className="w-52 space-y-3 text-xs">
+    <div className="w-56 space-y-3 text-xs">
       {/* Yes / No rows */}
       <div className="space-y-1.5">
         <div className="flex items-center gap-2">
@@ -62,7 +66,7 @@ export function VoteBar({
             {yesWeight.toLocaleString()}
           </span>
           <span className="ml-auto text-background/50">
-            {yesPercent.toFixed(1)}%
+            {yesPercent.toFixed(1)}% of cast
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -72,7 +76,7 @@ export function VoteBar({
             {noWeight.toLocaleString()}
           </span>
           <span className="ml-auto text-background/50">
-            {noPercent.toFixed(1)}%
+            {noPercent.toFixed(1)}% of cast
           </span>
         </div>
       </div>
@@ -80,24 +84,28 @@ export function VoteBar({
       {/* Stats */}
       <div className="space-y-1 border-t border-background/15 pt-2.5">
         <div className="flex justify-between gap-4">
-          <span className="text-background/50">Total cast</span>
-          <span className="font-medium tabular-nums">{total.toLocaleString()}</span>
+          <span className="text-background/50">Votes cast</span>
+          <span className="font-medium tabular-nums">
+            {total.toLocaleString()} / {totalSnapshotWeight.toLocaleString()}
+            {" "}({participationPct.toFixed(1)}%)
+          </span>
         </div>
-        {totalSnapshotWeight > 0 && (
+        {quorumPct > 0 && (
           <div className="flex justify-between gap-4">
-            <span className="text-background/50">Possible votes</span>
-            <span className="tabular-nums">{totalSnapshotWeight.toLocaleString()}</span>
+            <span className="text-background/50">Quorum</span>
+            <span className={`font-medium ${quorumMet ? "text-green-400" : ""}`}>
+              {quorumPct.toFixed(1)}% participation
+              {quorumMet ? " ✓" : ""}
+            </span>
           </div>
         )}
         {thresholdPct > 0 && (
-          <div className="flex justify-between align-center gap-4">
-            <span className="text-background/50">Approval threshold</span>
-            <div className="flex flex-col items-end">
-              <span className="font-medium">{thresholdPct.toFixed(1)}% yes</span>
-              <span className="text-background/50">
-                {`(>= ${Math.ceil((thresholdPct / 100) * totalSnapshotWeight).toLocaleString()} votes)`}
-              </span>
-            </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-background/50">Threshold</span>
+            <span className={`font-medium ${thresholdMet ? "text-green-400" : ""}`}>
+              {thresholdPct.toFixed(1)}% of votes cast
+              {thresholdMet ? " ✓" : ""}
+            </span>
           </div>
         )}
         {hasFloor && (
@@ -124,7 +132,9 @@ export function VoteBar({
           ? "No votes cast yet"
           : passing
             ? "Currently passing"
-            : "Currently failing"}
+            : !quorumMet
+              ? "Quorum not reached"
+              : "Threshold not met"}
       </div>
     </div>
   );
@@ -144,17 +154,14 @@ export function VoteBar({
               {showParticipation && (
                 <span className="mx-2 text-muted-foreground">
                   <AnimatedValue value={parseFloat(participationPct.toFixed(2))} suffix="%" /> participated
-                  {hasFloor ? (
+                  {" "}· quorum{" "}
+                  <AnimatedValue value={parseFloat(quorumPct.toFixed(2))} suffix="%" />
+                  {hasFloor && (
                     <>
                       {" "}·{" "}
                       <span className="text-amber-400">
                         floor <AnimatedValue value={floorBps! / 100} suffix="%" />
                       </span>
-                    </>
-                  ) : (
-                    <>
-                      {" "}· threshold{" "}
-                      <AnimatedValue value={parseFloat(thresholdPct.toFixed(2))} suffix="%" />
                     </>
                   )}
                 </span>
@@ -177,12 +184,18 @@ export function VoteBar({
                   style={{ left: `${yesAbsolute}%`, width: `${noAbsolute}%` }}
                 />
               </div>
-              {approvalLinePercent > 0 && (
+              {/* Quorum line — marks participation threshold on the total-weight bar */}
+              {quorumLinePercent > 0 && (
                 <div
-                  className={`absolute z-10 -bottom-1 -top-1 w-0.5 rounded-sm ${
-                    hasFloor ? "bg-amber-400/90" : "bg-white/80"
-                  }`}
-                  style={{ left: `${Math.min(approvalLinePercent, 99.5)}%` }}
+                  className="absolute z-10 -bottom-1 -top-1 w-0.5 rounded-sm bg-white/80"
+                  style={{ left: `${Math.min(quorumLinePercent, 99.5)}%` }}
+                />
+              )}
+              {/* Execution floor line — amber, only for types that require one */}
+              {hasFloor && floorLinePercent > 0 && (
+                <div
+                  className="absolute z-10 -bottom-1 -top-1 w-0.5 rounded-sm bg-amber-400/90"
+                  style={{ left: `${Math.min(floorLinePercent, 99.5)}%` }}
                 />
               )}
             </div>

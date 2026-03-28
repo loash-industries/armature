@@ -12,14 +12,12 @@ const metadataIpfs = z.string();
 export const proposalConfigSchema = z.object({
   quorum: z
     .number()
-    .int()
-    .min(1, "Quorum must be at least 0.01%")
-    .max(10000, "Quorum cannot exceed 100%"),
+    .min(0.01, "Quorum must be at least 0.01%")
+    .max(100, "Quorum cannot exceed 100%"),
   approvalThreshold: z
     .number()
-    .int()
-    .min(1, "Threshold must be at least 0.01%")
-    .max(10000, "Threshold cannot exceed 100%"),
+    .min(0.01, "Threshold must be at least 0.01%")
+    .max(100, "Threshold cannot exceed 100%"),
   proposeThreshold: z.number().int().min(0),
   expiryMs: z.number().int().min(1, "Minimum voting period is 1 hour"),
   executionDelayMs: z.number().int().min(0),
@@ -110,7 +108,7 @@ export const transferAssetsSchema = z.object({
 // --- Tier 2 schemas ---
 
 export const treasuryWithdrawSchema = z.object({
-  coinType: z.string().min(1, "Select a coin type"),
+  coinType: z.string().min(1, "Select a currency"),
   amount: z.string().min(1, "Amount is required"),
   recipient: suiAddress,
   metadataIpfs,
@@ -119,14 +117,14 @@ export const treasuryWithdrawSchema = z.object({
 export const sendCoinToDAOSchema = z.object({
   recipientTreasuryId: suiObjectId,
   amount: z.string().min(1, "Amount is required"),
-  coinType: z.string().min(1, "Select a coin type"),
+  coinType: z.string().min(1, "Select a currency"),
   metadataIpfs,
 });
 
 export const sendSmallPaymentSchema = z.object({
   recipient: suiAddress,
   amount: z.string().min(1, "Amount is required"),
-  coinType: z.string().min(1, "Select a coin type"),
+  coinType: z.string().min(1, "Select a currency"),
   metadataIpfs,
 });
 

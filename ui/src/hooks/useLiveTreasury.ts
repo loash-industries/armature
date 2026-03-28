@@ -16,6 +16,9 @@ export function useLiveTreasury(treasuryId: string | undefined) {
   const query = useTreasuryBalances(treasuryId)
   const { treasuryFeed } = useDaoRelayFramework()
 
+  console.log('[useLiveTreasury] treasuryId=%s, balances=%d, feedLen=%d, dataUpdatedAt=%d',
+    treasuryId, query.data?.length ?? 0, treasuryFeed.length, query.dataUpdatedAt)
+
   const coinTypes = useMemo(
     () => query.data?.map((b) => b.coinType) ?? [],
     [query.data],
@@ -34,10 +37,16 @@ export function useLiveTreasury(treasuryId: string | undefined) {
   // Filter feed to this specific vault (the context may serve multiple vaults
   // if a DAO holds coins in several treasury objects — rare but possible).
   const feed: TreasuryRelayEvent[] = useMemo(
-    () =>
-      treasuryId
+    () => {
+      const filtered = treasuryId
         ? treasuryFeed.filter((e) => e.vaultId === treasuryId)
-        : [],
+        : []
+      if (treasuryFeed.length > 0) {
+        console.log('[useLiveTreasury] feed filter: treasuryId=%s, totalFeed=%d, matchedFeed=%d, vaultIds=%o',
+          treasuryId, treasuryFeed.length, filtered.length, [...new Set(treasuryFeed.map(e => e.vaultId))])
+      }
+      return filtered
+    },
     [treasuryFeed, treasuryId],
   )
 

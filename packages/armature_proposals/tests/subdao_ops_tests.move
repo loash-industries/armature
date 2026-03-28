@@ -73,7 +73,7 @@ fun create_subdao_e2e() {
         board_voting::submit_proposal(
             &dao,
             b"CreateSubDAO".to_ascii_string(),
-            string::utf8(b"Create a managed sub-DAO"),
+            option::some(string::utf8(b"Create a managed sub-DAO")),
             payload,
             &clock,
             scenario.ctx(),
@@ -188,7 +188,7 @@ fun create_subdao_vault_mismatch_aborts() {
         board_voting::submit_proposal(
             &dao,
             b"CreateSubDAO".to_ascii_string(),
-            string::utf8(b"Mismatch test"),
+            option::some(string::utf8(b"Mismatch test")),
             payload,
             &clock,
             scenario.ctx(),
@@ -301,7 +301,7 @@ fun setup_parent_and_subdao(
         board_voting::submit_proposal(
             &dao,
             b"CreateSubDAO".to_ascii_string(),
-            string::utf8(b"Create child"),
+            option::some(string::utf8(b"Create child")),
             payload,
             clock,
             scenario.ctx(),
@@ -397,7 +397,7 @@ fun transfer_cap_to_subdao_e2e() {
         board_voting::submit_proposal(
             &dao,
             b"TransferCapToSubDAO".to_ascii_string(),
-            string::utf8(b"Transfer cap to child"),
+            option::some(string::utf8(b"Transfer cap to child")),
             payload,
             &clock,
             scenario.ctx(),
@@ -510,7 +510,7 @@ fun reclaim_cap_from_subdao_e2e() {
         board_voting::submit_proposal(
             &dao,
             b"ReclaimCapFromSubDAO".to_ascii_string(),
-            string::utf8(b"Reclaim cap from child"),
+            option::some(string::utf8(b"Reclaim cap from child")),
             payload,
             &clock,
             scenario.ctx(),
@@ -610,7 +610,7 @@ fun reclaim_cap_wrong_vault_aborts() {
         board_voting::submit_proposal(
             &dao,
             b"ReclaimCapFromSubDAO".to_ascii_string(),
-            string::utf8(b"Bad reclaim"),
+            option::some(string::utf8(b"Bad reclaim")),
             payload,
             &clock,
             scenario.ctx(),
@@ -718,7 +718,7 @@ fun pause_and_unpause_subdao_e2e() {
         board_voting::submit_proposal(
             &dao,
             b"PauseSubDAOExecution".to_ascii_string(),
-            string::utf8(b"Pause SubDAO"),
+            option::some(string::utf8(b"Pause SubDAO")),
             payload,
             &clock,
             scenario.ctx(),
@@ -781,7 +781,7 @@ fun pause_and_unpause_subdao_e2e() {
         board_voting::submit_proposal(
             &dao,
             b"UnpauseSubDAOExecution".to_ascii_string(),
-            string::utf8(b"Unpause SubDAO"),
+            option::some(string::utf8(b"Unpause SubDAO")),
             payload,
             &clock,
             scenario.ctx(),
@@ -885,7 +885,7 @@ fun paused_subdao_blocks_execution() {
         board_voting::submit_proposal(
             &dao,
             b"PauseSubDAOExecution".to_ascii_string(),
-            string::utf8(b"Pause SubDAO"),
+            option::some(string::utf8(b"Pause SubDAO")),
             pause_execution::new_pause(control_cap_id),
             &clock,
             scenario.ctx(),
@@ -945,7 +945,7 @@ fun paused_subdao_blocks_execution() {
         board_voting::submit_proposal(
             &subdao,
             b"SetBoard".to_ascii_string(),
-            string::utf8(b"Try to change board while paused"),
+            option::some(string::utf8(b"Try to change board while paused")),
             armature_proposals::set_board::new(vector[SUBDAO_MEMBER, CREATOR]),
             &clock,
             scenario.ctx(),
@@ -1038,7 +1038,7 @@ fun create_multi_member_subdao() {
         board_voting::submit_proposal(
             &dao,
             b"CreateSubDAO".to_ascii_string(),
-            string::utf8(b"Create 3-member SubDAO"),
+            option::some(string::utf8(b"Create 3-member SubDAO")),
             create_subdao::new(
                 string::utf8(b"Engineering"),
                 string::utf8(b"Multi-member"),

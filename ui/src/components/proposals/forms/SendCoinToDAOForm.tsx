@@ -32,6 +32,7 @@ type FormValues = z.infer<typeof formSchema>;
 interface SendCoinToDAOFormProps {
   daoId: string;
   isPending?: boolean;
+  pendingStep?: "creating" | "voting" | null;
   onSubmit: (data: SendCoinToDAOPayload) => void;
   onSubmitAndVote?: (data: SendCoinToDAOPayload) => void;
 }
@@ -39,6 +40,7 @@ interface SendCoinToDAOFormProps {
 export function SendCoinToDAOForm({
   daoId,
   isPending,
+  pendingStep,
   onSubmit,
   onSubmitAndVote,
 }: SendCoinToDAOFormProps) {
@@ -173,6 +175,8 @@ export function SendCoinToDAOForm({
 
         <SubmitProposalButton
           isPending={isPending}
+          pendingStep={pendingStep}
+          actionType={`Send ${selectedSymbol} to Organizational Unit`}
           onSubmit={() => form.handleSubmit(handleSubmit)()}
           onSubmitAndVote={() => form.handleSubmit(handleSubmitAndVote)()}
         />

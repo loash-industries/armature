@@ -137,13 +137,13 @@ export function CreateDaoPage() {
       <main className="mx-auto max-w-lg px-4 py-12">
         <Card>
           <CardHeader>
-            <CardTitle>Create a DAO</CardTitle>
+            <CardTitle>Create an organization</CardTitle>
           </CardHeader>
           <CardContent>
             {!wallet.isConnected && (
               <Alert className="mb-6">
                 <AlertDescription>
-                  Connect your wallet to create a DAO.
+                  Connect your wallet to create an organization.
                 </AlertDescription>
               </Alert>
             )}
@@ -155,9 +155,9 @@ export function CreateDaoPage() {
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>DAO Name</FormLabel>
+                      <FormLabel>Organization Name</FormLabel>
                       <FormControl>
-                        <Input placeholder="My DAO" {...field} />
+                        <Input placeholder="My Organization" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -172,7 +172,7 @@ export function CreateDaoPage() {
                       <FormLabel>Description</FormLabel>
                       <FormControl>
                         <Textarea
-                          placeholder="What is this DAO about?"
+                          placeholder="What is this organization about?"
                           {...field}
                         />
                       </FormControl>
@@ -259,7 +259,7 @@ export function CreateDaoPage() {
                   className="w-full"
                   disabled={!wallet.isConnected || isPending}
                 >
-                  {isPending ? "Creating DAO..." : "Create DAO"}
+                  {isPending ? "Creating organization..." : "Create organization"}
                 </Button>
               </form>
             </Form>

@@ -192,7 +192,7 @@ export interface ProposalSummary {
   createdMs: number;
   expiryMs: number;
   executionDelayMs: number;
-  metadataIpfs: string;
+  metadataIpfs: string | null;
   /** Full Move type of the proposal payload, e.g. `0x...::set_board::SetBoard` */
   payloadType: string;
   /** Map of voter address → approved (true=yes, false=no) */

@@ -79,10 +79,15 @@ export interface FreezeExemptTypeRemovedFields {
 }
 
 // armature::treasury_vault
+//
+// NOTE: Move's `std::ascii::String` / `std::string::String` serialises over
+// the wire as `{ bytes: number[] }` (BCS), not a plain string.  Use
+// `decodeMoveString()` from `@/lib/utils` before treating `coin_type` as a
+// string.
 export interface CoinDepositedFields {
   vault_id: string
   dao_id: string
-  coin_type: string
+  coin_type: string | { bytes: number[] }
   amount: string // u64
   depositor: string
 }
@@ -90,7 +95,7 @@ export interface CoinDepositedFields {
 export interface CoinWithdrawnFields {
   vault_id: string
   dao_id: string
-  coin_type: string
+  coin_type: string | { bytes: number[] }
   amount: string // u64
   recipient: string
 }
@@ -98,7 +103,7 @@ export interface CoinWithdrawnFields {
 export interface CoinClaimedFields {
   vault_id: string
   dao_id: string
-  coin_type: string
+  coin_type: string | { bytes: number[] }
   amount: string // u64
   claimer: string
 }

@@ -1,5 +1,4 @@
 /** Central registry of all known proposal types in the Armature framework. */
-
 export type ProposalTypeCategory = {
   label: string;
   types: ProposalTypeDef[];
@@ -10,158 +9,6 @@ export type ProposalTypeDef = {
   label: string;
   description: string;
 };
-
-export const PROPOSAL_TYPE_CATEGORIES: ProposalTypeCategory[] = [
-  {
-    label: "Board & Governance",
-    types: [
-      {
-        key: "SetBoard",
-        label: "Set Board",
-        description: "Replace the current board member list",
-      },
-      {
-        key: "EnableProposalType",
-        label: "Enable Proposal Type",
-        description: "Enable a new proposal type with voting config",
-      },
-      {
-        key: "DisableProposalType",
-        label: "Disable Proposal Type",
-        description: "Disable an existing proposal type",
-      },
-      {
-        key: "UpdateProposalConfig",
-        label: "Update Proposal Config",
-        description:
-          "Change quorum, threshold, or timing for a proposal type",
-      },
-    ],
-  },
-  {
-    label: "Treasury",
-    types: [
-      {
-        key: "TreasuryWithdraw",
-        label: "Treasury Withdraw",
-        description: "Send coins from the treasury to a recipient",
-      },
-      {
-        key: "SendCoinToDAO",
-        label: "Send Coin to DAO",
-        description: "Transfer coins from treasury to another DAO's treasury",
-      },
-      {
-        key: "SendSmallPayment",
-        label: "Send Small Payment",
-        description: "Rate-limited small payment from treasury",
-      },
-    ],
-  },
-  {
-    label: "Charter",
-    types: [
-      {
-        key: "CharterUpdate",
-        label: "Amend Charter",
-        description:
-          "Update the DAO charter name, description, or image",
-      },
-    ],
-  },
-  {
-    label: "Security",
-    types: [
-      {
-        key: "TransferFreezeAdmin",
-        label: "Transfer Freeze Admin",
-        description: "Transfer the freeze admin capability",
-      },
-      {
-        key: "UnfreezeProposalType",
-        label: "Unfreeze Proposal Type",
-        description: "Governance-driven unfreeze of a proposal type",
-      },
-      {
-        key: "UpdateFreezeConfig",
-        label: "Update Freeze Config",
-        description: "Change the maximum freeze duration",
-      },
-      {
-        key: "UpdateFreezeExemptTypes",
-        label: "Update Freeze-Exempt Types",
-        description: "Add or remove types from the freeze-exempt set",
-      },
-    ],
-  },
-  {
-    label: "SubDAO",
-    types: [
-      {
-        key: "CreateSubDAO",
-        label: "Create SubDAO",
-        description: "Create a new controlled SubDAO",
-      },
-      {
-        key: "SpinOutSubDAO",
-        label: "Spin Out SubDAO",
-        description: "Release a SubDAO from parent control",
-      },
-      {
-        key: "SpawnDAO",
-        label: "Spawn DAO",
-        description: "Create an independent DAO via migration",
-      },
-      {
-        key: "TransferCapToSubDAO",
-        label: "Transfer Cap to SubDAO",
-        description: "Transfer a capability from DAO vault to SubDAO vault",
-      },
-      {
-        key: "ReclaimCapFromSubDAO",
-        label: "Reclaim Cap from SubDAO",
-        description: "Reclaim a capability from a SubDAO's vault",
-      },
-      {
-        key: "PauseSubDAOExecution",
-        label: "Pause SubDAO Execution",
-        description: "Pause proposal execution on a SubDAO",
-      },
-      {
-        key: "UnpauseSubDAOExecution",
-        label: "Unpause SubDAO Execution",
-        description: "Resume proposal execution on a SubDAO",
-      },
-      {
-        key: "TransferAssets",
-        label: "Transfer Assets",
-        description: "Transfer coins and capabilities to another DAO",
-      },
-    ],
-  },
-  {
-    label: "Upgrade",
-    types: [
-      {
-        key: "ProposeUpgrade",
-        label: "Propose Upgrade",
-        description: "Authorize a package upgrade using a stored UpgradeCap",
-      },
-    ],
-  },
-];
-
-/** Flat list of all proposal type keys. */
-export const ALL_PROPOSAL_TYPE_KEYS: string[] =
-  PROPOSAL_TYPE_CATEGORIES.flatMap((cat) => cat.types.map((t) => t.key));
-
-/** Map of type key → ProposalTypeDef for quick lookups. */
-export const PROPOSAL_TYPE_MAP: Record<string, ProposalTypeDef> =
-  Object.fromEntries(
-    PROPOSAL_TYPE_CATEGORIES.flatMap((cat) =>
-      cat.types.map((t) => [t.key, t]),
-    ),
-  );
 
 /** Union of every known proposal type key. Add new keys here to enforce display-name coverage. */
 export type KnownProposalTypeKey =
@@ -193,29 +40,182 @@ export type KnownProposalTypeKey =
  * will error if any key is missing — add a new type key above and you must
  * add its label here too.
  */
-export const PROPOSAL_TYPE_DISPLAY_NAME = {
+export const PROPOSAL_TYPE_DISPLAY_NAME: Record<KnownProposalTypeKey, string> = {
   SetBoard: "Set Board",
-  EnableProposalType: "Enable Proposal Type",
-  DisableProposalType: "Disable Proposal Type",
-  UpdateProposalConfig: "Update Governance Config",
+  EnableProposalType: "Enable Action",
+  DisableProposalType: "Disable Action",
+  UpdateProposalConfig: "Update Action Settings",
   TreasuryWithdraw: "Send from Treasury",
-  SendCoinToDAO: "Send to DAO Treasury",
+  SendCoinToDAO: "Send to Organization or OU Treasury",
   SendSmallPayment: "Small Treasury Payment",
   CharterUpdate: "Amend Charter",
   TransferFreezeAdmin: "Transfer Freeze Admin",
-  UnfreezeProposalType: "Unfreeze Proposal Type",
+  UnfreezeProposalType: "Unfreeze Action",
   UpdateFreezeConfig: "Update Freeze Config",
   UpdateFreezeExemptTypes: "Update Freeze-Exempt Types",
-  CreateSubDAO: "Create SubDAO",
-  SpinOutSubDAO: "Spin Out SubDAO",
-  SpawnDAO: "Spawn DAO",
-  TransferCapToSubDAO: "Transfer Cap to SubDAO",
-  ReclaimCapFromSubDAO: "Reclaim Cap from SubDAO",
-  PauseSubDAOExecution: "Pause SubDAO Execution",
-  UnpauseSubDAOExecution: "Unpause SubDAO Execution",
+  CreateSubDAO: "Create Organizational Unit",
+  SpinOutSubDAO: "Spin Out Organizational Unit",
+  SpawnDAO: "Spawn New Organization",
+  TransferCapToSubDAO: "Transfer Cap to Organizational Unit",
+  ReclaimCapFromSubDAO: "Reclaim Cap from Organizational Unit",
+  PauseSubDAOExecution: "Pause Organizational Unit Execution",
+  UnpauseSubDAOExecution: "Unpause Organizational Unit Execution",
   TransferAssets: "Transfer Assets",
   ProposeUpgrade: "Propose Upgrade",
-} as const satisfies Record<KnownProposalTypeKey, string>;
+}
+
+export const PROPOSAL_TYPE_CATEGORIES: ProposalTypeCategory[] = [
+  {
+    label: "Board & Governance",
+    types: [
+      {
+        key: "SetBoard",
+        label: PROPOSAL_TYPE_DISPLAY_NAME["SetBoard"],
+        description: "Replace the current board member list",
+      },
+      {
+        key: "EnableProposalType",
+        label: PROPOSAL_TYPE_DISPLAY_NAME["EnableProposalType"],
+        description: "Enable a new type of action for this organization",
+      },
+      {
+        key: "DisableProposalType",
+        label: PROPOSAL_TYPE_DISPLAY_NAME["DisableProposalType"],
+        description: "Disable an existing proposal type",
+      },
+      {
+        key: "UpdateProposalConfig",
+        label: PROPOSAL_TYPE_DISPLAY_NAME["UpdateProposalConfig"],
+        description:
+          "Change quorum, threshold, or timing for a proposal type",
+      },
+    ],
+  },
+  {
+    label: "Treasury",
+    types: [
+      {
+        key: "TreasuryWithdraw",
+        label: PROPOSAL_TYPE_DISPLAY_NAME["TreasuryWithdraw"],
+        description: "Send coins from the treasury to a recipient",
+      },
+      {
+        key: "SendCoinToDAO",
+        label: PROPOSAL_TYPE_DISPLAY_NAME["SendCoinToDAO"],
+        description: "Transfer coins from treasury to another DAO's treasury",
+      },
+      {
+        key: "SendSmallPayment",
+        label: PROPOSAL_TYPE_DISPLAY_NAME["SendSmallPayment"],
+        description: "Rate-limited small payment from treasury",
+      },
+    ],
+  },
+  {
+    label: "Charter",
+    types: [
+      {
+        key: "CharterUpdate",
+        label: PROPOSAL_TYPE_DISPLAY_NAME["CharterUpdate"],
+        description:
+          "Update the DAO charter name, description, or image",
+      },
+    ],
+  },
+  {
+    label: "Security",
+    types: [
+      {
+        key: "TransferFreezeAdmin",
+        label: PROPOSAL_TYPE_DISPLAY_NAME["TransferFreezeAdmin"],
+        description: "Transfer the freeze admin capability",
+      },
+      {
+        key: "UnfreezeProposalType",
+        label: PROPOSAL_TYPE_DISPLAY_NAME["UnfreezeProposalType"],
+        description: "Governance-driven unfreeze of a proposal type",
+      },
+      {
+        key: "UpdateFreezeConfig",
+        label: PROPOSAL_TYPE_DISPLAY_NAME["UpdateFreezeConfig"],
+        description: "Change the maximum freeze duration",
+      },
+      {
+        key: "UpdateFreezeExemptTypes",
+        label: PROPOSAL_TYPE_DISPLAY_NAME["UpdateFreezeExemptTypes"],
+        description: "Add or remove types from the freeze-exempt set",
+      },
+    ],
+  },
+  {
+    label: "SubDAO",
+    types: [
+      {
+        key: "CreateSubDAO",
+        label: PROPOSAL_TYPE_DISPLAY_NAME["CreateSubDAO"],
+        description: "Create a new controlled SubDAO",
+      },
+      {
+        key: "SpinOutSubDAO",
+        label: PROPOSAL_TYPE_DISPLAY_NAME["SpinOutSubDAO"],
+        description: "Release a SubDAO from parent control",
+      },
+      {
+        key: "SpawnDAO",
+        label: PROPOSAL_TYPE_DISPLAY_NAME["SpawnDAO"],
+        description: "Create an independent DAO via migration",
+      },
+      {
+        key: "TransferCapToSubDAO",
+        label: PROPOSAL_TYPE_DISPLAY_NAME["TransferCapToSubDAO"],
+        description: "Transfer a capability from DAO vault to SubDAO vault",
+      },
+      {
+        key: "ReclaimCapFromSubDAO",
+        label: PROPOSAL_TYPE_DISPLAY_NAME["ReclaimCapFromSubDAO"],
+        description: "Reclaim a capability from a SubDAO's vault",
+      },
+      {
+        key: "PauseSubDAOExecution",
+        label: PROPOSAL_TYPE_DISPLAY_NAME["PauseSubDAOExecution"],
+        description: "Pause proposal execution on a SubDAO",
+      },
+      {
+        key: "UnpauseSubDAOExecution",
+        label: PROPOSAL_TYPE_DISPLAY_NAME["UnpauseSubDAOExecution"],
+        description: "Resume proposal execution on a SubDAO",
+      },
+      {
+        key: "TransferAssets",
+        label: PROPOSAL_TYPE_DISPLAY_NAME["TransferAssets"],
+        description: "Transfer coins and capabilities to another DAO",
+      },
+    ],
+  },
+  {
+    label: "Upgrade",
+    types: [
+      {
+        key: "ProposeUpgrade",
+        label: PROPOSAL_TYPE_DISPLAY_NAME["ProposeUpgrade"],
+        description: "Authorize a package upgrade using a stored UpgradeCap",
+      },
+    ],
+  },
+];
+
+/** Flat list of all proposal type keys. */
+export const ALL_PROPOSAL_TYPE_KEYS: string[] =
+  PROPOSAL_TYPE_CATEGORIES.flatMap((cat) => cat.types.map((t) => t.key));
+
+/** Map of type key → ProposalTypeDef for quick lookups. */
+export const PROPOSAL_TYPE_MAP: Record<string, ProposalTypeDef> =
+  Object.fromEntries(
+    PROPOSAL_TYPE_CATEGORIES.flatMap((cat) =>
+      cat.types.map((t) => [t.key, t]),
+    ),
+  );
+
 
 /** Tier classification: determines which form to render. */
 export type ProposalTier = "tier1" | "tier2" | "wizard";

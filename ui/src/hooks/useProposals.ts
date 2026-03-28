@@ -25,7 +25,7 @@ interface ProposalFields {
   config: ProposalConfigFields;
   created_at_ms: string;
   status: { variant: string };
-  metadata_ipfs: string;
+  metadata_ipfs: string | null;
   votes_cast: { contents: Array<{ key: string; value: boolean }> };
   payload: Record<string, unknown>;
 }

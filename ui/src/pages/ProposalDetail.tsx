@@ -146,8 +146,9 @@ export function ProposalDetail() {
   const hasVoted = proposal && address ? address in proposal.votesCast : false;
   const priorVote = proposal && address ? proposal.votesCast[address] : undefined;
   const isMember = governance?.members.some(m => m.address === address) ?? false;
+  const voterAddresses = proposal ? Object.keys(proposal.votesCast) : [];
   const { data: proposerNameMap } = useCharacterNames(
-    proposal?.proposer ? [proposal.proposer] : [],
+    proposal?.proposer ? [proposal.proposer, ...voterAddresses] : [],
   );
   const proposerName = proposal ? (proposerNameMap?.get(proposal.proposer) ?? null) : null;
 
@@ -302,6 +303,7 @@ export function ProposalDetail() {
         queryKey: cacheKeys.proposal(proposal.id),
       });
 
+      setActionPending("executing");
       const executeTx = buildExecuteTransaction();
       if (!executeTx) {
         toast.info("Voted but execute is not available for this proposal type");
@@ -409,6 +411,36 @@ export function ProposalDetail() {
       : proposal.totalSnapshotWeight > 0
         ? proposal.yesWeight * 10_000 >= proposal.totalSnapshotWeight * floorBps
         : proposal.yesWeight > 0;
+
+  // Minimum additional yes votes needed to pass (matching on-chain logic).
+  // On-chain: quorum = totalVoted / totalSnapshotWeight, threshold = yes / totalVoted.
+  const totalVoted = proposal.yesWeight + proposal.noWeight;
+  // For quorum: we need totalVoted >= ceil(totalWeight * quorum / 10000).
+  // Each new yes vote adds 1 to totalVoted, so additional votes needed for quorum:
+  const yesForQuorum =
+    totalWeight > 0
+      ? Math.max(0, Math.ceil((totalWeight * proposal.quorum) / 10_000) - totalVoted)
+      : 0;
+  // For threshold: we need yes / totalVoted >= threshold / 10000.
+  // Optimistically assume all new votes are yes votes.
+  // yes + n >= threshold * (totalVoted + n) / 10000
+  // Solving: n >= (threshold * totalVoted - 10000 * yes) / (10000 - threshold)
+  const thresholdDenom = 10_000 - proposal.approvalThreshold;
+  const yesForThreshold =
+    thresholdDenom > 0
+      ? Math.max(
+          0,
+          Math.ceil(
+            (proposal.approvalThreshold * totalVoted - 10_000 * proposal.yesWeight) /
+              thresholdDenom,
+          ),
+        )
+      : 0;
+  const yesForFloor =
+    floorBps !== null && totalWeight > 0
+      ? Math.max(0, Math.ceil((totalWeight * floorBps) / 10_000) - proposal.yesWeight)
+      : 0;
+  const votesNeeded = Math.max(yesForQuorum, yesForThreshold, yesForFloor);
 
   const expiryTimestamp = proposal.createdMs + proposal.expiryMs;
   const executableAt = expiryTimestamp + proposal.executionDelayMs;
@@ -611,7 +643,9 @@ export function ProposalDetail() {
                       >
                         {actionPending === "yes" || actionPending === "vote-execute"
                           ? "Voting..."
-                          : "Vote Yes"}
+                          : actionPending === "executing"
+                            ? "Executing..."
+                            : "Vote Yes"}
                       </Button>
                       <DropdownMenu>
                         <DropdownMenuTrigger
@@ -653,6 +687,11 @@ export function ProposalDetail() {
                     {actionPending === "no" ? "Voting..." : "Vote No"}
                   </Button>
                 </div>
+                {votesNeeded > 0 && (
+                  <p className="text-muted-foreground text-center text-xs">
+                    This proposal needs {votesNeeded} more approval {votesNeeded === 1 ? "vote" : "votes"} to pass
+                  </p>
+                )}
                 {!isMember && address && (
                   <p className="text-muted-foreground text-center text-xs">
                     Only board members can vote
@@ -687,7 +726,7 @@ export function ProposalDetail() {
                 ) : (
                   <Button
                     className="w-full"
-                    disabled={actionPending !== null || !isMember}
+                    disabled={actionPending !== null || !isMember || !floorMet}
                     onClick={() => handleExecute()}
                   >
                     {actionPending === "execute" ? "Executing..." : "Execute Proposal"}
@@ -714,6 +753,27 @@ export function ProposalDetail() {
             {}
           </CardContent>
         </Card>
+
+        {/* Votes cast list */}
+        {proposal.votesCast && Object.keys(proposal.votesCast).length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Votes Cast</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {Object.entries(proposal.votesCast).map(([addr, approved]) => (
+                <div key={addr} className="flex items-center justify-between text-sm">
+                  <span className="truncate font-mono text-xs">
+                    {proposerNameMap?.get(addr) ?? getAddressName(addr)}
+                  </span>
+                  <Badge variant={approved ? "default" : "destructive"} className="ml-2 shrink-0">
+                    {approved ? "Yes" : "No"}
+                  </Badge>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

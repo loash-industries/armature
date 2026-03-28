@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useParams } from "@tanstack/react-router";
+import { useNavigate, useParams } from "@tanstack/react-router";
+import { Plus } from "lucide-react";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,10 +9,11 @@ import { useDaoSummary } from "@/hooks/useDao";
 import { useDAOHierarchy } from "@/hooks/useSubDAOs";
 import { SubDAOCard } from "@/components/SubDAOCard";
 import { SubDAOGraph } from "@/components/SubDAOGraph";
-import { ControllerActionsMenu } from "@/components/ControllerActionsMenu";
+// import { ControllerActionsMenu } from "@/components/ControllerActionsMenu";
 
 export function SubDAOListPage() {
   const { daoId } = useParams({ strict: false });
+  const navigate = useNavigate();
   const id = daoId ?? "";
   const { data: dao, isLoading: daoLoading } = useDaoSummary(id);
   const {
@@ -25,6 +27,7 @@ export function SubDAOListPage() {
   const isLoading = daoLoading || hierarchyLoading;
   const children = hierarchy?.children ?? [];
 
+  // const newLocal = <ControllerActionsMenu daoId={id} />;
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -52,7 +55,20 @@ export function SubDAOListPage() {
               Graph
             </Button>
           </div>
-          <ControllerActionsMenu daoId={id} />
+          {/* {newLocal} */}
+          <Button
+            size="sm"
+            onClick={() =>
+              navigate({
+                to: "/dao/$daoId/proposals/new",
+                params: { daoId: id },
+                search: { type: "CreateSubDAO" },
+              })
+            }
+          >
+            <Plus className="mr-1.5 h-4 w-4" />
+            Create organizational unit
+          </Button>
         </div>
       </div>
 

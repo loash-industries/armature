@@ -4,6 +4,23 @@
 
 import { Transaction, fw, prop, SUI_CLOCK, MODULES, PROPOSAL_MODULES, PROPOSALS_PACKAGE_ID } from "./helpers";
 
+/**
+ * Build an Option<String> argument for submit_proposal's metadata_ipfs parameter.
+ */
+function optionalString(tx: Transaction, value: string) {
+  if (value) {
+    return tx.moveCall({
+      target: "0x1::option::some",
+      arguments: [tx.pure.string(value)],
+      typeArguments: ["0x1::string::String"],
+    });
+  }
+  return tx.moveCall({
+    target: "0x1::option::none",
+    typeArguments: ["0x1::string::String"],
+  });
+}
+
 /** Create a new root DAO. Returns a Transaction (DAO ID is emitted as event). */
 export function buildCreateDao(args: {
   name: string;
@@ -60,7 +77,7 @@ export function buildSubmitCreateSubDAO(args: {
     arguments: [
       tx.object(args.daoId),
       tx.pure.string("CreateSubDAO"),
-      tx.pure.string(args.metadataIpfs),
+      optionalString(tx, args.metadataIpfs),
       payload,
       tx.object(SUI_CLOCK),
     ],

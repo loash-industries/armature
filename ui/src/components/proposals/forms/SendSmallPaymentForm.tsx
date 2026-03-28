@@ -34,6 +34,7 @@ type FormValues = z.infer<typeof formSchema>;
 interface SendSmallPaymentFormProps {
   daoId: string;
   isPending?: boolean;
+  pendingStep?: "creating" | "voting" | null;
   onSubmit: (data: SendSmallPaymentPayload) => void;
   onSubmitAndVote?: (data: SendSmallPaymentPayload) => void;
 }
@@ -41,6 +42,7 @@ interface SendSmallPaymentFormProps {
 export function SendSmallPaymentForm({
   daoId,
   isPending,
+  pendingStep,
   onSubmit,
   onSubmitAndVote,
 }: SendSmallPaymentFormProps) {
@@ -188,6 +190,8 @@ export function SendSmallPaymentForm({
 
         <SubmitProposalButton
           isPending={isPending}
+          pendingStep={pendingStep}
+          actionType={selectedCoinType ? `Send ${selectedSymbol} to Organizational Unit` : "Send Payment"}
           onSubmit={() => form.handleSubmit(handleSubmit)()}
           onSubmitAndVote={() => form.handleSubmit(handleSubmitAndVote)()}
         />

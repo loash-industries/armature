@@ -19,6 +19,7 @@ import type { CharterUpdatePayload } from "@/types/proposal";
 interface CharterUpdateFormProps {
   daoId: string;
   isPending?: boolean;
+  pendingStep?: "creating" | "voting" | null;
   onSubmit: (data: CharterUpdatePayload) => void;
   onSubmitAndVote?: (data: CharterUpdatePayload) => void;
 }
@@ -26,6 +27,7 @@ interface CharterUpdateFormProps {
 export function CharterUpdateForm({
   daoId,
   isPending,
+  pendingStep,
   onSubmit,
   onSubmitAndVote,
 }: CharterUpdateFormProps) {
@@ -107,6 +109,8 @@ export function CharterUpdateForm({
 
         <SubmitProposalButton
           isPending={isPending}
+          pendingStep={pendingStep}
+          actionType={"Update Charter"}
           onSubmit={() => form.handleSubmit((data) => onSubmit(data))()}
           onSubmitAndVote={() => form.handleSubmit((data) => {
             if (onSubmitAndVote) onSubmitAndVote(data);

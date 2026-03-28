@@ -9,13 +9,7 @@ import {
   FormControl,
   FormMessage,
 } from "@/components/ui/form";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
+import { ProposalTypeSelect } from "@/components/proposals/ProposalTypeSelect";
 import { Textarea } from "@/components/ui/textarea";
 import { updateProposalConfigSchema } from "@/lib/schemas";
 import { useProposalFormOptions } from "@/hooks/useProposalFormOptions";
@@ -26,6 +20,7 @@ import type { UpdateProposalConfigPayload } from "@/types/proposal";
 interface UpdateProposalConfigFormProps {
   daoId: string;
   isPending?: boolean;
+  pendingStep?: "creating" | "voting" | null;
   onSubmit: (data: UpdateProposalConfigPayload) => void;
   onSubmitAndVote?: (data: UpdateProposalConfigPayload) => void;
 }
@@ -33,6 +28,7 @@ interface UpdateProposalConfigFormProps {
 export function UpdateProposalConfigForm({
   daoId,
   isPending,
+  pendingStep,
   onSubmit,
   onSubmitAndVote,
 }: UpdateProposalConfigFormProps) {
@@ -43,8 +39,8 @@ export function UpdateProposalConfigForm({
     defaultValues: {
       typeKey: "",
       config: {
-        quorum: 5000,
-        approvalThreshold: 5000,
+        quorum: 50,
+        approvalThreshold: 50,
         proposeThreshold: 0,
         expiryMs: 168,
         executionDelayMs: 0,
@@ -62,6 +58,8 @@ export function UpdateProposalConfigForm({
     ...data,
     config: {
       ...data.config,
+      quorum: Math.round(data.config.quorum * 100),
+      approvalThreshold: Math.round(data.config.approvalThreshold * 100),
       expiryMs: data.config.expiryMs * HOURS_TO_MS,
       executionDelayMs: data.config.executionDelayMs * HOURS_TO_MS,
       cooldownMs: data.config.cooldownMs * HOURS_TO_MS,
@@ -74,6 +72,8 @@ export function UpdateProposalConfigForm({
       if (existing?.config) {
         form.setValue("config", {
           ...existing.config,
+          quorum: existing.config.quorum / 100,
+          approvalThreshold: existing.config.approvalThreshold / 100,
           expiryMs: existing.config.expiryMs / HOURS_TO_MS,
           executionDelayMs: existing.config.executionDelayMs / HOURS_TO_MS,
           cooldownMs: existing.config.cooldownMs / HOURS_TO_MS,
@@ -90,29 +90,10 @@ export function UpdateProposalConfigForm({
         )}
         className="space-y-4"
       >
-        <FormField
+        <ProposalTypeSelect
           control={form.control}
-          name="typeKey"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Proposal Type</FormLabel>
-              <FormControl>
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select type..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {enabledTypes.map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {t}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
+          label="Proposal Type"
+          types={enabledTypes}
         />
 
         {selectedType && (
@@ -140,6 +121,8 @@ export function UpdateProposalConfigForm({
 
         <SubmitProposalButton
           isPending={isPending}
+          pendingStep={pendingStep}
+          actionType={selectedType ? `Update Config for ${selectedType}` : "Update Proposal Config"}
           onSubmit={() => form.handleSubmit((data) => onSubmit(toMs(data as UpdateProposalConfigPayload)))()}
           onSubmitAndVote={() => form.handleSubmit((data) => {
             const d = toMs(data as UpdateProposalConfigPayload);

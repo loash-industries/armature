@@ -455,7 +455,7 @@ const FIELD_LABELS: Record<string, string> = {
   new_max_freeze_duration_ms: "Max Freeze Duration (ms)",
   types_to_add: "Types to Add",
   types_to_remove: "Types to Remove",
-  coin_type: "Coin Type",
+  coin_type: "Coin",
 };
 
 const SUI_ADDRESS_RE = /^0x[a-fA-F0-9]{64}$/;

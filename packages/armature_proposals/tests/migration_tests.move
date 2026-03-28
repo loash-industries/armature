@@ -78,7 +78,7 @@ fun spawn_dao_and_destroy_origin_e2e() {
         board_voting::submit_proposal(
             &dao,
             b"SpawnDAO".to_ascii_string(),
-            string::utf8(b"Spawn successor DAO for migration"),
+            option::some(string::utf8(b"Spawn successor DAO for migration")),
             payload,
             &clock,
             scenario.ctx(),
@@ -216,7 +216,7 @@ fun create_subdao_and_spin_out_e2e() {
         board_voting::submit_proposal(
             &dao,
             b"CreateSubDAO".to_ascii_string(),
-            string::utf8(b"Create child DAO"),
+            option::some(string::utf8(b"Create child DAO")),
             payload,
             &clock,
             scenario.ctx(),
@@ -319,7 +319,7 @@ fun create_subdao_and_spin_out_e2e() {
         board_voting::submit_proposal(
             &dao,
             b"SpinOutSubDAO".to_ascii_string(),
-            string::utf8(b"Spin out child DAO to independence"),
+            option::some(string::utf8(b"Spin out child DAO to independence")),
             payload,
             &clock,
             scenario.ctx(),
@@ -451,7 +451,7 @@ fun controller_set_board_via_privileged_submit() {
         board_voting::submit_proposal(
             &dao,
             b"CreateSubDAO".to_ascii_string(),
-            string::utf8(b"Create child"),
+            option::some(string::utf8(b"Create child")),
             payload,
             &clock,
             scenario.ctx(),
@@ -526,7 +526,7 @@ fun controller_set_board_via_privileged_submit() {
         board_voting::submit_proposal(
             &dao,
             b"SetBoard".to_ascii_string(),
-            string::utf8(b"Vehicle for controller op"),
+            option::some(string::utf8(b"Vehicle for controller op")),
             payload,
             &clock,
             scenario.ctx(),
@@ -577,7 +577,7 @@ fun controller_set_board_via_privileged_submit() {
             &control,
             &subdao,
             b"SetBoard".to_ascii_string(),
-            string::utf8(b"Controller sets SubDAO board"),
+            option::some(string::utf8(b"Controller sets SubDAO board")),
             set_board::new(vector[SUBDAO_MEMBER, CREATOR]),
             &clock,
             scenario.ctx(),
@@ -669,7 +669,7 @@ fun migration_with_transfer_assets_e2e() {
         board_voting::submit_proposal(
             &dao,
             b"SpawnDAO".to_ascii_string(),
-            string::utf8(b"Spawn successor"),
+            option::some(string::utf8(b"Spawn successor")),
             payload,
             &clock,
             scenario.ctx(),
@@ -737,7 +737,7 @@ fun migration_with_transfer_assets_e2e() {
         board_voting::submit_proposal(
             &dao,
             b"TransferAssets".to_ascii_string(),
-            string::utf8(b"Transfer all assets to successor"),
+            option::some(string::utf8(b"Transfer all assets to successor")),
             payload,
             &clock,
             scenario.ctx(),

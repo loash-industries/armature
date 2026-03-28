@@ -4,6 +4,24 @@
 
 import { Transaction, fw, prop, SUI_CLOCK, MODULES, PROPOSAL_MODULES, PROPOSALS_PACKAGE_ID } from "./helpers";
 
+/**
+ * Build an Option<String> argument for submit_proposal's metadata_ipfs parameter.
+ * Wraps a non-empty string in option::some, otherwise returns option::none.
+ */
+function optionalString(tx: Transaction, value: string) {
+  if (value) {
+    return tx.moveCall({
+      target: "0x1::option::some",
+      arguments: [tx.pure.string(value)],
+      typeArguments: ["0x1::string::String"],
+    });
+  }
+  return tx.moveCall({
+    target: "0x1::option::none",
+    typeArguments: ["0x1::string::String"],
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Submit builders
 // ---------------------------------------------------------------------------
@@ -26,7 +44,7 @@ export function buildSubmitSetBoard(args: {
     arguments: [
       tx.object(args.daoId),
       tx.pure.string("SetBoard"),
-      tx.pure.string(args.metadataIpfs),
+      optionalString(tx, args.metadataIpfs),
       payload,
       tx.object(SUI_CLOCK),
     ],
@@ -56,7 +74,7 @@ export function buildSubmitUpdateMetadata(args: {
     arguments: [
       tx.object(args.daoId),
       tx.pure.string("CharterUpdate"),
-      tx.pure.string(args.metadataIpfs),
+      optionalString(tx, args.metadataIpfs),
       payload,
       tx.object(SUI_CLOCK),
     ],
@@ -92,7 +110,7 @@ export function buildSubmitSendCoin(args: {
     arguments: [
       tx.object(args.daoId),
       tx.pure.string("TreasuryWithdraw"),
-      tx.pure.string(args.metadataIpfs),
+      optionalString(tx, args.metadataIpfs),
       payload,
       tx.object(SUI_CLOCK),
     ],
@@ -122,7 +140,7 @@ export function buildSubmitDisableProposalType(args: {
     arguments: [
       tx.object(args.daoId),
       tx.pure.string("DisableProposalType"),
-      tx.pure.string(args.metadataIpfs),
+      optionalString(tx, args.metadataIpfs),
       payload,
       tx.object(SUI_CLOCK),
     ],
@@ -170,7 +188,7 @@ export function buildSubmitEnableProposalType(args: {
     arguments: [
       tx.object(args.daoId),
       tx.pure.string("EnableProposalType"),
-      tx.pure.string(args.metadataIpfs),
+      optionalString(tx, args.metadataIpfs),
       payload,
       tx.object(SUI_CLOCK),
     ],
@@ -200,7 +218,7 @@ export function buildSubmitTransferFreezeAdmin(args: {
     arguments: [
       tx.object(args.daoId),
       tx.pure.string("TransferFreezeAdmin"),
-      tx.pure.string(args.metadataIpfs),
+      optionalString(tx, args.metadataIpfs),
       payload,
       tx.object(SUI_CLOCK),
     ],
@@ -230,7 +248,7 @@ export function buildSubmitUnfreezeProposalType(args: {
     arguments: [
       tx.object(args.daoId),
       tx.pure.string("UnfreezeProposalType"),
-      tx.pure.string(args.metadataIpfs),
+      optionalString(tx, args.metadataIpfs),
       payload,
       tx.object(SUI_CLOCK),
     ],
@@ -266,7 +284,7 @@ export function buildSubmitSendCoinToDAO(args: {
     arguments: [
       tx.object(args.daoId),
       tx.pure.string("SendCoinToDAO"),
-      tx.pure.string(args.metadataIpfs),
+      optionalString(tx, args.metadataIpfs),
       payload,
       tx.object(SUI_CLOCK),
     ],
@@ -302,7 +320,7 @@ export function buildSubmitSendSmallPayment(args: {
     arguments: [
       tx.object(args.daoId),
       tx.pure.string("SendSmallPayment"),
-      tx.pure.string(args.metadataIpfs),
+      optionalString(tx, args.metadataIpfs),
       payload,
       tx.object(SUI_CLOCK),
     ],
@@ -332,7 +350,7 @@ export function buildSubmitUpdateFreezeConfig(args: {
     arguments: [
       tx.object(args.daoId),
       tx.pure.string("UpdateFreezeConfig"),
-      tx.pure.string(args.metadataIpfs),
+      optionalString(tx, args.metadataIpfs),
       payload,
       tx.object(SUI_CLOCK),
     ],
@@ -366,7 +384,7 @@ export function buildSubmitUpdateFreezeExemptTypes(args: {
     arguments: [
       tx.object(args.daoId),
       tx.pure.string("UpdateFreezeExemptTypes"),
-      tx.pure.string(args.metadataIpfs),
+      optionalString(tx, args.metadataIpfs),
       payload,
       tx.object(SUI_CLOCK),
     ],
@@ -400,7 +418,7 @@ export function buildSubmitTransferCapToSubDAO(args: {
     arguments: [
       tx.object(args.daoId),
       tx.pure.string("TransferCapToSubDAO"),
-      tx.pure.string(args.metadataIpfs),
+      optionalString(tx, args.metadataIpfs),
       payload,
       tx.object(SUI_CLOCK),
     ],
@@ -436,7 +454,7 @@ export function buildSubmitReclaimCapFromSubDAO(args: {
     arguments: [
       tx.object(args.daoId),
       tx.pure.string("ReclaimCapFromSubDAO"),
-      tx.pure.string(args.metadataIpfs),
+      optionalString(tx, args.metadataIpfs),
       payload,
       tx.object(SUI_CLOCK),
     ],
@@ -480,7 +498,7 @@ export function buildSubmitProposeUpgrade(args: {
     arguments: [
       tx.object(args.daoId),
       tx.pure.string("ProposeUpgrade"),
-      tx.pure.string(args.metadataIpfs),
+      optionalString(tx, args.metadataIpfs),
       payload,
       tx.object(SUI_CLOCK),
     ],
@@ -521,7 +539,7 @@ export function buildSubmitSpawnDAO(args: {
     arguments: [
       tx.object(args.daoId),
       tx.pure.string("SpawnDAO"),
-      tx.pure.string(args.metadataIpfs),
+      optionalString(tx, args.metadataIpfs),
       payload,
       tx.object(SUI_CLOCK),
     ],
@@ -575,7 +593,7 @@ export function buildSubmitSpinOutSubDAO(args: {
     arguments: [
       tx.object(args.daoId),
       tx.pure.string("SpinOutSubDAO"),
-      tx.pure.string(args.metadataIpfs),
+      optionalString(tx, args.metadataIpfs),
       payload,
       tx.object(SUI_CLOCK),
     ],
@@ -644,7 +662,7 @@ export function buildSubmitUpdateProposalConfig(args: {
     arguments: [
       tx.object(args.daoId),
       tx.pure.string("UpdateProposalConfig"),
-      tx.pure.string(args.metadataIpfs),
+      optionalString(tx, args.metadataIpfs),
       payload,
       tx.object(SUI_CLOCK),
     ],
@@ -674,7 +692,7 @@ export function buildSubmitPauseSubDAOExecution(args: {
     arguments: [
       tx.object(args.daoId),
       tx.pure.string("PauseSubDAOExecution"),
-      tx.pure.string(args.metadataIpfs),
+      optionalString(tx, args.metadataIpfs),
       payload,
       tx.object(SUI_CLOCK),
     ],
@@ -704,7 +722,7 @@ export function buildSubmitUnpauseSubDAOExecution(args: {
     arguments: [
       tx.object(args.daoId),
       tx.pure.string("UnpauseSubDAOExecution"),
-      tx.pure.string(args.metadataIpfs),
+      optionalString(tx, args.metadataIpfs),
       payload,
       tx.object(SUI_CLOCK),
     ],
@@ -757,7 +775,7 @@ export function buildSubmitTransferAssets(args: {
     arguments: [
       tx.object(args.daoId),
       tx.pure.string("TransferAssets"),
-      tx.pure.string(args.metadataIpfs),
+      optionalString(tx, args.metadataIpfs),
       payload,
       tx.object(SUI_CLOCK),
     ],

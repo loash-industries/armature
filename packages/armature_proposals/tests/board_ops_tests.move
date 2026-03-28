@@ -47,7 +47,7 @@ fun test_set_board_e2e() {
         board_voting::submit_proposal(
             &dao,
             b"SetBoard".to_ascii_string(),
-            string::utf8(b"Add NEW_MEMBER to board"),
+            option::some(string::utf8(b"Add NEW_MEMBER to board")),
             payload,
             &clock,
             scenario.ctx(),
@@ -131,7 +131,7 @@ fun test_set_board_empty_members_aborts() {
         board_voting::submit_proposal(
             &dao,
             b"SetBoard".to_ascii_string(),
-            string::utf8(b"Empty board"),
+            option::some(string::utf8(b"Empty board")),
             payload,
             &clock,
             scenario.ctx(),
@@ -221,7 +221,7 @@ fun test_full_board_replacement() {
         board_voting::submit_proposal(
             &dao,
             b"SetBoard".to_ascii_string(),
-            string::utf8(b"Full board replacement"),
+            option::some(string::utf8(b"Full board replacement")),
             payload,
             &clock,
             scenario.ctx(),
@@ -291,7 +291,7 @@ fun test_shrink_board_to_single_member() {
         board_voting::submit_proposal(
             &dao,
             b"SetBoard".to_ascii_string(),
-            string::utf8(b"Shrink to solo"),
+            option::some(string::utf8(b"Shrink to solo")),
             payload,
             &clock,
             scenario.ctx(),
@@ -363,7 +363,7 @@ fun test_grow_board_from_single() {
         board_voting::submit_proposal(
             &dao,
             b"SetBoard".to_ascii_string(),
-            string::utf8(b"Scale up board"),
+            option::some(string::utf8(b"Scale up board")),
             payload,
             &clock,
             scenario.ctx(),
@@ -429,7 +429,7 @@ fun test_sequential_board_changes() {
         board_voting::submit_proposal(
             &dao,
             b"SetBoard".to_ascii_string(),
-            string::utf8(b"Swap B for C"),
+            option::some(string::utf8(b"Swap B for C")),
             set_board::new(vector[CREATOR, NEW_MEMBER]),
             &clock,
             scenario.ctx(),
@@ -475,7 +475,7 @@ fun test_sequential_board_changes() {
         board_voting::submit_proposal(
             &dao,
             b"SetBoard".to_ascii_string(),
-            string::utf8(b"Swap A for D"),
+            option::some(string::utf8(b"Swap A for D")),
             set_board::new(vector[NEW_MEMBER, MEMBER_D]),
             &clock,
             scenario.ctx(),

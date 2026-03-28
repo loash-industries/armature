@@ -12,6 +12,7 @@ import { useWalletDaos } from "@/hooks/useWalletDaos";
 import type { DaoEntry } from "@/hooks/useWalletDaos";
 import { usePrefetchBoardMembers } from "@/hooks/usePrefetchBoardMembers";
 import { useCharacterNames } from "@/hooks/useCharacterNames";
+import { HIDDEN_DAO_IDS } from "@/config/constants";
 
 const suiAddressRegex = /^0x[a-fA-F0-9]{64}$/;
 
@@ -52,14 +53,21 @@ export function DaoPickerPage() {
   const { data: boardMemberAddresses = [] } = usePrefetchBoardMembers(daos);
   useCharacterNames(boardMemberAddresses);
 
-  const rootDaos = daos.filter((d) => !d.isSubDAO);
-  const subDaos = daos.filter((d) => d.isSubDAO);
+  const visibleDaos = daos.filter((d) => !HIDDEN_DAO_IDS.includes(d.daoId));
+  const rootDaos = visibleDaos.filter((d) => !d.isSubDAO);
+  const subDaos = visibleDaos.filter((d) => d.isSubDAO);
 
   function handleBrowse() {
     const trimmed = browseAddress.trim();
     if (suiAddressRegex.test(trimmed)) {
       navigate({ to: "/dao/$daoId", params: { daoId: trimmed } });
     }
+  }
+
+  // Auto-redirect if exactly 1 DAO
+  if (daos.length === 1) {
+    navigate({ to: "/dao/$daoId", params: { daoId: daos[0].daoId } });
+    return null;
   }
 
   return (
@@ -85,7 +93,7 @@ export function DaoPickerPage() {
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            {daos.length === 0 ? (
+            {visibleDaos.length === 0 ? (
               <p className="text-muted-foreground py-4 text-center text-sm">
                 No organizations found for your wallet. Create one or browse by address.
               </p>

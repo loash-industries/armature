@@ -51,7 +51,7 @@ fun receive_cap_cross_dao() {
         board_voting::submit_proposal(
             &dao,
             b"EnableProposalType".to_ascii_string(),
-            string::utf8(b"Vehicle for receive_cap"),
+            option::some(string::utf8(b"Vehicle for receive_cap")),
             enable_proposal_type::new(b"SomeType".to_ascii_string(), config),
             &clock,
             scenario.ctx(),

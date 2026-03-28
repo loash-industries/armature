@@ -6,7 +6,6 @@ use armature::emergency;
 use armature::governance::{Self, GovernanceConfig, GovernanceTypeInit};
 use armature::proposal::{Self, ExecutionRequest, ProposalConfig};
 use armature::treasury_vault;
-use std::option::{Self, Option};
 use std::string::String;
 use std::type_name;
 use sui::dynamic_field as df;

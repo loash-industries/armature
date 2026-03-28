@@ -14,7 +14,11 @@ import {
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Textarea } from "@/components/ui/textarea";
 import { RecipientCombobox } from "@/components/ui/RecipientCombobox";
-import { useTreasuryBalances, useDaoSummary, useCoinMetadataMap } from "@/hooks/useDao";
+import {
+  useTreasuryBalances,
+  useDaoSummary,
+  useCoinMetadataMap,
+} from "@/hooks/useDao";
 import { SubmitProposalButton } from "@/components/proposals/SubmitProposalButton";
 import { CoinAmountInput } from "@/components/ui/CoinAmountInput";
 import { CoinSelect } from "@/components/ui/CoinSelect";
@@ -37,6 +41,7 @@ type FormValues = z.infer<typeof formSchema>;
 interface TreasuryWithdrawFormProps {
   daoId: string;
   isPending?: boolean;
+  pendingStep?: "creating" | "voting" | null;
   isTypeEnabled?: boolean;
   onSubmit: (data: TreasuryWithdrawPayload) => void;
   onSubmitAndVote?: (data: TreasuryWithdrawPayload) => void;
@@ -45,6 +50,7 @@ interface TreasuryWithdrawFormProps {
 export function TreasuryWithdrawForm({
   daoId,
   isPending,
+  pendingStep,
   isTypeEnabled = true,
   onSubmit,
   onSubmitAndVote,
@@ -71,11 +77,15 @@ export function TreasuryWithdrawForm({
   });
 
   const selectedCoinType = form.watch("coinType");
-  const selectedBalance = balances?.find((b) => b.coinType === selectedCoinType);
-  const selectedMeta = selectedCoinType ? metadataMap?.[selectedCoinType] : undefined;
+  const selectedBalance = balances?.find(
+    (b) => b.coinType === selectedCoinType,
+  );
+  const selectedMeta = selectedCoinType
+    ? metadataMap?.[selectedCoinType]
+    : undefined;
   const selectedSymbol =
     selectedMeta?.symbol ??
-    (selectedCoinType ? selectedCoinType.split("::").pop() ?? "" : "");
+    (selectedCoinType ? (selectedCoinType.split("::").pop() ?? "") : "");
   const selectedDecimals = selectedMeta?.decimals ?? 9;
 
   const recipientValue = form.watch("recipient");
@@ -124,18 +134,22 @@ export function TreasuryWithdrawForm({
         {!isTypeEnabled && (
           <Alert className="border-yellow-500/50 text-yellow-700 dark:text-yellow-400 [&>svg]:text-yellow-600 dark:[&>svg]:text-yellow-400">
             <TriangleAlert />
-            <AlertTitle>Proposal type disabled</AlertTitle>
+            <AlertTitle>Action type disabled</AlertTitle>
             <AlertDescription>
-              Treasury Withdraw is not enabled for this DAO. You must{" "}
+              Action 'Treasury Withdraw' is not enabled for this Organization.
+              You must{" "}
               <Link
                 to="/dao/$daoId/proposals/new"
                 params={{ daoId }}
-                search={{ type: "EnableProposalType", prefill: "TreasuryWithdraw" }}
+                search={{
+                  type: "EnableProposalType",
+                  prefill: "TreasuryWithdraw",
+                }}
                 className="font-medium underline underline-offset-2 hover:opacity-80"
               >
                 enable treasury withdrawals
               </Link>{" "}
-              before creating this proposal.
+              before initiating a withdrawal.
             </AlertDescription>
           </Alert>
         )}
@@ -166,7 +180,10 @@ export function TreasuryWithdrawForm({
         {/* Amount */}
         <CoinAmountInput
           value={amount}
-          onChange={(v) => { setAmount(v); setAmountError(undefined); }}
+          onChange={(v) => {
+            setAmount(v);
+            setAmountError(undefined);
+          }}
           symbol={selectedSymbol}
           decimals={selectedDecimals}
           maxBalance={selectedBalance?.balance}
@@ -191,7 +208,11 @@ export function TreasuryWithdrawForm({
               </FormControl>
               {isValidRecipient && (
                 <p className="text-xs text-muted-foreground flex items-center gap-1">
-                  Resolved: <AddressName address={recipientValue} charName={recipientNameMap?.get(recipientValue)} />
+                  Resolved:{" "}
+                  <AddressName
+                    address={recipientValue}
+                    charName={recipientNameMap?.get(recipientValue)}
+                  />
                 </p>
               )}
               <FormMessage />
@@ -214,7 +235,13 @@ export function TreasuryWithdrawForm({
         />
 
         <SubmitProposalButton
+          actionType={
+            selectedCoinType
+              ? `Withdraw ${selectedSymbol} to Recipient`
+              : "Send Coin from Treasury"
+          }
           isPending={isPending || !isTypeEnabled}
+          pendingStep={pendingStep}
           onSubmit={() => form.handleSubmit(handleSubmit)()}
           onSubmitAndVote={() => form.handleSubmit(handleSubmitAndVote)()}
         />
@@ -222,4 +249,3 @@ export function TreasuryWithdrawForm({
     </Form>
   );
 }
-

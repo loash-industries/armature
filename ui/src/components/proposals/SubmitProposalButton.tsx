@@ -9,13 +9,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 interface SubmitProposalButtonProps {
+  actionType: string;
   isPending?: boolean;
+  pendingStep?: "creating" | "voting" | null;
   onSubmit: () => void;
   onSubmitAndVote: () => void;
 }
 
 export function SubmitProposalButton({
+  actionType,
   isPending,
+  pendingStep,
   onSubmit,
   onSubmitAndVote,
 }: SubmitProposalButtonProps) {
@@ -28,7 +32,13 @@ export function SubmitProposalButton({
         onClick={onSubmit}
         className="rounded-r-none"
       >
-        {isPending ? "Submitting..." : "Create Proposal"}
+        {pendingStep === "voting"
+          ? "Voting 'Yes'..."
+          : pendingStep === "creating"
+            ? "Creating proposal..."
+            : isPending
+              ? "Submitting..."
+              : `Create Proposal to execute '${actionType}' action`}
       </Button>
       <DropdownMenu>
         <DropdownMenuTrigger

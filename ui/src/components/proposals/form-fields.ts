@@ -29,7 +29,7 @@ export const TIER1_FIELD_DEFS: Record<string, FieldDef[]> = {
     {
       type: "select",
       name: "typeKey",
-      label: "Proposal Type to Disable",
+      label: "Action Type to Disable",
       optionsKey: "enabledTypes",
     },
   ],
@@ -40,16 +40,16 @@ export const TIER1_FIELD_DEFS: Record<string, FieldDef[]> = {
     {
       type: "select",
       name: "typeKey",
-      label: "Proposal Type to Unfreeze",
+      label: "Action Type to Unfreeze",
       optionsKey: "frozenTypes",
     },
   ],
   SpinOutSubDAO: [
-    { type: "text", name: "subDaoId", label: "SubDAO Object ID", placeholder: "0x..." },
+    { type: "text", name: "subDaoId", label: "Organizational Unit", placeholder: "0x..." },
   ],
   SpawnDAO: [
-    { type: "text", name: "name", label: "New DAO Name", placeholder: "My DAO" },
-    { type: "text", name: "description", label: "Description", placeholder: "DAO description" },
+    { type: "text", name: "name", label: "New Organizational Unit Name", placeholder: "My Organizational Unit" },
+    { type: "text", name: "description", label: "Description", placeholder: "Organizational Unit description" },
   ],
   UpdateFreezeConfig: [
     { type: "text", name: "newMaxFreezeDurationMs", label: "Max Freeze Duration (ms)", placeholder: "604800000" },
@@ -59,16 +59,16 @@ export const TIER1_FIELD_DEFS: Record<string, FieldDef[]> = {
     { type: "text", name: "typesToRemove", label: "Types to Remove (comma-separated)", placeholder: "TypeC" },
   ],
   TransferCapToSubDAO: [
-    { type: "text", name: "capId", label: "Capability Object ID", placeholder: "0x..." },
-    { type: "text", name: "targetSubdao", label: "Target SubDAO Object ID", placeholder: "0x..." },
+    { type: "text", name: "capId", label: "Credential", placeholder: "0x..." },
+    { type: "text", name: "targetSubdao", label: "Target Organizational Unit", placeholder: "0x..." },
   ],
   ReclaimCapFromSubDAO: [
-    { type: "text", name: "subdaoId", label: "SubDAO Object ID", placeholder: "0x..." },
-    { type: "text", name: "capId", label: "Capability Object ID", placeholder: "0x..." },
-    { type: "text", name: "controlId", label: "SubDAOControl Object ID", placeholder: "0x..." },
+    { type: "text", name: "subdaoId", label: "Organizational Unit", placeholder: "0x..." },
+    { type: "text", name: "capId", label: "Credential", placeholder: "0x..." },
+    { type: "text", name: "controlId", label: "Organizational Unit Ownership credential", placeholder: "0x..." },
   ],
   ProposeUpgrade: [
-    { type: "text", name: "capId", label: "UpgradeCap Object ID", placeholder: "0x..." },
+    { type: "text", name: "capId", label: "Upgrade Credential", placeholder: "0x..." },
     { type: "text", name: "packageId", label: "Package ID", placeholder: "0x..." },
     { type: "text", name: "digest", label: "Build Digest (hex)", placeholder: "0x..." },
     { type: "number", name: "policy", label: "Upgrade Policy", min: 0, placeholder: "0" },

@@ -28,15 +28,21 @@ import { PACKAGE_ID, PROPOSALS_PACKAGE_ID } from "@/config/constants";
 const DAO_ID = "0x" + "a".repeat(64);
 const PROPOSAL_ID = "0x" + "b".repeat(64);
 const SUI_TYPE = "0x2::sui::SUI";
-const META = "ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi";
+const META =
+  "ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi";
 
-function assertSubmitPattern(commands: ReturnType<ReturnType<typeof buildVote>["getData"]>["commands"], proposalModule: string, payloadTypeSuffix: string) {
-  expect(commands).toHaveLength(2);
+function assertSubmitPattern(
+  commands: ReturnType<ReturnType<typeof buildVote>["getData"]>["commands"],
+  proposalModule: string,
+  payloadTypeSuffix: string,
+) {
+  expect(commands).toHaveLength(3);
   expect(commands[0].MoveCall?.module).toBe(proposalModule);
   expect(commands[0].MoveCall?.function).toBe("new");
-  expect(commands[1].MoveCall?.module).toBe("board_voting");
-  expect(commands[1].MoveCall?.function).toBe("submit_proposal");
-  expect(commands[1].MoveCall?.typeArguments[0]).toContain(payloadTypeSuffix);
+  // commands[1] is the optionalString (option::some / option::none) MoveCall
+  expect(commands[2].MoveCall?.module).toBe("board_voting");
+  expect(commands[2].MoveCall?.function).toBe("submit_proposal");
+  expect(commands[2].MoveCall?.typeArguments[0]).toContain(payloadTypeSuffix);
 }
 
 // ---------------------------------------------------------------------------
@@ -47,7 +53,11 @@ describe("buildVote", () => {
   const proposalType = `${PROPOSALS_PACKAGE_ID}::set_board::SetBoard`;
 
   it("produces a single proposal::vote move call", () => {
-    const tx = buildVote({ proposalId: PROPOSAL_ID, approve: true, proposalType });
+    const tx = buildVote({
+      proposalId: PROPOSAL_ID,
+      approve: true,
+      proposalType,
+    });
     const { commands } = tx.getData();
     expect(commands).toHaveLength(1);
     expect(commands[0].MoveCall?.module).toBe("proposal");
@@ -55,19 +65,33 @@ describe("buildVote", () => {
   });
 
   it("uses PACKAGE_ID", () => {
-    const tx = buildVote({ proposalId: PROPOSAL_ID, approve: false, proposalType });
+    const tx = buildVote({
+      proposalId: PROPOSAL_ID,
+      approve: false,
+      proposalType,
+    });
     const { commands } = tx.getData();
-    expect(commands[0].MoveCall?.package).toContain(PACKAGE_ID.replace(/^0x0*/, ""));
+    expect(commands[0].MoveCall?.package).toContain(
+      PACKAGE_ID.replace(/^0x0*/, ""),
+    );
   });
 
   it("sets type argument to proposalType", () => {
-    const tx = buildVote({ proposalId: PROPOSAL_ID, approve: true, proposalType });
+    const tx = buildVote({
+      proposalId: PROPOSAL_ID,
+      approve: true,
+      proposalType,
+    });
     const { commands } = tx.getData();
     expect(commands[0].MoveCall?.typeArguments[0]).toBe(proposalType);
   });
 
   it("passes clock as argument", () => {
-    const tx = buildVote({ proposalId: PROPOSAL_ID, approve: true, proposalType });
+    const tx = buildVote({
+      proposalId: PROPOSAL_ID,
+      approve: true,
+      proposalType,
+    });
     const { commands } = tx.getData();
     // 3 args: proposalId, approve, clock
     expect(commands[0].MoveCall?.arguments).toHaveLength(3);
@@ -75,7 +99,11 @@ describe("buildVote", () => {
 
   // Helper variable re-use fix
   it("approve=false also works", () => {
-    const tx = buildVote({ proposalId: PROPOSAL_ID, approve: false, proposalType });
+    const tx = buildVote({
+      proposalId: PROPOSAL_ID,
+      approve: false,
+      proposalType,
+    });
     const { commands } = tx.getData();
     expect(commands[0].MoveCall?.function).toBe("vote");
   });
@@ -104,7 +132,11 @@ describe("buildSubmitSetBoard", () => {
       newMembers: ["0x" + "1".repeat(64)],
       metadataIpfs: META,
     });
-    assertSubmitPattern(tx.getData().commands, "set_board", "::set_board::SetBoard");
+    assertSubmitPattern(
+      tx.getData().commands,
+      "set_board",
+      "::set_board::SetBoard",
+    );
   });
 });
 
@@ -117,7 +149,11 @@ describe("buildSubmitSendCoin", () => {
       coinType: SUI_TYPE,
       metadataIpfs: META,
     });
-    assertSubmitPattern(tx.getData().commands, "send_coin", "::send_coin::SendCoin");
+    assertSubmitPattern(
+      tx.getData().commands,
+      "send_coin",
+      "::send_coin::SendCoin",
+    );
   });
 
   it("includes coinType in type argument of submit_proposal", () => {
@@ -128,7 +164,7 @@ describe("buildSubmitSendCoin", () => {
       coinType: SUI_TYPE,
       metadataIpfs: META,
     });
-    const typeArg = tx.getData().commands[1].MoveCall?.typeArguments[0];
+    const typeArg = tx.getData().commands[2].MoveCall?.typeArguments[0];
     expect(typeArg).toContain(SUI_TYPE);
   });
 
@@ -158,12 +194,13 @@ describe("buildSubmitEnableProposalType", () => {
       metadataIpfs: META,
     });
     const { commands } = tx.getData();
-    expect(commands).toHaveLength(3);
+    expect(commands).toHaveLength(4);
     expect(commands[0].MoveCall?.function).toBe("new_config");
     expect(commands[1].MoveCall?.module).toBe("enable_proposal_type");
     expect(commands[1].MoveCall?.function).toBe("new");
-    expect(commands[2].MoveCall?.module).toBe("board_voting");
-    expect(commands[2].MoveCall?.function).toBe("submit_proposal");
+    // commands[2] is the optionalString MoveCall
+    expect(commands[3].MoveCall?.module).toBe("board_voting");
+    expect(commands[3].MoveCall?.function).toBe("submit_proposal");
   });
 });
 
@@ -176,13 +213,17 @@ describe("buildSubmitUpdateProposalConfig", () => {
       metadataIpfs: META,
     });
     const { commands } = tx.getData();
-    // optU16 some/none + optU64 x5 + update_proposal_config::new + board_voting::submit_proposal
+    // optU16 some/none + optU64 x5 + update_proposal_config::new + optionalString + board_voting::submit_proposal
     // quorum = some (1 cmd), approvalThreshold = none (1), proposeThreshold = none (1),
     // expiryMs = none (1), executionDelayMs = none (1), cooldownMs = none (1) = 6 option cmds
-    // + payload (1) + submit (1) = 8 total
-    expect(commands.length).toBeGreaterThanOrEqual(8);
-    expect(commands[commands.length - 1]?.MoveCall?.function).toBe("submit_proposal");
-    expect(commands[commands.length - 2]?.MoveCall?.module).toBe("update_proposal_config");
+    // + payload (1) + optionalString (1) + submit (1) = 9 total
+    expect(commands.length).toBeGreaterThanOrEqual(9);
+    expect(commands[commands.length - 1]?.MoveCall?.function).toBe(
+      "submit_proposal",
+    );
+    expect(commands[commands.length - 3]?.MoveCall?.module).toBe(
+      "update_proposal_config",
+    );
   });
 
   it("builds Option::none for omitted fields", () => {
@@ -214,7 +255,9 @@ describe("buildSubmitTransferAssets", () => {
     // 2× type_name::get + makeMoveVec + transfer_assets::new + submit_proposal = 5
     const getTypeCalls = commands.filter((c) => c.MoveCall?.function === "get");
     expect(getTypeCalls).toHaveLength(coinTypes.length);
-    const makeMoveVecs = commands.filter((c) => "$kind" in c && c.$kind === "MakeMoveVec");
+    const makeMoveVecs = commands.filter(
+      (c) => "$kind" in c && c.$kind === "MakeMoveVec",
+    );
     expect(makeMoveVecs).toHaveLength(1);
   });
 });
@@ -230,7 +273,11 @@ describe("buildSubmitUpdateMetadata", () => {
       newIpfsCid: META,
       metadataIpfs: META,
     });
-    assertSubmitPattern(tx.getData().commands, "update_metadata", "::update_metadata::UpdateMetadata");
+    assertSubmitPattern(
+      tx.getData().commands,
+      "update_metadata",
+      "::update_metadata::UpdateMetadata",
+    );
   });
 });
 
@@ -241,7 +288,11 @@ describe("buildSubmitDisableProposalType", () => {
       typeKey: "SendCoin",
       metadataIpfs: META,
     });
-    assertSubmitPattern(tx.getData().commands, "disable_proposal_type", "::disable_proposal_type::DisableProposalType");
+    assertSubmitPattern(
+      tx.getData().commands,
+      "disable_proposal_type",
+      "::disable_proposal_type::DisableProposalType",
+    );
   });
 });
 
@@ -252,7 +303,11 @@ describe("buildSubmitTransferFreezeAdmin", () => {
       newAdmin: "0x" + "2".repeat(64),
       metadataIpfs: META,
     });
-    assertSubmitPattern(tx.getData().commands, "transfer_freeze_admin", "::transfer_freeze_admin::TransferFreezeAdmin");
+    assertSubmitPattern(
+      tx.getData().commands,
+      "transfer_freeze_admin",
+      "::transfer_freeze_admin::TransferFreezeAdmin",
+    );
   });
 });
 
@@ -263,7 +318,11 @@ describe("buildSubmitUnfreezeProposalType", () => {
       typeKey: "SetBoard",
       metadataIpfs: META,
     });
-    assertSubmitPattern(tx.getData().commands, "unfreeze_proposal_type", "::unfreeze_proposal_type::UnfreezeProposalType");
+    assertSubmitPattern(
+      tx.getData().commands,
+      "unfreeze_proposal_type",
+      "::unfreeze_proposal_type::UnfreezeProposalType",
+    );
   });
 });
 
@@ -276,7 +335,11 @@ describe("buildSubmitSendCoinToDAO", () => {
       coinType: SUI_TYPE,
       metadataIpfs: META,
     });
-    assertSubmitPattern(tx.getData().commands, "send_coin_to_dao", "::send_coin_to_dao::SendCoinToDAO");
+    assertSubmitPattern(
+      tx.getData().commands,
+      "send_coin_to_dao",
+      "::send_coin_to_dao::SendCoinToDAO",
+    );
   });
 
   it("includes coinType in submit_proposal type argument", () => {
@@ -287,7 +350,9 @@ describe("buildSubmitSendCoinToDAO", () => {
       coinType: SUI_TYPE,
       metadataIpfs: META,
     });
-    expect(tx.getData().commands[1].MoveCall?.typeArguments[0]).toContain(SUI_TYPE);
+    expect(tx.getData().commands[2].MoveCall?.typeArguments[0]).toContain(
+      SUI_TYPE,
+    );
   });
 });
 
@@ -300,7 +365,11 @@ describe("buildSubmitSendSmallPayment", () => {
       coinType: SUI_TYPE,
       metadataIpfs: META,
     });
-    assertSubmitPattern(tx.getData().commands, "send_small_payment", "::send_small_payment::SendSmallPayment");
+    assertSubmitPattern(
+      tx.getData().commands,
+      "send_small_payment",
+      "::send_small_payment::SendSmallPayment",
+    );
   });
 
   it("includes coinType in submit_proposal type argument", () => {
@@ -311,7 +380,9 @@ describe("buildSubmitSendSmallPayment", () => {
       coinType: SUI_TYPE,
       metadataIpfs: META,
     });
-    expect(tx.getData().commands[1].MoveCall?.typeArguments[0]).toContain(SUI_TYPE);
+    expect(tx.getData().commands[2].MoveCall?.typeArguments[0]).toContain(
+      SUI_TYPE,
+    );
   });
 });
 
@@ -322,7 +393,11 @@ describe("buildSubmitUpdateFreezeConfig", () => {
       newMaxFreezeDurationMs: "604800000",
       metadataIpfs: META,
     });
-    assertSubmitPattern(tx.getData().commands, "update_freeze_config", "::update_freeze_config::UpdateFreezeConfig");
+    assertSubmitPattern(
+      tx.getData().commands,
+      "update_freeze_config",
+      "::update_freeze_config::UpdateFreezeConfig",
+    );
   });
 });
 
@@ -334,7 +409,11 @@ describe("buildSubmitUpdateFreezeExemptTypes", () => {
       typesToRemove: [],
       metadataIpfs: META,
     });
-    assertSubmitPattern(tx.getData().commands, "update_freeze_exempt_types", "::update_freeze_exempt_types::UpdateFreezeExemptTypes");
+    assertSubmitPattern(
+      tx.getData().commands,
+      "update_freeze_exempt_types",
+      "::update_freeze_exempt_types::UpdateFreezeExemptTypes",
+    );
   });
 });
 
@@ -350,7 +429,11 @@ describe("buildSubmitTransferCapToSubDAO", () => {
       targetSubdao: "0x" + "2".repeat(64),
       metadataIpfs: META,
     });
-    assertSubmitPattern(tx.getData().commands, "transfer_cap_to_subdao", "::transfer_cap_to_subdao::TransferCapToSubDAO");
+    assertSubmitPattern(
+      tx.getData().commands,
+      "transfer_cap_to_subdao",
+      "::transfer_cap_to_subdao::TransferCapToSubDAO",
+    );
   });
 });
 
@@ -363,7 +446,11 @@ describe("buildSubmitReclaimCapFromSubDAO", () => {
       controlId: "0x" + "3".repeat(64),
       metadataIpfs: META,
     });
-    assertSubmitPattern(tx.getData().commands, "reclaim_cap_from_subdao", "::reclaim_cap_from_subdao::ReclaimCapFromSubDAO");
+    assertSubmitPattern(
+      tx.getData().commands,
+      "reclaim_cap_from_subdao",
+      "::reclaim_cap_from_subdao::ReclaimCapFromSubDAO",
+    );
   });
 
   it("passes subdaoId, capId, and controlId as three separate arguments to ::new", () => {
@@ -391,7 +478,11 @@ describe("buildSubmitProposeUpgrade", () => {
       policy: 0,
       metadataIpfs: META,
     });
-    assertSubmitPattern(tx.getData().commands, "propose_upgrade", "::propose_upgrade::ProposeUpgrade");
+    assertSubmitPattern(
+      tx.getData().commands,
+      "propose_upgrade",
+      "::propose_upgrade::ProposeUpgrade",
+    );
   });
 
   it("propose_upgrade::new receives 4 arguments (capId, packageId, digest bytes, policy)", () => {
@@ -423,9 +514,9 @@ describe("buildSubmitProposeUpgrade", () => {
       policy: 0,
       metadataIpfs: META,
     });
-    // Both should produce 2 commands with the same structure
-    expect(txWith.getData().commands).toHaveLength(2);
-    expect(txWithout.getData().commands).toHaveLength(2);
+    // Both should produce 3 commands with the same structure (payload + optionalString + submit)
+    expect(txWith.getData().commands).toHaveLength(3);
+    expect(txWithout.getData().commands).toHaveLength(3);
     expect(txWith.getData().commands[0].MoveCall?.function).toBe("new");
     expect(txWithout.getData().commands[0].MoveCall?.function).toBe("new");
   });
@@ -453,14 +544,17 @@ describe("buildSubmitSpawnDAO", () => {
       metadataIpfs: META,
     });
     const { commands } = tx.getData();
-    expect(commands).toHaveLength(3);
+    expect(commands).toHaveLength(4);
     expect(commands[0].MoveCall?.module).toBe("governance");
     expect(commands[0].MoveCall?.function).toBe("init_board");
     expect(commands[1].MoveCall?.module).toBe("spawn_dao");
     expect(commands[1].MoveCall?.function).toBe("new");
-    expect(commands[2].MoveCall?.module).toBe("board_voting");
-    expect(commands[2].MoveCall?.function).toBe("submit_proposal");
-    expect(commands[2].MoveCall?.typeArguments[0]).toContain("::spawn_dao::SpawnDAO");
+    // commands[2] is the optionalString MoveCall
+    expect(commands[3].MoveCall?.module).toBe("board_voting");
+    expect(commands[3].MoveCall?.function).toBe("submit_proposal");
+    expect(commands[3].MoveCall?.typeArguments[0]).toContain(
+      "::spawn_dao::SpawnDAO",
+    );
   });
 });
 
@@ -474,14 +568,19 @@ describe("buildSubmitSpinOutSubDAO", () => {
       metadataIpfs: META,
     });
     const { commands } = tx.getData();
-    expect(commands).toHaveLength(5);
-    const configCalls = commands.filter((c) => c.MoveCall?.function === "new_config");
+    expect(commands).toHaveLength(6);
+    const configCalls = commands.filter(
+      (c) => c.MoveCall?.function === "new_config",
+    );
     expect(configCalls).toHaveLength(3);
     expect(commands[3].MoveCall?.module).toBe("spin_out_subdao");
     expect(commands[3].MoveCall?.function).toBe("new");
-    expect(commands[4].MoveCall?.module).toBe("board_voting");
-    expect(commands[4].MoveCall?.function).toBe("submit_proposal");
-    expect(commands[4].MoveCall?.typeArguments[0]).toContain("::spin_out_subdao::SpinOutSubDAO");
+    // commands[4] is the optionalString MoveCall
+    expect(commands[5].MoveCall?.module).toBe("board_voting");
+    expect(commands[5].MoveCall?.function).toBe("submit_proposal");
+    expect(commands[5].MoveCall?.typeArguments[0]).toContain(
+      "::spin_out_subdao::SpinOutSubDAO",
+    );
   });
 });
 
@@ -493,12 +592,15 @@ describe("buildSubmitPauseSubDAOExecution", () => {
       metadataIpfs: META,
     });
     const { commands } = tx.getData();
-    expect(commands).toHaveLength(2);
+    expect(commands).toHaveLength(3);
     expect(commands[0].MoveCall?.module).toBe("pause_execution");
     expect(commands[0].MoveCall?.function).toBe("new_pause");
-    expect(commands[1].MoveCall?.module).toBe("board_voting");
-    expect(commands[1].MoveCall?.function).toBe("submit_proposal");
-    expect(commands[1].MoveCall?.typeArguments[0]).toContain("::pause_execution::PauseSubDAOExecution");
+    // commands[1] is the optionalString MoveCall
+    expect(commands[2].MoveCall?.module).toBe("board_voting");
+    expect(commands[2].MoveCall?.function).toBe("submit_proposal");
+    expect(commands[2].MoveCall?.typeArguments[0]).toContain(
+      "::pause_execution::PauseSubDAOExecution",
+    );
   });
 });
 
@@ -510,11 +612,14 @@ describe("buildSubmitUnpauseSubDAOExecution", () => {
       metadataIpfs: META,
     });
     const { commands } = tx.getData();
-    expect(commands).toHaveLength(2);
+    expect(commands).toHaveLength(3);
     expect(commands[0].MoveCall?.module).toBe("pause_execution");
     expect(commands[0].MoveCall?.function).toBe("new_unpause");
-    expect(commands[1].MoveCall?.module).toBe("board_voting");
-    expect(commands[1].MoveCall?.function).toBe("submit_proposal");
-    expect(commands[1].MoveCall?.typeArguments[0]).toContain("::pause_execution::UnpauseSubDAOExecution");
+    // commands[1] is the optionalString MoveCall
+    expect(commands[2].MoveCall?.module).toBe("board_voting");
+    expect(commands[2].MoveCall?.function).toBe("submit_proposal");
+    expect(commands[2].MoveCall?.typeArguments[0]).toContain(
+      "::pause_execution::UnpauseSubDAOExecution",
+    );
   });
 });

@@ -22,7 +22,7 @@ const EControllerPaused: u64 = 3;
 public fun submit_proposal<P: store>(
     dao: &DAO,
     type_key: std::ascii::String,
-    metadata_ipfs: String,
+    metadata_ipfs: Option<String>,
     payload: P,
     clock: &Clock,
     ctx: &mut TxContext,

@@ -22,7 +22,7 @@ public fun privileged_submit<P: store>(
     control: &SubDAOControl,
     subdao: &DAO,
     type_key: std::ascii::String,
-    metadata_ipfs: String,
+    metadata_ipfs: Option<String>,
     payload: P,
     clock: &Clock,
     ctx: &mut TxContext,

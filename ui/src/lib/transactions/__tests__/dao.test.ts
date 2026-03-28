@@ -44,12 +44,13 @@ describe("buildSubmitCreateSubDAO", () => {
       metadataIpfs: "ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
     });
     const { commands } = tx.getData();
-    expect(commands).toHaveLength(2);
+    expect(commands).toHaveLength(3);
     expect(commands[0].MoveCall?.module).toBe("create_subdao");
     expect(commands[0].MoveCall?.function).toBe("new");
     expect(commands[0].MoveCall?.package).toContain(PROPOSALS_PACKAGE_ID.replace(/^0x0*/, ""));
-    expect(commands[1].MoveCall?.module).toBe("board_voting");
-    expect(commands[1].MoveCall?.function).toBe("submit_proposal");
+    // commands[1] is the optionalString MoveCall
+    expect(commands[2].MoveCall?.module).toBe("board_voting");
+    expect(commands[2].MoveCall?.function).toBe("submit_proposal");
   });
 
   it("sets correct type argument on submit_proposal", () => {
@@ -61,7 +62,7 @@ describe("buildSubmitCreateSubDAO", () => {
       metadataIpfs: "",
     });
     const { commands } = tx.getData();
-    const submitCmd = commands[1];
+    const submitCmd = commands[2];
     expect(submitCmd.MoveCall?.typeArguments[0]).toContain("::create_subdao::CreateSubDAO");
   });
 

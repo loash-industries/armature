@@ -66,7 +66,7 @@ fun submit_enable_type_proposal(
         board_voting::submit_proposal(
             &dao,
             b"EnableProposalType".to_ascii_string(),
-            string::utf8(b"Enable proposal type"),
+            option::some(string::utf8(b"Enable proposal type")),
             payload,
             clock,
             scenario.ctx(),
@@ -230,7 +230,7 @@ fun disable_core_type_enable_proposal_type_aborts() {
         board_voting::submit_proposal(
             &dao,
             b"DisableProposalType".to_ascii_string(),
-            string::utf8(b"Try to disable core type"),
+            option::some(string::utf8(b"Try to disable core type")),
             payload,
             &clock,
             scenario.ctx(),
@@ -289,7 +289,7 @@ fun disable_core_type_unfreeze_proposal_type_aborts() {
         board_voting::submit_proposal(
             &dao,
             b"DisableProposalType".to_ascii_string(),
-            string::utf8(b"Try to disable core type"),
+            option::some(string::utf8(b"Try to disable core type")),
             payload,
             &clock,
             scenario.ctx(),
@@ -383,7 +383,7 @@ fun enable_proposal_type_66_percent_floor() {
         board_voting::submit_proposal(
             &dao,
             b"EnableProposalType".to_ascii_string(),
-            string::utf8(b"Enable custom action"),
+            option::some(string::utf8(b"Enable custom action")),
             payload,
             &clock,
             scenario.ctx(),
@@ -489,7 +489,7 @@ fun update_proposal_config_self_80_percent_floor() {
         board_voting::submit_proposal(
             &dao,
             b"UpdateProposalConfig".to_ascii_string(),
-            string::utf8(b"Lower own quorum"),
+            option::some(string::utf8(b"Lower own quorum")),
             payload,
             &clock,
             scenario.ctx(),
@@ -601,7 +601,7 @@ fun update_proposal_config_non_self_target_succeeds() {
         board_voting::submit_proposal(
             &dao,
             b"UpdateProposalConfig".to_ascii_string(),
-            string::utf8(b"Lower SetBoard quorum"),
+            option::some(string::utf8(b"Lower SetBoard quorum")),
             payload,
             &clock,
             scenario.ctx(),

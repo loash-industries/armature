@@ -43,7 +43,7 @@ export function NewProposalPage() {
   const { daoId } = useParams({ strict: false });
   const search = useSearch({ strict: false }) as Record<string, string>;
   const navigate = useNavigate();
-  const { submitProposal, isPending } = useSubmitProposal(daoId ?? "");
+  const { submitProposal, isPending, pendingStep } = useSubmitProposal(daoId ?? "");
   const typeKey = search.type ?? "";
   const prefill = search.prefill ?? "";
   const [selectorOpen, setSelectorOpen] = useState(!typeKey);
@@ -106,6 +106,7 @@ export function NewProposalPage() {
               typeKey={typeKey}
               daoId={daoId ?? ""}
               isPending={isPending}
+              pendingStep={pendingStep}
               onSubmit={(data) => submitProposal(typeKey, data)}
               onSubmitAndVote={(data) => submitProposal(typeKey, data, true)}
             />
@@ -114,6 +115,7 @@ export function NewProposalPage() {
             <TreasuryWithdrawForm
               daoId={daoId ?? ""}
               isPending={isPending}
+              pendingStep={pendingStep}
               isTypeEnabled={enabledTypes.includes("TreasuryWithdraw")}
               onSubmit={(data) => submitProposal("TreasuryWithdraw", data)}
               onSubmitAndVote={(data) => submitProposal("TreasuryWithdraw", data, true)}
@@ -123,6 +125,7 @@ export function NewProposalPage() {
             <SetBoardForm
               daoId={daoId ?? ""}
               isPending={isPending}
+              pendingStep={pendingStep}
               onSubmit={(data) => submitProposal("SetBoard", data)}
               onSubmitAndVote={(data) => submitProposal("SetBoard", data, true)}
             />
@@ -131,6 +134,7 @@ export function NewProposalPage() {
             <EnableProposalTypeForm
               daoId={daoId ?? ""}
               isPending={isPending}
+              pendingStep={pendingStep}
               defaultTypeKey={prefill}
               onSubmit={(data) => submitProposal("EnableProposalType", data)}
               onSubmitAndVote={(data) => submitProposal("EnableProposalType", data, true)}
@@ -140,6 +144,7 @@ export function NewProposalPage() {
             <UpdateProposalConfigForm
               daoId={daoId ?? ""}
               isPending={isPending}
+              pendingStep={pendingStep}
               onSubmit={(data) => submitProposal("UpdateProposalConfig", data)}
               onSubmitAndVote={(data) => submitProposal("UpdateProposalConfig", data, true)}
             />
@@ -148,6 +153,7 @@ export function NewProposalPage() {
             <CharterUpdateForm
               daoId={daoId ?? ""}
               isPending={isPending}
+              pendingStep={pendingStep}
               onSubmit={(data) => submitProposal("CharterUpdate", data)}
               onSubmitAndVote={(data) => submitProposal("CharterUpdate", data, true)}
             />
@@ -156,6 +162,7 @@ export function NewProposalPage() {
             <SendCoinToDAOForm
               daoId={daoId ?? ""}
               isPending={isPending}
+              pendingStep={pendingStep}
               onSubmit={(data) => submitProposal("SendCoinToDAO", data)}
               onSubmitAndVote={(data) => submitProposal("SendCoinToDAO", data, true)}
             />
@@ -164,6 +171,7 @@ export function NewProposalPage() {
             <SendSmallPaymentForm
               daoId={daoId ?? ""}
               isPending={isPending}
+              pendingStep={pendingStep}
               onSubmit={(data) => submitProposal("SendSmallPayment", data)}
               onSubmitAndVote={(data) => submitProposal("SendSmallPayment", data, true)}
             />
@@ -172,6 +180,7 @@ export function NewProposalPage() {
             <CreateSubDAOWizard
               daoId={daoId ?? ""}
               isPending={isPending}
+              pendingStep={pendingStep}
               onSubmit={(data) => submitProposal("CreateSubDAO", data)}
               onSubmitAndVote={(data) => submitProposal("CreateSubDAO", data, true)}
             />

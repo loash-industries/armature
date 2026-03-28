@@ -94,7 +94,7 @@ fun small_startup_lifecycle() {
         board_voting::submit_proposal(
             &dao,
             b"SendSmallPayment".to_ascii_string(),
-            string::utf8(b"Pay Carol for design work"),
+            option::some(string::utf8(b"Pay Carol for design work")),
             payload,
             &clock,
             scenario.ctx(),
@@ -162,7 +162,7 @@ fun small_startup_lifecycle() {
         board_voting::submit_proposal(
             &dao,
             b"SetBoard".to_ascii_string(),
-            string::utf8(b"Carol leaving, welcome Dan and Eve"),
+            option::some(string::utf8(b"Carol leaving, welcome Dan and Eve")),
             payload,
             &clock,
             scenario.ctx(),
@@ -226,7 +226,7 @@ fun small_startup_lifecycle() {
         board_voting::submit_proposal(
             &dao,
             b"SendSmallPayment".to_ascii_string(),
-            string::utf8(b"DAN expense reimbursement"),
+            option::some(string::utf8(b"DAN expense reimbursement")),
             payload,
             &clock,
             scenario.ctx(),
@@ -373,7 +373,7 @@ fun medium_enterprise_lifecycle() {
         board_voting::submit_proposal(
             &dao,
             b"CreateSubDAO".to_ascii_string(),
-            string::utf8(b"Create Engineering SubDAO"),
+            option::some(string::utf8(b"Create Engineering SubDAO")),
             payload,
             &clock,
             scenario.ctx(),
@@ -458,7 +458,7 @@ fun medium_enterprise_lifecycle() {
         board_voting::submit_proposal(
             &dao,
             b"CreateSubDAO".to_ascii_string(),
-            string::utf8(b"Create Finance SubDAO"),
+            option::some(string::utf8(b"Create Finance SubDAO")),
             payload,
             &clock,
             scenario.ctx(),
@@ -543,7 +543,7 @@ fun medium_enterprise_lifecycle() {
         board_voting::submit_proposal(
             &dao,
             b"SetBoard".to_ascii_string(),
-            string::utf8(b"Vehicle: freeze eng type + change eng board"),
+            option::some(string::utf8(b"Vehicle: freeze eng type + change eng board")),
             payload,
             &clock,
             scenario.ctx(),
@@ -627,7 +627,7 @@ fun medium_enterprise_lifecycle() {
             &control,
             &eng_dao,
             b"SetBoard".to_ascii_string(),
-            string::utf8(b"Remove rogue actor"),
+            option::some(string::utf8(b"Remove rogue actor")),
             set_board::new(vector[ENG1, ENG2]),
             &clock,
             scenario.ctx(),
@@ -672,7 +672,7 @@ fun medium_enterprise_lifecycle() {
         board_voting::submit_proposal(
             &eng_dao,
             b"UnfreezeProposalType".to_ascii_string(),
-            string::utf8(b"Unfreeze SendCoin after rogue removed"),
+            option::some(string::utf8(b"Unfreeze SendCoin after rogue removed")),
             payload,
             &clock,
             scenario.ctx(),
@@ -729,7 +729,7 @@ fun medium_enterprise_lifecycle() {
         board_voting::submit_proposal(
             &dao,
             b"SendCoinToDAO".to_ascii_string(),
-            string::utf8(b"Q1 salary budget to Finance"),
+            option::some(string::utf8(b"Q1 salary budget to Finance")),
             payload,
             &clock,
             scenario.ctx(),
@@ -815,7 +815,7 @@ fun medium_enterprise_lifecycle() {
         board_voting::submit_proposal(
             &fin_dao,
             b"SendCoin".to_ascii_string(),
-            string::utf8(b"March salary for EMPLOYEE"),
+            option::some(string::utf8(b"March salary for EMPLOYEE")),
             payload,
             &clock,
             scenario.ctx(),

@@ -1,11 +1,10 @@
 [package]
 name = "armature_proposals"
-edition = "2024.beta"
+edition = "2024"
 version = "0.0.1"
 
 [dependencies]
-Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "framework/testnet" }
-armature_framework = { local = "../armature_framework" }
+armature = { local = "../armature_framework", env = "testnet_wip" }
 
-[addresses]
-armature_proposals = "0x0"
+[environments]
+testnet_wip = "0x0"

@@ -18,16 +18,19 @@ export function AppShell() {
   const { data: dao } = useDaoSummary(daoId ?? "");
 
   return (
-    <div className="bg-background flex h-screen w-full overflow-hidden">
+    <div className="bg-background relative flex h-screen w-full overflow-hidden">
+      {/* Logo */}
+      <img src="/armature.svg" alt="Armature" className="absolute left-4 top-4 h-auto w-40" />
+
       {/* Icon Sidebar */}
       <div className="flex-shrink-0 p-4 pr-0">
         <DaoSidebar />
       </div>
 
       {/* Main Content Area */}
-      <div className="flex min-w-0 flex-1 flex-col pt-4">
+      <div className="flex min-w-0 flex-1 flex-col pt-2">
         {/* Topbar */}
-        <header className="flex h-20 items-center justify-between px-4">
+        <header className="flex h-20 items-center justify-between px-4 pl-40">
           {/* DAO Picker */}
           <Button variant="outline" render={<Link to="/pick" />} className="gap-2 p-4">
             <span className="max-w-[165px] truncate text-sm font-bold">

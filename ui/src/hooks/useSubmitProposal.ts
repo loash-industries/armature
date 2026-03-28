@@ -279,7 +279,8 @@ export function useSubmitProposal(daoId: string) {
   const { signAndExecuteTransaction } = useWalletSigner();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [isPending, setIsPending] = useState(false);
+  const [pendingStep, setPendingStep] = useState<"creating" | "voting" | null>(null);
+  const isPending = pendingStep !== null;
 
   async function submitProposal(typeKey: string, data: unknown, andVoteYes = false) {
     if (NOT_IMPLEMENTED_TYPES.has(typeKey)) {
@@ -293,7 +294,7 @@ export function useSubmitProposal(daoId: string) {
       return;
     }
 
-    setIsPending(true);
+    setPendingStep("creating");
     try {
       const result = await signAndExecuteTransaction({ transaction });
       toast.success("Proposal created");
@@ -339,6 +340,7 @@ export function useSubmitProposal(daoId: string) {
 
       // Cast a Yes vote if requested
       if (andVoteYes && proposalId) {
+        setPendingStep("voting");
         if (!proposalType) {
           toast.error("Proposal created but could not determine proposal type for voting");
         } else {
@@ -375,9 +377,9 @@ export function useSubmitProposal(daoId: string) {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Transaction failed");
     } finally {
-      setIsPending(false);
+      setPendingStep(null);
     }
   }
 
-  return { submitProposal, isPending };
+  return { submitProposal, isPending, pendingStep };
 }

@@ -83,7 +83,7 @@ fun upgrade_e2e() {
         board_voting::submit_proposal(
             &dao,
             b"ProposeUpgrade".to_ascii_string(),
-            string::utf8(b"Upgrade package"),
+            option::some(string::utf8(b"Upgrade package")),
             payload,
             &clock,
             scenario.ctx(),
@@ -203,7 +203,7 @@ fun upgrade_vault_mismatch_aborts() {
         board_voting::submit_proposal(
             &dao,
             b"ProposeUpgrade".to_ascii_string(),
-            string::utf8(b"Upgrade package"),
+            option::some(string::utf8(b"Upgrade package")),
             payload,
             &clock,
             scenario.ctx(),

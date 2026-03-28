@@ -23,11 +23,12 @@ import type { SetBoardPayload } from "@/types/proposal";
 interface SetBoardFormProps {
   daoId: string;
   isPending?: boolean;
+  pendingStep?: "creating" | "voting" | null;
   onSubmit: (data: SetBoardPayload) => void;
   onSubmitAndVote?: (data: SetBoardPayload) => void;
 }
 
-export function SetBoardForm({ daoId, isPending, onSubmit, onSubmitAndVote }: SetBoardFormProps) {
+export function SetBoardForm({ daoId, isPending, pendingStep, onSubmit, onSubmitAndVote }: SetBoardFormProps) {
   const { data: govDetail } = useGovernanceDetail(daoId);
   const currentMembers = govDetail?.members.map((m) => m.address) ?? [];
 
@@ -176,6 +177,8 @@ export function SetBoardForm({ daoId, isPending, onSubmit, onSubmitAndVote }: Se
 
         <SubmitProposalButton
           isPending={isPending}
+          pendingStep={pendingStep}
+          actionType={"Set Board Members"}
           onSubmit={() => form.handleSubmit((data) => onSubmit(data as SetBoardPayload))()}
           onSubmitAndVote={() => form.handleSubmit((data) => {
             if (onSubmitAndVote) onSubmitAndVote(data as SetBoardPayload);

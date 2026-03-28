@@ -61,7 +61,7 @@ fun charter_update_lifecycle() {
         board_voting::submit_proposal(
             &dao,
             b"CharterUpdate".to_ascii_string(),
-            string::utf8(b"Update logo to v1"),
+            option::some(string::utf8(b"Update logo to v1")),
             payload,
             &clock,
             scenario.ctx(),
@@ -114,7 +114,7 @@ fun charter_update_lifecycle() {
         board_voting::submit_proposal(
             &dao,
             b"CharterUpdate".to_ascii_string(),
-            string::utf8(b"Update logo to v2"),
+            option::some(string::utf8(b"Update logo to v2")),
             update_metadata::new(string::utf8(b"ipfs://QmNewHashV2")),
             &clock,
             scenario.ctx(),
@@ -211,7 +211,7 @@ fun charter_update_wrong_dao_aborts() {
         board_voting::submit_proposal(
             &dao,
             b"CharterUpdate".to_ascii_string(),
-            string::utf8(b"Mismatch test"),
+            option::some(string::utf8(b"Mismatch test")),
             update_metadata::new(string::utf8(b"ipfs://malicious")),
             &clock,
             scenario.ctx(),

@@ -350,7 +350,7 @@ fun test_privileged_extract_succeeds() {
 
     // Registries updated
     assert!(!vault.contains(cap_id));
-    let type_name = std::type_name::get<TestCap>().into_string();
+    let type_name = std::type_name::with_defining_ids<TestCap>().into_string();
     assert!(!vault.cap_types().contains(&type_name));
 
     sui::test_utils::destroy(extracted);

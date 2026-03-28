@@ -337,6 +337,7 @@ export function useProposalRelay(
             logExecution('TreasuryWithdraw', ev.timestamp)
             // Treasury balance changed — invalidate via dao to get treasuryId
             queryClient.invalidateQueries({ queryKey: ['treasury', daoId] })
+            queryClient.invalidateQueries({ queryKey: cacheKeys.events('treasury', daoId) })
           },
         }),
       )
@@ -365,6 +366,7 @@ export function useProposalRelay(
             })
             logExecution('SendCoinToDAO', ev.timestamp)
             queryClient.invalidateQueries({ queryKey: ['treasury', daoId] })
+            queryClient.invalidateQueries({ queryKey: cacheKeys.events('treasury', daoId) })
           },
         }),
       )
@@ -393,6 +395,7 @@ export function useProposalRelay(
             })
             logExecution('SendSmallPayment', ev.timestamp)
             queryClient.invalidateQueries({ queryKey: ['treasury', daoId] })
+            queryClient.invalidateQueries({ queryKey: cacheKeys.events('treasury', daoId) })
           },
         }),
       )

@@ -45,7 +45,7 @@ fun submit_set_board(
         board_voting::submit_proposal(
             &dao,
             b"SetBoard".to_ascii_string(),
-            string::utf8(b"Board change"),
+            option::some(string::utf8(b"Board change")),
             payload,
             clock,
             scenario.ctx(),
@@ -276,7 +276,7 @@ fun governance_unfreeze_via_proposal() {
         board_voting::submit_proposal(
             &dao,
             b"UnfreezeProposalType".to_ascii_string(),
-            string::utf8(b"Unfreeze SetBoard"),
+            option::some(string::utf8(b"Unfreeze SetBoard")),
             payload,
             &clock,
             scenario.ctx(),
@@ -410,7 +410,7 @@ fun update_freeze_config_e2e() {
         board_voting::submit_proposal(
             &dao,
             b"UpdateFreezeConfig".to_ascii_string(),
-            string::utf8(b"Reduce freeze duration"),
+            option::some(string::utf8(b"Reduce freeze duration")),
             payload,
             &clock,
             scenario.ctx(),
@@ -509,7 +509,7 @@ fun add_freeze_exempt_type_e2e() {
         board_voting::submit_proposal(
             &dao,
             b"UpdateFreezeExemptTypes".to_ascii_string(),
-            string::utf8(b"Exempt SetBoard from freezing"),
+            option::some(string::utf8(b"Exempt SetBoard from freezing")),
             payload,
             &clock,
             scenario.ctx(),
@@ -597,7 +597,7 @@ fun remove_freeze_exempt_type_e2e() {
         board_voting::submit_proposal(
             &dao,
             b"UpdateFreezeExemptTypes".to_ascii_string(),
-            string::utf8(b"Add SetBoard exemption"),
+            option::some(string::utf8(b"Add SetBoard exemption")),
             payload,
             &clock,
             scenario.ctx(),
@@ -645,7 +645,7 @@ fun remove_freeze_exempt_type_e2e() {
         board_voting::submit_proposal(
             &dao,
             b"UpdateFreezeExemptTypes".to_ascii_string(),
-            string::utf8(b"Remove SetBoard exemption"),
+            option::some(string::utf8(b"Remove SetBoard exemption")),
             payload,
             &clock,
             scenario.ctx(),
@@ -727,7 +727,7 @@ fun remove_mandatory_exempt_type_aborts() {
         board_voting::submit_proposal(
             &dao,
             b"UpdateFreezeExemptTypes".to_ascii_string(),
-            string::utf8(b"Remove mandatory type"),
+            option::some(string::utf8(b"Remove mandatory type")),
             payload,
             &clock,
             scenario.ctx(),

@@ -244,8 +244,21 @@ export function useDaoActivity(daoId: string, treasuryId?: string, limit = 20) {
         }
       }
 
-      allEvents.sort((a, b) => b.timestampMs - a.timestampMs);
-      return allEvents.slice(0, limit);
+      // Deduplicate: when a treasury proposal executes, both treasury_vault
+      // (CoinWithdrawn) and treasury_ops (CoinSent / CoinSentToDAO / SmallPaymentSent)
+      // emit events in the same tx. Keep only the higher-level ops event.
+      const HIGH_LEVEL_TREASURY = new Set(["CoinSent", "CoinSentToDAO", "SmallPaymentSent"]);
+      const txHasHighLevel = new Set(
+        allEvents
+          .filter((e) => HIGH_LEVEL_TREASURY.has(e.eventType))
+          .map((e) => e.txDigest),
+      );
+      const deduped = allEvents.filter(
+        (e) => e.eventType !== "CoinWithdrawn" || !txHasHighLevel.has(e.txDigest),
+      );
+
+      deduped.sort((a, b) => b.timestampMs - a.timestampMs);
+      return deduped.slice(0, limit);
     },
     enabled: !!daoId,
   });
@@ -358,58 +371,78 @@ export function useTreasuryEvents(daoId: string, treasuryId?: string, limit = 20
     queryFn: async (): Promise<ActivityEvent[]> => {
       const PAGE_SIZE = 50;
       const MAX_PAGES = 10;
-      const filter = {
-        MoveModule: {
-          package: PACKAGE_ID,
-          module: MODULES.treasury_vault,
-        },
-      };
+
+      // Query both the low-level vault module and the higher-level proposal
+      // treasury_ops module so that CoinSent / CoinSentToDAO / SmallPaymentSent
+      // appear alongside CoinDeposited / CoinWithdrawn / CoinClaimed.
+      const sources = [
+        { package: PACKAGE_ID, module: MODULES.treasury_vault },
+        { package: PROPOSALS_PACKAGE_ID, module: PROPOSAL_MODULES.treasury_ops },
+      ];
 
       // Normalise to lowercase so hex-case differences don't break matching.
       const normDaoId = daoId.toLowerCase();
       const normVaultId = treasuryId?.toLowerCase();
 
-      const matched: ActivityEvent[] = [];
-      let cursor: string | undefined;
-      let pages = 0;
+      const allMatched: ActivityEvent[] = [];
 
-      try {
-        while (matched.length < limit && pages < MAX_PAGES) {
-          const result = await queryEvents(client, filter, cursor, PAGE_SIZE);
-          pages++;
+      for (const src of sources) {
+        const filter = { MoveModule: src };
+        let cursor: string | undefined;
+        let pages = 0;
+        let collected = 0;
 
-          for (const ev of result.data) {
-            const parsed = ev.parsedJson as Record<string, unknown>;
-            const evDaoId = extractId(parsed.dao_id)?.toLowerCase();
-            const evVaultId = extractId(parsed.vault_id)?.toLowerCase();
+        try {
+          while (collected < limit && pages < MAX_PAGES) {
+            const result = await queryEvents(client, filter, cursor, PAGE_SIZE);
+            pages++;
 
-            const matchesDaoId = evDaoId === normDaoId;
-            const matchesVaultId = normVaultId !== undefined && evVaultId === normVaultId;
-            if (!matchesDaoId && !matchesVaultId) continue;
+            for (const ev of result.data) {
+              const parsed = ev.parsedJson as Record<string, unknown>;
+              const evDaoId = extractId(parsed.dao_id)?.toLowerCase();
+              const evVaultId = extractId(parsed.vault_id)?.toLowerCase();
 
-            const typeParts = ev.type.split("::");
-            const eventName = typeParts[typeParts.length - 1] ?? ev.type;
-            matched.push({
-              txDigest: ev.id.txDigest,
-              eventType: eventName,
-              label: eventLabel(eventName),
-              description: eventDescription(eventName, parsed),
-              timestampMs: Number(ev.timestampMs ?? 0),
-              ...extractEventFields(eventName, parsed),
-            });
+              const matchesDaoId = evDaoId === normDaoId;
+              const matchesVaultId = normVaultId !== undefined && evVaultId === normVaultId;
+              if (!matchesDaoId && !matchesVaultId) continue;
 
-            if (matched.length >= limit) break;
+              const typeParts = ev.type.split("::");
+              const eventName = typeParts[typeParts.length - 1] ?? ev.type;
+              allMatched.push({
+                txDigest: ev.id.txDigest,
+                eventType: eventName,
+                label: eventLabel(eventName),
+                description: eventDescription(eventName, parsed),
+                timestampMs: Number(ev.timestampMs ?? 0),
+                ...extractEventFields(eventName, parsed),
+              });
+
+              collected++;
+              if (collected >= limit) break;
+            }
+
+            if (!result.hasNextPage || !result.nextCursor) break;
+            cursor = result.nextCursor ?? undefined;
           }
-
-          if (!result.hasNextPage || !result.nextCursor) break;
-          cursor = result.nextCursor ?? undefined;
+        } catch (err) {
+          console.error("[useTreasuryEvents] RPC error for module %s:", src.module, err);
         }
-      } catch (err) {
-        console.error("[useTreasuryEvents] RPC error:", err);
-        return matched;
       }
 
-      return matched;
+      // Deduplicate: when both CoinWithdrawn (vault) and CoinSent (ops) exist
+      // for the same txDigest, keep only the higher-level ops event.
+      const HIGH_LEVEL_TREASURY = new Set(["CoinSent", "CoinSentToDAO", "SmallPaymentSent"]);
+      const txHasHighLevel = new Set(
+        allMatched
+          .filter((e) => HIGH_LEVEL_TREASURY.has(e.eventType))
+          .map((e) => e.txDigest),
+      );
+      const deduped = allMatched.filter(
+        (e) => e.eventType !== "CoinWithdrawn" || !txHasHighLevel.has(e.txDigest),
+      );
+
+      deduped.sort((a, b) => b.timestampMs - a.timestampMs);
+      return deduped.slice(0, limit);
     },
     enabled: !!daoId,
   });
@@ -480,12 +513,12 @@ function eventLabel(eventName: string): string {
     FreezeConfigUpdated: "Emergency",
     FreezeExemptTypeAdded: "Emergency",
     FreezeExemptTypeRemoved: "Emergency",
-    CoinDeposited: "Treasury",
-    CoinWithdrawn: "Treasury",
-    CoinClaimed: "Treasury",
-    CoinSent: "Treasury",
-    CoinSentToDAO: "Treasury",
-    SmallPaymentSent: "Treasury",
+    CoinDeposited: "Deposit",
+    CoinWithdrawn: "Withdrawal",
+    CoinClaimed: "Claim",
+    CoinSent: "Withdrawal",
+    CoinSentToDAO: "Withdrawal",
+    SmallPaymentSent: "Withdrawal",
     BoardUpdated: "Board",
     MetadataUpdated: "Charter",
     ProposalTypeEnabled: "Proposals",
@@ -527,7 +560,7 @@ function eventDescription(
     case "CoinSent":
       return `Sent coins to ${truncId(parsed.recipient)}`;
     case "CoinSentToDAO":
-      return `Sent coins to DAO treasury ${truncId(parsed.target_treasury)}`;
+      return `Sent coins to Organization or OU treasury ${truncId(parsed.target_treasury)}`;
     case "SmallPaymentSent":
       return `Small payment sent to ${truncId(parsed.recipient)}`;
     case "BoardUpdated":

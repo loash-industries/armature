@@ -21,6 +21,7 @@ import type { Subscription } from '@loash-industries/relay-sdk'
 import { PACKAGE_ID, MODULES } from '@/config/constants'
 import { cacheKeys } from '@/lib/cache-keys'
 import { RELAY_NETWORK, RELAY_TOKEN } from '@/lib/relay'
+import { decodeMoveString } from '@/lib/utils'
 import type {
   ProposalCreatedFields,
   VoteCastFields,
@@ -209,14 +210,19 @@ export function useFrameworkRelay(
   useLayoutEffect(() => { dispatchRef.current = dispatch })
 
   useEffect(() => {
-    if (!enabled || !daoId || !RELAY_TOKEN) return
+    if (!enabled || !daoId || !RELAY_TOKEN) {
+      console.log('[useFrameworkRelay] skipped — enabled=%s, daoId=%s, hasToken=%s', enabled, daoId, !!RELAY_TOKEN)
+      return
+    }
 
+    console.log('[useFrameworkRelay] connecting for daoId=%s', daoId)
     const client = new RelayClient(RELAY_NETWORK, { token: RELAY_TOKEN })
     let cancelled = false
     const subscriptions: Subscription[] = []
 
     async function start() {
       await client.connect()
+      console.log('[useFrameworkRelay] connected, cancelled=%s', cancelled)
       if (cancelled) return
 
       // ── Proposal: ProposalCreated ──────────────────────────────────────────
@@ -327,18 +333,22 @@ export function useFrameworkRelay(
           onEvent: (ev) => {
             const f = ev.decoded_fields as unknown as CoinDepositedFields | null
             if (!f) return
+            const coinType = decodeMoveString(f.coin_type)
+            console.log('[useFrameworkRelay] CoinDeposited — raw coin_type=%o, decoded=%s, vault=%s, amount=%s, depositor=%s', f.coin_type, coinType, f.vault_id, f.amount, f.depositor)
             dispatchRef.current({
               type: 'COIN_EVENT',
               event: {
                 kind: 'deposited',
                 vaultId: f.vault_id,
-                coinType: f.coin_type,
+                coinType,
                 amount: BigInt(f.amount),
                 actor: f.depositor,
                 timestamp: ev.timestamp,
               },
             })
+            console.log('[useFrameworkRelay] invalidating treasury(%s) and events(treasury, %s)', f.vault_id, daoId)
             queryClient.invalidateQueries({ queryKey: cacheKeys.treasury(f.vault_id) })
+            queryClient.invalidateQueries({ queryKey: cacheKeys.events('treasury', daoId) })
           },
         }),
       )
@@ -346,6 +356,11 @@ export function useFrameworkRelay(
       if (cancelled) return
 
       // ── Treasury: CoinWithdrawn ────────────────────────────────────────────
+      // Every withdrawal goes through a proposal, so the higher-level
+      // CoinSent / CoinSentToDAO / SmallPaymentSent event (treasury_ops)
+      // always accompanies CoinWithdrawn. We subscribe here only for cache
+      // invalidation — the feed entry comes from useProposalRelay's
+      // paymentFeed and the RPC history, avoiding duplicate rows.
       subscriptions.push(
         await client.subscribe<CoinWithdrawnFields>({
           packageId: PACKAGE_ID,
@@ -355,18 +370,9 @@ export function useFrameworkRelay(
           onEvent: (ev) => {
             const f = ev.decoded_fields as unknown as CoinWithdrawnFields | null
             if (!f) return
-            dispatchRef.current({
-              type: 'COIN_EVENT',
-              event: {
-                kind: 'withdrawn',
-                vaultId: f.vault_id,
-                coinType: f.coin_type,
-                amount: BigInt(f.amount),
-                actor: f.recipient,
-                timestamp: ev.timestamp,
-              },
-            })
+            // No COIN_EVENT dispatch — higher-level ops event covers the feed.
             queryClient.invalidateQueries({ queryKey: cacheKeys.treasury(f.vault_id) })
+            queryClient.invalidateQueries({ queryKey: cacheKeys.events('treasury', daoId) })
           },
         }),
       )
@@ -388,13 +394,14 @@ export function useFrameworkRelay(
               event: {
                 kind: 'claimed',
                 vaultId: f.vault_id,
-                coinType: f.coin_type,
+                coinType: decodeMoveString(f.coin_type),
                 amount: BigInt(f.amount),
                 actor: f.claimer,
                 timestamp: ev.timestamp,
               },
             })
             queryClient.invalidateQueries({ queryKey: cacheKeys.treasury(f.vault_id) })
+            queryClient.invalidateQueries({ queryKey: cacheKeys.events('treasury', daoId) })
           },
         }),
       )

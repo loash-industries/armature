@@ -1,6 +1,6 @@
 [package]
-name = "armature_framework"
-edition = "2024.beta"
+name = "armature"
+edition = "2024"
 version = "0.0.1"
 
 [dependencies]
@@ -8,3 +8,9 @@ Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-fram
 
 [addresses]
 armature = "0x0"
+
+[environments]
+testnet_wip = "0x6f993d7a6fe02bcc2ae077d2a8f71d62613e84900fc130c47232514cb5374ab4"
+
+[env.testnet_wip]
+armature = "0x6f993d7a6fe02bcc2ae077d2a8f71d62613e84900fc130c47232514cb5374ab4"

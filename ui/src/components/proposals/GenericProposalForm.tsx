@@ -27,6 +27,7 @@ interface GenericProposalFormProps {
   typeKey: string;
   daoId: string;
   isPending?: boolean;
+  pendingStep?: "creating" | "voting" | null;
   onSubmit: (data: Record<string, unknown>) => void;
   onSubmitAndVote?: (data: Record<string, unknown>) => void;
 }
@@ -35,6 +36,7 @@ export function GenericProposalForm({
   typeKey,
   daoId,
   isPending,
+  pendingStep,
   onSubmit,
   onSubmitAndVote,
 }: GenericProposalFormProps) {
@@ -102,6 +104,8 @@ export function GenericProposalForm({
 
         <SubmitProposalButton
           isPending={isPending}
+          pendingStep={pendingStep}
+          actionType={typeKey}
           onSubmit={() => {
             voteRef.current = false;
             form.handleSubmit((data) => onSubmit(data as Record<string, unknown>))();
