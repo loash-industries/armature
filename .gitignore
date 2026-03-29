@@ -36,6 +36,7 @@ docker/.env
 
 # Screenshots (dev artifacts)
 *.png
+!assets/*.png
 
 # Playwright
 ui/playwright-report/
