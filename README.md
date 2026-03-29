@@ -8,6 +8,8 @@ A programmable DAO protocol on the [Sui](https://sui.io) blockchain. Armature pr
 
 Built for the [EVE Frontier](https://evefrontier.com) ecosystem, but general-purpose by design.
 
+Players use Armature to represent their tribes, alliances, and syndicates on-chain. It gives organizations the tools to scale, capture player-generated value, and build relationships backed by code guarantees — no handshake deals, no trust assumptions. The goal: a civilizational mesh woven from one repeated, powerful primitive.
+
 > **[Watch the demo →](https://youtu.be/FaZUX4C_6is)** | **[Read the whitepaper →](https://github.com/loash-industries/armature/releases/tag/whitepaper/v0.1.0)**
 
 ## Architecture
