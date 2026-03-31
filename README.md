@@ -10,7 +10,7 @@ Built for the [EVE Frontier](https://evefrontier.com) ecosystem, but general-pur
 
 Players use Armature to represent their tribes, alliances, and syndicates on-chain. It gives organizations the tools to scale, capture player-generated value, and build relationships backed by code guarantees — no handshake deals, no trust assumptions. The goal: a civilizational mesh woven from one repeated, powerful primitive.
 
-> **[Watch the demo →](https://youtu.be/FaZUX4C_6is)** | **[Read the whitepaper →](https://github.com/loash-industries/armature/releases/tag/whitepaper/v0.1.0)** | **[View the roadmap →](ROADMAP.md)**
+> **[Watch the demo →](https://youtu.be/P60Oe7JcIio)** | **[Read the whitepaper →](https://github.com/loash-industries/armature/releases/tag/whitepaper/v0.1.0)** | **[View the roadmap →](ROADMAP.md)**
 
 ## Architecture
 
