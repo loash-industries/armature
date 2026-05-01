@@ -339,7 +339,7 @@ const MEMBER_E: address = @0xE;
 
 #[test, expected_failure(abort_code = admin_ops::EApprovalFloorNotMet)]
 /// EnableProposalType handler enforces a 66% approval floor.
-/// A proposal passing with only 40% yes (2/5 board) is rejected.
+/// A proposal passing with only 40% yes (2/5 board) is rejected at execution.
 fun enable_proposal_type_66_percent_floor() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
@@ -357,12 +357,12 @@ fun enable_proposal_type_66_percent_floor() {
         );
     };
 
-    // Override EnableProposalType config with quorum needing 2+ votes
+    // Override EnableProposalType config: low quorum + threshold so 2/5 passes voting
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(
-            4_000, // quorum 40% (need 2 of 5)
+            5_000, // quorum 50% (but we override threshold below)
             5_000, // approval_threshold 50%
             0, // propose_threshold
             604_800_000, // expiry
@@ -391,7 +391,7 @@ fun enable_proposal_type_66_percent_floor() {
         test_scenario::return_shared(dao);
     };
 
-    // Only 2 of 5 board members vote yes (40% — passes quorum but below 66% floor)
+    // 3 of 5 board members vote yes (60% of snapshot — passes 50% threshold but below 66% floor)
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
@@ -408,13 +408,21 @@ fun enable_proposal_type_66_percent_floor() {
         test_scenario::return_shared(proposal);
     };
 
-    // Execute — should abort with EApprovalFloorNotMet (2/5 = 40% < 66%)
+    scenario.next_tx(MEMBER_C);
+    {
+        let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
+        clock.set_for_testing(4000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    // Execute — should abort with EApprovalFloorNotMet (3/5 = 60% < 66% of total_snapshot)
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();
         let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
-        clock.set_for_testing(4000);
+        clock.set_for_testing(5000);
 
         let request = board_voting::authorize_execution(
             &mut dao,
@@ -654,6 +662,154 @@ fun update_proposal_config_non_self_target_succeeds() {
         // Verify SetBoard quorum was updated
         let new_config = dao.proposal_configs().get(&b"SetBoard".to_ascii_string());
         assert!(new_config.quorum() == 3_000);
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// =========================================================================
+// EThresholdBelowFloor tests
+// =========================================================================
+
+#[test, expected_failure(abort_code = admin_ops::EThresholdBelowFloor)]
+/// UpdateProposalConfig cannot lower EnableProposalType threshold below 66% floor.
+fun update_config_below_floor_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_dao(&mut scenario);
+
+    // Submit UpdateProposalConfig targeting EnableProposalType with threshold=5000 (below 6600
+    // floor)
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        clock.set_for_testing(1000);
+        let payload = update_proposal_config::new(
+            b"EnableProposalType".to_ascii_string(),
+            option::none(), // keep quorum
+            option::some(5_000), // lower threshold to 50% — below 66% floor
+            option::none(),
+            option::none(),
+            option::none(),
+            option::none(),
+        );
+        board_voting::submit_proposal(
+            &dao,
+            b"UpdateProposalConfig".to_ascii_string(),
+            option::some(string::utf8(b"Lower EnableProposalType threshold")),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    // Vote yes (single-member board → 100% approval, passes 80% floor)
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
+        clock.set_for_testing(2000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    // Execute — should abort with EThresholdBelowFloor
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        clock.set_for_testing(3000);
+
+        let request = board_voting::authorize_execution(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        admin_ops::execute_update_proposal_config(&mut dao, &proposal, request);
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = admin_ops::EThresholdBelowFloor)]
+/// EnableProposalType cannot enable a floor-gated type with a sub-floor threshold.
+/// Uses a SubDAO that has had UpdateProposalConfig disabled via test helper,
+/// then tries to re-enable it with a threshold below the 80% floor.
+fun enable_type_with_sub_floor_config_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_and_share_subdao(&mut scenario);
+
+    // Disable UpdateProposalConfig on the SubDAO via test helper so we can re-enable it
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        dao.test_disable_type(b"UpdateProposalConfig".to_ascii_string());
+        test_scenario::return_shared(dao);
+    };
+
+    // Submit EnableProposalType proposal to re-enable UpdateProposalConfig with threshold=5000
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        clock.set_for_testing(1000);
+        // 5000 (50%) is below the 80% floor for UpdateProposalConfig
+        let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+        let payload = enable_proposal_type::new(
+            b"UpdateProposalConfig".to_ascii_string(),
+            config,
+        );
+        board_voting::submit_proposal(
+            &dao,
+            b"EnableProposalType".to_ascii_string(),
+            option::some(string::utf8(b"Re-enable UpdateProposalConfig with weak threshold")),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    // Vote yes
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
+        clock.set_for_testing(2000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    // Execute — should abort with EThresholdBelowFloor
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        clock.set_for_testing(3000);
+
+        let request = board_voting::authorize_execution(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        admin_ops::execute_enable_proposal_type(&mut dao, &proposal, request);
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
