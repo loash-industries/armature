@@ -339,7 +339,7 @@ const MEMBER_E: address = @0xE;
 
 #[test, expected_failure(abort_code = admin_ops::EApprovalFloorNotMet)]
 /// EnableProposalType handler enforces a 66% approval floor.
-/// A proposal passing with 60% yes (3/5 board) is rejected at execution time.
+/// A proposal passing with only 40% yes (2/5 board) is rejected at execution.
 fun enable_proposal_type_66_percent_floor() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
@@ -357,13 +357,13 @@ fun enable_proposal_type_66_percent_floor() {
         );
     };
 
-    // Override EnableProposalType config with quorum needing 3+ votes and 50% threshold
+    // Override EnableProposalType config: low quorum + threshold so 2/5 passes voting
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(
-            5_000, // quorum 50% (need 3 of 5)
-            5_000, // approval_threshold 50% (3/5 passes: 3*10000=30000 >= 5000*5=25000)
+            5_000, // quorum 50% (but we override threshold below)
+            5_000, // approval_threshold 50%
             0, // propose_threshold
             604_800_000, // expiry
             0, // execution_delay
@@ -391,7 +391,7 @@ fun enable_proposal_type_66_percent_floor() {
         test_scenario::return_shared(dao);
     };
 
-    // 3 of 5 board members vote yes (60% — passes 50% threshold but below 66% floor)
+    // 3 of 5 board members vote yes (60% of snapshot — passes 50% threshold but below 66% floor)
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
@@ -416,7 +416,7 @@ fun enable_proposal_type_66_percent_floor() {
         test_scenario::return_shared(proposal);
     };
 
-    // Execute — should abort with EApprovalFloorNotMet (3/5 = 60% < 66%)
+    // Execute — should abort with EApprovalFloorNotMet (3/5 = 60% < 66% of total_snapshot)
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();

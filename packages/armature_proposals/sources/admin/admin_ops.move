@@ -96,6 +96,9 @@ public fun execute_enable_proposal_type(
         assert!(!dao::is_subdao_blocked_type(&type_key), ESubDAOBlockedType);
     };
 
+    // Enforce minimum threshold for the new type's config if it has an execution floor
+    assert_threshold_meets_floor(&type_key, &config);
+
     dao.enable_proposal_type(type_key, config, &request);
 
     event::emit(ProposalTypeEnabled {
@@ -184,10 +187,7 @@ fun assert_approval_floor<P: store>(proposal: &Proposal<P>, floor_bps: u64) {
 
 /// Assert that a config's approval_threshold is not below the execution floor
 /// for the given type. Types without a floor are unconstrained.
-fun assert_threshold_meets_floor(
-    type_key: &std::ascii::String,
-    config: &proposal::ProposalConfig,
-) {
+fun assert_threshold_meets_floor(type_key: &std::ascii::String, config: &proposal::ProposalConfig) {
     let floor = execution_floor_for_type(type_key);
     if (floor > 0) {
         assert!((config.approval_threshold() as u64) >= floor, EThresholdBelowFloor);

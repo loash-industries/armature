@@ -305,15 +305,15 @@ public fun vote<P: store>(self: &mut Proposal<P>, approve: bool, clock: &Clock, 
         (self.config.quorum as u64),
     );
 
-    // approval_threshold is checked against total_snapshot_weight (not total_voted)
-    // so that passing guarantees the proposal meets any execution floor of the same
-    // percentage. This prevents proposals from being stuck in Passed status when they
-    // cannot satisfy execution-time supermajority requirements.
-    let threshold_met = utils::gte_bps(
-        self.yes_weight,
-        self.total_snapshot_weight,
-        (self.config.approval_threshold as u64),
-    );
+    let threshold_met = if (total_voted == 0) {
+        false
+    } else {
+        utils::gte_bps(
+            self.yes_weight,
+            total_voted,
+            (self.config.approval_threshold as u64),
+        )
+    };
 
     if (quorum_met && threshold_met) {
         self.status = ProposalStatus::Passed;

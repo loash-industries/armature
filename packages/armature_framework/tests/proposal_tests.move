@@ -99,7 +99,7 @@ fun test_status_active_to_passed() {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
         prop.vote(true, &clock, scenario.ctx());
         // quorum: 1*10000 >= 5000*2 → 10000 >= 10000 ✓
-        // threshold: 1*10000 >= 5000*2 → 10000 >= 10000 ✓ (checked against total_snapshot)
+        // threshold: 1*10000 >= 5000*1 → 10000 >= 5000 ✓
         assert!(prop.status().is_passed());
         test_scenario::return_shared(prop);
     };
