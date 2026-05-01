@@ -266,9 +266,9 @@ fun test_board__below_quorum_does_not_pass() {
 // === Test 7: Threshold boundary 50 percent ===
 
 #[test]
-/// 1 yes / 1 no = 50% — passes at threshold 5000 (50%).
+/// 1 yes / 1 no out of 3 members at 50% threshold — does NOT pass.
 /// Quorum: 2*10000=20000 vs 5000*3=15000 → met ✓
-/// Threshold: 1*10000=10000 vs 5000*2=10000 → met (>=) ✓
+/// Threshold (vs total_snapshot): 1*10000=10000 vs 5000*3=15000 → not met ✗
 fun test_board__threshold_boundary_50_percent() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
@@ -283,7 +283,7 @@ fun test_board__threshold_boundary_50_percent() {
     scenario.next_tx(CREATOR);
     {
         let prop = scenario.take_shared<Proposal<TestPayload>>();
-        assert!(prop.status().is_passed());
+        assert!(prop.status().is_active()); // 1/3 yes < 50% of total snapshot
         assert!(prop.yes_weight() == 1);
         assert!(prop.no_weight() == 1);
         test_scenario::return_shared(prop);
@@ -328,11 +328,11 @@ fun test_board__no_votes_majority_fails() {
 // === Test 9: Abstention not counted in threshold ===
 
 #[test]
-/// Non-voters don't count toward yes/no.
+/// Non-voters don't cast weight, but threshold is checked against total snapshot.
 /// 3 members, only 1 votes yes. Quorum=1 (0.01%), threshold=5000 (50%).
 /// Quorum: 1*10000=10000 vs 1*3=3 → met ✓
-/// Threshold: 1*10000=10000 vs 5000*1=5000 → met ✓
-/// Passes because abstainer doesn't count toward no.
+/// Threshold (vs total_snapshot): 1*10000=10000 vs 5000*3=15000 → not met ✗
+/// Does NOT pass because threshold requires 50% of total snapshot, not 50% of voters.
 fun test_board__abstention_not_counted_in_threshold() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
@@ -347,7 +347,7 @@ fun test_board__abstention_not_counted_in_threshold() {
     scenario.next_tx(CREATOR);
     {
         let prop = scenario.take_shared<Proposal<TestPayload>>();
-        assert!(prop.status().is_passed()); // Abstentions don't count as no
+        assert!(prop.status().is_active()); // 1/3 yes < 50% of total snapshot
         assert!(prop.yes_weight() == 1);
         assert!(prop.no_weight() == 0);
         test_scenario::return_shared(prop);

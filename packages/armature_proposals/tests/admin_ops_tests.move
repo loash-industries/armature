@@ -339,7 +339,7 @@ const MEMBER_E: address = @0xE;
 
 #[test, expected_failure(abort_code = admin_ops::EApprovalFloorNotMet)]
 /// EnableProposalType handler enforces a 66% approval floor.
-/// A proposal passing with only 40% yes (2/5 board) is rejected.
+/// A proposal passing with 60% yes (3/5 board) is rejected at execution time.
 fun enable_proposal_type_66_percent_floor() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
@@ -357,13 +357,13 @@ fun enable_proposal_type_66_percent_floor() {
         );
     };
 
-    // Override EnableProposalType config with quorum needing 2+ votes
+    // Override EnableProposalType config with quorum needing 3+ votes and 50% threshold
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(
-            4_000, // quorum 40% (need 2 of 5)
-            5_000, // approval_threshold 50%
+            5_000, // quorum 50% (need 3 of 5)
+            5_000, // approval_threshold 50% (3/5 passes: 3*10000=30000 >= 5000*5=25000)
             0, // propose_threshold
             604_800_000, // expiry
             0, // execution_delay
@@ -391,7 +391,7 @@ fun enable_proposal_type_66_percent_floor() {
         test_scenario::return_shared(dao);
     };
 
-    // Only 2 of 5 board members vote yes (40% — passes quorum but below 66% floor)
+    // 3 of 5 board members vote yes (60% — passes 50% threshold but below 66% floor)
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
@@ -408,13 +408,21 @@ fun enable_proposal_type_66_percent_floor() {
         test_scenario::return_shared(proposal);
     };
 
-    // Execute — should abort with EApprovalFloorNotMet (2/5 = 40% < 66%)
+    scenario.next_tx(MEMBER_C);
+    {
+        let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
+        clock.set_for_testing(4000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    // Execute — should abort with EApprovalFloorNotMet (3/5 = 60% < 66%)
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();
         let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
-        clock.set_for_testing(4000);
+        clock.set_for_testing(5000);
 
         let request = board_voting::authorize_execution(
             &mut dao,
