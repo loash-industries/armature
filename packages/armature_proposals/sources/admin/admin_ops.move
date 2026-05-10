@@ -17,6 +17,7 @@ const ECharterDaoMismatch: u64 = 1;
 const EUndisableableType: u64 = 2;
 const EApprovalFloorNotMet: u64 = 3;
 const ESubDAOBlockedType: u64 = 4;
+const EThresholdBelowFloor: u64 = 5;
 
 // === Constants ===
 
@@ -95,6 +96,9 @@ public fun execute_enable_proposal_type(
         assert!(!dao::is_subdao_blocked_type(&type_key), ESubDAOBlockedType);
     };
 
+    // Enforce minimum threshold for the new type's config if it has an execution floor
+    assert_threshold_meets_floor(&type_key, &config);
+
     dao.enable_proposal_type(type_key, config, &request);
 
     event::emit(ProposalTypeEnabled {
@@ -133,6 +137,10 @@ public fun execute_update_proposal_config(
         payload.execution_delay_ms().destroy_with_default(existing.execution_delay_ms()),
         payload.cooldown_ms().destroy_with_default(existing.cooldown_ms()),
     );
+
+    // Enforce minimum approval_threshold for types with execution floors.
+    // Prevents painting the DAO into a deadlock where proposals pass but cannot execute.
+    assert_threshold_meets_floor(&target_key, &new_config);
 
     dao.update_proposal_config(target_key, new_config, &request);
 
@@ -175,4 +183,25 @@ fun assert_disableable(type_key: &std::ascii::String) {
 fun assert_approval_floor<P: store>(proposal: &Proposal<P>, floor_bps: u64) {
     let total = proposal.total_snapshot_weight();
     assert!(utils::gte_bps(proposal.yes_weight(), total, floor_bps), EApprovalFloorNotMet);
+}
+
+/// Assert that a config's approval_threshold is not below the execution floor
+/// for the given type. Types without a floor are unconstrained.
+fun assert_threshold_meets_floor(type_key: &std::ascii::String, config: &proposal::ProposalConfig) {
+    let floor = execution_floor_for_type(type_key);
+    if (floor > 0) {
+        assert!((config.approval_threshold() as u64) >= floor, EThresholdBelowFloor);
+    };
+}
+
+/// Return the execution floor (in basis points) for a given type key.
+/// Returns 0 for types with no floor.
+fun execution_floor_for_type(type_key: &std::ascii::String): u64 {
+    if (*type_key == b"EnableProposalType".to_ascii_string()) {
+        ENABLE_APPROVAL_FLOOR_BPS
+    } else if (*type_key == b"UpdateProposalConfig".to_ascii_string()) {
+        SELF_UPDATE_APPROVAL_FLOOR_BPS
+    } else {
+        0
+    }
 }

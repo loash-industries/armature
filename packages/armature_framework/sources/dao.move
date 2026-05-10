@@ -647,3 +647,10 @@ public fun test_update_config(
     let (_, _existing) = self.proposal_configs.remove(&type_key);
     self.proposal_configs.insert(type_key, config);
 }
+
+#[test_only]
+/// Disable a proposal type on the DAO without an ExecutionRequest.
+public fun test_disable_type(self: &mut DAO, type_key: std::ascii::String) {
+    self.enabled_proposal_types.remove(&type_key);
+    self.proposal_configs.remove(&type_key);
+}
