@@ -1,9 +1,9 @@
 #[test_only]
 module armature::tribe_tests;
 
-use armature::capability_vault::{Self, CapabilityVault, SubDAOControl};
+use armature::capability_vault::{CapabilityVault, SubDAOControl};
 use armature::charter::Charter;
-use armature::dao::{Self, DAO};
+use armature::dao::DAO;
 use armature::emergency::{EmergencyFreeze, FreezeAdminCap};
 use armature::governance;
 use armature::proposal;
@@ -103,41 +103,59 @@ fun create_tribe_daos_are_active_with_correct_boards() {
     scenario.end();
 }
 
-// === Test 3: parent vault contains SubDAOControls targeting both SubDAOs ===
+// === Test 3: control hierarchy — tribe→officers→members ===
 
 #[test]
-/// The parent CapabilityVault holds exactly two SubDAOControls, one for each SubDAO.
-fun create_tribe_parent_vault_controls_both_subdaos() {
+/// Tribe vault holds one SubDAOControl pointing at the Officers SubDAO.
+/// Officers vault holds one SubDAOControl pointing at the Members SubDAO.
+fun create_tribe_control_hierarchy_is_tribe_officers_members() {
     let mut scenario = test_scenario::begin(CREATOR);
     let (tribe_id, officer_id, member_id) = do_create_tribe(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
         let tribe_dao = scenario.take_shared_by_id<DAO>(tribe_id);
-        let vault_id = tribe_dao.capability_vault_id();
+        let officer_dao = scenario.take_shared_by_id<DAO>(officer_id);
+        let tribe_vault_id = tribe_dao.capability_vault_id();
+        let officer_vault_id = officer_dao.capability_vault_id();
         test_scenario::return_shared(tribe_dao);
+        test_scenario::return_shared(officer_dao);
 
-        let mut vault = scenario.take_shared_by_id<CapabilityVault>(vault_id);
-        let ctrl_ids = vault.ids_for_type<SubDAOControl>();
-        assert!(ctrl_ids.length() == 2);
+        // Tribe vault: exactly one control, pointing at the Officers SubDAO.
+        let mut tribe_vault = scenario.take_shared_by_id<CapabilityVault>(tribe_vault_id);
+        let tribe_ctrl_ids = tribe_vault.ids_for_type<SubDAOControl>();
+        assert!(tribe_ctrl_ids.length() == 1);
 
-        // Loan each control and confirm it targets one of the two SubDAOs.
         let req = proposal::new_execution_request<TestProposal>(
-            vault.dao_id(),
+            tribe_vault.dao_id(),
             object::id_from_address(@0xBEEF),
         );
-        let (ctrl_a, loan_a) = vault.loan_cap<SubDAOControl, TestProposal>(ctrl_ids[0], &req);
-        let (ctrl_b, loan_b) = vault.loan_cap<SubDAOControl, TestProposal>(ctrl_ids[1], &req);
-
-        let targets = vector[ctrl_a.subdao_id(), ctrl_b.subdao_id()];
-        assert!(targets.contains(&officer_id));
-        assert!(targets.contains(&member_id));
-
-        vault.return_cap(ctrl_a, loan_a);
-        vault.return_cap(ctrl_b, loan_b);
+        let (tribe_ctrl, tribe_loan) = tribe_vault.loan_cap<SubDAOControl, TestProposal>(
+            tribe_ctrl_ids[0],
+            &req,
+        );
+        assert!(tribe_ctrl.subdao_id() == officer_id);
+        tribe_vault.return_cap(tribe_ctrl, tribe_loan);
         proposal::consume(req);
+        test_scenario::return_shared(tribe_vault);
 
-        test_scenario::return_shared(vault);
+        // Officers vault: exactly one control, pointing at the Members SubDAO.
+        let mut officer_vault = scenario.take_shared_by_id<CapabilityVault>(officer_vault_id);
+        let officer_ctrl_ids = officer_vault.ids_for_type<SubDAOControl>();
+        assert!(officer_ctrl_ids.length() == 1);
+
+        let req = proposal::new_execution_request<TestProposal>(
+            officer_vault.dao_id(),
+            object::id_from_address(@0xBEEF),
+        );
+        let (officer_ctrl, officer_loan) = officer_vault.loan_cap<SubDAOControl, TestProposal>(
+            officer_ctrl_ids[0],
+            &req,
+        );
+        assert!(officer_ctrl.subdao_id() == member_id);
+        officer_vault.return_cap(officer_ctrl, officer_loan);
+        proposal::consume(req);
+        test_scenario::return_shared(officer_vault);
     };
 
     scenario.end();
