@@ -226,6 +226,79 @@ public fun create(
     dao_id
 }
 
+/// Create a parent DAO without sharing the CapabilityVault.
+/// All other companion objects are shared; the freeze admin cap is transferred
+/// to the creator. Returns the dao_id and the un-shared vault so the caller
+/// can populate it with SubDAOControls before sharing.
+/// Only callable within the framework package.
+public(package) fun create_returning_vault(
+    gov_init: &GovernanceTypeInit,
+    name: String,
+    description: String,
+    image_url: String,
+    ctx: &mut TxContext,
+): (ID, capability_vault::CapabilityVault) {
+    assert!(name.length() > 0, EInvalidName);
+    assert!(description.length() > 0, EInvalidDescription);
+
+    let creator = ctx.sender();
+
+    let governance = governance::new_board(gov_init);
+
+    let dao_uid = object::new(ctx);
+    let dao_id = dao_uid.to_inner();
+
+    let treasury_vault = treasury_vault::new(dao_id, ctx);
+    let treasury_id = object::id(&treasury_vault);
+
+    let cap_vault = capability_vault::new(dao_id, ctx);
+    let capability_vault_id = object::id(&cap_vault);
+
+    let dao_charter = charter::new(dao_id, name, description, image_url, ctx);
+    let charter_id = object::id(&dao_charter);
+
+    let emergency_freeze = emergency::new(dao_id, ctx);
+    let emergency_freeze_id = object::id(&emergency_freeze);
+
+    let freeze_admin_cap = emergency::new_admin_cap(dao_id, ctx);
+
+    let (proposal_configs, enabled_proposal_types) = default_proposal_configs();
+
+    let dao = DAO {
+        id: dao_uid,
+        status: DAOStatus::Active,
+        governance,
+        proposal_configs,
+        enabled_proposal_types,
+        last_executed_at: vec_map::empty(),
+        treasury_id,
+        capability_vault_id,
+        charter_id,
+        emergency_freeze_id,
+        execution_paused: false,
+        controller_cap_id: option::none(),
+        controller_paused: false,
+    };
+
+    event::emit(DAOCreated {
+        dao_id,
+        treasury_id,
+        capability_vault_id,
+        charter_id,
+        emergency_freeze_id,
+        creator,
+    });
+
+    transfer::share_object(dao);
+    treasury_vault::share(treasury_vault);
+    charter::share(dao_charter);
+    emergency::share(emergency_freeze);
+
+    emergency::transfer_admin_cap(freeze_admin_cap, creator);
+
+    (dao_id, cap_vault)
+}
+
 // === Accessors ===
 
 /// Returns the DAO's current status.

@@ -1,7 +1,7 @@
 #[test_only]
 module armature::dao_tests;
 
-use armature::capability_vault::CapabilityVault;
+use armature::capability_vault::{Self, CapabilityVault};
 use armature::charter::Charter;
 use armature::dao::{Self, DAO};
 use armature::emergency::{EmergencyFreeze, FreezeAdminCap};
@@ -259,4 +259,105 @@ fun test_config_threshold_below_min_aborts() {
 /// Verifies expiry below minimum aborts.
 fun test_config_expiry_below_min_aborts() {
     proposal::new_config(1, 5_000, 0, 3_599_999, 0, 0);
+}
+
+// === create_returning_vault tests ===
+
+#[test]
+/// create_returning_vault returns a vault whose dao_id matches the returned
+/// dao_id, and whose object ID matches the DAO's capability_vault_id field.
+fun test_create_returning_vault_ids_are_consistent() {
+    let mut scenario = test_scenario::begin(CREATOR);
+
+    let vault_id: ID;
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR]);
+        let (dao_id, vault) = dao::create_returning_vault(
+            &init,
+            string::utf8(b"Test DAO"),
+            string::utf8(b"Description"),
+            string::utf8(b"https://example.com/logo.png"),
+            scenario.ctx(),
+        );
+        assert!(vault.dao_id() == dao_id);
+        vault_id = object::id(&vault);
+        capability_vault::share(vault);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        assert!(dao.capability_vault_id() == vault_id);
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.end();
+}
+
+#[test]
+/// The vault returned by create_returning_vault is empty — no caps pre-populated.
+fun test_create_returning_vault_vault_starts_empty() {
+    let mut scenario = test_scenario::begin(CREATOR);
+
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR]);
+        let (_, vault) = dao::create_returning_vault(
+            &init,
+            string::utf8(b"Test DAO"),
+            string::utf8(b"Description"),
+            string::utf8(b"https://example.com/logo.png"),
+            scenario.ctx(),
+        );
+        assert!(vault.is_empty());
+        assert!(vault.cap_ids().length() == 0);
+        capability_vault::share(vault);
+    };
+
+    scenario.end();
+}
+
+#[test]
+/// create_returning_vault shares the DAO, treasury, charter, and emergency freeze,
+/// and transfers the FreezeAdminCap to the creator — identical to create().
+fun test_create_returning_vault_other_companions_are_shared() {
+    let mut scenario = test_scenario::begin(CREATOR);
+
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR, MEMBER_B]);
+        let (_, vault) = dao::create_returning_vault(
+            &init,
+            string::utf8(b"Test DAO"),
+            string::utf8(b"A description"),
+            string::utf8(b"https://example.com/logo.png"),
+            scenario.ctx(),
+        );
+        capability_vault::share(vault);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        assert!(dao.status().is_active());
+        assert!(dao.governance().is_board_member(CREATOR));
+        assert!(dao.governance().is_board_member(MEMBER_B));
+        test_scenario::return_shared(dao);
+
+        let treasury = scenario.take_shared<TreasuryVault>();
+        test_scenario::return_shared(treasury);
+
+        let charter = scenario.take_shared<Charter>();
+        assert!(charter.name() == &string::utf8(b"Test DAO"));
+        test_scenario::return_shared(charter);
+
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        test_scenario::return_shared(freeze);
+
+        let cap = scenario.take_from_sender<FreezeAdminCap>();
+        test_scenario::return_to_sender(&scenario, cap);
+    };
+
+    scenario.end();
 }
