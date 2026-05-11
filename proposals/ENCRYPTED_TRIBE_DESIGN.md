@@ -4,7 +4,7 @@
 
 This document describes the integration of Keyspace's ACL-based encryption model into Armature's DAO framework under a **tribe participation** model. Tribes are DAOs whose board membership is the encryption access list. Encrypted content is shared via off-chain blobs (IPFS / Walrus); on-chain state tracks access control, epoch, and entry pointers.
 
-No separate companion object is introduced. All encryption state lives directly on the `DAO` struct for the DAO or subDAO
+No separate companion object is introduced. All encryption state lives directly on the `DAO` struct for the DAO or subDAO.
 
 ---
 
@@ -12,8 +12,8 @@ No separate companion object is introduced. All encryption state lives directly 
 
 - **Board = access list.** Tribe board members are encryption grantees. No separate `AdminCap` or `AllowList`.
 - **Epoch tracks revocations.** `encrypt_epoch` increments automatically when a `SetBoard` execution removes members, signalling that prior entries must be re-encrypted.
-- **Single-member unilateral execution.** Encryption operations default to a privileged path: any board member can propose and execute in a single PTB, with no quorum or voting round-trip required.
-- **Entries indexed on-chain.** `entries: vector<ID>` provides a cheap on-chain index without off-chain event indexing.
+- **All encryption operations are direct.** Any board member can call encryption functions in a single PTB — no proposal, voting round-trip, or `ExecutionRequest` required.
+- **Entries indexed on-chain, capped at 32.** `entries: vector<ID>` provides a bounded on-chain index without off-chain event indexing. At most 32 `EncryptedEntry` objects per DAO at any time.
 - **`seal_approve` reads live DAO state.** The Walrus Seal key server checks board membership directly on the DAO.
 
 ---
@@ -23,7 +23,7 @@ No separate companion object is introduced. All encryption state lives directly 
 Two fields added to the existing `DAO` struct in `dao.move`:
 
 ```move
-public struct DAO has key {
+public struct DAO has key, store {
   id: UID,
   status: DAOStatus,
   governance: GovernanceConfig,
@@ -40,11 +40,11 @@ public struct DAO has key {
 
   // ── Encryption ────────────────────────────────────────────────
   encrypt_epoch: u64,   // increments on member removal; drives key rotation
-  entries: vector<ID>,  // on-chain index of published EncryptedEntry IDs
+  entries: vector<ID>,  // on-chain index of published EncryptedEntry IDs (max 32)
 }
 ```
 
-`encrypt_epoch` initialises to `0`. For non-encrypting DAOs it is a harmless zero field.
+`encrypt_epoch` initialises to `0`. `entries` initialises to `vector[]`. For non-encrypting DAOs both are harmless zero/empty fields.
 
 ---
 
@@ -61,6 +61,12 @@ public struct EncryptedEntry has key, store {
   created_by: address,
   encrypt_epoch: u64,   // dao.encrypt_epoch at time of encryption
 }
+```
+
+### Constants
+
+```move
+const MAX_ENTRIES: u64 = 32;
 ```
 
 ### Events
@@ -83,6 +89,12 @@ public struct EntryRemoved has copy, drop {
   entry_id: ID,
   dao_id: ID,
 }
+```
+
+`EncryptionEpochRotated` is defined in `dao.move` (emitted from both `set_board_governance` and `rotate_encryption_epoch`):
+
+```move
+// in dao.move
 public struct EncryptionEpochRotated has copy, drop {
   dao_id: ID,
   old_epoch: u64,
@@ -92,90 +104,51 @@ public struct EncryptionEpochRotated has copy, drop {
 
 ---
 
-## Unilateral Execution Path ("Propose and Execute")
+## All Encryption Operations Are Direct (No Proposal Machinery)
 
-### The Problem
+All encryption functions are gated solely by board membership — no `ExecutionRequest`, no proposal object, no voting round-trip. This applies to epoch rotation and entry removal as well as publish/edit.
 
-Standard armature governance requires: submit proposal (shared object created) → vote → execute. Because the proposal becomes a shared object, you cannot reference it in the same PTB that created it — Sui requires shared object IDs to be declared at PTB construction time. This makes atomic single-transaction "propose and execute" impossible through the standard path.
+The rationale: these are operational key-hygiene actions, not governance decisions. Events provide the full audit trail. The `EmergencyFreeze` does not gate encryption operations.
 
-### The Solution
-
-Armature already solves this in `controller.move` for SubDAO parent authority. The same mechanism applies here: `proposal::privileged_create<P>()` skips the voting lifecycle entirely, returning an `ExecutionRequest<P>` hot-potato directly. Since `ExecutionRequest` is not a shared object, it can be created and consumed within a single PTB.
-
-A new function `encryption_execute<P>` in `board_voting.move` (or a dedicated `tribe_voting.move`) exposes this path, restricted to encryption-designated proposal types:
-
-```move
-/// Unilateral execution for encryption proposal types.
-/// Any board member may call this; no proposal or voting round-trip required.
-/// Returns a hot-potato ExecutionRequest consumable in the same PTB.
-public fun encryption_execute<P>(
-  dao: &mut DAO,
-  freeze: &EmergencyFreeze,
-  clock: &Clock,
-  ctx: &mut TxContext,
-): ExecutionRequest<P>
-```
-
-Internally:
-1. Asserts `dao.status == Active`
-2. Asserts `is_encryption_type<P>()` — the type is in the encryption whitelist
-3. Asserts `!freeze.is_frozen(type_key_for<P>(), clock)`
-4. Asserts `is_governance_member(dao, ctx.sender())`
-5. Calls `proposal::privileged_create<P>(dao.id.to_inner(), ctx)` → `ExecutionRequest<P>`
-6. Records `last_executed_at` for cooldown tracking
-7. Returns the `ExecutionRequest<P>`
-
-### Encryption-Designated Types
-
-`is_encryption_type<P>()` whitelists:
-- `RotateEncryptionEpoch`
-- `RemoveEntry`
-
-These types bypass voting by default. They can still be submitted through standard board voting if a DAO wants multi-party consent (e.g. a high-security tribe), but the default path is unilateral.
-
-### PTB Flow (Single Board Member, Single Transaction)
-
-```
-Command 1: req = encryption_execute<RotateEncryptionEpoch>(dao, freeze, clock, ctx)
-Command 2: rotate_encryption_epoch<RotateEncryptionEpoch>(dao, req, ctx)
-```
-
-```
-Command 1: req = encryption_execute<RemoveEntry>(dao, freeze, clock, ctx)
-Command 2: remove_entry<RemoveEntry>(dao, entry, req, ctx)
-```
+For a DAO that wants multi-party consent on explicit epoch rotations or removals, the board can adopt an off-chain coordination policy; the on-chain enforcement remains unilateral by design.
 
 ---
 
 ## Encryption Functions
 
-### Member-direct (no proposal or execution request)
+All functions assert `is_governance_member(dao, ctx.sender())` as their first authorization check.
+
+### Member-direct: publish, edit, update
 
 ```move
 /// Any board member publishes an encrypted entry.
+/// Aborts if the entry cap (32) is already reached.
 public fun publish_entry(
   dao: &mut DAO,
-  location: vector<u8>,
-  description: vector<u8>,
+  location: String,
+  description: String,
   ctx: &mut TxContext,
 )
 ```
+- Asserts `dao.status == Active`
 - Asserts `is_governance_member(dao, ctx.sender())`
+- Asserts `dao.entries.length() < MAX_ENTRIES`
 - Creates and shares `EncryptedEntry` at current `dao.encrypt_epoch`
 - Pushes entry ID into `dao.entries`
 - Emits `EntryPublished`
 
 ```move
 /// Re-encrypt a stale entry after an epoch increment.
+/// Asserts the entry is stale (its epoch differs from the DAO's current epoch).
 public fun update_entry(
   dao: &DAO,
   entry: &mut EncryptedEntry,
-  new_location: vector<u8>,
+  new_location: String,
   ctx: &TxContext,
 )
 ```
 - Asserts `is_governance_member(dao, ctx.sender())`
-- Asserts `entry.dao_id == dao.id.to_inner()`
+- Asserts `entry.dao_id == dao.id()`
 - Asserts `entry.encrypt_epoch != dao.encrypt_epoch` (must be stale)
 - Updates location and epoch; emits `EntryUpdated`
 
@@ -184,38 +157,40 @@ public fun update_entry(
 public fun edit_entry(
   dao: &DAO,
   entry: &mut EncryptedEntry,
-  new_location: vector<u8>,
+  new_location: String,
   ctx: &TxContext,
 )
 ```
 - Asserts `is_governance_member(dao, ctx.sender())`
-- Asserts `entry.dao_id == dao.id.to_inner()`
+- Asserts `entry.dao_id == dao.id()`
 - Updates location only; emits `EntryUpdated`
 
-### Execution-request-gated (via unilateral or standard governance)
+### Member-direct: rotate epoch and remove entry
 
 ```move
 /// Explicitly increment encrypt_epoch, marking all existing entries stale.
-public fun rotate_encryption_epoch<P>(
+/// Use for out-of-band rotations (e.g. suspected key compromise, periodic hygiene).
+/// The primary rotation path is automatic: SetBoard removal auto-increments the epoch.
+public fun rotate_encryption_epoch(
   dao: &mut DAO,
-  req: ExecutionRequest<P>,
   ctx: &TxContext,
 )
 ```
-- Consumes `ExecutionRequest` via `proposal::finalize`
+- Asserts `dao.status == Active`
+- Asserts `is_governance_member(dao, ctx.sender())`
 - Increments `dao.encrypt_epoch`
 - Emits `EncryptionEpochRotated`
 
 ```move
 /// Remove an entry from the on-chain index and delete the object.
-public fun remove_entry<P>(
+public fun remove_entry(
   dao: &mut DAO,
   entry: EncryptedEntry,
-  req: ExecutionRequest<P>,
   ctx: &TxContext,
 )
 ```
-- Consumes `ExecutionRequest`
+- Asserts `is_governance_member(dao, ctx.sender())`
+- Asserts `entry.dao_id == dao.id()`
 - Removes `entry.id` from `dao.entries`
 - Destructs and deletes `EncryptedEntry`
 - Emits `EntryRemoved`
@@ -227,47 +202,48 @@ public fun remove_entry<P>(
 /// id = dao UID bytes (32) || random nonce.
 entry fun seal_approve(id: vector<u8>, dao: &DAO, ctx: &TxContext)
 ```
-- Verifies `id[0..32] == object::uid_to_bytes(&dao.id)`
+- Verifies `id[0..32] == object::id_to_bytes(&dao.id())`
 - Asserts `is_governance_member(dao, ctx.sender())`
 
-### New DAO accessor
+### New DAO accessors
 
 ```move
+public fun encrypt_epoch(dao: &DAO): u64
+public fun entries(dao: &DAO): &vector<ID>
 public fun is_governance_member(dao: &DAO, addr: address): bool {
   governance::is_board_member(&dao.governance, addr)
 }
+```
+
+Package-internal mutators (used by `encrypted_entry.move`):
+
+```move
+public(package) fun increment_encrypt_epoch(self: &mut DAO): (u64, u64)
+public(package) fun push_entry(self: &mut DAO, entry_id: ID)
+public(package) fun remove_entry_id(self: &mut DAO, target: ID)
 ```
 
 ---
 
 ## Automatic Epoch Rotation on Board Change
 
-In `dao.move`'s `set_board_governance<P>()`, after replacing the board, diff the old and new member sets. If any member was removed, increment `encrypt_epoch` automatically in the same execution:
+In `dao.move`'s `set_board_governance<P>()`, the old board member set is captured before the replacement. If any member was removed, `encrypt_epoch` is incremented automatically in the same execution:
 
 ```move
-if (any_removed(&old_members, &new_members)) {
-  let old = dao.encrypt_epoch;
-  dao.encrypt_epoch = old + 1;
+let old_members = *self.governance.board_members().keys();
+self.governance.set_board(new_members);
+if (any_member_removed(&old_members, &new_members)) {
+  let old = self.encrypt_epoch;
+  self.encrypt_epoch = old + 1;
   event::emit(EncryptionEpochRotated {
-    dao_id: dao.id.to_inner(),
+    dao_id: self.id(),
     old_epoch: old,
-    new_epoch: dao.encrypt_epoch,
+    new_epoch: self.encrypt_epoch,
   });
 };
 ```
 
-This is side-effectful on the `SetBoard` execution — no separate `RotateEncryptionEpoch` proposal needed after a membership change. The `RotateEncryptionEpoch` proposal type exists only for explicit out-of-band rotations (e.g. suspected key compromise, periodic security rotation).
-
----
-
-## New Proposal Types
-
-| Type | Path | Trigger |
-|---|---|---|
-| `RotateEncryptionEpoch` | Unilateral by default; can use standard board voting | Explicit key rotation |
-| `RemoveEntry` | Unilateral by default; can use standard board voting | Purge an entry |
-
-Both are added to the default enabled proposal types. The `is_encryption_type<P>()` classifier routes them to `encryption_execute` instead of `authorize_execution`.
+This is side-effectful on the `SetBoard` execution — no separate rotation needed after a membership change. `rotate_encryption_epoch` exists only for explicit out-of-band rotations (e.g. suspected key compromise, periodic security hygiene).
 
 ---
 
@@ -282,7 +258,39 @@ See [TRIBE_DAO_STRUCTURE.md](TRIBE_DAO_STRUCTURE.md) for the full object hierarc
 3. **Edit** — member re-uploads, calls `edit_entry` (same epoch, no re-keying)
 4. **Revocation** — `SetBoard` removes a member; `encrypt_epoch` auto-increments; Seal rejects old-epoch key requests for new entries
 5. **Re-encrypt** — remaining members call `update_entry` per stale entry with new Seal ID at current epoch
-6. **Remove** — board member calls `encryption_execute<RemoveEntry>` + `remove_entry` in one PTB
+6. **Remove** — board member calls `remove_entry` (single PTB, no proposal)
+
+### Entry cap and rotation
+
+Each DAO holds at most 32 `EncryptedEntry` objects. To publish a 33rd entry, an existing entry must first be removed via `remove_entry`. This bound keeps the DAO object size predictable and the `dao.entries` linear scan cost constant.
+
+---
+
+## Migration and SpinOut Considerations
+
+### DAO migration (SpawnDAO / set_migrating)
+
+When a DAO enters `Migrating` status and is eventually destroyed via `dao::destroy`, **`entries` must be empty**. The destroy function asserts `dao.entries.is_empty()`. The migration workflow:
+
+1. Board executes `SetBoard`/`SpawnDAO` to enter `Migrating` status
+2. Board members call `remove_entry` for each entry (at most 32 calls; entries are bounded)
+3. Anyone calls `dao::destroy` to clean up all companion objects
+
+The successor DAO starts with `encrypt_epoch: 0` and `entries: []`. Members re-encrypt content and publish to the new DAO. This is the correct security posture — a new DAO should have a fresh key epoch.
+
+### SubDAO SpinOut
+
+`SpinOutSubDAO` preserves the SubDAO object in place — `encrypt_epoch` and `entries` carry over to the now-independent DAO without any special handling.
+
+### CreateSubDAO / SpawnDAO (new SubDAOs)
+
+New SubDAOs always initialise with `encrypt_epoch: 0` and `entries: []`.
+
+---
+
+## No New Proposal Types
+
+No new armature proposal types are introduced. `RotateEncryptionEpoch` and `RemoveEntry` are direct board-member functions, not governed operations. The encryption feature does not modify `DEFAULT_PROPOSAL_TYPES`, `SUBDAO_BLOCKED_TYPES`, or `UNDISABLEABLE_TYPES`.
 
 ---
 
@@ -290,9 +298,9 @@ See [TRIBE_DAO_STRUCTURE.md](TRIBE_DAO_STRUCTURE.md) for the full object hierarc
 
 | File | Change |
 |---|---|
-| `dao.move` | Add `encrypt_epoch: u64`, `entries: vector<ID>` to `DAO`; add `is_governance_member()` accessor; add `RotateEncryptionEpoch` + `RemoveEntry` to default types; auto-rotate epoch in `set_board_governance` when members removed; update `DAOCreated` event |
-| `board_voting.move` | Add `encryption_execute<P>()` unilateral path; add `is_encryption_type<P>()` classifier |
-| `encrypted_entry.move` *(new)* | `EncryptedEntry` struct; `publish_entry`, `update_entry`, `edit_entry`, `rotate_encryption_epoch`, `remove_entry`, `seal_approve`; all events |
+| `dao.move` | Add `encrypt_epoch: u64`, `entries: vector<ID>` to `DAO`; add `EncryptionEpochRotated` event; add public accessors (`encrypt_epoch`, `entries`, `is_governance_member`) and package-internal mutators (`increment_encrypt_epoch`, `push_entry`, `remove_entry_id`); auto-rotate epoch in `set_board_governance` when members removed; assert `entries.is_empty()` in `destroy`; update all constructors |
+| `governance.move` | Add `public(package) fun board_members()` accessor returning `&VecSet<address>` |
+| `encrypted_entry.move` *(new)* | `EncryptedEntry` struct; `publish_entry`, `update_entry`, `edit_entry`, `rotate_encryption_epoch`, `remove_entry`, `seal_approve`; `EntryPublished`, `EntryUpdated`, `EntryRemoved` events; `MAX_ENTRIES = 32` constant |
 
 Keyspace's `acl_encrypt.move` is **not ported** — its logic is fully subsumed. `seal_approve` is the only keyspace-origin pattern retained, adapted to read from `DAO` directly.
 
