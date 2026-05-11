@@ -271,59 +271,11 @@ Both are added to the default enabled proposal types. The `is_encryption_type<P>
 
 ---
 
-## Tribe Architecture (DAO Pattern)
+## Tribe Architecture
 
-```
-Tribe DAO
-│
-├── SpawnDAO proposal
-│   ├── create_subdao() + share_subdao()
-│   │    Tribe Members SubDAO initialised with:
-│   │     encrypt_epoch: 0
-│   │     entries: vector::empty()
-│   │     SubDAOControl stored in parent CapabilityVault
-│   └── create_subdao() + share_subdao()
-│       Tribe Officers SubDAO initialised with:
-│        encrypt_epoch: 0
-│        entries: vector::empty()
-│        SubDAOControl stored in parent CapabilityVault
-│
-├── Tribe Officers SubDAO
-│   ├── Board members = tribe officers = Seal grantees
-│   │
-│   ├── publish_entry()   — any officer, no proposal
-│   ├── edit_entry()      — any officer, no proposal
-│   ├── update_entry()    — any officer, no proposal (stale entries only)
-│   ├── seal_approve()    — Walrus Seal reads live board from DAO
-│   │
-│   ├── SetBoard proposal executes
-│   │   ├── Officer removed → encrypt_epoch auto-increments (same PTB)
-│   │   └── Prior EncryptedEntry objects are stale; officer call update_entry()
-│   │
-│   ├── RotateEncryptionEpoch  — unilateral (1 member, 1 PTB)
-│   ├── RemoveEntry            — unilateral (1 member, 1 PTB)
-│   │
-│   └── Parent oversight via privileged_submit() through SubDAOControl
-│
-└── Members SubDAO
-    ├── Board members = tribe members = Seal grantees
-    │
-    ├── publish_entry()   — any member, no proposal
-    ├── edit_entry()      — any member, no proposal
-    ├── update_entry()    — any member, no proposal (stale entries only)
-    ├── seal_approve()    — Walrus Seal reads live board from DAO
-    │
-    ├── SetBoard proposal executes
-    │   ├── Member removed → encrypt_epoch auto-increments (same PTB)
-    │   └── Prior EncryptedEntry objects are stale; members call update_entry()
-    │
-    ├── RotateEncryptionEpoch  — unilateral (1 member, 1 PTB)
-    ├── RemoveEntry            — unilateral (1 member, 1 PTB)
-    │
-    └── Parent oversight via privileged_submit() through SubDAOControl
-```
+See [TRIBE_DAO_STRUCTURE.md](TRIBE_DAO_STRUCTURE.md) for the full object hierarchy, SubDAO relationships, creation flow, and governance boundaries.
 
-### Entry lifecycle
+### Encrypted entry lifecycle
 
 1. **Publish** — member encrypts content locally, uploads blob, calls `publish_entry`; Seal ID = `dao_uid || nonce`
 2. **Read** — authorised member calls `seal_approve` in a PTB; Seal releases key; member decrypts blob locally
