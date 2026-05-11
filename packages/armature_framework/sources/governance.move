@@ -88,6 +88,15 @@ public(package) fun board_vote_snapshot(self: &GovernanceConfig): (VecMap<addres
     }
 }
 
+/// Returns the raw member set for Board governance. Used by dao.move to diff
+/// old vs new members when auto-rotating the encryption epoch on SetBoard.
+public(package) fun board_members(self: &GovernanceConfig): &VecSet<address> {
+    match (self) {
+        GovernanceConfig::Board { members, .. } => members,
+        _ => abort 0,
+    }
+}
+
 /// Atomically replace board members and seat count.
 public(package) fun set_board(self: &mut GovernanceConfig, new_members: vector<address>) {
     assert!(new_members.length() > 0, EEmptyBoard);

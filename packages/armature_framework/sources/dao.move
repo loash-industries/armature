@@ -23,6 +23,7 @@ const ETreasuryIdMismatch: u64 = 4;
 const EVaultIdMismatch: u64 = 5;
 const ECharterIdMismatch: u64 = 6;
 const EFreezeIdMismatch: u64 = 7;
+const EEntriesNotEmpty: u64 = 8;
 
 // === Constants ===
 
@@ -124,6 +125,8 @@ public struct DAO has key, store {
     execution_paused: bool,
     controller_cap_id: Option<ID>,
     controller_paused: bool,
+    encrypt_epoch: u64,
+    entries: vector<ID>,
 }
 
 // === Events ===
@@ -136,6 +139,14 @@ public struct DAOCreated has copy, drop {
     charter_id: ID,
     emergency_freeze_id: ID,
     creator: address,
+}
+
+/// Emitted when the encryption epoch is incremented, either automatically on
+/// member removal via SetBoard or explicitly via rotate_encryption_epoch.
+public struct EncryptionEpochRotated has copy, drop {
+    dao_id: ID,
+    old_epoch: u64,
+    new_epoch: u64,
 }
 
 /// Emitted when a Migrating DAO is permanently destroyed.
@@ -201,6 +212,8 @@ public fun create(
         execution_paused: false,
         controller_cap_id: option::none(),
         controller_paused: false,
+        encrypt_epoch: 0,
+        entries: vector[],
     };
 
     // Emit creation event
@@ -278,6 +291,8 @@ public(package) fun create_returning_vault(
         execution_paused: false,
         controller_cap_id: option::none(),
         controller_paused: false,
+        encrypt_epoch: 0,
+        entries: vector[],
     };
 
     event::emit(DAOCreated {
@@ -349,17 +364,61 @@ public fun last_executed_at(self: &DAO): &VecMap<std::ascii::String, u64> {
 /// Returns the DAO's object ID.
 public fun id(self: &DAO): ID { object::id(self) }
 
+/// Returns the current encryption epoch. Increments on any board-member removal.
+public fun encrypt_epoch(self: &DAO): u64 { self.encrypt_epoch }
+
+/// Returns the on-chain index of published EncryptedEntry IDs (at most 32).
+public fun entries(self: &DAO): &vector<ID> { &self.entries }
+
+/// Returns true if addr is a current board member (encryption grantee).
+/// Only valid for Board governance; aborts for Direct/Weighted.
+public fun is_governance_member(self: &DAO, addr: address): bool {
+    self.governance.is_board_member(addr)
+}
+
+/// Increment the encryption epoch and emit EncryptionEpochRotated.
+/// Called by set_board_governance (on member removal) and by
+/// encrypted_entry::rotate_encryption_epoch (explicit out-of-band rotation).
+/// Emitting the event here keeps it tied to the module that defines the type.
+public(package) fun increment_encrypt_epoch(self: &mut DAO) {
+    let old = self.encrypt_epoch;
+    self.encrypt_epoch = old + 1;
+    event::emit(EncryptionEpochRotated {
+        dao_id: self.id(),
+        old_epoch: old,
+        new_epoch: self.encrypt_epoch,
+    });
+}
+
+/// Append an entry ID to the on-chain index.
+/// Called by encrypted_entry::publish_entry after creating the EncryptedEntry.
+public(package) fun push_entry(self: &mut DAO, entry_id: ID) {
+    self.entries.push_back(entry_id);
+}
+
+/// Remove an entry ID from the on-chain index by value.
+/// Called by encrypted_entry::remove_entry before deleting the EncryptedEntry.
+public(package) fun remove_entry_id(self: &mut DAO, target: ID) {
+    let (found, idx) = self.entries.index_of(&target);
+    if (found) { self.entries.remove(idx); };
+}
+
 // === Public Mutators (ExecutionRequest-gated) ===
 
 /// Replace the DAO's board members and seat count.
 /// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+/// Auto-increments encrypt_epoch if any member was removed, providing forward security.
 public fun set_board_governance<P>(
     self: &mut DAO,
     new_members: vector<address>,
     req: &ExecutionRequest<P>,
 ) {
     assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    let old_members = *self.governance.board_members().keys();
     self.governance.set_board(new_members);
+    if (any_member_removed(&old_members, &new_members)) {
+        self.increment_encrypt_epoch();
+    };
 }
 
 /// Remove a proposal type from the enabled set and its config.
@@ -525,6 +584,8 @@ public(package) fun create_subdao_returning_vault(
         execution_paused: false,
         controller_cap_id: option::none(),
         controller_paused: false,
+        encrypt_epoch: 0,
+        entries: vector[],
     };
 
     event::emit(DAOCreated {
@@ -594,6 +655,8 @@ public fun create_subdao(
         execution_paused: false,
         controller_cap_id: option::none(),
         controller_paused: false,
+        encrypt_epoch: 0,
+        entries: vector[],
     };
 
     event::emit(DAOCreated {
@@ -636,6 +699,7 @@ public fun destroy(
     assert!(object::id(&vault) == dao.capability_vault_id, EVaultIdMismatch);
     assert!(object::id(&charter) == dao.charter_id, ECharterIdMismatch);
     assert!(object::id(&freeze) == dao.emergency_freeze_id, EFreezeIdMismatch);
+    assert!(dao.entries.is_empty(), EEntriesNotEmpty);
 
     let successor_dao_id = dao.status.successor_dao_id();
     let dao_id = object::id(&dao);
@@ -661,6 +725,8 @@ public fun destroy(
         execution_paused: _,
         controller_cap_id: _,
         controller_paused: _,
+        encrypt_epoch: _,
+        entries: _,
     } = dao;
     id.delete();
 
@@ -686,6 +752,24 @@ public fun is_subdao_blocked_type(type_key: &std::ascii::String): bool {
 public fun is_migration_allowed_type(type_key: &std::ascii::String): bool {
     let types = MIGRATION_ALLOWED_TYPES;
     vec_contains_key(&types, type_key)
+}
+
+/// Returns true if any address in old_members is absent from new_members.
+/// Used by set_board_governance to detect member removals for epoch auto-rotation.
+fun any_member_removed(old_members: &vector<address>, new_members: &vector<address>): bool {
+    let mut i = 0;
+    while (i < old_members.length()) {
+        let old = old_members[i];
+        let mut found = false;
+        let mut j = 0;
+        while (j < new_members.length()) {
+            if (new_members[j] == old) { found = true };
+            j = j + 1;
+        };
+        if (!found) return true;
+        i = i + 1;
+    };
+    false
 }
 
 /// Helper: check if a vector of byte-string constants contains the given ascii key.
