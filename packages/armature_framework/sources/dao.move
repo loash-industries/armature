@@ -24,6 +24,7 @@ const EVaultIdMismatch: u64 = 5;
 const ECharterIdMismatch: u64 = 6;
 const EFreezeIdMismatch: u64 = 7;
 const EEntriesNotEmpty: u64 = 8;
+const EEntryIdNotFound: u64 = 9;
 
 // === Constants ===
 
@@ -398,9 +399,12 @@ public(package) fun push_entry(self: &mut DAO, entry_id: ID) {
 
 /// Remove an entry ID from the on-chain index by value.
 /// Called by encrypted_entry::remove_entry before deleting the EncryptedEntry.
+/// Aborts if the ID is absent — index divergence would corrupt the cap count
+/// and break the migration entries.is_empty() guard.
 public(package) fun remove_entry_id(self: &mut DAO, target: ID) {
     let (found, idx) = self.entries.index_of(&target);
-    if (found) { self.entries.remove(idx); };
+    assert!(found, EEntryIdNotFound);
+    self.entries.remove(idx);
 }
 
 // === Public Mutators (ExecutionRequest-gated) ===
