@@ -115,3 +115,27 @@ public(package) fun set_board(self: &mut GovernanceConfig, new_members: vector<a
         _ => abort 0,
     }
 }
+
+/// Add a single member to the board. Aborts if already present.
+public(package) fun add_board_member(self: &mut GovernanceConfig, member: address) {
+    match (self) {
+        GovernanceConfig::Board { members } => {
+            assert!(!members.contains(&member), EDuplicateBoardMember);
+            members.insert(member);
+        },
+        _ => abort 0,
+    }
+}
+
+/// Remove a single member from the board. Aborts if not present or if
+/// removal would leave the board empty.
+public(package) fun remove_board_member(self: &mut GovernanceConfig, member: address) {
+    match (self) {
+        GovernanceConfig::Board { members } => {
+            assert!(members.contains(&member), ENotBoardMember);
+            assert!(members.length() > 1, EEmptyBoard);
+            members.remove(&member);
+        },
+        _ => abort 0,
+    }
+}

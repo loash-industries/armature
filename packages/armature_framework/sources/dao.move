@@ -31,6 +31,8 @@ const EEntryIdNotFound: u64 = 9;
 /// Default proposal type keys that every DAO starts with.
 const DEFAULT_PROPOSAL_TYPES: vector<vector<u8>> = vector[
     b"SetBoard",
+    b"AddMember",
+    b"RemoveMember",
     b"CharterUpdate",
     b"EnableProposalType",
     b"DisableProposalType",
@@ -423,6 +425,30 @@ public fun set_board_governance<P>(
     if (any_member_removed(&old_members, &new_members)) {
         self.increment_encrypt_epoch();
     };
+}
+
+/// Add a single member to the DAO's board.
+/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+public fun add_board_member_governance<P>(
+    self: &mut DAO,
+    member: address,
+    req: &ExecutionRequest<P>,
+) {
+    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    self.governance.add_board_member(member);
+}
+
+/// Remove a single member from the DAO's board.
+/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+/// Auto-increments encrypt_epoch for forward security.
+public fun remove_board_member_governance<P>(
+    self: &mut DAO,
+    member: address,
+    req: &ExecutionRequest<P>,
+) {
+    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    self.governance.remove_board_member(member);
+    self.increment_encrypt_epoch();
 }
 
 /// Remove a proposal type from the enabled set and its config.
