@@ -76,9 +76,11 @@ public fun execute_disable_proposal_type(
     proposal::finalize(request, proposal);
 }
 
-/// Execute an EnableProposalType proposal: add a type to the enabled set.
+/// Execute an EnableProposalType proposal: add a type to the enabled set and bind
+/// the canonical Move type `NewType` to the type_key so future proposals cannot
+/// substitute a different payload type under the same key.
 /// Enforces a 66% approval floor regardless of the proposal's own config threshold.
-public fun execute_enable_proposal_type(
+public fun execute_enable_proposal_type<NewType: store>(
     dao: &mut DAO,
     proposal: &Proposal<EnableProposalType>,
     request: ExecutionRequest<EnableProposalType>,
@@ -100,6 +102,9 @@ public fun execute_enable_proposal_type(
     assert_threshold_meets_floor(&type_key, &config);
 
     dao.enable_proposal_type(type_key, config, &request);
+
+    // Bind NewType to the key so submit_proposal<P> rejects any P that isn't NewType.
+    dao.bind_type_key<NewType, EnableProposalType>(type_key, &request);
 
     event::emit(ProposalTypeEnabled {
         dao_id: dao.id(),

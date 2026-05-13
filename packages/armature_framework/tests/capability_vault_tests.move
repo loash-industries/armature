@@ -17,6 +17,8 @@ public struct AnotherCap has key, store {
 
 public struct TestProposal has drop {}
 
+public struct RecvProposal has drop {}
+
 // === Constants ===
 
 const ADMIN: address = @0xA;
@@ -39,6 +41,18 @@ fun make_another_cap(ctx: &mut TxContext): AnotherCap {
 
 fun make_req(dao_id: ID): proposal::ExecutionRequest<TestProposal> {
     proposal::new_execution_request<TestProposal>(dao_id, object::id_from_address(@0xBEEF))
+}
+
+fun make_recv_req(dao_id: ID): proposal::ExecutionRequest<RecvProposal> {
+    proposal::new_execution_request<RecvProposal>(dao_id, object::id_from_address(@0xCAFE))
+}
+
+fun setup_two_vaults(ctx: &mut TxContext): (CapabilityVault, CapabilityVault, ID, ID) {
+    let dao_a = object::id_from_address(@0xDA0A);
+    let dao_b = object::id_from_address(@0xDA0B);
+    let vault_a = capability_vault::new(dao_a, ctx);
+    let vault_b = capability_vault::new(dao_b, ctx);
+    (vault_a, vault_b, dao_a, dao_b)
 }
 
 // === Tests ===
@@ -430,4 +444,78 @@ fun test_borrow_cap__returns_immutable_reference() {
 
     proposal::consume(req);
     sui::test_utils::destroy(vault);
+}
+
+// =========================================================================
+// receive_cap_authorized tests
+// =========================================================================
+
+#[test]
+/// receive_cap_authorized succeeds when recv_req.dao_id matches the receiving vault.
+fun receive_cap_authorized_succeeds_with_matching_recv_dao() {
+    let mut ctx = tx_context::dummy();
+    let (mut src_vault, mut recv_vault, dao_a, dao_b) = setup_two_vaults(&mut ctx);
+    let cap = make_cap(&mut ctx, 99);
+    let cap_id = object::id(&cap);
+    src_vault.store_cap_init(cap);
+
+    let send_req = make_req(dao_a);
+    let recv_req = make_recv_req(dao_b);
+
+    let extracted = src_vault.extract_cap<TestCap, TestProposal>(cap_id, &send_req);
+    recv_vault.receive_cap_authorized(extracted, &send_req, &recv_req);
+
+    assert!(recv_vault.contains(cap_id));
+
+    proposal::consume(send_req);
+    proposal::consume(recv_req);
+    sui::test_utils::destroy(src_vault);
+    sui::test_utils::destroy(recv_vault);
+}
+
+#[test, expected_failure(abort_code = capability_vault::EDAOIdMismatch)]
+/// receive_cap_authorized aborts when recv_req.dao_id does not match the receiving vault's dao_id.
+fun receive_cap_authorized_aborts_on_recv_dao_mismatch() {
+    let mut ctx = tx_context::dummy();
+    let (mut src_vault, mut recv_vault, dao_a, _dao_b) = setup_two_vaults(&mut ctx);
+    let cap = make_cap(&mut ctx, 77);
+    let cap_id = object::id(&cap);
+    src_vault.store_cap_init(cap);
+
+    let send_req = make_req(dao_a);
+    // recv_req carries dao_a's ID but recv_vault belongs to dao_b → mismatch
+    let wrong_recv_req = make_recv_req(dao_a);
+
+    let extracted = src_vault.extract_cap<TestCap, TestProposal>(cap_id, &send_req);
+    // Should abort: recv_vault.dao_id() == dao_b but wrong_recv_req.dao_id == dao_a
+    recv_vault.receive_cap_authorized(extracted, &send_req, &wrong_recv_req);
+
+    // Unreachable — satisfy type checker
+    proposal::consume(send_req);
+    proposal::consume(wrong_recv_req);
+    sui::test_utils::destroy(src_vault);
+    sui::test_utils::destroy(recv_vault);
+}
+
+#[test]
+/// receive_cap (unguarded) succeeds regardless of which dao_id the request carries —
+/// it is intended for intra-framework parent→child transfers where only the source
+/// DAO's vote is required.
+fun receive_cap_unguarded_accepts_any_req_dao_id() {
+    let mut ctx = tx_context::dummy();
+    let (mut src_vault, mut recv_vault, dao_a, _dao_b) = setup_two_vaults(&mut ctx);
+    let cap = make_cap(&mut ctx, 55);
+    let cap_id = object::id(&cap);
+    src_vault.store_cap_init(cap);
+
+    // req carries dao_a — matches src_vault, NOT recv_vault; receive_cap doesn't check
+    let req = make_req(dao_a);
+    let extracted = src_vault.extract_cap<TestCap, TestProposal>(cap_id, &req);
+    recv_vault.receive_cap(extracted, &req);
+
+    assert!(recv_vault.contains(cap_id));
+
+    proposal::consume(req);
+    sui::test_utils::destroy(src_vault);
+    sui::test_utils::destroy(recv_vault);
 }

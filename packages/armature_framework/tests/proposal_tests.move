@@ -908,3 +908,52 @@ fun test_execute_paused_aborts() {
     clock.destroy_for_testing();
     scenario.end();
 }
+
+// =========================================================================
+// consume_execution_request tests
+// =========================================================================
+
+#[test]
+/// consume_execution_request destroys the hot potato without requiring a Proposal object.
+fun consume_execution_request_destroys_hot_potato() {
+    let dao_id = object::id_from_address(@0xDA0);
+    let proposal_id = object::id_from_address(@0xBEEF);
+    let req = proposal::new_execution_request<TestPayload>(dao_id, proposal_id);
+
+    assert!(req.req_dao_id() == dao_id);
+    assert!(req.req_proposal_id() == proposal_id);
+
+    proposal::consume_execution_request(req);
+}
+
+#[test]
+/// consume_execution_request works as an alternative to finalize when the handler
+/// does not need to cross-validate the Proposal object.
+fun consume_execution_request_works_after_governance_execution() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let clock = clock::create_for_testing(scenario.ctx());
+
+    create_test_dao(&mut scenario);
+    create_test_proposal(&mut scenario, &clock);
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        prop.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(prop);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let dao = scenario.take_shared<DAO>();
+        let req = prop.execute(dao.governance(), option::none(), false, &clock, scenario.ctx());
+        // Consume without passing the Proposal object — the hot potato is sufficient proof.
+        proposal::consume_execution_request(req);
+        test_scenario::return_shared(prop);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}

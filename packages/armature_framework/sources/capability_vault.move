@@ -107,11 +107,31 @@ public fun store_cap<T: key + store, P>(
 /// Receive a capability into the vault for cross-DAO transfers.
 /// Requires an ExecutionRequest for governance authorization but does NOT
 /// check dao_id match, since the request originates from the source DAO.
+/// This is correct for intra-framework parent→child transfers where the source DAO's
+/// governance vote is the sole authorization. Third-party cross-DAO handlers should
+/// use `receive_cap_authorized` instead to also require the receiving DAO's approval.
 public fun receive_cap<T: key + store, P>(
     self: &mut CapabilityVault,
     cap: T,
     _req: &ExecutionRequest<P>,
 ) {
+    let cap_id = object::id(&cap);
+    register_cap<T>(self, cap_id);
+    dof::add(&mut self.id, cap_id, cap);
+}
+
+/// Receive a capability with dual authorization: both the sending DAO's governance
+/// (via `send_req`) and the receiving DAO's governance (via `recv_req`) must approve.
+/// Unlike `receive_cap`, this asserts the receiving vault belongs to the DAO that
+/// issued `recv_req`. Third-party cross-DAO handlers should prefer this over
+/// `receive_cap` so the destination DAO has an explicit vote to accept the capability.
+public fun receive_cap_authorized<T: key + store, Send, Recv>(
+    self: &mut CapabilityVault,
+    cap: T,
+    _send_req: &ExecutionRequest<Send>,
+    recv_req: &ExecutionRequest<Recv>,
+) {
+    assert!(self.dao_id == recv_req.req_dao_id(), EDAOIdMismatch);
     let cap_id = object::id(&cap);
     register_cap<T>(self, cap_id);
     dof::add(&mut self.id, cap_id, cap);

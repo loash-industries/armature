@@ -97,7 +97,7 @@ fun receive_cap_cross_dao() {
         assert!(vault.contains(foreign_id));
 
         // Consume the request via the handler
-        admin_ops::execute_enable_proposal_type(&mut dao, &proposal, request);
+        admin_ops::execute_enable_proposal_type<EnableProposalType>(&mut dao, &proposal, request);
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);

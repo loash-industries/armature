@@ -3,6 +3,7 @@ module armature::board_voting_tests;
 
 use armature::board_voting;
 use armature::dao::{Self, DAO};
+use armature::emergency::EmergencyFreeze;
 use armature::governance;
 use armature::proposal::{Self, Proposal};
 use std::string;
@@ -22,10 +23,14 @@ const MEMBER_H: address = @0x11;
 const MEMBER_I: address = @0x12;
 const MEMBER_J: address = @0x13;
 
-// === Test payload ===
+// === Test payloads ===
 
 public struct TestPayload has drop, store {
     value: u64,
+}
+
+public struct AltPayload has drop, store {
+    label: u64,
 }
 
 // === Helpers ===
@@ -525,6 +530,131 @@ fun test_propose_threshold__above_board_weight_aborts() {
             scenario.ctx(),
         );
         test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// =========================================================================
+// Type binding enforcement tests
+// =========================================================================
+
+fun create_dao_single_member_with_custom_key(scenario: &mut test_scenario::Scenario) {
+    create_dao_with_members(scenario, vector[CREATOR]);
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let config = proposal::new_config(5_000, 5_000, 0, 3_600_000, 0, 0);
+        dao.test_enable_type(b"CustomKey".to_ascii_string(), config);
+        test_scenario::return_shared(dao);
+    };
+}
+
+#[test]
+/// submit_proposal succeeds when the payload type matches the bound type for the key.
+fun submit_proposal_succeeds_with_bound_type() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let clock = clock::create_for_testing(scenario.ctx());
+
+    create_dao_single_member_with_custom_key(&mut scenario);
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        dao.test_bind_type<TestPayload>(b"CustomKey".to_ascii_string());
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        board_voting::submit_proposal(
+            &dao,
+            b"CustomKey".to_ascii_string(),
+            option::none(),
+            TestPayload { value: 1 },
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        assert!(prop.status().is_active());
+        test_scenario::return_shared(prop);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::board_voting::ETypeMismatch)]
+/// submit_proposal aborts when the payload type does not match the bound type for the key.
+fun submit_proposal_aborts_on_type_key_mismatch() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let clock = clock::create_for_testing(scenario.ctx());
+
+    create_dao_single_member_with_custom_key(&mut scenario);
+
+    // Bind TestPayload to "CustomKey"
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        dao.test_bind_type<TestPayload>(b"CustomKey".to_ascii_string());
+        test_scenario::return_shared(dao);
+    };
+
+    // Submit AltPayload under the same key — should abort with ETypeMismatch
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        board_voting::submit_proposal(
+            &dao,
+            b"CustomKey".to_ascii_string(),
+            option::none(),
+            AltPayload { label: 99 },
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+/// submit_proposal with an unbound key accepts any payload type — built-in default types
+/// have no binding so backward compatibility is preserved.
+fun submit_proposal_unbound_key_accepts_any_type() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let clock = clock::create_for_testing(scenario.ctx());
+
+    create_dao_with_members(&mut scenario, vector[CREATOR]);
+
+    // "SetBoard" is a default type with NO binding.
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        board_voting::submit_proposal(
+            &dao,
+            b"SetBoard".to_ascii_string(),
+            option::none(),
+            TestPayload { value: 42 },
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        assert!(prop.status().is_active());
+        test_scenario::return_shared(prop);
     };
 
     clock.destroy_for_testing();
