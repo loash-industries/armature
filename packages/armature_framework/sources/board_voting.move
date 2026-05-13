@@ -12,6 +12,7 @@ const EDAONotActive: u64 = 0;
 const ETypeNotEnabled: u64 = 1;
 const EDAOIdMismatch: u64 = 2;
 const EControllerPaused: u64 = 3;
+const EProposeThresholdNotMet: u64 = 4;
 
 // === Submit ===
 
@@ -38,6 +39,11 @@ public fun submit_proposal<P: store>(
     dao.governance().assert_board_member(proposer);
 
     let config = *dao.proposal_configs().get(&type_key);
+
+    if (config.propose_threshold() > 0) {
+        let weight = dao.governance().proposer_weight(proposer);
+        assert!(weight >= config.propose_threshold(), EProposeThresholdNotMet);
+    };
 
     // Status validated above: active or migration-allowed
     let status_ok = true;

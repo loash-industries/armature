@@ -407,3 +407,126 @@ fun test_board__large_board_10_members() {
     clock.destroy_for_testing();
     scenario.end();
 }
+
+// === Test 11: propose_threshold = 0 never blocks (default) ===
+
+#[test]
+/// propose_threshold = 0 (default): threshold check is skipped entirely.
+/// Any board member can propose regardless. Baseline backward-compat test.
+fun test_propose_threshold__zero_never_blocks() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_dao_with_members(&mut scenario, vector[CREATOR, MEMBER_B]);
+
+    // Default config has propose_threshold = 0 — submit should succeed
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        board_voting::submit_proposal(
+            &dao,
+            b"SetBoard".to_ascii_string(),
+            option::none(),
+            TestPayload { value: 1 },
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        assert!(prop.status().is_active());
+        test_scenario::return_shared(prop);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// === Test 12: propose_threshold = 1 passes for board member ===
+
+#[test]
+/// propose_threshold = 1: board member weight = 1, exactly meets threshold.
+fun test_propose_threshold__at_board_weight_passes() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_dao_with_members(&mut scenario, vector[CREATOR, MEMBER_B]);
+
+    // Raise propose_threshold to 1 — board member weight is 1, should still pass
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let config = proposal::new_config(5_000, 5_000, 1, 3_600_000, 0, 0);
+        dao.test_update_config(b"SetBoard".to_ascii_string(), config);
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        board_voting::submit_proposal(
+            &dao,
+            b"SetBoard".to_ascii_string(),
+            option::none(),
+            TestPayload { value: 2 },
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        assert!(prop.status().is_active());
+        test_scenario::return_shared(prop);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// === Test 13: propose_threshold = 2 blocks any board member ===
+
+#[test, expected_failure(abort_code = armature::board_voting::EProposeThresholdNotMet)]
+/// propose_threshold = 2: board member weight = 1, below threshold → abort.
+/// In Board governance each member has weight 1, so threshold > 1 is unreachable.
+fun test_propose_threshold__above_board_weight_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_dao_with_members(&mut scenario, vector[CREATOR, MEMBER_B]);
+
+    // Set propose_threshold = 2 — impossible to meet for any board member
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let config = proposal::new_config(5_000, 5_000, 2, 3_600_000, 0, 0);
+        dao.test_update_config(b"SetBoard".to_ascii_string(), config);
+        test_scenario::return_shared(dao);
+    };
+
+    // Submit should abort with EProposeThresholdNotMet
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        board_voting::submit_proposal(
+            &dao,
+            b"SetBoard".to_ascii_string(),
+            option::none(),
+            TestPayload { value: 3 },
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
