@@ -127,6 +127,25 @@ public(package) fun add_board_member(self: &mut GovernanceConfig, member: addres
     }
 }
 
+/// Returns the voting weight of addr in this governance config.
+/// Board: 1 (asserts membership). Direct/Weighted: weight from map (asserts presence).
+public(package) fun proposer_weight(self: &GovernanceConfig, addr: address): u64 {
+    match (self) {
+        GovernanceConfig::Board { members } => {
+            assert!(members.contains(&addr), ENotBoardMember);
+            1
+        },
+        GovernanceConfig::Direct { voters, .. } => {
+            assert!(voters.contains(&addr), ENotBoardMember);
+            *voters.get(&addr)
+        },
+        GovernanceConfig::Weighted { delegates, .. } => {
+            assert!(delegates.contains(&addr), ENotBoardMember);
+            *delegates.get(&addr)
+        },
+    }
+}
+
 /// Remove a single member from the board. Aborts if not present or if
 /// removal would leave the board empty.
 public(package) fun remove_board_member(self: &mut GovernanceConfig, member: address) {
