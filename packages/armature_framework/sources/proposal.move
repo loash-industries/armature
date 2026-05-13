@@ -469,10 +469,18 @@ public(package) fun consume<P>(req: ExecutionRequest<P>) {
     let ExecutionRequest { dao_id: _, proposal_id: _ } = req;
 }
 
+/// Consume the ExecutionRequest hot potato. The hot potato itself is proof of governance
+/// authorization — no additional validation is performed. Use this when your handler
+/// does not need to cross-validate against the specific Proposal object.
+/// Use `finalize` instead if you want the stricter dao_id/proposal_id/status check.
+public fun consume_execution_request<P>(req: ExecutionRequest<P>) {
+    let ExecutionRequest { dao_id: _, proposal_id: _ } = req;
+}
+
 /// Consume the execution request after validating it matches the proposal.
-/// External packages (handlers) must use this instead of consume().
 /// Asserts the request was produced for the given proposal and that
 /// the proposal has been executed through the governance flow.
+/// Preferred over `consume_execution_request` when the handler receives the Proposal object.
 public fun finalize<P: store>(req: ExecutionRequest<P>, proposal: &Proposal<P>) {
     assert!(req.dao_id == proposal.dao_id, ERequestMismatch);
     assert!(req.proposal_id == object::id(proposal), ERequestMismatch);

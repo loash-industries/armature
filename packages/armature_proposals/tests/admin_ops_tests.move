@@ -14,6 +14,14 @@ use std::string;
 use sui::clock;
 use sui::test_scenario;
 
+// === Test payload types ===
+
+/// Stand-in third-party payload for type binding tests.
+public struct TestPayload has drop, store { value: u64 }
+
+/// Alternative payload used to verify binding rejects wrong types.
+public struct AltPayload has drop, store { label: u64 }
+
 const CREATOR: address = @0xA;
 
 // === Test helpers ===
@@ -114,7 +122,11 @@ fun enable_blocked_type_aborts_for_subdao_with_controller() {
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_enable_proposal_type(&mut subdao, &proposal, request);
+        admin_ops::execute_enable_proposal_type<EnableProposalType>(
+            &mut subdao,
+            &proposal,
+            request,
+        );
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
@@ -153,7 +165,11 @@ fun enable_non_blocked_type_succeeds_for_subdao_with_controller() {
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_enable_proposal_type(&mut subdao, &proposal, request);
+        admin_ops::execute_enable_proposal_type<EnableProposalType>(
+            &mut subdao,
+            &proposal,
+            request,
+        );
 
         // Verify the type was added
         assert!(subdao.enabled_proposal_types().contains(&b"CustomAction".to_ascii_string()));
@@ -193,7 +209,7 @@ fun enable_blocked_type_succeeds_for_independent_dao() {
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_enable_proposal_type(&mut dao, &proposal, request);
+        admin_ops::execute_enable_proposal_type<EnableProposalType>(&mut dao, &proposal, request);
 
         // Verify SpawnDAO is now enabled
         assert!(dao.enabled_proposal_types().contains(&b"SpawnDAO".to_ascii_string()));
@@ -431,7 +447,7 @@ fun enable_proposal_type_66_percent_floor() {
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_enable_proposal_type(&mut dao, &proposal, request);
+        admin_ops::execute_enable_proposal_type<EnableProposalType>(&mut dao, &proposal, request);
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
@@ -809,12 +825,150 @@ fun enable_type_with_sub_floor_config_aborts() {
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_enable_proposal_type(&mut dao, &proposal, request);
+        admin_ops::execute_enable_proposal_type<EnableProposalType>(&mut dao, &proposal, request);
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// =========================================================================
+// Type binding tests for execute_enable_proposal_type
+// =========================================================================
+
+/// Full lifecycle helper: submit + vote + authorize + execute enable for type_key.
+fun run_enable_type<NewType: store>(
+    scenario: &mut test_scenario::Scenario,
+    clock: &mut clock::Clock,
+    type_key: vector<u8>,
+    ts_submit: u64,
+    ts_vote: u64,
+    ts_exec: u64,
+) {
+    clock.set_for_testing(ts_submit);
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+        let payload = enable_proposal_type::new(type_key.to_ascii_string(), config);
+        board_voting::submit_proposal(
+            &dao,
+            b"EnableProposalType".to_ascii_string(),
+            option::none(),
+            payload,
+            clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    clock.set_for_testing(ts_vote);
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
+        proposal.vote(true, clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    clock.set_for_testing(ts_exec);
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        let request = board_voting::authorize_execution(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            clock,
+            scenario.ctx(),
+        );
+        admin_ops::execute_enable_proposal_type<NewType>(&mut dao, &proposal, request);
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(dao);
+    };
+}
+
+#[test]
+/// execute_enable_proposal_type<NewType> stores a type binding for the key.
+fun execute_enable_proposal_type_binds_type_key() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_dao(&mut scenario);
+    run_enable_type<TestPayload>(&mut scenario, &mut clock, b"MyGrant", 1000, 2000, 3000);
+
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        assert!(dao.has_type_binding(&b"MyGrant".to_ascii_string()));
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+/// Re-enabling a previously disabled key with the SAME NewType is idempotent — succeeds.
+fun execute_enable_proposal_type_idempotent_for_same_type() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_dao(&mut scenario);
+
+    // First enable — binds TestPayload to "MyGrant"
+    run_enable_type<TestPayload>(&mut scenario, &mut clock, b"MyGrant", 1000, 2000, 3000);
+
+    // Disable "MyGrant" via test helper (binding is kept)
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        dao.test_disable_type(b"MyGrant".to_ascii_string());
+        test_scenario::return_shared(dao);
+    };
+
+    // Re-enable with the SAME TestPayload — should succeed (idempotent binding)
+    run_enable_type<TestPayload>(&mut scenario, &mut clock, b"MyGrant", 4000, 5000, 6000);
+
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        assert!(dao.has_type_binding(&b"MyGrant".to_ascii_string()));
+        assert!(dao.enabled_proposal_types().contains(&b"MyGrant".to_ascii_string()));
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = 10, location = armature::dao)]
+/// Re-enabling a disabled key with a DIFFERENT NewType aborts with ETypeBindingMismatch.
+fun execute_enable_proposal_type_binding_mismatch_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_dao(&mut scenario);
+
+    // First enable — binds TestPayload to "MyGrant"
+    run_enable_type<TestPayload>(&mut scenario, &mut clock, b"MyGrant", 1000, 2000, 3000);
+
+    // Disable
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        dao.test_disable_type(b"MyGrant".to_ascii_string());
+        test_scenario::return_shared(dao);
+    };
+
+    // Re-enable with AltPayload — should abort with ETypeBindingMismatch
+    run_enable_type<AltPayload>(&mut scenario, &mut clock, b"MyGrant", 4000, 5000, 6000);
 
     clock.destroy_for_testing();
     scenario.end();

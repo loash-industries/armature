@@ -25,6 +25,8 @@ const ECharterIdMismatch: u64 = 6;
 const EFreezeIdMismatch: u64 = 7;
 const EEntriesNotEmpty: u64 = 8;
 const EEntryIdNotFound: u64 = 9;
+/// Attempted to bind a type key whose binding already exists with a different Move type.
+const ETypeBindingMismatch: u64 = 10;
 
 // === Constants ===
 
@@ -120,6 +122,10 @@ public struct DAO has key, store {
     governance: GovernanceConfig,
     proposal_configs: VecMap<std::ascii::String, ProposalConfig>,
     enabled_proposal_types: VecSet<std::ascii::String>,
+    /// Maps type_key → canonical Move type name (set by `bind_type_key` during
+    /// execute_enable_proposal_type). Immutable after binding; enforced in
+    /// `board_voting::submit_proposal` to prevent type-key spoofing.
+    type_bindings: VecMap<std::ascii::String, std::ascii::String>,
     last_executed_at: VecMap<std::ascii::String, u64>,
     treasury_id: ID,
     capability_vault_id: ID,
@@ -207,6 +213,7 @@ public fun create(
         governance,
         proposal_configs,
         enabled_proposal_types,
+        type_bindings: vec_map::empty(),
         last_executed_at: vec_map::empty(),
         treasury_id,
         capability_vault_id,
@@ -286,6 +293,7 @@ public(package) fun create_returning_vault(
         governance,
         proposal_configs,
         enabled_proposal_types,
+        type_bindings: vec_map::empty(),
         last_executed_at: vec_map::empty(),
         treasury_id,
         capability_vault_id,
@@ -336,6 +344,17 @@ public fun proposal_configs(self: &DAO): &VecMap<std::ascii::String, ProposalCon
 /// Returns the set of enabled proposal types.
 public fun enabled_proposal_types(self: &DAO): &VecSet<std::ascii::String> {
     &self.enabled_proposal_types
+}
+
+/// Returns true if the type key has a bound canonical Move type name.
+public fun has_type_binding(self: &DAO, type_key: &std::ascii::String): bool {
+    self.type_bindings.contains(type_key)
+}
+
+/// Returns the canonical Move type name bound to the type key.
+/// Aborts if no binding exists — check `has_type_binding` first.
+public fun type_binding_for(self: &DAO, type_key: &std::ascii::String): std::ascii::String {
+    *self.type_bindings.get(type_key)
 }
 
 /// Returns the treasury vault ID.
@@ -476,6 +495,24 @@ public fun enable_proposal_type<P>(
     self.proposal_configs.insert(type_key, config);
 }
 
+/// Bind a canonical Move type to a registered type key. Called during
+/// `execute_enable_proposal_type<NewType>` to prevent type-key spoofing.
+/// Bindings are immutable after first registration: re-binding the same type
+/// succeeds (idempotent), re-binding a different type aborts.
+public fun bind_type_key<NewType, P>(
+    self: &mut DAO,
+    type_key: std::ascii::String,
+    req: &ExecutionRequest<P>,
+) {
+    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    let type_name = std::type_name::with_defining_ids<NewType>().into_string();
+    if (self.type_bindings.contains(&type_key)) {
+        assert!(*self.type_bindings.get(&type_key) == type_name, ETypeBindingMismatch);
+    } else {
+        self.type_bindings.insert(type_key, type_name);
+    };
+}
+
 /// Replace the ProposalConfig for an existing proposal type.
 /// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
 public fun update_proposal_config<P>(
@@ -606,6 +643,7 @@ public(package) fun create_subdao_returning_vault(
         governance,
         proposal_configs,
         enabled_proposal_types,
+        type_bindings: vec_map::empty(),
         last_executed_at: vec_map::empty(),
         treasury_id,
         capability_vault_id,
@@ -677,6 +715,7 @@ public fun create_subdao(
         governance,
         proposal_configs,
         enabled_proposal_types,
+        type_bindings: vec_map::empty(),
         last_executed_at: vec_map::empty(),
         treasury_id,
         capability_vault_id,
@@ -747,6 +786,7 @@ public fun destroy(
         governance: _,
         proposal_configs: _,
         enabled_proposal_types: _,
+        type_bindings: _,
         last_executed_at: _,
         treasury_id: _,
         capability_vault_id: _,
@@ -883,6 +923,15 @@ fun build_proposal_configs(
 }
 
 // === Test Helpers ===
+
+#[test_only]
+/// Bind a Move type to a type key without an ExecutionRequest (test setup shortcut).
+public fun test_bind_type<NewType>(self: &mut DAO, type_key: std::ascii::String) {
+    let type_name = std::type_name::with_defining_ids<NewType>().into_string();
+    if (!self.type_bindings.contains(&type_key)) {
+        self.type_bindings.insert(type_key, type_name);
+    };
+}
 
 #[test_only]
 /// Enable a proposal type on the DAO without an ExecutionRequest.

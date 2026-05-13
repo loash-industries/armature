@@ -4,6 +4,7 @@ use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
 use armature::proposal::{Self, ExecutionRequest, Proposal};
 use std::string::String;
+use std::type_name;
 use sui::clock::Clock;
 
 // === Errors ===
@@ -13,6 +14,8 @@ const ETypeNotEnabled: u64 = 1;
 const EDAOIdMismatch: u64 = 2;
 const EControllerPaused: u64 = 3;
 const EProposeThresholdNotMet: u64 = 4;
+/// Submitted payload type P does not match the Move type bound to this type_key.
+const ETypeMismatch: u64 = 5;
 
 // === Submit ===
 
@@ -34,6 +37,12 @@ public fun submit_proposal<P: store>(
         && dao::is_migration_allowed_type(&type_key);
     assert!(is_active || is_migration_ok, EDAONotActive);
     assert!(dao.enabled_proposal_types().contains(&type_key), ETypeNotEnabled);
+
+    // If the type_key has a bound Move type, verify P matches to prevent spoofing.
+    if (dao.has_type_binding(&type_key)) {
+        let actual = type_name::with_defining_ids<P>().into_string();
+        assert!(dao.type_binding_for(&type_key) == actual, ETypeMismatch);
+    };
 
     let proposer = ctx.sender();
     dao.governance().assert_board_member(proposer);
