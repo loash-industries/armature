@@ -668,40 +668,81 @@ Two notes:
 
 ### Handler Adapter Pattern
 
-Existing handlers read `proposal.payload()` from a `&Proposal<P>` and call
-`proposal::finalize(request, proposal)`. Neither is available in a composite (no
-`Proposal<P>` exists, only `Proposal<CompositePayload>`). The adapter pattern is
-mechanical:
+#### `proposal` module API split
+
+`proposal::finalize(request, proposal)` currently does two things atomically: consumes
+the `ExecutionRequest` hot potato and marks the `Proposal` as `Executed`. Composite
+step handlers have no `Proposal<P>` to pass, so `finalize` is split into two primitives:
 
 ```move
-// Existing handler — unchanged:
-pub fun execute_send_coin<T>(
-    vault: &mut TreasuryVault,
-    proposal: &Proposal<SendCoin<T>>,           // reads .payload() here
-    request: ExecutionRequest<SendCoin<T>>,
-    ctx: &mut TxContext,
-) {
-    let payload = proposal.payload();
-    let coin = vault.withdraw(payload.amount(), &request, ctx);
-    transfer::public_transfer(coin, payload.recipient());
-    proposal::finalize(request, proposal);      // requires &Proposal<SendCoin<T>>
-}
+/// Consumes the hot potato. Called by the canonical impl function.
+public fun consume_execution_request<P>(request: ExecutionRequest<P>) { … }
 
-// Composite step variant (new):
-pub fun execute_send_coin_step<T>(
-    vault: &mut TreasuryVault,
-    payload: SendCoin<T>,                       // received by value from advance_step
-    request: ExecutionRequest<SendCoin<T>>,
-    ctx: &mut TxContext,
-) {
-    let coin = vault.withdraw(payload.amount(), &request, ctx);
-    transfer::public_transfer(coin, payload.recipient());
-    proposal::consume_execution_request(request); // no &Proposal<P> needed
+/// Marks the proposal Executed and emits the event. Called by the single-action shim.
+public fun mark_executed<P>(proposal: &mut Proposal<P>) { … }
+
+/// Convenience wrapper — unchanged; existing handlers that call finalize directly keep working.
+public fun finalize<P>(request: ExecutionRequest<P>, proposal: &mut Proposal<P>) {
+    consume_execution_request(request);
+    mark_executed(proposal);
 }
 ```
 
-Third-party handlers that already use `consume_execution_request` are automatically
-composite-compatible without any changes.
+#### Payload `drop` ability
+
+Composable payload types must declare `drop` in addition to `store`. Pure-data payloads
+(structs containing only primitive fields or other droppable types) can always carry `drop`
+safely. Any payload that wraps a non-droppable value (e.g. a `Balance` or inner capability)
+cannot have `drop` and must therefore set `composable_allowed = false` in its config —
+which is the correct policy regardless, since such payloads represent resource transfers
+that need explicit accounting and should not appear as steps in an arbitrary composite.
+
+#### Unified implementation pattern
+
+`execute_send_coin_step` is the canonical implementation. `execute_send_coin` is a thin
+shim that extracts fields from the proposal reference and delegates:
+
+```move
+// Canonical implementation — receives payload by reference; consumes request.
+// Private to the handler module.
+fun send_coin_impl<T>(
+    vault: &mut TreasuryVault,
+    payload: &SendCoin<T>,
+    request: ExecutionRequest<SendCoin<T>>,
+    ctx: &mut TxContext,
+) {
+    let coin = vault.withdraw(payload.amount(), &request, ctx);
+    transfer::public_transfer(coin, payload.recipient());
+    proposal::consume_execution_request(request);
+}
+
+// Single-action shim — reads from proposal reference, marks proposal executed.
+pub fun execute_send_coin<T>(
+    vault: &mut TreasuryVault,
+    proposal: &mut Proposal<SendCoin<T>>,
+    request: ExecutionRequest<SendCoin<T>>,
+    ctx: &mut TxContext,
+) {
+    send_coin_impl(vault, proposal.payload(), request, ctx);
+    proposal::mark_executed(proposal);
+}
+
+// Step handler — payload arrives by value from advance_step; pass reference to impl,
+// then let the value drop (requires SendCoin<T>: drop).
+pub fun execute_send_coin_step<T>(
+    vault: &mut TreasuryVault,
+    payload: SendCoin<T>,
+    request: ExecutionRequest<SendCoin<T>>,
+    ctx: &mut TxContext,
+) {
+    send_coin_impl(vault, &payload, request, ctx);
+    // payload drops here — valid because SendCoin<T> has `drop`
+}
+```
+
+Logic lives in one place (`send_coin_impl`). Adding, changing, or auditing the action
+requires touching exactly one function. Third-party handlers that already call
+`consume_execution_request` directly are automatically composite-compatible.
 
 ### Pros
 
@@ -731,17 +772,19 @@ composite-compatible without any changes.
   `armature_framework`; `board_voting.move` gains `submit_composite`; `dao.move`
   gains `max_composite_steps` and the `"Composite"` default type.
 - **New `_step` handler variants** — every composable proposal type needs a companion
-  handler that accepts the payload by value and calls `consume_execution_request`.
-  This is mechanical but doubles the handler count for each type.
+  step handler, but logic duplication is eliminated by the canonical-impl pattern: one
+  private `_impl` function holds the logic; `execute_foo` and `execute_foo_step` are
+  thin wrappers. Payload types must carry `drop`, which is safe for all pure-data payloads
+  and correctly excludes resource-holding payloads from composability.
+- **`proposal::finalize` is split** — into `consume_execution_request` (called by the
+  canonical impl) and `mark_executed` (called by the single-action shim). The combined
+  `finalize` wrapper is kept for handlers that don't adopt the canonical-impl pattern,
+  preserving backwards compatibility.
 - **Two shared objects per composite** — `CompositeFrame` + `Proposal<CompositePayload>`
   vs. one object for single-action proposals. Minor storage overhead.
 - **PTB construction is more complex** — the client must call `advance_step<P>` and the
   step handler in sequence for each step, correctly threading the `Pipeline` value
   between calls.
-- **`finalize` not used for steps** — step handlers call `consume_execution_request`
-  rather than `proposal::finalize`, which means the per-step execution does not validate
-  the composite proposal object. The `Pipeline` hot potato provides the ordering
-  guarantee instead.
 - **`advance_step` requires `&mut DAO` and `&EmergencyFreeze`** — per-step freeze and
   cooldown enforcement (see above) means the execution PTB must pass `dao`, `freeze`, and
   `clock` to every `advance_step` call. This slightly increases PTB verbosity but is
@@ -964,11 +1007,19 @@ giving atomic multi-proposal execution without changing any existing handlers.
 
 ## Open Questions
 
-1. **`finalize` vs `consume_execution_request` for step handlers** — Step handlers
+1. ~~**`finalize` vs `consume_execution_request` for step handlers** — Step handlers
    call `consume_execution_request` rather than `proposal::finalize`, losing the
    per-step proposal-ID validation that `finalize` provides. Is the `Pipeline` ordering
    guarantee sufficient, or should `advance_step` perform an additional proposal-ID
-   check?
+   check?~~ **Resolved.** `proposal::finalize` is split into `consume_execution_request`
+   (consumes the hot potato, called by the canonical `_impl` function) and `mark_executed`
+   (marks the proposal `Executed`, called by the single-action shim). The combined
+   `finalize` wrapper is preserved for existing handlers. Step handlers never need to
+   validate against a `Proposal<P>` object — proposal-ID correctness is guaranteed by
+   `advance_step` (which reads `pipeline.composite_proposal_id` to construct the
+   `ExecutionRequest`) and `finalize_pipeline` (which closes out `Proposal<CompositePayload>`).
+   The `Pipeline` hot potato's forward-only ordering makes step skipping impossible, so
+   no additional per-step proposal-ID check is needed in `advance_step`.
 
 2. ~~**Per-step cooldown enforcement** — Should individual step type cooldowns be checked
    during composite execution, or only the `"Composite"` type's own cooldown?~~ **Resolved.**

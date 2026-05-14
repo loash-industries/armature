@@ -2,7 +2,7 @@ module armature_proposals::remove_member;
 
 /// Remove a single member from the board.
 /// Lighter-weight alternative to SetBoard when only one address needs to be removed.
-public struct RemoveMember has store {
+public struct RemoveMember has copy, drop, store {
     member: address,
 }
 

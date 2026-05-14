@@ -1,5 +1,6 @@
 module armature_proposals::admin_ops;
 
+use armature::board_voting;
 use armature::charter::Charter;
 use armature::dao::{Self, DAO};
 use armature::proposal::{Self, Proposal, ExecutionRequest};
@@ -8,6 +9,8 @@ use armature_proposals::disable_proposal_type::DisableProposalType;
 use armature_proposals::enable_proposal_type::EnableProposalType;
 use armature_proposals::update_metadata::UpdateMetadata;
 use armature_proposals::update_proposal_config::UpdateProposalConfig;
+use std::string::String;
+use sui::clock::Clock;
 use sui::event;
 
 // === Errors ===
@@ -15,9 +18,13 @@ use sui::event;
 const EDaoMismatch: u64 = 0;
 const ECharterDaoMismatch: u64 = 1;
 const EUndisableableType: u64 = 2;
+#[allow(unused_const)]
 const EApprovalFloorNotMet: u64 = 3;
 const ESubDAOBlockedType: u64 = 4;
 const EThresholdBelowFloor: u64 = 5;
+/// Proposal's approval_threshold is below the hardcoded floor for this type.
+/// Enforced at submission time by propose_update_proposal_config.
+const EFloorNotMet: u64 = 6;
 
 // === Constants ===
 
@@ -85,15 +92,14 @@ public fun execute_disable_proposal_type(
 /// Execute an EnableProposalType proposal: add a type to the enabled set and bind
 /// the canonical Move type `NewType` to the type_key so future proposals cannot
 /// substitute a different payload type under the same key.
-/// Enforces a 66% approval floor regardless of the proposal's own config threshold.
+/// The 66% approval floor is enforced at submission time in board_voting::submit_proposal;
+/// no execution-time floor check is needed here.
 public fun execute_enable_proposal_type<NewType: store>(
     dao: &mut DAO,
     proposal: &Proposal<EnableProposalType>,
     request: ExecutionRequest<EnableProposalType>,
 ) {
     assert!(dao.id() == request.req_dao_id(), EDaoMismatch);
-
-    assert_approval_floor(proposal, ENABLE_APPROVAL_FLOOR_BPS);
 
     let payload = proposal.payload();
     let type_key = payload.type_key();
@@ -122,7 +128,8 @@ public fun execute_enable_proposal_type<NewType: store>(
 
 /// Execute an UpdateProposalConfig proposal: merge optional field overrides
 /// into the existing config for the target type.
-/// When targeting "UpdateProposalConfig" itself, enforces an 80% approval floor.
+/// The 80% self-targeting floor is enforced at submission time by
+/// propose_update_proposal_config; no execution-time floor check is needed here.
 public fun execute_update_proposal_config(
     dao: &mut DAO,
     proposal: &Proposal<UpdateProposalConfig>,
@@ -132,11 +139,6 @@ public fun execute_update_proposal_config(
 
     let payload = proposal.payload();
     let target_key = payload.target_type_key();
-
-    // Enforce 80% super-majority when modifying UpdateProposalConfig's own rules
-    if (target_key == b"UpdateProposalConfig".to_ascii_string()) {
-        assert_approval_floor(proposal, SELF_UPDATE_APPROVAL_FLOOR_BPS);
-    };
 
     // Merge: use payload value if present, otherwise keep existing
     let existing = dao.proposal_configs().get(&target_key);
@@ -169,18 +171,72 @@ public fun execute_update_metadata(
     proposal: &Proposal<UpdateMetadata>,
     request: ExecutionRequest<UpdateMetadata>,
 ) {
+    update_metadata_impl(charter, proposal.payload(), &request);
+    proposal::finalize(request, proposal);
+}
+
+/// Composite step variant: execute an UpdateMetadata step extracted from a Pipeline.
+public fun execute_update_metadata_step(
+    charter: &mut Charter,
+    payload: UpdateMetadata,
+    request: ExecutionRequest<UpdateMetadata>,
+) {
+    update_metadata_impl(charter, &payload, &request);
+    proposal::consume_execution_request(request);
+}
+
+// === Internal ===
+
+fun update_metadata_impl(
+    charter: &mut Charter,
+    payload: &UpdateMetadata,
+    request: &ExecutionRequest<UpdateMetadata>,
+) {
     assert!(charter.dao_id() == request.req_dao_id(), ECharterDaoMismatch);
-
-    let payload = proposal.payload();
-
-    charter.update_metadata(*payload.new_ipfs_cid(), &request);
-
+    charter.update_metadata(*payload.new_ipfs_cid(), request);
     event::emit(MetadataUpdated {
         dao_id: charter.dao_id(),
         new_ipfs_cid: *payload.new_ipfs_cid(),
     });
+}
 
-    proposal::finalize(request, proposal);
+// === Submission wrapper ===
+
+/// Submit an UpdateProposalConfig proposal with submission-time floor enforcement.
+/// When the payload targets UpdateProposalConfig itself, asserts that the DAO's
+/// current UpdateProposalConfig approval_threshold meets the 80% supermajority
+/// floor before creating the proposal. This is strictly stronger than the old
+/// execution-time check: a malicious downgrade proposal never enters the object
+/// graph, cannot be voted on, and consumes no proposal slot.
+///
+/// Callers that need non-self-targeting UpdateProposalConfig submissions can use
+/// board_voting::submit_proposal<UpdateProposalConfig> directly — no floor applies.
+#[allow(lint(share_owned, custom_state_change))]
+public fun propose_update_proposal_config(
+    dao: &DAO,
+    metadata_ipfs: Option<String>,
+    payload: UpdateProposalConfig,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
+    let type_key = b"UpdateProposalConfig".to_ascii_string();
+    let config = *dao.proposal_configs().get(&type_key);
+
+    if (payload.target_type_key() == b"UpdateProposalConfig".to_ascii_string()) {
+        assert!(
+            (config.approval_threshold() as u64) >= SELF_UPDATE_APPROVAL_FLOOR_BPS,
+            EFloorNotMet,
+        );
+    };
+
+    board_voting::submit_proposal<UpdateProposalConfig>(
+        dao,
+        type_key,
+        metadata_ipfs,
+        payload,
+        clock,
+        ctx,
+    );
 }
 
 // === Internal ===
@@ -190,7 +246,10 @@ fun assert_disableable(type_key: &std::ascii::String) {
     assert!(!dao::is_undisableable_type(type_key), EUndisableableType);
 }
 
-/// Assert that a proposal's approval rate meets the specified floor (in basis points).
+#[allow(unused_function)]
+/// Assert that a proposal's approval rate (yes/total_snapshot) meets the floor.
+/// Kept as a utility for invariant auditing; no longer called in production handlers
+/// after submission-time floor enforcement was introduced (ADR_SUBMISSION_TIME_FLOOR_ENFORCEMENT).
 fun assert_approval_floor<P: store>(proposal: &Proposal<P>, floor_bps: u64) {
     let total = proposal.total_snapshot_weight();
     // Reject zero-weight proposals. gte_bps(0, 0, _) returns true (0 >= 0),

@@ -1,7 +1,7 @@
 module armature_proposals::send_coin_to_dao;
 
 /// Transfer amount of Coin<T> from treasury to another DAO's TreasuryVault.
-public struct SendCoinToDAO<phantom T> has store {
+public struct SendCoinToDAO<phantom T> has drop, store {
     recipient_treasury: ID,
     amount: u64,
 }

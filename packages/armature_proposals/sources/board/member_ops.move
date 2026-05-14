@@ -45,25 +45,12 @@ public struct MembersBatchAdded has copy, drop {
 
 // === Handlers ===
 
-/// Execute an AddMember proposal: add a single address to the DAO's board.
 public fun execute_add_member(
     dao: &mut DAO,
     proposal: &Proposal<AddMember>,
     request: ExecutionRequest<AddMember>,
 ) {
-    assert!(dao.id() == request.req_dao_id(), EDaoMismatch);
-    let payload = proposal.payload();
-
-    dao.add_board_member_governance(
-        payload.member(),
-        &request,
-    );
-
-    event::emit(MemberAdded {
-        dao_id: dao.id(),
-        member: payload.member(),
-    });
-
+    add_member_impl(dao, proposal.payload(), &request);
     proposal::finalize(request, proposal);
 }
 
@@ -104,24 +91,53 @@ public fun execute_batch_add_members(
     proposal::finalize(request, proposal);
 }
 
-/// Execute a RemoveMember proposal: remove a single address from the DAO's board.
+public fun execute_add_member_step(
+    dao: &mut DAO,
+    payload: AddMember,
+    request: ExecutionRequest<AddMember>,
+) {
+    add_member_impl(dao, &payload, &request);
+    proposal::consume_execution_request(request);
+}
+
 public fun execute_remove_member(
     dao: &mut DAO,
     proposal: &Proposal<RemoveMember>,
     request: ExecutionRequest<RemoveMember>,
 ) {
+    remove_member_impl(dao, proposal.payload(), &request);
+    proposal::finalize(request, proposal);
+}
+
+public fun execute_remove_member_step(
+    dao: &mut DAO,
+    payload: RemoveMember,
+    request: ExecutionRequest<RemoveMember>,
+) {
+    remove_member_impl(dao, &payload, &request);
+    proposal::consume_execution_request(request);
+}
+
+// === Internal ===
+
+fun add_member_impl(dao: &mut DAO, payload: &AddMember, request: &ExecutionRequest<AddMember>) {
     assert!(dao.id() == request.req_dao_id(), EDaoMismatch);
-    let payload = proposal.payload();
+    dao.add_board_member_governance(payload.member(), request);
+    event::emit(MemberAdded {
+        dao_id: dao.id(),
+        member: payload.member(),
+    });
+}
 
-    dao.remove_board_member_governance(
-        payload.member(),
-        &request,
-    );
-
+fun remove_member_impl(
+    dao: &mut DAO,
+    payload: &RemoveMember,
+    request: &ExecutionRequest<RemoveMember>,
+) {
+    assert!(dao.id() == request.req_dao_id(), EDaoMismatch);
+    dao.remove_board_member_governance(payload.member(), request);
     event::emit(MemberRemoved {
         dao_id: dao.id(),
         member: payload.member(),
     });
-
-    proposal::finalize(request, proposal);
 }

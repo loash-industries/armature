@@ -16,6 +16,15 @@ const EControllerPaused: u64 = 3;
 const EProposeThresholdNotMet: u64 = 4;
 /// Submitted payload type P does not match the Move type bound to this type_key.
 const ETypeMismatch: u64 = 5;
+/// Proposal's approval_threshold is below the hardcoded floor for this type.
+/// Enforced at submission time so the proposal never enters the object graph.
+const EFloorNotMet: u64 = 6;
+
+// === Constants ===
+
+/// 66% approval floor for EnableProposalType proposals (basis points).
+/// Matches the constant in admin_ops; enforced here at submission time.
+const ENABLE_APPROVAL_FLOOR_BPS: u64 = 6_600;
 
 // === Submit ===
 
@@ -48,6 +57,14 @@ public fun submit_proposal<P: store>(
     dao.governance().assert_board_member(proposer);
 
     let config = *dao.proposal_configs().get(&type_key);
+
+    // Submission-time floor enforcement for EnableProposalType.
+    // The proposal's approval_threshold must be >= 66% so that the vote guarantee
+    // (yes/total_voted >= threshold >= floor) holds at execution time without
+    // needing &Proposal<P> access in _step composite variants.
+    if (type_key == b"EnableProposalType".to_ascii_string()) {
+        assert!((config.approval_threshold() as u64) >= ENABLE_APPROVAL_FLOOR_BPS, EFloorNotMet);
+    };
 
     if (config.propose_threshold() > 0) {
         let weight = dao.governance().proposer_weight(proposer);

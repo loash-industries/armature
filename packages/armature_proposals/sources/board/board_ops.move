@@ -27,18 +27,27 @@ public fun execute_set_board(
     proposal: &Proposal<SetBoard>,
     request: ExecutionRequest<SetBoard>,
 ) {
+    set_board_impl(dao, proposal.payload(), &request);
+    proposal::finalize(request, proposal);
+}
+
+/// Composite step variant: execute a SetBoard step extracted from a Pipeline.
+public fun execute_set_board_step(
+    dao: &mut DAO,
+    payload: SetBoard,
+    request: ExecutionRequest<SetBoard>,
+) {
+    set_board_impl(dao, &payload, &request);
+    proposal::consume_execution_request(request);
+}
+
+// === Internal ===
+
+fun set_board_impl(dao: &mut DAO, payload: &SetBoard, request: &ExecutionRequest<SetBoard>) {
     assert!(dao.id() == request.req_dao_id(), EDaoMismatch);
-    let payload = proposal.payload();
-
-    dao.set_board_governance(
-        *payload.new_members(),
-        &request,
-    );
-
+    dao.set_board_governance(*payload.new_members(), request);
     event::emit(BoardUpdated {
         dao_id: dao.id(),
         new_members: *payload.new_members(),
     });
-
-    proposal::finalize(request, proposal);
 }
