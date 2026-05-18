@@ -458,16 +458,29 @@ public fun add_board_member_governance<P>(
     self.governance.add_board_member(member);
 }
 
-/// Add multiple members to the DAO's board atomically. Aborts and leaves
-/// the board unchanged if any address is already present or duplicated.
+/// Add multiple members to the DAO's board, skipping any address already
+/// present. Returns (added, skipped) in input order.
+///
+/// IMPORTANT: This diverges from `add_board_member_governance`, which aborts
+/// on duplicates. The batch variant prefers ergonomics over symmetry because
+/// its primary use case (bulk migration / large rosters) routinely contains
+/// addresses the officer board did not realize were already on the board —
+/// aborting the entire batch would force re-curation and re-vote for a
+/// benign condition. Internal duplicates within `new_members` (the same
+/// address listed twice in the input) still abort: that is proposer error
+/// with no plausible benign reading.
+///
+/// Callers MUST surface `skipped` in any event they emit so the on-chain
+/// audit trail reflects actual state changes, not just proposer intent.
+///
 /// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
 public fun add_board_members_governance<P>(
     self: &mut DAO,
     new_members: vector<address>,
     req: &ExecutionRequest<P>,
-) {
+): (vector<address>, vector<address>) {
     assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
-    self.governance.add_board_members(new_members);
+    self.governance.add_board_members(new_members)
 }
 
 /// Remove a single member from the DAO's board.

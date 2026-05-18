@@ -504,9 +504,11 @@ fun test_batch_add_members_e2e() {
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = armature::governance::EDuplicateBoardMember)]
-/// Batch containing an address already on the board should abort atomically.
-fun test_batch_add_members_existing_member_aborts() {
+#[test]
+/// Batch containing an address already on the board should skip it silently:
+/// new members are added, existing members are reported in the event's
+/// `skipped` field rather than aborting the whole batch.
+fun test_batch_add_members_existing_member_skipped() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
@@ -527,12 +529,12 @@ fun test_batch_add_members_existing_member_aborts() {
         let dao = scenario.take_shared<DAO>();
         clock.set_for_testing(1000);
 
-        // MEMBER_B is already on the board
+        // MEMBER_B is already on the board; BATCH_MEMBER_1 is new.
         let payload = batch_add_members::new(vector[BATCH_MEMBER_1, MEMBER_B]);
         board_voting::submit_proposal(
             &dao,
             b"BatchAddMembers".to_ascii_string(),
-            option::some(string::utf8(b"Batch with dup")),
+            option::some(string::utf8(b"Batch with one existing")),
             payload,
             &clock,
             scenario.ctx(),
@@ -565,6 +567,12 @@ fun test_batch_add_members_existing_member_aborts() {
         );
 
         member_ops::execute_batch_add_members(&mut dao, &proposal, request);
+
+        // New member was added, existing member untouched.
+        let gov = dao.governance();
+        assert!(gov.is_board_member(CREATOR));
+        assert!(gov.is_board_member(MEMBER_B));
+        assert!(gov.is_board_member(BATCH_MEMBER_1));
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);

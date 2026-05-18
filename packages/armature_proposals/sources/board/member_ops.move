@@ -33,10 +33,14 @@ public struct MemberRemoved has copy, drop {
     member: address,
 }
 
-/// Emitted when a batch of members is added to the board via governance.
+/// Emitted when a batch of members is processed via governance.
+/// `added` and `skipped` together reconstruct the full proposed batch:
+/// `added` is the addresses actually inserted, `skipped` is the addresses
+/// already on the board at execution time. Both are in input order.
 public struct MembersBatchAdded has copy, drop {
     dao_id: ID,
-    members: vector<address>,
+    added: vector<address>,
+    skipped: vector<address>,
 }
 
 // === Handlers ===
@@ -63,9 +67,19 @@ public fun execute_add_member(
     proposal::finalize(request, proposal);
 }
 
-/// Execute a BatchAddMembers proposal: add many addresses to the DAO's board
-/// in a single atomic operation. Aborts if the batch is empty, exceeds the
-/// per-proposal cap, contains duplicates, or any address is already on the board.
+/// Execute a BatchAddMembers proposal: add many addresses to the DAO's board.
+///
+/// Aborts on:
+///   - empty batch (`EEmptyBatch`)
+///   - batch larger than `MAX_BATCH_SIZE` (`EBatchTooLarge`)
+///   - the same address listed more than once within the batch
+///     (`governance::EDuplicateBoardMember`)
+///
+/// Does NOT abort on addresses that are already on the board — those are
+/// silently skipped. The emitted `MembersBatchAdded` event reports both
+/// `added` and `skipped` so the on-chain audit trail reflects what
+/// actually happened. See `dao::add_board_members_governance` for the
+/// rationale.
 public fun execute_batch_add_members(
     dao: &mut DAO,
     proposal: &Proposal<BatchAddMembers>,
@@ -79,11 +93,12 @@ public fun execute_batch_add_members(
     assert!(len > 0, EEmptyBatch);
     assert!(len <= MAX_BATCH_SIZE, EBatchTooLarge);
 
-    dao.add_board_members_governance(*members, &request);
+    let (added, skipped) = dao.add_board_members_governance(*members, &request);
 
     event::emit(MembersBatchAdded {
         dao_id: dao.id(),
-        members: *members,
+        added,
+        skipped,
     });
 
     proposal::finalize(request, proposal);
