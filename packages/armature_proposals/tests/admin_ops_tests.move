@@ -2,12 +2,14 @@
 module armature_proposals::admin_ops_tests;
 
 use armature::board_voting;
+use armature::capability_vault::CapabilityVault;
 use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
 use armature::proposal::{Self, Proposal};
 use armature_proposals::admin_ops;
 use armature_proposals::disable_proposal_type::{Self, DisableProposalType};
+use armature_proposals::enable_bypass_type::{Self, EnableBypassType};
 use armature_proposals::enable_proposal_type::{Self, EnableProposalType};
 use armature_proposals::update_proposal_config::{Self, UpdateProposalConfig};
 use std::string;
@@ -969,6 +971,184 @@ fun execute_enable_proposal_type_binding_mismatch_aborts() {
 
     // Re-enable with AltPayload — should abort with ETypeBindingMismatch
     run_enable_type<AltPayload>(&mut scenario, &mut clock, b"MyGrant", 4000, 5000, 6000);
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// =========================================================================
+// EnableBypassType tests
+// =========================================================================
+
+#[test]
+/// E2E: EnableBypassType proposal → vote (single member = 100%) → execute mints
+/// an ExternalExecutionCap<TestPayload>, enables the type, and binds the Move type.
+/// A follow-up external_executed_create using that cap then succeeds.
+fun execute_enable_bypass_type_e2e() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_dao(&mut scenario);
+
+    // Submit
+    clock.set_for_testing(1000);
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        // Approval threshold must be >= 8000 to satisfy the 80% execution floor.
+        let config = proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0);
+        let payload = enable_bypass_type::new(b"MyBypass".to_ascii_string(), config);
+        board_voting::submit_proposal(
+            &dao,
+            b"EnableBypassType".to_ascii_string(),
+            option::none(),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    // Vote
+    clock.set_for_testing(2000);
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    // Execute
+    clock.set_for_testing(3000);
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut vault = scenario.take_shared<CapabilityVault>();
+        let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+
+        let request = board_voting::authorize_execution(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        admin_ops::execute_enable_bypass_type<TestPayload>(
+            &mut dao,
+            &mut vault,
+            &proposal,
+            request,
+            scenario.ctx(),
+        );
+
+        // Type registered + bound
+        assert!(dao.enabled_proposal_types().contains(&b"MyBypass".to_ascii_string()));
+        assert!(dao.has_type_binding(&b"MyBypass".to_ascii_string()));
+        // Vault now contains a cap of type ExternalExecutionCap<TestPayload>
+        let cap_ids = vault.ids_for_type<armature::proposal::ExternalExecutionCap<TestPayload>>();
+        assert!(cap_ids.length() == 1);
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(vault);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature_proposals::admin_ops::EApprovalFloorNotMet)]
+/// Sub-80% approval at execute time must abort, even if the proposal otherwise
+/// reached "passed" status. Setup: 2-member board, relax EnableBypassType's
+/// stored config threshold to 50% via test_update_config, vote 1/2 (50% yes
+/// = exactly at the relaxed threshold but well below the 80% floor), execute
+/// → EApprovalFloorNotMet.
+fun execute_enable_bypass_type_below_floor_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    let member_b: address = @0xB1;
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR, member_b]);
+        dao::create(
+            &init,
+            string::utf8(b"Test DAO"),
+            string::utf8(b"2-member DAO"),
+            string::utf8(b"https://example.com/logo.png"),
+            scenario.ctx(),
+        );
+    };
+
+    // Relax the on-DAO EnableBypassType config so a 50% vote is enough to "pass".
+    // Defense-in-depth means execute_enable_bypass_type re-checks the 80% floor.
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let weak = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+        dao.test_update_config(b"EnableBypassType".to_ascii_string(), weak);
+        test_scenario::return_shared(dao);
+    };
+
+    // Submit (payload-level config can stay strong; it's the on-DAO config
+    // that drives the per-proposal vote threshold).
+    clock.set_for_testing(1000);
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        let config = proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0);
+        let payload = enable_bypass_type::new(b"MyBypass".to_ascii_string(), config);
+        board_voting::submit_proposal(
+            &dao,
+            b"EnableBypassType".to_ascii_string(),
+            option::none(),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    // 1/2 yes = 50% — clears the relaxed threshold, fails the 80% floor.
+    clock.set_for_testing(2000);
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    // Execute — expect EApprovalFloorNotMet.
+    clock.set_for_testing(3000);
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut vault = scenario.take_shared<CapabilityVault>();
+        let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+
+        let request = board_voting::authorize_execution(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        admin_ops::execute_enable_bypass_type<TestPayload>(
+            &mut dao,
+            &mut vault,
+            &proposal,
+            request,
+            scenario.ctx(),
+        );
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(vault);
+        test_scenario::return_shared(dao);
+    };
 
     clock.destroy_for_testing();
     scenario.end();

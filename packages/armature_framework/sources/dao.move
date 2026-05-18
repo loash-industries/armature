@@ -38,6 +38,7 @@ const DEFAULT_PROPOSAL_TYPES: vector<vector<u8>> = vector[
     b"BatchAddMembers",
     b"CharterUpdate",
     b"EnableProposalType",
+    b"EnableBypassType",
     b"DisableProposalType",
     b"UpdateProposalConfig",
     b"TransferFreezeAdmin",
@@ -56,6 +57,7 @@ const SUBDAO_BLOCKED_TYPES: vector<vector<u8>> = vector[
 /// These are governance meta-operations and security invariants.
 const UNDISABLEABLE_TYPES: vector<vector<u8>> = vector[
     b"EnableProposalType",
+    b"EnableBypassType",
     b"DisableProposalType",
     b"TransferFreezeAdmin",
     b"UnfreezeProposalType",
@@ -80,6 +82,10 @@ const ENABLE_PROPOSAL_TYPE_MIN_THRESHOLD: u16 = 6_600;
 /// Minimum approval_threshold for UpdateProposalConfig — must be >= the 80% self-update
 /// execution floor enforced by admin_ops::execute_update_proposal_config.
 const UPDATE_PROPOSAL_CONFIG_MIN_THRESHOLD: u16 = 8_000;
+
+/// Minimum approval_threshold for EnableBypassType — must be >= the 80% execution
+/// floor enforced by admin_ops::execute_enable_bypass_type.
+const ENABLE_BYPASS_TYPE_MIN_THRESHOLD: u16 = 8_000;
 
 // === Enums ===
 
@@ -904,6 +910,8 @@ fun config_for_type(type_key: &std::ascii::String): ProposalConfig {
         ENABLE_PROPOSAL_TYPE_MIN_THRESHOLD
     } else if (*type_key == b"UpdateProposalConfig".to_ascii_string()) {
         UPDATE_PROPOSAL_CONFIG_MIN_THRESHOLD
+    } else if (*type_key == b"EnableBypassType".to_ascii_string()) {
+        ENABLE_BYPASS_TYPE_MIN_THRESHOLD
     } else {
         DEFAULT_APPROVAL_THRESHOLD
     };

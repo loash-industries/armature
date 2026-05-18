@@ -1,10 +1,12 @@
 module armature_proposals::admin_ops;
 
+use armature::capability_vault::CapabilityVault;
 use armature::charter::Charter;
 use armature::dao::{Self, DAO};
 use armature::proposal::{Self, Proposal, ExecutionRequest};
 use armature::utils;
 use armature_proposals::disable_proposal_type::DisableProposalType;
+use armature_proposals::enable_bypass_type::EnableBypassType;
 use armature_proposals::enable_proposal_type::EnableProposalType;
 use armature_proposals::update_metadata::UpdateMetadata;
 use armature_proposals::update_proposal_config::UpdateProposalConfig;
@@ -18,6 +20,7 @@ const EUndisableableType: u64 = 2;
 const EApprovalFloorNotMet: u64 = 3;
 const ESubDAOBlockedType: u64 = 4;
 const EThresholdBelowFloor: u64 = 5;
+const EVaultDaoMismatch: u64 = 6;
 
 // === Constants ===
 
@@ -26,6 +29,12 @@ const ENABLE_APPROVAL_FLOOR_BPS: u64 = 6_600;
 
 /// 80% approval floor for self-referencing UpdateProposalConfig (basis points).
 const SELF_UPDATE_APPROVAL_FLOOR_BPS: u64 = 8_000;
+
+/// 80% approval floor for EnableBypassType (basis points).
+/// Strictly higher than EnableProposalType because opting into bypass
+/// execution waives the per-proposal vote for every future submission
+/// under this type.
+const ENABLE_BYPASS_APPROVAL_FLOOR_BPS: u64 = 8_000;
 
 // === Events ===
 
@@ -37,6 +46,14 @@ public struct ProposalTypeDisabled has copy, drop {
 public struct ProposalTypeEnabled has copy, drop {
     dao_id: ID,
     type_key: std::ascii::String,
+}
+
+/// Emitted when a DAO opts into bypass execution for a proposal type.
+/// `cap_id` is the ID of the ExternalExecutionCap deposited into the vault.
+public struct BypassEnabled has copy, drop {
+    dao_id: ID,
+    type_key: std::ascii::String,
+    cap_id: ID,
 }
 
 public struct ProposalConfigUpdated has copy, drop {
@@ -109,6 +126,53 @@ public fun execute_enable_proposal_type<NewType: store>(
     event::emit(ProposalTypeEnabled {
         dao_id: dao.id(),
         type_key,
+    });
+
+    proposal::finalize(request, proposal);
+}
+
+/// Execute an EnableBypassType proposal: enable a proposal type AND mint an
+/// `ExternalExecutionCap<NewType>` into the DAO's CapabilityVault, opting the
+/// DAO into bypass execution for this type. Subsequent submissions of type
+/// `NewType` can skip the vote by going through
+/// `armature::external_execution::external_executed_create` with the cap.
+///
+/// Enforces an 80% approval floor — strictly more consequential than
+/// `EnableProposalType` because every future submission under this type
+/// will execute without a vote.
+public fun execute_enable_bypass_type<NewType: store>(
+    dao: &mut DAO,
+    vault: &mut CapabilityVault,
+    proposal: &Proposal<EnableBypassType>,
+    request: ExecutionRequest<EnableBypassType>,
+    ctx: &mut TxContext,
+) {
+    assert!(dao.id() == request.req_dao_id(), EDaoMismatch);
+    assert!(vault.dao_id() == dao.id(), EVaultDaoMismatch);
+
+    assert_approval_floor(proposal, ENABLE_BYPASS_APPROVAL_FLOOR_BPS);
+
+    let payload = proposal.payload();
+    let type_key = payload.type_key();
+    let config = *payload.config();
+
+    if (dao.controller_cap_id().is_some()) {
+        assert!(!dao::is_subdao_blocked_type(&type_key), ESubDAOBlockedType);
+    };
+
+    assert_threshold_meets_floor(&type_key, &config);
+
+    dao.enable_proposal_type(type_key, config, &request);
+    dao.bind_type_key<NewType, EnableBypassType>(type_key, &request);
+
+    let cap = proposal::new_external_execution_cap<NewType>(dao.id(), ctx);
+    let cap_id = object::id(&cap);
+    vault.store_cap(cap, &request);
+
+    event::emit(BypassEnabled {
+        dao_id: dao.id(),
+        type_key,
+        cap_id,
     });
 
     proposal::finalize(request, proposal);
@@ -206,6 +270,8 @@ fun execution_floor_for_type(type_key: &std::ascii::String): u64 {
         ENABLE_APPROVAL_FLOOR_BPS
     } else if (*type_key == b"UpdateProposalConfig".to_ascii_string()) {
         SELF_UPDATE_APPROVAL_FLOOR_BPS
+    } else if (*type_key == b"EnableBypassType".to_ascii_string()) {
+        ENABLE_BYPASS_APPROVAL_FLOOR_BPS
     } else {
         0
     }
