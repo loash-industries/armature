@@ -444,7 +444,11 @@ fun test_batch_add_members_e2e() {
         let dao = scenario.take_shared<DAO>();
         clock.set_for_testing(1000);
 
-        let payload = batch_add_members::new(vector[BATCH_MEMBER_1, BATCH_MEMBER_2, BATCH_MEMBER_3]);
+        let payload = batch_add_members::new(vector[
+            BATCH_MEMBER_1,
+            BATCH_MEMBER_2,
+            BATCH_MEMBER_3,
+        ]);
         board_voting::submit_proposal(
             &dao,
             b"BatchAddMembers".to_ascii_string(),
@@ -595,7 +599,11 @@ fun test_batch_add_members_internal_duplicate_aborts() {
         clock.set_for_testing(1000);
 
         // BATCH_MEMBER_1 appears twice within the batch itself
-        let payload = batch_add_members::new(vector[BATCH_MEMBER_1, BATCH_MEMBER_2, BATCH_MEMBER_1]);
+        let payload = batch_add_members::new(vector[
+            BATCH_MEMBER_1,
+            BATCH_MEMBER_2,
+            BATCH_MEMBER_1,
+        ]);
         board_voting::submit_proposal(
             &dao,
             b"BatchAddMembers".to_ascii_string(),
@@ -741,8 +749,37 @@ fun test_batch_add_members_oversize_aborts() {
         let mut i: u8 = 10;
         while ((i as u64) < 111) {
             let mut bytes = vector[
-                0u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0u8,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
             ];
             bytes.push_back(i);
             addrs.push_back(sui::address::from_bytes(bytes));
