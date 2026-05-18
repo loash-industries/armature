@@ -500,27 +500,22 @@ public fun consume_execution_request<P>(req: ExecutionRequest<P>) {
 public fun cap_dao_id<P>(self: &ExternalExecutionCap<P>): ID { self.dao_id }
 
 /// Create an ExternalExecutionCap, authorized by an active ExecutionRequest.
-/// The request acts as the auth gate: only handlers running within a
-/// governance-approved PTB can produce one, and the cap is bound to the same
-/// DAO as the request. In practice this means
-/// `admin_ops::execute_enable_bypass_type<NewType>` is the only path that
-/// mints a cap, because that handler holds the only `ExecutionRequest<EnableBypassType>`
-/// the framework will issue for that flow.
-///
-/// `Auth` is the type of the authorizing request; `P` is the type the cap
-/// will authorize bypass execution for. Typically `Auth = EnableBypassType`
-/// and `P` = the new bypass-eligible payload type.
-public fun new_external_execution_cap<Auth, P>(
+/// Restricted to `public(package)` so the only caller is the framework's
+/// own `external_execution::execute_enable_bypass_type<NewType>` handler.
+/// This prevents the cross-type escalation where any caller holding any
+/// `ExecutionRequest<Auth>` could mint a cap for an unrelated proposal type.
+public(package) fun new_external_execution_cap<Auth, P>(
     req: &ExecutionRequest<Auth>,
     ctx: &mut TxContext,
 ): ExternalExecutionCap<P> {
     ExternalExecutionCap<P> { id: object::new(ctx), dao_id: req.dao_id }
 }
 
-/// Permanently destroy an ExternalExecutionCap, authorized by an
-/// ExecutionRequest scoped to the same DAO as the cap. Used by future
-/// disable flows; not currently invoked in the default handler set.
-public fun destroy_external_execution_cap<Auth, P>(
+/// Permanently destroy an ExternalExecutionCap.
+/// Restricted to `public(package)` so only the framework's
+/// `external_execution::execute_disable_bypass_type<NewType>` handler can
+/// destroy a cap. The request asserts the cap belongs to the same DAO.
+public(package) fun destroy_external_execution_cap<Auth, P>(
     cap: ExternalExecutionCap<P>,
     req: &ExecutionRequest<Auth>,
 ) {

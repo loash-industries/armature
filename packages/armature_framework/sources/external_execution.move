@@ -18,9 +18,11 @@
 /// of type `P` execute via this path, regardless of the extension package.
 module armature::external_execution;
 
-use armature::dao::DAO;
+use armature::capability_vault::CapabilityVault;
+use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
-use armature::proposal::{Self, ExecutionRequest, ExternalExecutionCap};
+use armature::proposal::{Self, ExecutionRequest, ExternalExecutionCap, Proposal, ProposalConfig};
+use armature::utils;
 use std::string::String;
 use std::type_name;
 use sui::clock::Clock;
@@ -34,6 +36,16 @@ const EExecutionPaused: u64 = 2;
 const EControllerPaused: u64 = 3;
 const ETypeMismatch: u64 = 4;
 const ECooldownActive: u64 = 5;
+const EDAOIdMismatch: u64 = 6;
+const EVaultDAOMismatch: u64 = 7;
+const EApprovalFloorNotMet: u64 = 8;
+const ESubDAOBlockedType: u64 = 9;
+const ECapNotFound: u64 = 10;
+
+// === Constants ===
+
+/// 80% approval floor for EnableBypassType (basis points).
+const ENABLE_BYPASS_APPROVAL_FLOOR_BPS: u64 = 8_000;
 
 // === Events ===
 
@@ -118,4 +130,158 @@ public fun external_executed_create<P: store>(
         clock,
         ctx,
     )
+}
+
+// === EnableBypassType / DisableBypassType ===
+//
+// Lives in the framework (not in armature_proposals) because the handler
+// mints `ExternalExecutionCap<NewType>` via a `public(package)` constructor.
+// Keeping the proposal type and its handler in the same Move package as the
+// constructor prevents the privilege-escalation path that arises when any
+// caller holding any `ExecutionRequest<Auth>` can mint a cap for an
+// unrelated proposal type.
+
+/// Enable a new proposal type on the DAO with bypass-execution authorization.
+/// In addition to the standard `EnableProposalType` effects (register the type,
+/// bind the canonical Move type for anti-spoofing), this mints an
+/// `ExternalExecutionCap<NewType>` into the DAO's `CapabilityVault`.
+public struct EnableBypassType has store {
+    type_key: std::ascii::String,
+    config: ProposalConfig,
+}
+
+/// Disable a bypass-enabled proposal type and destroy its
+/// `ExternalExecutionCap<NewType>` in one atomic step.
+public struct DisableBypassType has store {
+    type_key: std::ascii::String,
+    cap_id: ID,
+}
+
+// === Events ===
+
+/// Emitted when a DAO opts into bypass execution for a proposal type.
+public struct BypassEnabled has copy, drop {
+    dao_id: ID,
+    type_key: std::ascii::String,
+    cap_id: ID,
+}
+
+/// Emitted when a DAO opts out of bypass execution for a proposal type.
+public struct BypassDisabled has copy, drop {
+    dao_id: ID,
+    type_key: std::ascii::String,
+    cap_id: ID,
+}
+
+// === Constructors ===
+
+public fun new_enable_bypass_type(
+    type_key: std::ascii::String,
+    config: ProposalConfig,
+): EnableBypassType {
+    EnableBypassType { type_key, config }
+}
+
+public fun new_disable_bypass_type(type_key: std::ascii::String, cap_id: ID): DisableBypassType {
+    DisableBypassType { type_key, cap_id }
+}
+
+// === Accessors ===
+
+public fun enable_type_key(self: &EnableBypassType): std::ascii::String { self.type_key }
+
+public fun enable_config(self: &EnableBypassType): &ProposalConfig { &self.config }
+
+public fun disable_type_key(self: &DisableBypassType): std::ascii::String { self.type_key }
+
+public fun disable_cap_id(self: &DisableBypassType): ID { self.cap_id }
+
+// === Handlers ===
+
+/// Execute an `EnableBypassType` proposal: enable a proposal type AND mint
+/// an `ExternalExecutionCap<NewType>` into the DAO's `CapabilityVault`.
+/// Subsequent submissions of type `NewType` can skip the vote by going
+/// through `external_executed_create` with the cap.
+///
+/// Enforces an 80% approval floor — strictly more consequential than
+/// `EnableProposalType` (66%) because every future submission under this
+/// type will execute without a vote.
+public fun execute_enable_bypass_type<NewType: store>(
+    dao: &mut DAO,
+    vault: &mut CapabilityVault,
+    proposal: &Proposal<EnableBypassType>,
+    request: ExecutionRequest<EnableBypassType>,
+    ctx: &mut TxContext,
+) {
+    assert!(dao.id() == request.req_dao_id(), EDAOIdMismatch);
+    assert!(vault.dao_id() == dao.id(), EVaultDAOMismatch);
+
+    assert_approval_floor(proposal, ENABLE_BYPASS_APPROVAL_FLOOR_BPS);
+
+    let payload = proposal.payload();
+    let type_key = payload.type_key;
+    let config = payload.config;
+
+    if (dao.controller_cap_id().is_some()) {
+        assert!(!dao::is_subdao_blocked_type(&type_key), ESubDAOBlockedType);
+    };
+
+    dao.enable_proposal_type(type_key, config, &request);
+    dao.bind_type_key<NewType, EnableBypassType>(type_key, &request);
+
+    let cap = proposal::new_external_execution_cap<NewType>(&request, ctx);
+    let cap_id = object::id(&cap);
+    vault.store_cap(cap, &request);
+
+    event::emit(BypassEnabled { dao_id: dao.id(), type_key, cap_id });
+
+    proposal::finalize(request, proposal);
+}
+
+/// Execute a `DisableBypassType` proposal: extract the specified
+/// `ExternalExecutionCap<NewType>` from the vault, destroy it, and remove
+/// the proposal type from the enabled set in one atomic step.
+///
+/// The caller specifies which cap to destroy by ID; the handler verifies
+/// the cap belongs to the type being disabled by checking `type_binding_for`
+/// matches `NewType`. This prevents griefing a different bypass-enabled
+/// type by passing an unrelated cap_id.
+public fun execute_disable_bypass_type<NewType: store>(
+    dao: &mut DAO,
+    vault: &mut CapabilityVault,
+    proposal: &Proposal<DisableBypassType>,
+    request: ExecutionRequest<DisableBypassType>,
+) {
+    assert!(dao.id() == request.req_dao_id(), EDAOIdMismatch);
+    assert!(vault.dao_id() == dao.id(), EVaultDAOMismatch);
+
+    let payload = proposal.payload();
+    let type_key = payload.type_key;
+    let cap_id = payload.cap_id;
+
+    // Verify the type is bound to NewType — guards against destroying a cap
+    // for a different type by ID confusion.
+    assert!(dao.has_type_binding(&type_key), ETypeNotEnabled);
+    let expected = type_name::with_defining_ids<NewType>().into_string();
+    assert!(dao.type_binding_for(&type_key) == expected, ETypeMismatch);
+
+    // Verify the cap_id is actually registered in the vault as an EEC<NewType>.
+    let cap_ids = vault.ids_for_type<ExternalExecutionCap<NewType>>();
+    assert!(cap_ids.contains(&cap_id), ECapNotFound);
+
+    let cap: ExternalExecutionCap<NewType> = vault.extract_cap(cap_id, &request);
+    proposal::destroy_external_execution_cap(cap, &request);
+
+    dao.disable_proposal_type(type_key, &request);
+
+    event::emit(BypassDisabled { dao_id: dao.id(), type_key, cap_id });
+
+    proposal::finalize(request, proposal);
+}
+
+// === Internal ===
+
+fun assert_approval_floor<P: store>(proposal: &Proposal<P>, floor_bps: u64) {
+    let total = proposal.total_snapshot_weight();
+    assert!(utils::gte_bps(proposal.yes_weight(), total, floor_bps), EApprovalFloorNotMet);
 }
