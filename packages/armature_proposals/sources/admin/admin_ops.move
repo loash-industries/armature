@@ -165,7 +165,7 @@ public fun execute_enable_bypass_type<NewType: store>(
     dao.enable_proposal_type(type_key, config, &request);
     dao.bind_type_key<NewType, EnableBypassType>(type_key, &request);
 
-    let cap = proposal::new_external_execution_cap<NewType>(dao.id(), ctx);
+    let cap = proposal::new_external_execution_cap<EnableBypassType, NewType>(&request, ctx);
     let cap_id = object::id(&cap);
     vault.store_cap(cap, &request);
 

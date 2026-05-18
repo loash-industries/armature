@@ -499,18 +499,32 @@ public fun consume_execution_request<P>(req: ExecutionRequest<P>) {
 /// Returns the DAO this cap is scoped to.
 public fun cap_dao_id<P>(self: &ExternalExecutionCap<P>): ID { self.dao_id }
 
-/// Create an ExternalExecutionCap. Framework-internal — only callable by
-/// `armature::external_execution` during `EnableBypassType<P>` execution.
-public(package) fun new_external_execution_cap<P>(
-    dao_id: ID,
+/// Create an ExternalExecutionCap, authorized by an active ExecutionRequest.
+/// The request acts as the auth gate: only handlers running within a
+/// governance-approved PTB can produce one, and the cap is bound to the same
+/// DAO as the request. In practice this means
+/// `admin_ops::execute_enable_bypass_type<NewType>` is the only path that
+/// mints a cap, because that handler holds the only `ExecutionRequest<EnableBypassType>`
+/// the framework will issue for that flow.
+///
+/// `Auth` is the type of the authorizing request; `P` is the type the cap
+/// will authorize bypass execution for. Typically `Auth = EnableBypassType`
+/// and `P` = the new bypass-eligible payload type.
+public fun new_external_execution_cap<Auth, P>(
+    req: &ExecutionRequest<Auth>,
     ctx: &mut TxContext,
 ): ExternalExecutionCap<P> {
-    ExternalExecutionCap<P> { id: object::new(ctx), dao_id }
+    ExternalExecutionCap<P> { id: object::new(ctx), dao_id: req.dao_id }
 }
 
-/// Permanently destroy an ExternalExecutionCap. Framework-internal —
-/// only callable by `armature::external_execution` during disable flow.
-public(package) fun destroy_external_execution_cap<P>(cap: ExternalExecutionCap<P>) {
+/// Permanently destroy an ExternalExecutionCap, authorized by an
+/// ExecutionRequest scoped to the same DAO as the cap. Used by future
+/// disable flows; not currently invoked in the default handler set.
+public fun destroy_external_execution_cap<Auth, P>(
+    cap: ExternalExecutionCap<P>,
+    req: &ExecutionRequest<Auth>,
+) {
+    assert!(cap.dao_id == req.dao_id, ECapDAOMismatch);
     let ExternalExecutionCap { id, dao_id: _ } = cap;
     id.delete();
 }
