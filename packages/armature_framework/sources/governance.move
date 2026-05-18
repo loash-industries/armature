@@ -127,6 +127,50 @@ public(package) fun add_board_member(self: &mut GovernanceConfig, member: addres
     }
 }
 
+/// Add multiple members to the board, skipping any address that is already
+/// present. Aborts only on **internal duplicates** within `new_members`
+/// (the same address listed twice in the input vector) — that case is
+/// treated as proposer error, not benign overlap with current membership.
+///
+/// Returns (added, skipped): the addresses actually inserted and the
+/// addresses that were already on the board, both in input order. The
+/// caller is expected to surface `skipped` in its event so the on-chain
+/// record reflects what actually happened, not just proposer intent.
+public(package) fun add_board_members(
+    self: &mut GovernanceConfig,
+    new_members: vector<address>,
+): (vector<address>, vector<address>) {
+    match (self) {
+        GovernanceConfig::Board { members } => {
+            // First pass: reject internal duplicates before any mutation.
+            let mut seen = vec_set::empty<address>();
+            let mut i = 0;
+            while (i < new_members.length()) {
+                let addr = new_members[i];
+                assert!(!seen.contains(&addr), EDuplicateBoardMember);
+                seen.insert(addr);
+                i = i + 1;
+            };
+            // Second pass: insert non-existing members, record both outcomes.
+            let mut added = vector::empty<address>();
+            let mut skipped = vector::empty<address>();
+            let mut j = 0;
+            while (j < new_members.length()) {
+                let addr = new_members[j];
+                if (members.contains(&addr)) {
+                    skipped.push_back(addr);
+                } else {
+                    members.insert(addr);
+                    added.push_back(addr);
+                };
+                j = j + 1;
+            };
+            (added, skipped)
+        },
+        _ => abort 0,
+    }
+}
+
 /// Returns the voting weight of addr in this governance config.
 /// Board: 1 (asserts membership). Direct/Weighted: weight from map (asserts presence).
 public(package) fun proposer_weight(self: &GovernanceConfig, addr: address): u64 {
