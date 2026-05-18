@@ -92,7 +92,7 @@ fun external_executed_create_happy_path() {
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = armature::external_execution::ECapDAOMismatch)]
+#[test, expected_failure(abort_code = armature::proposal::ECapDAOMismatch)]
 /// A cap minted for a different DAO must not authorize execution.
 fun external_executed_create_cap_for_wrong_dao_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
