@@ -35,6 +35,7 @@ const DEFAULT_PROPOSAL_TYPES: vector<vector<u8>> = vector[
     b"SetBoard",
     b"AddMember",
     b"RemoveMember",
+    b"BatchAddMembers",
     b"CharterUpdate",
     b"EnableProposalType",
     b"DisableProposalType",
@@ -455,6 +456,18 @@ public fun add_board_member_governance<P>(
 ) {
     assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
     self.governance.add_board_member(member);
+}
+
+/// Add multiple members to the DAO's board atomically. Aborts and leaves
+/// the board unchanged if any address is already present or duplicated.
+/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+public fun add_board_members_governance<P>(
+    self: &mut DAO,
+    new_members: vector<address>,
+    req: &ExecutionRequest<P>,
+) {
+    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    self.governance.add_board_members(new_members);
 }
 
 /// Remove a single member from the DAO's board.

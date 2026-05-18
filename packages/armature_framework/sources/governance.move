@@ -127,6 +127,31 @@ public(package) fun add_board_member(self: &mut GovernanceConfig, member: addres
     }
 }
 
+/// Add multiple members to the board atomically. Aborts if any address is
+/// already on the board or duplicated within `new_members`, leaving the
+/// existing membership unchanged on failure.
+public(package) fun add_board_members(self: &mut GovernanceConfig, new_members: vector<address>) {
+    match (self) {
+        GovernanceConfig::Board { members } => {
+            let mut seen = vec_set::empty<address>();
+            let mut i = 0;
+            while (i < new_members.length()) {
+                let addr = new_members[i];
+                assert!(!members.contains(&addr), EDuplicateBoardMember);
+                assert!(!seen.contains(&addr), EDuplicateBoardMember);
+                seen.insert(addr);
+                i = i + 1;
+            };
+            let mut j = 0;
+            while (j < new_members.length()) {
+                members.insert(new_members[j]);
+                j = j + 1;
+            };
+        },
+        _ => abort 0,
+    }
+}
+
 /// Returns the voting weight of addr in this governance config.
 /// Board: 1 (asserts membership). Direct/Weighted: weight from map (asserts presence).
 public(package) fun proposer_weight(self: &GovernanceConfig, addr: address): u64 {

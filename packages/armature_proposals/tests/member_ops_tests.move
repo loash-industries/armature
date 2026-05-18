@@ -7,6 +7,7 @@ use armature::emergency::EmergencyFreeze;
 use armature::governance;
 use armature::proposal::Proposal;
 use armature_proposals::add_member::{Self, AddMember};
+use armature_proposals::batch_add_members::{Self, BatchAddMembers};
 use armature_proposals::member_ops;
 use armature_proposals::remove_member::{Self, RemoveMember};
 use std::string;
@@ -16,6 +17,9 @@ use sui::test_scenario;
 const CREATOR: address = @0xA;
 const MEMBER_B: address = @0xB;
 const NEW_MEMBER: address = @0xC;
+const BATCH_MEMBER_1: address = @0xD;
+const BATCH_MEMBER_2: address = @0xE;
+const BATCH_MEMBER_3: address = @0xF;
 
 // =========================================================================
 // AddMember tests
@@ -403,6 +407,385 @@ fun test_remove_last_member_aborts() {
         );
 
         member_ops::execute_remove_member(&mut dao, &proposal, request);
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// =========================================================================
+// BatchAddMembers tests
+// =========================================================================
+
+#[test]
+/// E2E: Create DAO → BatchAddMembers proposal → vote → execute → verify all added.
+fun test_batch_add_members_e2e() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR, MEMBER_B]);
+        dao::create(
+            &init,
+            string::utf8(b"Test DAO"),
+            string::utf8(b"Batch add e2e"),
+            string::utf8(b"https://example.com/logo.png"),
+            scenario.ctx(),
+        );
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        clock.set_for_testing(1000);
+
+        let payload = batch_add_members::new(vector[BATCH_MEMBER_1, BATCH_MEMBER_2, BATCH_MEMBER_3]);
+        board_voting::submit_proposal(
+            &dao,
+            b"BatchAddMembers".to_ascii_string(),
+            option::some(string::utf8(b"Add three at once")),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<BatchAddMembers>>();
+        clock.set_for_testing(2000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut proposal = scenario.take_shared<Proposal<BatchAddMembers>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        clock.set_for_testing(3000);
+
+        let request = board_voting::authorize_execution(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+
+        member_ops::execute_batch_add_members(&mut dao, &proposal, request);
+
+        let gov = dao.governance();
+        assert!(gov.is_board_member(CREATOR));
+        assert!(gov.is_board_member(MEMBER_B));
+        assert!(gov.is_board_member(BATCH_MEMBER_1));
+        assert!(gov.is_board_member(BATCH_MEMBER_2));
+        assert!(gov.is_board_member(BATCH_MEMBER_3));
+        // encrypt_epoch should not change on add
+        assert!(dao.encrypt_epoch() == 0);
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::governance::EDuplicateBoardMember)]
+/// Batch containing an address already on the board should abort atomically.
+fun test_batch_add_members_existing_member_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR, MEMBER_B]);
+        dao::create(
+            &init,
+            string::utf8(b"Test DAO"),
+            string::utf8(b"Batch with existing"),
+            string::utf8(b"https://example.com/logo.png"),
+            scenario.ctx(),
+        );
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        clock.set_for_testing(1000);
+
+        // MEMBER_B is already on the board
+        let payload = batch_add_members::new(vector[BATCH_MEMBER_1, MEMBER_B]);
+        board_voting::submit_proposal(
+            &dao,
+            b"BatchAddMembers".to_ascii_string(),
+            option::some(string::utf8(b"Batch with dup")),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<BatchAddMembers>>();
+        clock.set_for_testing(2000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut proposal = scenario.take_shared<Proposal<BatchAddMembers>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        clock.set_for_testing(3000);
+
+        let request = board_voting::authorize_execution(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+
+        member_ops::execute_batch_add_members(&mut dao, &proposal, request);
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::governance::EDuplicateBoardMember)]
+/// Batch with an address duplicated within itself should abort atomically.
+fun test_batch_add_members_internal_duplicate_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR, MEMBER_B]);
+        dao::create(
+            &init,
+            string::utf8(b"Test DAO"),
+            string::utf8(b"Internal dup"),
+            string::utf8(b"https://example.com/logo.png"),
+            scenario.ctx(),
+        );
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        clock.set_for_testing(1000);
+
+        // BATCH_MEMBER_1 appears twice within the batch itself
+        let payload = batch_add_members::new(vector[BATCH_MEMBER_1, BATCH_MEMBER_2, BATCH_MEMBER_1]);
+        board_voting::submit_proposal(
+            &dao,
+            b"BatchAddMembers".to_ascii_string(),
+            option::some(string::utf8(b"Internal dup")),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<BatchAddMembers>>();
+        clock.set_for_testing(2000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut proposal = scenario.take_shared<Proposal<BatchAddMembers>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        clock.set_for_testing(3000);
+
+        let request = board_voting::authorize_execution(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+
+        member_ops::execute_batch_add_members(&mut dao, &proposal, request);
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature_proposals::member_ops::EEmptyBatch)]
+/// Empty batch should abort with EEmptyBatch.
+fun test_batch_add_members_empty_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR, MEMBER_B]);
+        dao::create(
+            &init,
+            string::utf8(b"Test DAO"),
+            string::utf8(b"Empty batch"),
+            string::utf8(b"https://example.com/logo.png"),
+            scenario.ctx(),
+        );
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        clock.set_for_testing(1000);
+
+        let payload = batch_add_members::new(vector[]);
+        board_voting::submit_proposal(
+            &dao,
+            b"BatchAddMembers".to_ascii_string(),
+            option::some(string::utf8(b"Empty")),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<BatchAddMembers>>();
+        clock.set_for_testing(2000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut proposal = scenario.take_shared<Proposal<BatchAddMembers>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        clock.set_for_testing(3000);
+
+        let request = board_voting::authorize_execution(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+
+        member_ops::execute_batch_add_members(&mut dao, &proposal, request);
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature_proposals::member_ops::EBatchTooLarge)]
+/// Batch exceeding MAX_BATCH_SIZE (100) should abort with EBatchTooLarge.
+fun test_batch_add_members_oversize_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR, MEMBER_B]);
+        dao::create(
+            &init,
+            string::utf8(b"Test DAO"),
+            string::utf8(b"Oversize batch"),
+            string::utf8(b"https://example.com/logo.png"),
+            scenario.ctx(),
+        );
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        clock.set_for_testing(1000);
+
+        // Build a batch of 101 distinct addresses: 31 zero bytes + 1 byte i,
+        // starting at i=10 to stay clear of CREATOR/MEMBER_B/named consts.
+        let mut addrs = vector::empty<address>();
+        let mut i: u8 = 10;
+        while ((i as u64) < 111) {
+            let mut bytes = vector[
+                0u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            ];
+            bytes.push_back(i);
+            addrs.push_back(sui::address::from_bytes(bytes));
+            i = i + 1;
+        };
+
+        let payload = batch_add_members::new(addrs);
+        board_voting::submit_proposal(
+            &dao,
+            b"BatchAddMembers".to_ascii_string(),
+            option::some(string::utf8(b"Too many")),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<BatchAddMembers>>();
+        clock.set_for_testing(2000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut proposal = scenario.take_shared<Proposal<BatchAddMembers>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        clock.set_for_testing(3000);
+
+        let request = board_voting::authorize_execution(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+
+        member_ops::execute_batch_add_members(&mut dao, &proposal, request);
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
