@@ -20,6 +20,7 @@ use sui::event;
 const EDaoMismatch: u64 = 0;
 const ETooManyAdds: u64 = 1;
 const ETooManyRemoves: u64 = 2;
+const EZeroTribeIdNotAllowed: u64 = 3;
 
 // === Constants ===
 
@@ -84,6 +85,16 @@ public fun execute_configure_autojoin(
 
     assert!(payload.add_tribe_ids.length() <= MAX_OPS_PER_CALL, ETooManyAdds);
     assert!(payload.remove_tribe_ids.length() <= MAX_OPS_PER_CALL, ETooManyRemoves);
+
+    // Reject tribe_id == 0 in adds. world::character::create_character /
+    // update_tribe both reject 0 today (ETribeIdEmpty), but defending at
+    // config time prevents a bad allowlist entry from existing in the
+    // first place — independent of any future world-contracts change.
+    let mut i = 0;
+    while (i < payload.add_tribe_ids.length()) {
+        assert!(payload.add_tribe_ids[i] != 0, EZeroTribeIdNotAllowed);
+        i = i + 1;
+    };
 
     if (!dao.has_type_state<ConfigureAutojoin>()) {
         dao.init_type_state<ConfigureAutojoin, TribeIdAllowlist>(

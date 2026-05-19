@@ -53,6 +53,7 @@ const ESenderNotCharacterOwner: u64 = 1;
 const EAllowlistNotInitialized: u64 = 2;
 const EAutojoinDisabled: u64 = 3;
 const ETribeIdNotAllowed: u64 = 4;
+const EZeroTribeIdNotAllowed: u64 = 5;
 
 // === Structs ===
 
@@ -121,6 +122,10 @@ public fun submit_autojoin(
         members_dao.borrow_type_state<ConfigureAutojoin, TribeIdAllowlist>();
     assert!(allowlist.is_enabled(), EAutojoinDisabled);
     let tribe_id = character.tribe();
+    // Reject tribe_id == 0 at the use site too. ConfigureAutojoin rejects 0
+    // on adds, but defense-in-depth: if the world-contracts admin gate ever
+    // changes and produces a 0-tribe Character, this catches it independently.
+    assert!(tribe_id != 0, EZeroTribeIdNotAllowed);
     assert!(allowlist.contains(tribe_id), ETribeIdNotAllowed);
 
     // 3. Borrow the cap. borrow_external_cap asserts vault.dao_id == members_dao.id().
