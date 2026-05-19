@@ -5,7 +5,10 @@ version = "0.0.1"
 
 [dependencies]
 armature = { local = "../armature_framework" }
-world = { local = "../../.world-contracts/contracts/world" }
+# Pinned to v0.0.23 (commit 02b75e3) so CI can resolve without the local
+# .world-contracts checkout. Bump alongside the world-contracts upgrade
+# whenever the Character / admin-gating surface changes.
+world = { git = "https://github.com/evefrontier/world-contracts.git", subdir = "contracts/world", rev = "v0.0.23" }
 
 [environments]
 testnet_internal = "4c78adac"
