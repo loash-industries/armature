@@ -27,6 +27,12 @@ const ENABLE_APPROVAL_FLOOR_BPS: u64 = 6_600;
 /// 80% approval floor for self-referencing UpdateProposalConfig (basis points).
 const SELF_UPDATE_APPROVAL_FLOOR_BPS: u64 = 8_000;
 
+/// 80% approval floor for EnableBypassType (basis points). The handler that
+/// enforces this floor at execute time lives in `armature::external_execution`;
+/// the value is duplicated here so `UpdateProposalConfig` can keep
+/// `EnableBypassType`'s on-DAO config above the floor.
+const ENABLE_BYPASS_APPROVAL_FLOOR_BPS: u64 = 8_000;
+
 // === Events ===
 
 public struct ProposalTypeDisabled has copy, drop {
@@ -187,6 +193,11 @@ fun assert_disableable(type_key: &std::ascii::String) {
 /// Assert that a proposal's approval rate meets the specified floor (in basis points).
 fun assert_approval_floor<P: store>(proposal: &Proposal<P>, floor_bps: u64) {
     let total = proposal.total_snapshot_weight();
+    // Reject zero-weight proposals. gte_bps(0, 0, _) returns true (0 >= 0),
+    // which would let a privileged_create / external_executed_create proposal
+    // (snapshot weight 0) pass any floor vacuously. The floor only has meaning
+    // when there is real voting power behind the proposal.
+    assert!(total > 0, EApprovalFloorNotMet);
     assert!(utils::gte_bps(proposal.yes_weight(), total, floor_bps), EApprovalFloorNotMet);
 }
 
@@ -206,6 +217,8 @@ fun execution_floor_for_type(type_key: &std::ascii::String): u64 {
         ENABLE_APPROVAL_FLOOR_BPS
     } else if (*type_key == b"UpdateProposalConfig".to_ascii_string()) {
         SELF_UPDATE_APPROVAL_FLOOR_BPS
+    } else if (*type_key == b"EnableBypassType".to_ascii_string()) {
+        ENABLE_BYPASS_APPROVAL_FLOOR_BPS
     } else {
         0
     }

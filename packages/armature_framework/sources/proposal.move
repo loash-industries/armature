@@ -26,6 +26,7 @@ const EExecutionPaused: u64 = 12;
 const ERequestMismatch: u64 = 13;
 const ENotExecuted: u64 = 14;
 const EDAONotActive: u64 = 15;
+const ECapDAOMismatch: u64 = 16;
 
 // === Constants ===
 
@@ -59,6 +60,22 @@ public enum ProposalStatus has copy, drop, store {
 public struct ExecutionRequest<phantom P> {
     dao_id: ID,
     proposal_id: ID,
+}
+
+/// Capability that authorizes producing an `ExecutionRequest<P>` for a
+/// specific DAO without going through a vote. The cap is the on-chain
+/// opt-in for bypass execution: a DAO that passes `EnableBypassType<P>`
+/// receives one of these in its `CapabilityVault`. Extension packages
+/// that wrap an external authorization condition (Character ownership,
+/// token balance, attestation, oracle assertion, etc.) borrow the cap
+/// and pass it to `external_execution::external_executed_create`.
+///
+/// Scoped per (DAO, proposal type): a cap for tribe Alpha's AutojoinDAO
+/// cannot mint a request for tribe Beta, nor for any other proposal type.
+/// Construction is framework-internal; outside code cannot fabricate one.
+public struct ExternalExecutionCap<phantom P> has key, store {
+    id: UID,
+    dao_id: ID,
 }
 
 /// A shared proposal object. Generic over the payload type P.
@@ -477,6 +494,42 @@ public fun consume_execution_request<P>(req: ExecutionRequest<P>) {
     let ExecutionRequest { dao_id: _, proposal_id: _ } = req;
 }
 
+// === ExternalExecutionCap ===
+
+/// Returns the DAO this cap is scoped to.
+public fun cap_dao_id<P>(self: &ExternalExecutionCap<P>): ID { self.dao_id }
+
+/// Create an ExternalExecutionCap, authorized by an active ExecutionRequest.
+/// Restricted to `public(package)` so the only caller is the framework's
+/// own `external_execution::execute_enable_bypass_type<NewType>` handler.
+/// This prevents the cross-type escalation where any caller holding any
+/// `ExecutionRequest<Auth>` could mint a cap for an unrelated proposal type.
+public(package) fun new_external_execution_cap<Auth, P>(
+    req: &ExecutionRequest<Auth>,
+    ctx: &mut TxContext,
+): ExternalExecutionCap<P> {
+    ExternalExecutionCap<P> { id: object::new(ctx), dao_id: req.dao_id }
+}
+
+/// Permanently destroy an ExternalExecutionCap.
+/// Restricted to `public(package)` so only the framework's
+/// `external_execution::execute_disable_bypass_type<NewType>` handler can
+/// destroy a cap. The request asserts the cap belongs to the same DAO.
+public(package) fun destroy_external_execution_cap<Auth, P>(
+    cap: ExternalExecutionCap<P>,
+    req: &ExecutionRequest<Auth>,
+) {
+    assert!(cap.dao_id == req.dao_id, ECapDAOMismatch);
+    let ExternalExecutionCap { id, dao_id: _ } = cap;
+    id.delete();
+}
+
+/// Assert the cap is scoped to the given DAO. Framework-internal —
+/// used by `external_execution::external_executed_create`.
+public(package) fun assert_cap_for_dao<P>(cap: &ExternalExecutionCap<P>, dao_id: ID) {
+    assert!(cap.dao_id == dao_id, ECapDAOMismatch);
+}
+
 /// Consume the execution request after validating it matches the proposal.
 /// Asserts the request was produced for the given proposal and that
 /// the proposal has been executed through the governance flow.
@@ -486,4 +539,22 @@ public fun finalize<P: store>(req: ExecutionRequest<P>, proposal: &Proposal<P>) 
     assert!(req.proposal_id == object::id(proposal), ERequestMismatch);
     assert!(proposal.status.is_executed(), ENotExecuted);
     let ExecutionRequest { dao_id: _, proposal_id: _ } = req;
+}
+
+// === Test Helpers ===
+
+#[test_only]
+/// Mint an ExternalExecutionCap<P> for testing without going through governance.
+public fun new_external_execution_cap_for_testing<P>(
+    dao_id: ID,
+    ctx: &mut TxContext,
+): ExternalExecutionCap<P> {
+    ExternalExecutionCap<P> { id: object::new(ctx), dao_id }
+}
+
+#[test_only]
+/// Destroy an ExternalExecutionCap from a test scenario.
+public fun destroy_external_execution_cap_for_testing<P>(cap: ExternalExecutionCap<P>) {
+    let ExternalExecutionCap { id, dao_id: _ } = cap;
+    id.delete();
 }
