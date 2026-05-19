@@ -46,18 +46,14 @@ const ESelfBootstrapDenied: u64 = 11;
 // === Constants ===
 
 /// 80% approval floor for EnableBypassType (basis points).
+/// Approval floor enforced at execute time. Mirrored by
+/// `admin_ops::ENABLE_BYPASS_APPROVAL_FLOOR_BPS` for the `UpdateProposalConfig`
+/// path; the two MUST stay in sync. The handler's check (this constant) is
+/// authoritative — the duplicate guards the on-DAO config from being relaxed
+/// below the handler floor via `UpdateProposalConfig`.
 const ENABLE_BYPASS_APPROVAL_FLOOR_BPS: u64 = 8_000;
 
-// === Self-bootstrap denylist ===
-//
-// Move types that are NOT permitted as `NewType` in `execute_enable_bypass_type`.
-// Bypass-enabling these would let a single `ExternalExecutionCap<EnableBypassType>`
-// (or `<DisableBypassType>`) bootstrap unlimited bypass authority via the
-// bypass path itself — `external_executed_create<EnableBypassType>` would
-// then produce zero-weight `Proposal<EnableBypassType>` objects that the
-// handler would accept (the approval-floor check guards yes/total, which
-// is now also rejected when total == 0, but defense-in-depth blocks the
-// shape entirely).
+// Self-bootstrap forbidden types — see `bypass_forbidden_type_names` below.
 
 // === Events ===
 
@@ -232,15 +228,7 @@ public fun execute_enable_bypass_type<NewType: store>(
     // NewType = EnableBypassType (or DisableBypassType) creates a self-
     // bootstrap loop: a single cap could mint caps for arbitrary types
     // via privileged_create-zero-weight proposals.
-    let new_type_name = type_name::with_defining_ids<NewType>().into_string();
-    assert!(
-        new_type_name != type_name::with_defining_ids<EnableBypassType>().into_string(),
-        ESelfBootstrapDenied,
-    );
-    assert!(
-        new_type_name != type_name::with_defining_ids<DisableBypassType>().into_string(),
-        ESelfBootstrapDenied,
-    );
+    assert_not_bypass_forbidden<NewType>();
 
     assert_approval_floor(proposal, ENABLE_BYPASS_APPROVAL_FLOOR_BPS);
 
@@ -306,6 +294,31 @@ public fun execute_disable_bypass_type<NewType: store>(
 }
 
 // === Internal ===
+
+/// Refuse to bypass-enable any Move type whose canonical name is in
+/// the framework's self-bootstrap denylist. Centralising this guard
+/// means future framework-meta types only need to be added in one place
+/// to stay safe. Aborts with `ESelfBootstrapDenied` on match.
+fun assert_not_bypass_forbidden<NewType>() {
+    let new_type_name = type_name::with_defining_ids<NewType>().into_string();
+    let forbidden = bypass_forbidden_type_names();
+    let mut i = 0;
+    while (i < forbidden.length()) {
+        assert!(new_type_name != forbidden[i], ESelfBootstrapDenied);
+        i = i + 1;
+    };
+}
+
+/// Canonical Move type names that cannot be bypass-enabled. Extend this
+/// list whenever a new framework-meta type is added whose handler runs
+/// inside the bypass path. Centralised so a single edit covers the
+/// invariant rather than scattered assertions.
+fun bypass_forbidden_type_names(): vector<std::ascii::String> {
+    vector[
+        type_name::with_defining_ids<EnableBypassType>().into_string(),
+        type_name::with_defining_ids<DisableBypassType>().into_string(),
+    ]
+}
 
 fun assert_approval_floor<P: store>(proposal: &Proposal<P>, floor_bps: u64) {
     let total = proposal.total_snapshot_weight();

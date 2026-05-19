@@ -5,7 +5,7 @@ use armature::board_voting;
 use armature::capability_vault::CapabilityVault;
 use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
-use armature::external_execution::{Self, EnableBypassType};
+use armature::external_execution::{Self, DisableBypassType, EnableBypassType};
 use armature::governance;
 use armature::proposal::{Self, ExternalExecutionCap, Proposal};
 use std::string;
@@ -45,6 +45,80 @@ fun enable_dummy_type(scenario: &mut test_scenario::Scenario) {
         dao.test_bind_type<DummyBypass>(b"DummyBypass".to_ascii_string());
         test_scenario::return_shared(dao);
     };
+}
+
+/// Run a full EnableBypassType lifecycle: submit, vote (100% from a single
+/// CREATOR-only board), execute. Returns the cap_id deposited in the vault.
+fun run_enable_bypass<NewType: store>(
+    scenario: &mut test_scenario::Scenario,
+    clock: &mut clock::Clock,
+    type_key: vector<u8>,
+    ts_submit: u64,
+    ts_vote: u64,
+    ts_exec: u64,
+): ID {
+    clock.set_for_testing(ts_submit);
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        let config = proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0);
+        let payload = external_execution::new_enable_bypass_type(
+            type_key.to_ascii_string(),
+            config,
+        );
+        board_voting::submit_proposal(
+            &dao,
+            b"EnableBypassType".to_ascii_string(),
+            option::none(),
+            payload,
+            clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    clock.set_for_testing(ts_vote);
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
+        proposal.vote(true, clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    clock.set_for_testing(ts_exec);
+    let mut cap_id_opt = option::none<ID>();
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut vault = scenario.take_shared<CapabilityVault>();
+        let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+
+        let request = board_voting::authorize_execution(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            clock,
+            scenario.ctx(),
+        );
+        external_execution::execute_enable_bypass_type<NewType>(
+            &mut dao,
+            &mut vault,
+            &proposal,
+            request,
+            scenario.ctx(),
+        );
+
+        let ids = vault.ids_for_type<ExternalExecutionCap<NewType>>();
+        cap_id_opt.fill(ids[0]);
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(vault);
+        test_scenario::return_shared(dao);
+    };
+
+    cap_id_opt.destroy_some()
 }
 
 #[test]
@@ -401,7 +475,7 @@ fun execute_enable_bypass_type_e2e() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
         let cap_id = cap_id_opt.destroy_some();
-        let cap: &ExternalExecutionCap<DummyBypass> = vault.borrow_external_cap(cap_id);
+        let cap: &ExternalExecutionCap<DummyBypass> = vault.borrow_external_cap(dao.id(), cap_id);
         let req = external_execution::external_executed_create<DummyBypass>(
             cap,
             &mut dao,
@@ -752,6 +826,251 @@ fun external_executed_create_controller_paused_aborts() {
         proposal::destroy_external_execution_cap_for_testing(cap);
 
         test_scenario::return_shared(freeze);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// =========================================================================
+// DisableBypassType tests
+// =========================================================================
+
+#[test]
+/// E2E: enable bypass for a type, then disable it via a passing
+/// DisableBypassType proposal. After execute, the type is no longer enabled
+/// and the cap is no longer present in the vault.
+fun execute_disable_bypass_type_e2e() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_test_dao(&mut scenario);
+    let cap_id = run_enable_bypass<DummyBypass>(
+        &mut scenario,
+        &mut clock,
+        b"DummyBypass",
+        1000,
+        2000,
+        3000,
+    );
+
+    // Submit DisableBypassType.
+    clock.set_for_testing(4000);
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        let payload = external_execution::new_disable_bypass_type(
+            b"DummyBypass".to_ascii_string(),
+            cap_id,
+        );
+        board_voting::submit_proposal(
+            &dao,
+            b"DisableBypassType".to_ascii_string(),
+            option::none(),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    clock.set_for_testing(5000);
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<DisableBypassType>>();
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    clock.set_for_testing(6000);
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut vault = scenario.take_shared<CapabilityVault>();
+        let mut proposal = scenario.take_shared<Proposal<DisableBypassType>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+
+        let request = board_voting::authorize_execution(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        external_execution::execute_disable_bypass_type<DummyBypass>(
+            &mut dao,
+            &mut vault,
+            &proposal,
+            request,
+        );
+
+        // Type removed from enabled set.
+        assert!(!dao.enabled_proposal_types().contains(&b"DummyBypass".to_ascii_string()));
+        // Cap no longer in vault.
+        let remaining = vault.ids_for_type<ExternalExecutionCap<DummyBypass>>();
+        assert!(remaining.is_empty());
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(vault);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::external_execution::ETypeMismatch)]
+/// Disable handler invoked with NewType that does not match the type_key's
+/// binding must abort, even if the cap_id is otherwise valid for the DAO.
+/// Guards against ID-confusion attacks where a malicious proposal would
+/// destroy a different cap than the type_key suggests.
+fun execute_disable_bypass_type_wrong_new_type_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_test_dao(&mut scenario);
+    let cap_id = run_enable_bypass<DummyBypass>(
+        &mut scenario,
+        &mut clock,
+        b"DummyBypass",
+        1000,
+        2000,
+        3000,
+    );
+
+    clock.set_for_testing(4000);
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        let payload = external_execution::new_disable_bypass_type(
+            b"DummyBypass".to_ascii_string(),
+            cap_id,
+        );
+        board_voting::submit_proposal(
+            &dao,
+            b"DisableBypassType".to_ascii_string(),
+            option::none(),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    clock.set_for_testing(5000);
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<DisableBypassType>>();
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    clock.set_for_testing(6000);
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut vault = scenario.take_shared<CapabilityVault>();
+        let mut proposal = scenario.take_shared<Proposal<DisableBypassType>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+
+        let request = board_voting::authorize_execution(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        // Type binding for DummyBypass is DummyBypass, but we pass OtherBypass.
+        external_execution::execute_disable_bypass_type<OtherBypass>(
+            &mut dao,
+            &mut vault,
+            &proposal,
+            request,
+        );
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(vault);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::external_execution::ECapNotFound)]
+/// Disable handler must abort when the cap_id is not in the vault for
+/// the given NewType, even if everything else lines up.
+fun execute_disable_bypass_type_wrong_cap_id_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_test_dao(&mut scenario);
+    let _real_cap_id = run_enable_bypass<DummyBypass>(
+        &mut scenario,
+        &mut clock,
+        b"DummyBypass",
+        1000,
+        2000,
+        3000,
+    );
+
+    let bogus_cap_id = object::id_from_address(@0xBADC);
+
+    clock.set_for_testing(4000);
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        let payload = external_execution::new_disable_bypass_type(
+            b"DummyBypass".to_ascii_string(),
+            bogus_cap_id,
+        );
+        board_voting::submit_proposal(
+            &dao,
+            b"DisableBypassType".to_ascii_string(),
+            option::none(),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    clock.set_for_testing(5000);
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<DisableBypassType>>();
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    clock.set_for_testing(6000);
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut vault = scenario.take_shared<CapabilityVault>();
+        let mut proposal = scenario.take_shared<Proposal<DisableBypassType>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+
+        let request = board_voting::authorize_execution(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        external_execution::execute_disable_bypass_type<DummyBypass>(
+            &mut dao,
+            &mut vault,
+            &proposal,
+            request,
+        );
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(vault);
         test_scenario::return_shared(dao);
     };
 

@@ -151,15 +151,21 @@ public fun borrow_cap<T: key + store, P>(
 
 /// Borrow an `ExternalExecutionCap<P>` from the vault without an
 /// `ExecutionRequest`. The cap is bearer auth: its presence in this vault
-/// is the DAO's on-chain opt-in for bypass execution under type `P`. The
-/// cap itself encodes the DAO it is scoped to, so misuse is blocked at the
-/// use site (`external_execution::external_executed_create` re-asserts
-/// `cap.dao_id == dao.id()`). This is the function extension packages
-/// call to thread the cap into their bypass-submission flow.
+/// is the DAO's on-chain opt-in for bypass execution under type `P`.
+///
+/// The caller MUST pass the `dao_id` of the DAO it intends to act on, and
+/// this function asserts the vault belongs to that DAO. Combined with the
+/// cap's own `dao_id` (re-checked at the use site by
+/// `external_execution::external_executed_create`), this is two independent
+/// boundaries between a borrowed cap and a DAO mutation. Don't rely on the
+/// use-site check alone — a future consumer that forgets it would otherwise
+/// have an authority leak.
 public fun borrow_external_cap<P>(
     self: &CapabilityVault,
+    dao_id: ID,
     cap_id: ID,
 ): &armature::proposal::ExternalExecutionCap<P> {
+    assert!(self.dao_id == dao_id, EDAOIdMismatch);
     dof::borrow(&self.id, cap_id)
 }
 
