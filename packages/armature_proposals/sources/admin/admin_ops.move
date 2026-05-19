@@ -193,6 +193,11 @@ fun assert_disableable(type_key: &std::ascii::String) {
 /// Assert that a proposal's approval rate meets the specified floor (in basis points).
 fun assert_approval_floor<P: store>(proposal: &Proposal<P>, floor_bps: u64) {
     let total = proposal.total_snapshot_weight();
+    // Reject zero-weight proposals. gte_bps(0, 0, _) returns true (0 >= 0),
+    // which would let a privileged_create / external_executed_create proposal
+    // (snapshot weight 0) pass any floor vacuously. The floor only has meaning
+    // when there is real voting power behind the proposal.
+    assert!(total > 0, EApprovalFloorNotMet);
     assert!(utils::gte_bps(proposal.yes_weight(), total, floor_bps), EApprovalFloorNotMet);
 }
 

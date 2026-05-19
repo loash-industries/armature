@@ -41,11 +41,23 @@ const EVaultDAOMismatch: u64 = 7;
 const EApprovalFloorNotMet: u64 = 8;
 const ESubDAOBlockedType: u64 = 9;
 const ECapNotFound: u64 = 10;
+const ESelfBootstrapDenied: u64 = 11;
 
 // === Constants ===
 
 /// 80% approval floor for EnableBypassType (basis points).
 const ENABLE_BYPASS_APPROVAL_FLOOR_BPS: u64 = 8_000;
+
+// === Self-bootstrap denylist ===
+//
+// Move types that are NOT permitted as `NewType` in `execute_enable_bypass_type`.
+// Bypass-enabling these would let a single `ExternalExecutionCap<EnableBypassType>`
+// (or `<DisableBypassType>`) bootstrap unlimited bypass authority via the
+// bypass path itself — `external_executed_create<EnableBypassType>` would
+// then produce zero-weight `Proposal<EnableBypassType>` objects that the
+// handler would accept (the approval-floor check guards yes/total, which
+// is now also rejected when total == 0, but defense-in-depth blocks the
+// shape entirely).
 
 // === Events ===
 
@@ -216,6 +228,20 @@ public fun execute_enable_bypass_type<NewType: store>(
     assert!(dao.id() == request.req_dao_id(), EDAOIdMismatch);
     assert!(vault.dao_id() == dao.id(), EVaultDAOMismatch);
 
+    // Deny bypass-enabling the framework's own bypass-meta types. Letting
+    // NewType = EnableBypassType (or DisableBypassType) creates a self-
+    // bootstrap loop: a single cap could mint caps for arbitrary types
+    // via privileged_create-zero-weight proposals.
+    let new_type_name = type_name::with_defining_ids<NewType>().into_string();
+    assert!(
+        new_type_name != type_name::with_defining_ids<EnableBypassType>().into_string(),
+        ESelfBootstrapDenied,
+    );
+    assert!(
+        new_type_name != type_name::with_defining_ids<DisableBypassType>().into_string(),
+        ESelfBootstrapDenied,
+    );
+
     assert_approval_floor(proposal, ENABLE_BYPASS_APPROVAL_FLOOR_BPS);
 
     let payload = proposal.payload();
@@ -283,5 +309,10 @@ public fun execute_disable_bypass_type<NewType: store>(
 
 fun assert_approval_floor<P: store>(proposal: &Proposal<P>, floor_bps: u64) {
     let total = proposal.total_snapshot_weight();
+    // Reject zero-weight proposals. gte_bps(0, 0, _) returns true (0 >= 0),
+    // which would let a privileged_create / external_executed_create proposal
+    // (snapshot weight 0) pass any floor vacuously. The floor only has meaning
+    // when there is real voting power behind the proposal.
+    assert!(total > 0, EApprovalFloorNotMet);
     assert!(utils::gte_bps(proposal.yes_weight(), total, floor_bps), EApprovalFloorNotMet);
 }

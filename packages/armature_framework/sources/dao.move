@@ -39,6 +39,7 @@ const DEFAULT_PROPOSAL_TYPES: vector<vector<u8>> = vector[
     b"CharterUpdate",
     b"EnableProposalType",
     b"EnableBypassType",
+    b"DisableBypassType",
     b"DisableProposalType",
     b"UpdateProposalConfig",
     b"TransferFreezeAdmin",
@@ -46,11 +47,14 @@ const DEFAULT_PROPOSAL_TYPES: vector<vector<u8>> = vector[
 ];
 
 /// Proposal types blocked for SubDAOs — hierarchy-altering operations
-/// reserved for independent DAOs.
+/// reserved for independent DAOs, plus bypass-meta types that would let
+/// a SubDAO autonomously escalate its own execution privileges.
 const SUBDAO_BLOCKED_TYPES: vector<vector<u8>> = vector[
     b"SpawnDAO",
     b"SpinOutSubDAO",
     b"CreateSubDAO",
+    b"EnableBypassType",
+    b"DisableBypassType",
 ];
 
 /// Proposal types that can never be disabled via DisableProposalType.
@@ -58,6 +62,7 @@ const SUBDAO_BLOCKED_TYPES: vector<vector<u8>> = vector[
 const UNDISABLEABLE_TYPES: vector<vector<u8>> = vector[
     b"EnableProposalType",
     b"EnableBypassType",
+    b"DisableBypassType",
     b"DisableProposalType",
     b"TransferFreezeAdmin",
     b"UnfreezeProposalType",
