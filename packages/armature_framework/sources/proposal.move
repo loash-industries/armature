@@ -553,6 +553,14 @@ public fun new_external_execution_cap_for_testing<P>(
 }
 
 #[test_only]
+/// Synthesize an ExecutionRequest<P> for testing. Cross-package tests (e.g.
+/// armature_world_bridge) need to thread a request between split-PTB test
+/// transactions; production code can never call this because it's #[test_only].
+public fun new_execution_request_for_testing<P>(dao_id: ID, proposal_id: ID): ExecutionRequest<P> {
+    ExecutionRequest { dao_id, proposal_id }
+}
+
+#[test_only]
 /// Destroy an ExternalExecutionCap from a test scenario.
 public fun destroy_external_execution_cap_for_testing<P>(cap: ExternalExecutionCap<P>) {
     let ExternalExecutionCap { id, dao_id: _ } = cap;
