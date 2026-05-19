@@ -465,3 +465,33 @@ fun test_claim_coin_multiple_types() {
 // Note: test_withdraw_requires_execution_request is enforced by the ExecutionRequest
 // parameter — only code holding a valid ExecutionRequest (from governance) can withdraw.
 // This is verified by the Move type system and does not need a runtime test.
+
+#[test]
+/// destroy_empty succeeds on a freshly-created vault that holds no balances.
+fun test_destroy_empty_succeeds_on_empty_vault() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    scenario.next_tx(CREATOR);
+    {
+        let dao_id = object::id_from_address(@0xDA0);
+        let vault = treasury_vault::new(dao_id, scenario.ctx());
+        treasury_vault::destroy_empty(vault);
+    };
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = treasury_vault::EVaultNotEmpty)]
+/// destroy_empty aborts with EVaultNotEmpty if the vault still holds coin balances.
+/// Previously this asserted with EInsufficientBalance, which was semantically
+/// misleading — see #79.
+fun test_destroy_empty_aborts_on_non_empty_vault() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    scenario.next_tx(CREATOR);
+    {
+        let dao_id = object::id_from_address(@0xDA0);
+        let mut vault = treasury_vault::new(dao_id, scenario.ctx());
+        let coin = coin::mint_for_testing<SUI>(100, scenario.ctx());
+        vault.deposit(coin, scenario.ctx());
+        treasury_vault::destroy_empty(vault);
+    };
+    scenario.end();
+}

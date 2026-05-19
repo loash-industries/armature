@@ -11,6 +11,7 @@ use sui::vec_set::{Self, VecSet};
 
 const EInsufficientBalance: u64 = 0;
 const EDAOIdMismatch: u64 = 1;
+const EVaultNotEmpty: u64 = 2;
 
 // === Events ===
 
@@ -190,9 +191,10 @@ public fun is_empty(self: &TreasuryVault): bool {
     self.coin_types.is_empty()
 }
 
-/// Destroy an empty TreasuryVault. Aborts if the vault still holds coins.
+/// Destroy an empty TreasuryVault. Aborts with `EVaultNotEmpty` if the
+/// vault still holds coin balances.
 public(package) fun destroy_empty(vault: TreasuryVault) {
     let TreasuryVault { id, dao_id: _, coin_types } = vault;
-    assert!(coin_types.is_empty(), EInsufficientBalance);
+    assert!(coin_types.is_empty(), EVaultNotEmpty);
     id.delete();
 }
