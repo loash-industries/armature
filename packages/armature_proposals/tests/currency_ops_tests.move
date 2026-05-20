@@ -304,10 +304,18 @@ fun burn_from_treasury() {
         let mut proposal = scenario.take_shared<Proposal<MintCoin<GLYPH>>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let request = board_voting::authorize_execution(
-            &mut dao, &mut proposal, &freeze, &clock, scenario.ctx(),
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
         );
         currency_ops::execute_mint_coin<GLYPH>(
-            &mut cap_vault, &mut treasury, &proposal, request, scenario.ctx(),
+            &mut cap_vault,
+            &mut treasury,
+            &proposal,
+            request,
+            scenario.ctx(),
         );
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
@@ -345,10 +353,18 @@ fun burn_from_treasury() {
         let mut proposal = scenario.take_shared<Proposal<BurnCoin<GLYPH>>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let request = board_voting::authorize_execution(
-            &mut dao, &mut proposal, &freeze, &clock, scenario.ctx(),
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
         );
         currency_ops::execute_burn_coin<GLYPH>(
-            &mut cap_vault, &mut treasury, &proposal, request, scenario.ctx(),
+            &mut cap_vault,
+            &mut treasury,
+            &proposal,
+            request,
+            scenario.ctx(),
         );
 
         assert!(treasury.balance<GLYPH>() == 600_000);
@@ -403,7 +419,11 @@ fun return_cap_relinquishes_custody() {
         let mut proposal = scenario.take_shared<Proposal<ReturnCurrencyCap<GLYPH>>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let request = board_voting::authorize_execution(
-            &mut dao, &mut proposal, &freeze, &clock, scenario.ctx(),
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
         );
         currency_ops::execute_return_currency_cap<GLYPH>(&mut cap_vault, &proposal, request);
 
@@ -478,10 +498,18 @@ fun mint_with_unknown_cap_aborts() {
         let mut proposal = scenario.take_shared<Proposal<MintCoin<GLYPH>>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let request = board_voting::authorize_execution(
-            &mut dao, &mut proposal, &freeze, &clock, scenario.ctx(),
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
         );
         currency_ops::execute_mint_coin<GLYPH>(
-            &mut cap_vault, &mut treasury, &proposal, request, scenario.ctx(),
+            &mut cap_vault,
+            &mut treasury,
+            &proposal,
+            request,
+            scenario.ctx(),
         );
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
