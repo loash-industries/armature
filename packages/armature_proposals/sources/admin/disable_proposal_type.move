@@ -2,7 +2,7 @@ module armature_proposals::disable_proposal_type;
 
 /// Disable a proposal type on the DAO.
 /// Handler asserts the target type is not undisableable.
-public struct DisableProposalType has store {
+public struct DisableProposalType has drop, store {
     type_key: std::ascii::String,
 }
 

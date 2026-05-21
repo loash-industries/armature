@@ -3,7 +3,7 @@ module armature_proposals::transfer_freeze_admin;
 /// Transfer the FreezeAdminCap to a new address.
 /// Unfreezes all currently frozen types as a side effect.
 /// Cannot itself be frozen.
-public struct TransferFreezeAdmin has store {
+public struct TransferFreezeAdmin has drop, store {
     new_admin: address,
 }
 

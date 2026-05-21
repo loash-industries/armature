@@ -4,7 +4,7 @@ use armature::governance::GovernanceTypeInit;
 use std::string::String;
 
 /// Create a successor DAO and transition this DAO to Migrating status.
-public struct SpawnDAO has store {
+public struct SpawnDAO has drop, store {
     governance_init: GovernanceTypeInit,
     name: String,
     description: String,

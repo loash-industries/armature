@@ -7,7 +7,8 @@
 ///      with `NewType = AutojoinDAO`, depositing an `ExternalExecutionCap<AutojoinDAO>`
 ///      in the DAO's CapabilityVault.
 ///   2. DAO has previously passed `EnableProposalType { type_key: "ConfigureAutojoin", .. }`
-///      with `NewType = ConfigureAutojoin`, then `ConfigureAutojoin { add_tribe_ids: [N], set_enabled: some(true), .. }`
+///      with `NewType = ConfigureAutojoin`, then `ConfigureAutojoin { add_tribe_ids: [N],
+/// set_enabled: some(true), .. }`
 ///      to populate the allowlist.
 ///   3. Player calls `submit_autojoin(dao, vault, cap_id, character, freeze, clock, ctx)`.
 ///      The function verifies the character's wallet matches `ctx.sender()`,
@@ -118,8 +119,10 @@ public fun submit_autojoin(
 
     // 2. Read the per-DAO allowlist. type-state is keyed by ConfigureAutojoin.
     assert!(members_dao.has_type_state<ConfigureAutojoin>(), EAllowlistNotInitialized);
-    let allowlist: &TribeIdAllowlist =
-        members_dao.borrow_type_state<ConfigureAutojoin, TribeIdAllowlist>();
+    let allowlist: &TribeIdAllowlist = members_dao.borrow_type_state<
+        ConfigureAutojoin,
+        TribeIdAllowlist,
+    >();
     assert!(allowlist.is_enabled(), EAutojoinDisabled);
     let tribe_id = character.tribe();
     // Reject tribe_id == 0 at the use site too. ConfigureAutojoin rejects 0
@@ -177,8 +180,7 @@ public fun execute_autojoin_dao(
     // but a same-PTB re-read is cheap and protects against
     // future-refactor regressions.
     assert!(dao.has_type_state<ConfigureAutojoin>(), EAllowlistNotInitialized);
-    let allowlist: &TribeIdAllowlist =
-        dao.borrow_type_state<ConfigureAutojoin, TribeIdAllowlist>();
+    let allowlist: &TribeIdAllowlist = dao.borrow_type_state<ConfigureAutojoin, TribeIdAllowlist>();
     assert!(allowlist.is_enabled(), EAutojoinDisabled);
     assert!(allowlist.contains(payload.tribe_id), ETribeIdNotAllowed);
 

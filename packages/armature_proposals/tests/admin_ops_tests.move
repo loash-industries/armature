@@ -469,6 +469,7 @@ fun update_proposal_config_self_submission_floor_rejects_below_80_percent() {
             option::none(),
             option::none(),
             option::none(),
+            option::none(),
         );
         admin_ops::propose_update_proposal_config(
             &dao,
@@ -501,6 +502,7 @@ fun update_proposal_config_self_submission_floor_allows_80_percent() {
         let payload = update_proposal_config::new(
             b"UpdateProposalConfig".to_ascii_string(), // self-target
             option::some(8_000), // keep at 80% — floor check passes
+            option::none(),
             option::none(),
             option::none(),
             option::none(),
@@ -565,6 +567,7 @@ fun update_proposal_config_non_self_target_succeeds() {
         let payload = update_proposal_config::new(
             b"SetBoard".to_ascii_string(),
             option::some(3_000), // new quorum for SetBoard
+            option::none(),
             option::none(),
             option::none(),
             option::none(),
@@ -659,6 +662,7 @@ fun update_config_below_floor_aborts() {
             b"EnableProposalType".to_ascii_string(),
             option::none(), // keep quorum
             option::some(5_000), // lower threshold to 50% — below 66% floor
+            option::none(),
             option::none(),
             option::none(),
             option::none(),
@@ -918,6 +922,154 @@ fun execute_enable_proposal_type_binding_mismatch_aborts() {
 
     // Re-enable with AltPayload — should abort with ETypeBindingMismatch
     run_enable_type<AltPayload>(&mut scenario, &mut clock, b"MyGrant", 4000, 5000, 6000);
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// =========================================================================
+// composable_allowed field on UpdateProposalConfig
+// =========================================================================
+
+#[test]
+/// execute_update_proposal_config correctly applies the composable_allowed override.
+/// Starts with AddMember (composable by default), disables it via UpdateProposalConfig
+/// with composable_allowed: some(false), then re-enables it with some(true) and verifies
+/// each state transition on the DAO config.
+fun update_proposal_config_composable_allowed_updates_config() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_dao(&mut scenario);
+
+    // AddMember is composable by default — confirm baseline.
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        assert!(dao.proposal_configs().get(&b"AddMember".to_ascii_string()).composable_allowed());
+        test_scenario::return_shared(dao);
+    };
+
+    // Submit UpdateProposalConfig for AddMember with composable_allowed: some(false).
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        clock.set_for_testing(1000);
+        let payload = update_proposal_config::new(
+            b"AddMember".to_ascii_string(),
+            option::none(),
+            option::none(),
+            option::none(),
+            option::none(),
+            option::none(),
+            option::none(),
+            option::some(false), // disable composability
+        );
+        board_voting::submit_proposal(
+            &dao,
+            b"UpdateProposalConfig".to_ascii_string(),
+            option::none(),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
+        clock.set_for_testing(2000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        clock.set_for_testing(3000);
+
+        let request = board_voting::authorize_execution(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        admin_ops::execute_update_proposal_config(&mut dao, &proposal, request);
+
+        // Composability is now false.
+        assert!(!dao.proposal_configs().get(&b"AddMember".to_ascii_string()).composable_allowed());
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(dao);
+    };
+
+    // Submit a second UpdateProposalConfig to re-enable composability.
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        clock.set_for_testing(4000);
+        let payload = update_proposal_config::new(
+            b"AddMember".to_ascii_string(),
+            option::none(),
+            option::none(),
+            option::none(),
+            option::none(),
+            option::none(),
+            option::none(),
+            option::some(true), // re-enable composability
+        );
+        board_voting::submit_proposal(
+            &dao,
+            b"UpdateProposalConfig".to_ascii_string(),
+            option::none(),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
+        clock.set_for_testing(5000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        clock.set_for_testing(6000);
+
+        let request = board_voting::authorize_execution(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        admin_ops::execute_update_proposal_config(&mut dao, &proposal, request);
+
+        // Composability is restored.
+        assert!(dao.proposal_configs().get(&b"AddMember".to_ascii_string()).composable_allowed());
+
+        // Other fields are preserved — quorum unchanged from default.
+        let cfg = dao.proposal_configs().get(&b"AddMember".to_ascii_string());
+        assert!(cfg.quorum() == 5_000);
+        assert!(cfg.approval_threshold() == 5_000);
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(dao);
+    };
 
     clock.destroy_for_testing();
     scenario.end();

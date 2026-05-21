@@ -4,7 +4,7 @@ module armature_proposals::update_proposal_config;
 /// Fields set to none are left unchanged.
 /// When targeting UpdateProposalConfig itself, the handler enforces
 /// an 80% super-majority approval floor at execution time.
-public struct UpdateProposalConfig has store {
+public struct UpdateProposalConfig has drop, store {
     target_type_key: std::ascii::String,
     quorum: Option<u16>,
     approval_threshold: Option<u16>,
@@ -12,6 +12,7 @@ public struct UpdateProposalConfig has store {
     expiry_ms: Option<u64>,
     execution_delay_ms: Option<u64>,
     cooldown_ms: Option<u64>,
+    composable_allowed: Option<bool>,
 }
 
 // === Constructor ===
@@ -24,6 +25,7 @@ public fun new(
     expiry_ms: Option<u64>,
     execution_delay_ms: Option<u64>,
     cooldown_ms: Option<u64>,
+    composable_allowed: Option<bool>,
 ): UpdateProposalConfig {
     UpdateProposalConfig {
         target_type_key,
@@ -33,6 +35,7 @@ public fun new(
         expiry_ms,
         execution_delay_ms,
         cooldown_ms,
+        composable_allowed,
     }
 }
 
@@ -51,3 +54,5 @@ public fun expiry_ms(self: &UpdateProposalConfig): Option<u64> { self.expiry_ms 
 public fun execution_delay_ms(self: &UpdateProposalConfig): Option<u64> { self.execution_delay_ms }
 
 public fun cooldown_ms(self: &UpdateProposalConfig): Option<u64> { self.cooldown_ms }
+
+public fun composable_allowed(self: &UpdateProposalConfig): Option<bool> { self.composable_allowed }

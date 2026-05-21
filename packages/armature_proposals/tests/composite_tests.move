@@ -11,7 +11,9 @@ use armature::proposal::{Self, Proposal};
 use armature::treasury_vault::TreasuryVault;
 use armature_proposals::add_member::{Self, AddMember};
 use armature_proposals::admin_ops;
+use armature_proposals::batch_add_members::{Self, BatchAddMembers};
 use armature_proposals::board_ops;
+use armature_proposals::enable_proposal_type::{Self, EnableProposalType};
 use armature_proposals::member_ops;
 use armature_proposals::remove_member::{Self, RemoveMember};
 use armature_proposals::send_coin::{Self, SendCoin};
@@ -24,6 +26,9 @@ use sui::clock;
 use sui::coin;
 use sui::sui::SUI;
 use sui::test_scenario;
+
+/// Placeholder payload type for type-binding tests (e.g., enable_proposal_type_step).
+public struct TestPayload has drop, store { _dummy: u64 }
 
 const CREATOR: address = @0xA;
 const MEMBER_B: address = @0xB;
@@ -48,7 +53,7 @@ fun create_dao_two_members(scenario: &mut test_scenario::Scenario) {
 }
 
 /// Disable composability for a given type_key on the DAO using the test helper.
-/// Used to test the ENotComposable rejection path; all types are composable by default.
+/// Used to test the ENotComposable rejection path for types that are composable by opt-in.
 fun disable_composable(scenario: &mut test_scenario::Scenario, type_key: vector<u8>) {
     scenario.next_tx(CREATOR);
     {
@@ -121,7 +126,7 @@ fun composite_two_add_member_steps_e2e() {
             scenario.ctx(),
         );
 
-        let pipeline = composite::begin_pipeline(&proposal, &frame, request);
+        let pipeline = composite::begin_pipeline(&dao, &proposal, &frame, request);
 
         // Step 0: AddMember(MEMBER_C)
         let (payload_c, req_c, pipeline) = composite::advance_step<AddMember>(
@@ -218,7 +223,7 @@ fun composite_add_then_remove_member_e2e() {
             scenario.ctx(),
         );
 
-        let pipeline = composite::begin_pipeline(&proposal, &frame, request);
+        let pipeline = composite::begin_pipeline(&dao, &proposal, &frame, request);
 
         let (payload_add, req_add, pipeline) = composite::advance_step<AddMember>(
             &mut dao,
@@ -382,7 +387,7 @@ fun finalize_pipeline_incomplete_aborts() {
             scenario.ctx(),
         );
 
-        let pipeline = composite::begin_pipeline(&proposal, &frame, request);
+        let pipeline = composite::begin_pipeline(&dao, &proposal, &frame, request);
 
         // Only advance step 0 — skip step 1.
         let (payload, req, pipeline) = composite::advance_step<AddMember>(
@@ -457,7 +462,7 @@ fun advance_step_wrong_type_aborts() {
             scenario.ctx(),
         );
 
-        let pipeline = composite::begin_pipeline(&proposal, &frame, request);
+        let pipeline = composite::begin_pipeline(&dao, &proposal, &frame, request);
 
         // Step 0 is AddMember but we try to advance with RemoveMember — should abort.
         let (payload, req, pipeline) = composite::advance_step<RemoveMember>(
@@ -504,7 +509,14 @@ fun composite_send_coin_step_e2e() {
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();
-        let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+        let config = proposal::new_config(
+            5_000,
+            5_000,
+            0,
+            604_800_000,
+            0,
+            0,
+        ).with_composable_allowed(true);
         dao.test_enable_type(b"SendCoin".to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
@@ -557,7 +569,7 @@ fun composite_send_coin_step_e2e() {
             &clock,
             scenario.ctx(),
         );
-        let pipeline = composite::begin_pipeline(&proposal, &frame, request);
+        let pipeline = composite::begin_pipeline(&dao, &proposal, &frame, request);
 
         let (payload, req, pipeline) = composite::advance_step<SendCoin<SUI>>(
             &mut dao,
@@ -643,7 +655,14 @@ fun composite_send_coin_to_dao_step_e2e() {
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared_by_id<DAO>(source_dao_id);
-        let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+        let config = proposal::new_config(
+            5_000,
+            5_000,
+            0,
+            604_800_000,
+            0,
+            0,
+        ).with_composable_allowed(true);
         dao.test_enable_type(b"SendCoinToDAO".to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
@@ -697,7 +716,7 @@ fun composite_send_coin_to_dao_step_e2e() {
             &clock,
             scenario.ctx(),
         );
-        let pipeline = composite::begin_pipeline(&proposal, &frame, request);
+        let pipeline = composite::begin_pipeline(&dao, &proposal, &frame, request);
 
         let (payload, req, pipeline) = composite::advance_step<SendCoinToDAO<SUI>>(
             &mut dao,
@@ -778,7 +797,7 @@ fun composite_set_board_step_e2e() {
             &clock,
             scenario.ctx(),
         );
-        let pipeline = composite::begin_pipeline(&proposal, &frame, request);
+        let pipeline = composite::begin_pipeline(&dao, &proposal, &frame, request);
 
         let (payload, req, pipeline) = composite::advance_step<SetBoard>(
             &mut dao,
@@ -861,7 +880,7 @@ fun composite_update_metadata_step_e2e() {
             &clock,
             scenario.ctx(),
         );
-        let pipeline = composite::begin_pipeline(&proposal, &frame, request);
+        let pipeline = composite::begin_pipeline(&dao, &proposal, &frame, request);
 
         let (payload, req, pipeline) = composite::advance_step<UpdateMetadata>(
             &mut dao,
@@ -880,6 +899,230 @@ fun composite_update_metadata_step_e2e() {
         test_scenario::return_shared(frame);
         test_scenario::return_shared(proposal);
         test_scenario::return_shared(charter);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = composite::ENotComposable)]
+/// add_step aborts for a governance-sensitive type that is deny-by-default non-composable.
+/// BatchAddMembers is a default type with no _step handler, so composable_allowed = false
+/// without any manual disable call — regression guard for the deny-by-default fix.
+fun add_step_rejects_governance_sensitive_type_by_default() {
+    let mut scenario = test_scenario::begin(CREATOR);
+
+    create_dao_two_members(&mut scenario);
+
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        let mut frame = composite::new_frame(dao.id(), scenario.ctx());
+        composite::add_step<BatchAddMembers>(
+            &mut frame,
+            &dao,
+            b"BatchAddMembers".to_ascii_string(),
+            batch_add_members::new(vector[MEMBER_C]),
+        );
+        transfer::public_share_object(frame);
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.end();
+}
+
+#[test]
+/// Two AddMember steps with cooldown > 0 both succeed: advance_step checks cooldown
+/// against the pre-pipeline snapshot, so intra-composite steps don't block each other.
+fun composite_same_type_cooldown_snapshot_succeeds() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_dao_two_members(&mut scenario);
+
+    // Set a non-zero cooldown on AddMember.
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let existing = *dao.proposal_configs().get(&b"AddMember".to_ascii_string());
+        let with_cooldown = proposal::new_config(
+            existing.quorum(),
+            existing.approval_threshold(),
+            existing.propose_threshold(),
+            existing.expiry_ms(),
+            existing.execution_delay_ms(),
+            1_000,
+        ).with_composable_allowed(true);
+        dao.test_update_config(b"AddMember".to_ascii_string(), with_cooldown);
+        test_scenario::return_shared(dao);
+    };
+
+    // Build composite with two AddMember steps.
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        clock.set_for_testing(1000);
+        let mut frame = composite::new_frame(dao.id(), scenario.ctx());
+        composite::add_step<AddMember>(
+            &mut frame,
+            &dao,
+            b"AddMember".to_ascii_string(),
+            add_member::new(MEMBER_C),
+        );
+        composite::add_step<AddMember>(
+            &mut frame,
+            &dao,
+            b"AddMember".to_ascii_string(),
+            add_member::new(MEMBER_D),
+        );
+        composite::submit_composite(&dao, frame, option::none(), &clock, scenario.ctx());
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<CompositePayload>>();
+        clock.set_for_testing(2000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut proposal = scenario.take_shared<Proposal<CompositePayload>>();
+        let mut frame = scenario.take_shared<CompositeFrame>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        clock.set_for_testing(3000);
+
+        let request = board_voting::authorize_execution(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        let pipeline = composite::begin_pipeline(&dao, &proposal, &frame, request);
+
+        let (payload_c, req_c, pipeline) = composite::advance_step<AddMember>(
+            &mut dao,
+            &mut frame,
+            pipeline,
+            &freeze,
+            &clock,
+        );
+        member_ops::execute_add_member_step(&mut dao, payload_c, req_c);
+
+        // Step 1 shares the same type_key and runs at the same timestamp.
+        // Without the snapshot fix this would abort ECooldownActive.
+        let (payload_d, req_d, pipeline) = composite::advance_step<AddMember>(
+            &mut dao,
+            &mut frame,
+            pipeline,
+            &freeze,
+            &clock,
+        );
+        member_ops::execute_add_member_step(&mut dao, payload_d, req_d);
+
+        composite::finalize_pipeline(pipeline);
+
+        assert!(dao.governance().is_board_member(MEMBER_C));
+        assert!(dao.governance().is_board_member(MEMBER_D));
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(frame);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+/// Composite with a single EnableProposalType step enables a new proposal type within
+/// the pipeline. Uses a single-member DAO so CREATOR's vote alone reaches 100% approval,
+/// satisfying the 66% effective threshold floor imposed by assert_composite_floors.
+fun composite_enable_proposal_type_step_e2e() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    // Single-member DAO — CREATOR's yes vote = 100% approval.
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR]);
+        dao::create(
+            &init,
+            string::utf8(b"Enable Step DAO"),
+            string::utf8(b"Test DAO for enable_proposal_type_step"),
+            string::utf8(b"https://example.com/logo.png"),
+            scenario.ctx(),
+        );
+    };
+
+    // Submit composite: one EnableProposalType step that enables "MyGrant" / TestPayload.
+    // EnableProposalType default threshold = 6600; effective = max(Composite 5000, 6600) = 6600,
+    // meeting the 66% composite floor check.
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        clock.set_for_testing(1000);
+        let type_config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+        let step_payload = enable_proposal_type::new(b"MyGrant".to_ascii_string(), type_config);
+        let mut frame = composite::new_frame(dao.id(), scenario.ctx());
+        composite::add_step<EnableProposalType>(
+            &mut frame,
+            &dao,
+            b"EnableProposalType".to_ascii_string(),
+            step_payload,
+        );
+        composite::submit_composite(&dao, frame, option::none(), &clock, scenario.ctx());
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<CompositePayload>>();
+        clock.set_for_testing(2000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut proposal = scenario.take_shared<Proposal<CompositePayload>>();
+        let mut frame = scenario.take_shared<CompositeFrame>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        clock.set_for_testing(3000);
+
+        let request = board_voting::authorize_execution(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        let pipeline = composite::begin_pipeline(&dao, &proposal, &frame, request);
+
+        let (payload, req, pipeline) = composite::advance_step<EnableProposalType>(
+            &mut dao,
+            &mut frame,
+            pipeline,
+            &freeze,
+            &clock,
+        );
+        admin_ops::execute_enable_proposal_type_step<TestPayload>(&mut dao, payload, req);
+
+        composite::finalize_pipeline(pipeline);
+
+        assert!(dao.enabled_proposal_types().contains(&b"MyGrant".to_ascii_string()));
+        assert!(dao.has_type_binding(&b"MyGrant".to_ascii_string()));
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(frame);
+        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 

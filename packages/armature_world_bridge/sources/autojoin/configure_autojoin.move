@@ -103,8 +103,10 @@ public fun execute_configure_autojoin(
         );
     };
 
-    let allowlist: &mut TribeIdAllowlist =
-        dao.borrow_type_state_mut<ConfigureAutojoin, TribeIdAllowlist>(&request);
+    let allowlist: &mut TribeIdAllowlist = dao.borrow_type_state_mut<
+        ConfigureAutojoin,
+        TribeIdAllowlist,
+    >(&request);
 
     allowlist.apply(payload.add_tribe_ids, payload.remove_tribe_ids);
     if (payload.set_enabled.is_some()) {

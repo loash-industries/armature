@@ -3,7 +3,7 @@ module armature_proposals::spin_out_subdao;
 use armature::proposal::ProposalConfig;
 
 /// Destroy SubDAOControl and grant a SubDAO full independence.
-public struct SpinOutSubDAO has store {
+public struct SpinOutSubDAO has drop, store {
     subdao_id: ID,
     control_cap_id: ID,
     freeze_admin_cap_id: ID,

@@ -1,7 +1,7 @@
 module armature_proposals::propose_upgrade;
 
 /// Authorize a package upgrade using a stored UpgradeCap.
-public struct ProposeUpgrade has store {
+public struct ProposeUpgrade has drop, store {
     cap_id: ID,
     package_id: ID,
     digest: vector<u8>,

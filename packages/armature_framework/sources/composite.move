@@ -22,6 +22,7 @@ use std::type_name::{Self, TypeName};
 use sui::clock::Clock;
 use sui::dynamic_field as df;
 use sui::event;
+use sui::vec_map::VecMap;
 
 // === Errors ===
 
@@ -71,7 +72,7 @@ public struct CompositeFrame has key, store {
 /// References the shared CompositeFrame by ID; records step metadata copied
 /// at submission so advance_step can validate P against the recorded TypeName
 /// without reading the frame's dynamic fields.
-public struct CompositePayload has store {
+public struct CompositePayload has drop, store {
     frame_id: ID,
     step_type_keys: vector<std::ascii::String>,
     step_types: vector<TypeName>,
@@ -79,12 +80,17 @@ public struct CompositePayload has store {
 
 /// Hot-potato step sequencer. No abilities — must be consumed in the same PTB
 /// via finalize_pipeline after all steps have been advanced.
+///
+/// `last_executed_snapshot` captures `dao.last_executed_at()` at begin_pipeline
+/// time. advance_step checks cooldowns against this snapshot so that two steps
+/// sharing a type_key within the same composite don't block each other.
 public struct Pipeline {
     frame_id: ID,
     dao_id: ID,
     composite_proposal_id: ID,
     current_step: u64,
     total_steps: u64,
+    last_executed_snapshot: VecMap<std::ascii::String, u64>,
 }
 
 // === Events ===
@@ -214,7 +220,12 @@ public fun submit_composite(
 /// Begin pipeline execution for a passed composite proposal.
 /// Returns a Pipeline hot potato that enforces forward-only step ordering.
 /// Must be called after board_voting::authorize_execution<CompositePayload>.
+///
+/// Snapshots dao.last_executed_at() so advance_step can check per-step
+/// cooldowns against pre-composite execution times. This prevents two steps
+/// with the same type_key from blocking each other within one composite.
 public fun begin_pipeline(
+    dao: &DAO,
     proposal: &Proposal<CompositePayload>,
     frame: &CompositeFrame,
     req: ExecutionRequest<CompositePayload>,
@@ -224,6 +235,7 @@ public fun begin_pipeline(
     assert!(req.req_proposal_id() == object::id(proposal), EFrameMismatch);
 
     let total_steps = payload.step_type_keys.length();
+    let last_executed_snapshot = *dao.last_executed_at();
 
     // Consume the ExecutionRequest — the Pipeline hot potato takes over sequencing.
     proposal::consume(req);
@@ -234,6 +246,7 @@ public fun begin_pipeline(
         composite_proposal_id: object::id(proposal),
         current_step: 0,
         total_steps,
+        last_executed_snapshot,
     }
 }
 
@@ -266,12 +279,12 @@ public fun advance_step<P: store>(
     // Per-step freeze check mirrors board_voting::authorize_execution.
     freeze.assert_not_frozen(&step_type_key, clock);
 
-    // Per-step cooldown check and record.
+    // Per-step cooldown check against the pre-pipeline snapshot so steps
+    // sharing a type_key don't block each other within the same composite.
     let step_config = *dao.proposal_configs().get(&step_type_key);
     if (step_config.cooldown_ms() > 0) {
-        let last_at = dao.last_executed_at();
-        if (last_at.contains(&step_type_key)) {
-            let last = *last_at.get(&step_type_key);
+        if (pipeline.last_executed_snapshot.contains(&step_type_key)) {
+            let last = *pipeline.last_executed_snapshot.get(&step_type_key);
             assert!(clock.timestamp_ms() >= last + step_config.cooldown_ms(), ECooldownActive);
         };
     };
@@ -283,8 +296,14 @@ public fun advance_step<P: store>(
 
     let req = proposal::new_execution_request<P>(pipeline.dao_id, pipeline.composite_proposal_id);
 
-    let Pipeline { frame_id, dao_id, composite_proposal_id, current_step: _, total_steps } =
-        pipeline;
+    let Pipeline {
+        frame_id,
+        dao_id,
+        composite_proposal_id,
+        current_step: _,
+        total_steps,
+        last_executed_snapshot,
+    } = pipeline;
 
     let next = Pipeline {
         frame_id,
@@ -292,6 +311,7 @@ public fun advance_step<P: store>(
         composite_proposal_id,
         current_step: step_idx + 1,
         total_steps,
+        last_executed_snapshot,
     };
 
     (payload, req, next)
@@ -307,6 +327,7 @@ public fun finalize_pipeline(pipeline: Pipeline) {
         composite_proposal_id: _,
         current_step: _,
         total_steps: _,
+        last_executed_snapshot: _,
     } = pipeline;
 }
 

@@ -3,7 +3,7 @@ module armature_proposals::create_subdao;
 use std::string::String;
 
 /// Create a new Board-governance SubDAO controlled by this DAO.
-public struct CreateSubDAO has store {
+public struct CreateSubDAO has drop, store {
     name: String,
     description: String,
     initial_board: vector<address>,

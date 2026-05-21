@@ -3,7 +3,7 @@ module armature_proposals::unfreeze_proposal_type;
 /// Governance-initiated unfreeze of a proposal type.
 /// Overrides an admin freeze without requiring the FreezeAdminCap.
 /// Cannot itself be frozen.
-public struct UnfreezeProposalType has store {
+public struct UnfreezeProposalType has drop, store {
     type_key: std::ascii::String,
 }
 

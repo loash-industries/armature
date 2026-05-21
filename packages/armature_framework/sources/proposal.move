@@ -160,7 +160,7 @@ public fun new_config(
         expiry_ms,
         execution_delay_ms,
         cooldown_ms,
-        composable_allowed: true,
+        composable_allowed: false,
     }
 }
 

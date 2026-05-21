@@ -4,7 +4,6 @@ use armature::board_voting;
 use armature::charter::Charter;
 use armature::dao::{Self, DAO};
 use armature::proposal::{Self, Proposal, ExecutionRequest};
-use armature::utils;
 use armature_proposals::disable_proposal_type::DisableProposalType;
 use armature_proposals::enable_proposal_type::EnableProposalType;
 use armature_proposals::update_metadata::UpdateMetadata;
@@ -18,8 +17,6 @@ use sui::event;
 const EDaoMismatch: u64 = 0;
 const ECharterDaoMismatch: u64 = 1;
 const EUndisableableType: u64 = 2;
-#[allow(unused_const)]
-const EApprovalFloorNotMet: u64 = 3;
 const ESubDAOBlockedType: u64 = 4;
 const EThresholdBelowFloor: u64 = 5;
 /// Proposal's approval_threshold is below the hardcoded floor for this type.
@@ -99,31 +96,18 @@ public fun execute_enable_proposal_type<NewType: store>(
     proposal: &Proposal<EnableProposalType>,
     request: ExecutionRequest<EnableProposalType>,
 ) {
-    assert!(dao.id() == request.req_dao_id(), EDaoMismatch);
-
-    let payload = proposal.payload();
-    let type_key = payload.type_key();
-    let config = *payload.config();
-
-    // SubDAOs with a controller cannot enable hierarchy-altering types
-    if (dao.controller_cap_id().is_some()) {
-        assert!(!dao::is_subdao_blocked_type(&type_key), ESubDAOBlockedType);
-    };
-
-    // Enforce minimum threshold for the new type's config if it has an execution floor
-    assert_threshold_meets_floor(&type_key, &config);
-
-    dao.enable_proposal_type(type_key, config, &request);
-
-    // Bind NewType to the key so submit_proposal<P> rejects any P that isn't NewType.
-    dao.bind_type_key<NewType, EnableProposalType>(type_key, &request);
-
-    event::emit(ProposalTypeEnabled {
-        dao_id: dao.id(),
-        type_key,
-    });
-
+    enable_proposal_type_impl<NewType>(dao, proposal.payload(), &request);
     proposal::finalize(request, proposal);
+}
+
+/// Composite step variant: enable a proposal type from within a composite pipeline.
+public fun execute_enable_proposal_type_step<NewType: store>(
+    dao: &mut DAO,
+    payload: EnableProposalType,
+    request: ExecutionRequest<EnableProposalType>,
+) {
+    enable_proposal_type_impl<NewType>(dao, &payload, &request);
+    proposal::consume_execution_request(request);
 }
 
 /// Execute an UpdateProposalConfig proposal: merge optional field overrides
@@ -149,7 +133,9 @@ public fun execute_update_proposal_config(
         payload.expiry_ms().destroy_with_default(existing.expiry_ms()),
         payload.execution_delay_ms().destroy_with_default(existing.execution_delay_ms()),
         payload.cooldown_ms().destroy_with_default(existing.cooldown_ms()),
-    );
+    ).with_composable_allowed(payload
+        .composable_allowed()
+        .destroy_with_default(existing.composable_allowed()));
 
     // Enforce minimum approval_threshold for types with execution floors.
     // Prevents painting the DAO into a deadlock where proposals pass but cannot execute.
@@ -186,6 +172,31 @@ public fun execute_update_metadata_step(
 }
 
 // === Internal ===
+
+fun enable_proposal_type_impl<NewType: store>(
+    dao: &mut DAO,
+    payload: &EnableProposalType,
+    request: &ExecutionRequest<EnableProposalType>,
+) {
+    assert!(dao.id() == request.req_dao_id(), EDaoMismatch);
+
+    let type_key = payload.type_key();
+    let config = *payload.config();
+
+    if (dao.controller_cap_id().is_some()) {
+        assert!(!dao::is_subdao_blocked_type(&type_key), ESubDAOBlockedType);
+    };
+
+    assert_threshold_meets_floor(&type_key, &config);
+
+    dao.enable_proposal_type(type_key, config, request);
+    dao.bind_type_key<NewType, EnableProposalType>(type_key, request);
+
+    event::emit(ProposalTypeEnabled {
+        dao_id: dao.id(),
+        type_key,
+    });
+}
 
 fun update_metadata_impl(
     charter: &mut Charter,
@@ -244,20 +255,6 @@ public fun propose_update_proposal_config(
 /// Abort if the type key is one of the core undisableable types.
 fun assert_disableable(type_key: &std::ascii::String) {
     assert!(!dao::is_undisableable_type(type_key), EUndisableableType);
-}
-
-#[allow(unused_function)]
-/// Assert that a proposal's approval rate (yes/total_snapshot) meets the floor.
-/// Kept as a utility for invariant auditing; no longer called in production handlers
-/// after submission-time floor enforcement was introduced (ADR_SUBMISSION_TIME_FLOOR_ENFORCEMENT).
-fun assert_approval_floor<P: store>(proposal: &Proposal<P>, floor_bps: u64) {
-    let total = proposal.total_snapshot_weight();
-    // Reject zero-weight proposals. gte_bps(0, 0, _) returns true (0 >= 0),
-    // which would let a privileged_create / external_executed_create proposal
-    // (snapshot weight 0) pass any floor vacuously. The floor only has meaning
-    // when there is real voting power behind the proposal.
-    assert!(total > 0, EApprovalFloorNotMet);
-    assert!(utils::gte_bps(proposal.yes_weight(), total, floor_bps), EApprovalFloorNotMet);
 }
 
 /// Assert that a config's approval_threshold is not below the execution floor
