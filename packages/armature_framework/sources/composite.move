@@ -131,6 +131,7 @@ public fun add_step<P: store>(
     type_key: std::ascii::String,
     payload: P,
 ) {
+    assert!(frame.dao_id == dao.id(), EDAOIdMismatch);
     assert!(frame.step_type_keys.length() < MAX_COMPOSITE_STEPS, EPipelineComplete);
     assert!(type_key != b"Composite".to_ascii_string(), ECompositeNesting);
     assert!(dao.enabled_proposal_types().contains(&type_key), ENotComposable);
