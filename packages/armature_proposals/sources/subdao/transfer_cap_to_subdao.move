@@ -1,7 +1,7 @@
 module armature_proposals::transfer_cap_to_subdao;
 
 /// Transfer a capability from this DAO's vault to a SubDAO's vault.
-public struct TransferCapToSubDAO has store {
+public struct TransferCapToSubDAO has drop, store {
     cap_id: ID,
     target_subdao: ID,
 }

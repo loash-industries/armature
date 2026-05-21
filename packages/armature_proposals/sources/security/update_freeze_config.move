@@ -1,7 +1,7 @@
 module armature_proposals::update_freeze_config;
 
 /// Update the max_freeze_duration_ms on the EmergencyFreeze object.
-public struct UpdateFreezeConfig has store {
+public struct UpdateFreezeConfig has drop, store {
     new_max_freeze_duration_ms: u64,
 }
 

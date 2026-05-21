@@ -4,7 +4,7 @@ use std::type_name::TypeName;
 
 /// Move treasury and capability vault contents to a target DAO.
 /// Subject to per-call asset limits (max 50 combined).
-public struct TransferAssets has store {
+public struct TransferAssets has drop, store {
     target_dao_id: ID,
     target_treasury_id: ID,
     target_vault_id: ID,

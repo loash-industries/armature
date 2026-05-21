@@ -2,7 +2,7 @@ module armature_proposals::send_small_payment;
 
 /// Rate-limited small payment from treasury. Uses ProposalTypeState
 /// to enforce a cumulative spend cap within rolling time epochs.
-public struct SendSmallPayment<phantom T> has store {
+public struct SendSmallPayment<phantom T> has drop, store {
     recipient: address,
     amount: u64,
 }

@@ -42,6 +42,10 @@ public struct ProposalConfig has copy, drop, store {
     expiry_ms: u64,
     execution_delay_ms: u64,
     cooldown_ms: u64,
+    /// Whether this type may appear as a step in a composite proposal.
+    /// Deny-by-default: false for all types unless explicitly set to true via
+    /// UpdateProposalConfig. Floor-gated and governance-sensitive types stay false.
+    composable_allowed: bool,
 }
 
 /// Proposal lifecycle status. Transitions are one-directional:
@@ -156,6 +160,7 @@ public fun new_config(
         expiry_ms,
         execution_delay_ms,
         cooldown_ms,
+        composable_allowed: false,
     }
 }
 
@@ -170,6 +175,15 @@ public fun expiry_ms(self: &ProposalConfig): u64 { self.expiry_ms }
 public fun execution_delay_ms(self: &ProposalConfig): u64 { self.execution_delay_ms }
 
 public fun cooldown_ms(self: &ProposalConfig): u64 { self.cooldown_ms }
+
+public fun composable_allowed(self: &ProposalConfig): bool { self.composable_allowed }
+
+/// Return a copy of this config with `composable_allowed` set to `allowed`.
+/// Used by governance (UpdateProposalConfig) to open a type for composite proposals.
+public fun with_composable_allowed(mut self: ProposalConfig, allowed: bool): ProposalConfig {
+    self.composable_allowed = allowed;
+    self
+}
 
 // === ProposalStatus helpers ===
 

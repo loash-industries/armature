@@ -2,7 +2,7 @@ module armature_proposals::reclaim_cap_from_subdao;
 
 /// Reclaim a capability from a SubDAO's vault using SubDAOControl authority.
 /// Proposed on the controller DAO, not the SubDAO.
-public struct ReclaimCapFromSubDAO has store {
+public struct ReclaimCapFromSubDAO has drop, store {
     subdao_id: ID,
     cap_id: ID,
     control_id: ID,

@@ -3,7 +3,7 @@ module armature_proposals::update_metadata;
 use std::string::String;
 
 /// Update the DAO's metadata IPFS CID.
-public struct UpdateMetadata has store {
+public struct UpdateMetadata has copy, drop, store {
     new_ipfs_cid: String,
 }
 

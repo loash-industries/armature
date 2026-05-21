@@ -153,14 +153,14 @@ public fun external_executed_create<P: store>(
 /// In addition to the standard `EnableProposalType` effects (register the type,
 /// bind the canonical Move type for anti-spoofing), this mints an
 /// `ExternalExecutionCap<NewType>` into the DAO's `CapabilityVault`.
-public struct EnableBypassType has store {
+public struct EnableBypassType has drop, store {
     type_key: std::ascii::String,
     config: ProposalConfig,
 }
 
 /// Disable a bypass-enabled proposal type and destroy its
 /// `ExternalExecutionCap<NewType>` in one atomic step.
-public struct DisableBypassType has store {
+public struct DisableBypassType has drop, store {
     type_key: std::ascii::String,
     cap_id: ID,
 }

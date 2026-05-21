@@ -4,7 +4,7 @@ use armature::proposal::ProposalConfig;
 
 /// Enable a new proposal type on the DAO with mandatory config.
 /// Handler enforces a 66% approval floor at execution time.
-public struct EnableProposalType has store {
+public struct EnableProposalType has drop, store {
     type_key: std::ascii::String,
     config: ProposalConfig,
 }

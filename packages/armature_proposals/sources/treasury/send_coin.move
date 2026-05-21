@@ -1,7 +1,7 @@
 module armature_proposals::send_coin;
 
 /// Transfer amount of Coin<T> from treasury to an address.
-public struct SendCoin<phantom T> has store {
+public struct SendCoin<phantom T> has drop, store {
     recipient: address,
     amount: u64,
 }

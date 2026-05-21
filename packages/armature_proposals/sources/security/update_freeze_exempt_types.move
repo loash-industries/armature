@@ -1,7 +1,7 @@
 module armature_proposals::update_freeze_exempt_types;
 
 /// Add or remove types from the freeze-exempt set on EmergencyFreeze.
-public struct UpdateFreezeExemptTypes has store {
+public struct UpdateFreezeExemptTypes has drop, store {
     types_to_add: vector<std::ascii::String>,
     types_to_remove: vector<std::ascii::String>,
 }

@@ -43,31 +43,26 @@ public struct SmallPaymentSent has copy, drop {
 
 // === Handlers ===
 
-/// Execute a SendCoin proposal: withdraw from treasury and transfer to recipient.
 public fun execute_send_coin<T>(
     vault: &mut TreasuryVault,
     proposal: &Proposal<SendCoin<T>>,
     request: ExecutionRequest<SendCoin<T>>,
     ctx: &mut TxContext,
 ) {
-    assert!(vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
-
-    let payload = proposal.payload();
-    let coin = vault.withdraw<T, SendCoin<T>>(payload.amount(), &request, ctx);
-
-    event::emit(CoinSent {
-        dao_id: vault.dao_id(),
-        coin_type: std::type_name::with_original_ids<T>().into_string(),
-        amount: payload.amount(),
-        recipient: payload.recipient(),
-    });
-
-    transfer::public_transfer(coin, payload.recipient());
-
+    send_coin_impl(vault, proposal.payload(), &request, ctx);
     proposal::finalize(request, proposal);
 }
 
-/// Execute a SendCoinToDAO proposal: withdraw from source treasury, deposit into target.
+public fun execute_send_coin_step<T>(
+    vault: &mut TreasuryVault,
+    payload: SendCoin<T>,
+    request: ExecutionRequest<SendCoin<T>>,
+    ctx: &mut TxContext,
+) {
+    send_coin_impl(vault, &payload, &request, ctx);
+    proposal::consume_execution_request(request);
+}
+
 public fun execute_send_coin_to_dao<T>(
     source_vault: &mut TreasuryVault,
     target_vault: &mut TreasuryVault,
@@ -75,22 +70,19 @@ public fun execute_send_coin_to_dao<T>(
     request: ExecutionRequest<SendCoinToDAO<T>>,
     ctx: &mut TxContext,
 ) {
-    assert!(source_vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
-
-    let payload = proposal.payload();
-    assert!(object::id(target_vault) == payload.recipient_treasury(), ETargetVaultMismatch);
-
-    let coin = source_vault.withdraw<T, SendCoinToDAO<T>>(payload.amount(), &request, ctx);
-    target_vault.deposit(coin, ctx);
-
-    event::emit(CoinSentToDAO {
-        dao_id: source_vault.dao_id(),
-        coin_type: std::type_name::with_original_ids<T>().into_string(),
-        amount: payload.amount(),
-        target_treasury: payload.recipient_treasury(),
-    });
-
+    send_coin_to_dao_impl(source_vault, target_vault, proposal.payload(), &request, ctx);
     proposal::finalize(request, proposal);
+}
+
+public fun execute_send_coin_to_dao_step<T>(
+    source_vault: &mut TreasuryVault,
+    target_vault: &mut TreasuryVault,
+    payload: SendCoinToDAO<T>,
+    request: ExecutionRequest<SendCoinToDAO<T>>,
+    ctx: &mut TxContext,
+) {
+    send_coin_to_dao_impl(source_vault, target_vault, &payload, &request, ctx);
+    proposal::consume_execution_request(request);
 }
 
 /// Execute a SendSmallPayment proposal: rate-limited withdrawal from treasury.
@@ -152,4 +144,42 @@ public fun execute_send_small_payment<T>(
     transfer::public_transfer(coin, payload.recipient());
 
     proposal::finalize(request, proposal);
+}
+
+// === Internal ===
+
+fun send_coin_impl<T>(
+    vault: &mut TreasuryVault,
+    payload: &SendCoin<T>,
+    request: &ExecutionRequest<SendCoin<T>>,
+    ctx: &mut TxContext,
+) {
+    assert!(vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
+    let coin = vault.withdraw<T, SendCoin<T>>(payload.amount(), request, ctx);
+    event::emit(CoinSent {
+        dao_id: vault.dao_id(),
+        coin_type: std::type_name::with_original_ids<T>().into_string(),
+        amount: payload.amount(),
+        recipient: payload.recipient(),
+    });
+    transfer::public_transfer(coin, payload.recipient());
+}
+
+fun send_coin_to_dao_impl<T>(
+    source_vault: &mut TreasuryVault,
+    target_vault: &mut TreasuryVault,
+    payload: &SendCoinToDAO<T>,
+    request: &ExecutionRequest<SendCoinToDAO<T>>,
+    ctx: &mut TxContext,
+) {
+    assert!(source_vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
+    assert!(object::id(target_vault) == payload.recipient_treasury(), ETargetVaultMismatch);
+    let coin = source_vault.withdraw<T, SendCoinToDAO<T>>(payload.amount(), request, ctx);
+    target_vault.deposit(coin, ctx);
+    event::emit(CoinSentToDAO {
+        dao_id: source_vault.dao_id(),
+        coin_type: std::type_name::with_original_ids<T>().into_string(),
+        amount: payload.amount(),
+        target_treasury: payload.recipient_treasury(),
+    });
 }

@@ -44,6 +44,7 @@ const DEFAULT_PROPOSAL_TYPES: vector<vector<u8>> = vector[
     b"UpdateProposalConfig",
     b"TransferFreezeAdmin",
     b"UnfreezeProposalType",
+    b"Composite",
 ];
 
 /// Proposal types blocked for SubDAOs — hierarchy-altering operations
@@ -80,12 +81,14 @@ const DEFAULT_EXPIRY_MS: u64 = 604_800_000; // 7 days
 const DEFAULT_EXECUTION_DELAY_MS: u64 = 0;
 const DEFAULT_COOLDOWN_MS: u64 = 0;
 
-/// Minimum approval_threshold for EnableProposalType — must be >= the 66% execution floor
-/// enforced by admin_ops::execute_enable_proposal_type.
+/// Minimum approval_threshold for EnableProposalType — matches the 66% submission-time
+/// floor enforced by board_voting::submit_proposal and the config-level floor in
+/// admin_ops::execute_update_proposal_config (assert_threshold_meets_floor).
 const ENABLE_PROPOSAL_TYPE_MIN_THRESHOLD: u16 = 6_600;
 
-/// Minimum approval_threshold for UpdateProposalConfig — must be >= the 80% self-update
-/// execution floor enforced by admin_ops::execute_update_proposal_config.
+/// Minimum approval_threshold for UpdateProposalConfig — matches the 80% submission-time
+/// floor enforced by admin_ops::propose_update_proposal_config (self-targeting) and the
+/// config-level floor in admin_ops::execute_update_proposal_config.
 const UPDATE_PROPOSAL_CONFIG_MIN_THRESHOLD: u16 = 8_000;
 
 /// Minimum approval_threshold for EnableBypassType — must be >= the 80% execution
@@ -910,6 +913,7 @@ fun subdao_proposal_configs(): (
 /// Return the per-type default ProposalConfig for a given type key.
 /// Types with hardcoded execution floors in admin_ops use a threshold that
 /// matches the floor so the config threshold is never misleadingly low.
+/// composable_allowed is true only for types that have a _step handler variant.
 fun config_for_type(type_key: &std::ascii::String): ProposalConfig {
     let approval_threshold = if (*type_key == b"EnableProposalType".to_ascii_string()) {
         ENABLE_PROPOSAL_TYPE_MIN_THRESHOLD
@@ -920,6 +924,12 @@ fun config_for_type(type_key: &std::ascii::String): ProposalConfig {
     } else {
         DEFAULT_APPROVAL_THRESHOLD
     };
+    let composable =
+        *type_key == b"AddMember".to_ascii_string()
+        || *type_key == b"RemoveMember".to_ascii_string()
+        || *type_key == b"SetBoard".to_ascii_string()
+        || *type_key == b"CharterUpdate".to_ascii_string()
+        || *type_key == b"EnableProposalType".to_ascii_string();
     proposal::new_config(
         DEFAULT_QUORUM,
         approval_threshold,
@@ -927,7 +937,7 @@ fun config_for_type(type_key: &std::ascii::String): ProposalConfig {
         DEFAULT_EXPIRY_MS,
         DEFAULT_EXECUTION_DELAY_MS,
         DEFAULT_COOLDOWN_MS,
-    )
+    ).with_composable_allowed(composable)
 }
 
 /// Build proposal config map and enabled set from a types list, excluding blocked types.
