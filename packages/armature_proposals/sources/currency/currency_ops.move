@@ -1,7 +1,7 @@
 module armature_proposals::currency_ops;
 
 use armature::capability_vault::CapabilityVault;
-use armature::proposal::{Self, Proposal, ExecutionRequest};
+use armature::proposal::{ExecutionRequest, ExecutionTicket};
 use armature::treasury_vault::TreasuryVault;
 use armature_proposals::adopt_currency::AdoptCurrency;
 use armature_proposals::burn_coin::BurnCoin;
@@ -49,19 +49,16 @@ public struct CurrencyCapReturned has copy, drop {
 // === Handlers ===
 
 /// Execute an AdoptCurrency proposal: take custody of a `TreasuryCap<T>` by
-/// storing it in the capability vault. The cap's ID is derived on store; the
-/// vault's `ids_for_type<TreasuryCap<T>>()` then surfaces it for later
-/// mint/burn proposals.
+/// storing it in the capability vault.
 public fun execute_adopt_currency<T>(
     vault: &mut CapabilityVault,
     cap: TreasuryCap<T>,
-    proposal: &Proposal<AdoptCurrency<T>>,
-    request: ExecutionRequest<AdoptCurrency<T>>,
+    ticket: ExecutionTicket<AdoptCurrency<T>>,
 ) {
-    assert!(vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
+    assert!(vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
 
     let cap_id = object::id(&cap);
-    vault.store_cap(cap, &request);
+    vault.store_cap(cap, ticket.ticket_request());
 
     event::emit(CurrencyAdopted {
         dao_id: vault.dao_id(),
@@ -69,76 +66,69 @@ public fun execute_adopt_currency<T>(
         treasury_cap_id: cap_id,
     });
 
-    proposal::finalize(request, proposal);
+    ticket.discharge();
 }
 
-/// Execute a MintCoin proposal: mint `amount` of `Coin<T>` with the custodied
-/// cap. `recipient = none` deposits into the treasury; `some(addr)` transfers
-/// directly.
+/// Execute a MintCoin proposal: mint `amount` of `Coin<T>` with the custodied cap.
 public fun execute_mint_coin<T>(
     cap_vault: &mut CapabilityVault,
     treasury_vault: &mut TreasuryVault,
-    proposal: &Proposal<MintCoin<T>>,
-    request: ExecutionRequest<MintCoin<T>>,
+    ticket: ExecutionTicket<MintCoin<T>>,
     ctx: &mut TxContext,
 ) {
     use armature_proposals::mint_coin;
-    let payload = proposal.payload();
+    let payload = ticket.ticket_payload();
     mint<T, MintCoin<T>>(
         cap_vault,
         treasury_vault,
         mint_coin::treasury_cap_id(payload),
         mint_coin::amount(payload),
         mint_coin::recipient(payload),
-        &request,
+        ticket.ticket_request(),
         ctx,
     );
-    proposal::finalize(request, proposal);
+    ticket.discharge();
 }
 
-/// Execute a MintAllowance proposal: identical mint mechanics to `MintCoin`,
-/// distinct type so it can be bypass-enabled for vote-free operational minting.
+/// Execute a MintAllowance proposal: identical mint mechanics to `MintCoin`.
 public fun execute_mint_allowance<T>(
     cap_vault: &mut CapabilityVault,
     treasury_vault: &mut TreasuryVault,
-    proposal: &Proposal<MintAllowance<T>>,
-    request: ExecutionRequest<MintAllowance<T>>,
+    ticket: ExecutionTicket<MintAllowance<T>>,
     ctx: &mut TxContext,
 ) {
     use armature_proposals::mint_allowance;
-    let payload = proposal.payload();
+    let payload = ticket.ticket_payload();
     mint<T, MintAllowance<T>>(
         cap_vault,
         treasury_vault,
         mint_allowance::treasury_cap_id(payload),
         mint_allowance::amount(payload),
         mint_allowance::recipient(payload),
-        &request,
+        ticket.ticket_request(),
         ctx,
     );
-    proposal::finalize(request, proposal);
+    ticket.discharge();
 }
 
-/// Execute a BurnCoin proposal: withdraw `amount` of `Coin<T>` from the
-/// treasury and burn it with the custodied cap, contracting total supply.
+/// Execute a BurnCoin proposal: withdraw and burn `amount` of `Coin<T>`.
 public fun execute_burn_coin<T>(
     cap_vault: &mut CapabilityVault,
     treasury_vault: &mut TreasuryVault,
-    proposal: &Proposal<BurnCoin<T>>,
-    request: ExecutionRequest<BurnCoin<T>>,
+    ticket: ExecutionTicket<BurnCoin<T>>,
     ctx: &mut TxContext,
 ) {
     use armature_proposals::burn_coin;
-    assert!(cap_vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
-    assert!(treasury_vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
+    assert!(cap_vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
+    assert!(treasury_vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
 
-    let payload = proposal.payload();
+    let payload = ticket.ticket_payload();
     let cap_id = burn_coin::treasury_cap_id(payload);
     let amount = burn_coin::amount(payload);
     assert_cap_in_vault<TreasuryCap<T>>(cap_vault, cap_id);
 
-    let coin = treasury_vault.withdraw<T, BurnCoin<T>>(amount, &request, ctx);
-    let cap: &mut TreasuryCap<T> = cap_vault.borrow_cap_mut(cap_id, &request);
+    let coin = treasury_vault.withdraw<T, BurnCoin<T>>(amount, ticket.ticket_request(), ctx);
+    let cap: &mut TreasuryCap<T> = cap_vault.borrow_cap_mut(cap_id, ticket.ticket_request());
     coin::burn(cap, coin);
 
     event::emit(CoinBurned {
@@ -147,25 +137,23 @@ public fun execute_burn_coin<T>(
         amount,
     });
 
-    proposal::finalize(request, proposal);
+    ticket.discharge();
 }
 
-/// Execute a ReturnCurrencyCap proposal: extract the `TreasuryCap<T>` from the
-/// vault and transfer it to the recipient, relinquishing mint authority.
+/// Execute a ReturnCurrencyCap proposal: extract the `TreasuryCap<T>` and transfer it.
 public fun execute_return_currency_cap<T>(
     vault: &mut CapabilityVault,
-    proposal: &Proposal<ReturnCurrencyCap<T>>,
-    request: ExecutionRequest<ReturnCurrencyCap<T>>,
+    ticket: ExecutionTicket<ReturnCurrencyCap<T>>,
 ) {
     use armature_proposals::return_currency_cap;
-    assert!(vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
+    assert!(vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
 
-    let payload = proposal.payload();
+    let payload = ticket.ticket_payload();
     let cap_id = return_currency_cap::treasury_cap_id(payload);
     let recipient = return_currency_cap::recipient(payload);
     assert_cap_in_vault<TreasuryCap<T>>(vault, cap_id);
 
-    let cap: TreasuryCap<T> = vault.extract_cap(cap_id, &request);
+    let cap: TreasuryCap<T> = vault.extract_cap(cap_id, ticket.ticket_request());
 
     event::emit(CurrencyCapReturned {
         dao_id: vault.dao_id(),
@@ -176,7 +164,7 @@ public fun execute_return_currency_cap<T>(
 
     transfer::public_transfer(cap, recipient);
 
-    proposal::finalize(request, proposal);
+    ticket.discharge();
 }
 
 // === Internal ===

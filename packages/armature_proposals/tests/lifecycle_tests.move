@@ -128,7 +128,7 @@ fun small_startup_lifecycle() {
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(dao.emergency_freeze_id());
         clock.set_for_testing(3_000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -139,8 +139,7 @@ fun small_startup_lifecycle() {
         treasury_ops::execute_send_small_payment<SUI>(
             &mut dao,
             &mut vault,
-            &proposal,
-            request,
+            ticket,
             &clock,
             scenario.ctx(),
         );
@@ -195,7 +194,7 @@ fun small_startup_lifecycle() {
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(dao.emergency_freeze_id());
         clock.set_for_testing(12_000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -203,7 +202,7 @@ fun small_startup_lifecycle() {
             scenario.ctx(),
         );
 
-        board_ops::execute_set_board(&mut dao, &proposal, request);
+        board_ops::execute_set_board(&mut dao, ticket);
 
         // Verify new board
         assert!(dao.governance().is_board_member(ALICE));
@@ -258,7 +257,7 @@ fun small_startup_lifecycle() {
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(dao.emergency_freeze_id());
         clock.set_for_testing(22_000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -269,8 +268,7 @@ fun small_startup_lifecycle() {
         treasury_ops::execute_send_small_payment<SUI>(
             &mut dao,
             &mut vault,
-            &proposal,
-            request,
+            ticket,
             &clock,
             scenario.ctx(),
         );
@@ -414,7 +412,7 @@ fun medium_enterprise_lifecycle() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3_000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -422,7 +420,7 @@ fun medium_enterprise_lifecycle() {
             scenario.ctx(),
         );
 
-        subdao_ops::execute_create_subdao(&mut vault, &proposal, request, scenario.ctx());
+        subdao_ops::execute_create_subdao(&mut vault, ticket, scenario.ctx());
 
         let control_ids = vault.ids_for_type<SubDAOControl>();
         eng_control_id = control_ids[0];
@@ -498,7 +496,7 @@ fun medium_enterprise_lifecycle() {
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(dao.emergency_freeze_id());
         clock.set_for_testing(7_000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -506,7 +504,7 @@ fun medium_enterprise_lifecycle() {
             scenario.ctx(),
         );
 
-        subdao_ops::execute_create_subdao(&mut vault, &proposal, request, scenario.ctx());
+        subdao_ops::execute_create_subdao(&mut vault, ticket, scenario.ctx());
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
@@ -590,7 +588,7 @@ fun medium_enterprise_lifecycle() {
         clock.set_for_testing(22_000);
 
         // Authorize parent proposal
-        let parent_req = board_voting::authorize_execution(
+        let parent_req = board_voting::ticket_from_vote(
             &mut top_dao,
             &mut top_proposal,
             &top_freeze,
@@ -603,7 +601,7 @@ fun medium_enterprise_lifecycle() {
         let eng_freeze_cap_id = freeze_cap_ids[0];
         let (freeze_cap, freeze_loan) = vault.loan_cap<FreezeAdminCap, SetBoard>(
             eng_freeze_cap_id,
-            &parent_req,
+            parent_req.ticket_request(),
         );
 
         // Freeze SendCoin on Engineering SubDAO
@@ -619,7 +617,7 @@ fun medium_enterprise_lifecycle() {
         // Loan SubDAOControl to change Engineering board
         let (control, control_loan) = vault.loan_cap<SubDAOControl, SetBoard>(
             eng_control_id,
-            &parent_req,
+            parent_req.ticket_request(),
         );
 
         // Privileged submit: remove ROGUE from Engineering board
@@ -652,7 +650,7 @@ fun medium_enterprise_lifecycle() {
         assert!(!eng_dao.governance().is_board_member(ROGUE));
 
         // Finalize parent vehicle proposal (SetBoard on parent — no-op, same board)
-        board_ops::execute_set_board(&mut top_dao, &top_proposal, parent_req);
+        board_ops::execute_set_board(&mut top_dao, parent_req);
 
         test_scenario::return_shared(eng_freeze);
         test_scenario::return_shared(eng_dao);
@@ -697,7 +695,7 @@ fun medium_enterprise_lifecycle() {
         >(eng_dao.emergency_freeze_id());
         clock.set_for_testing(32_000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut eng_dao,
             &mut proposal,
             &eng_freeze,
@@ -707,8 +705,7 @@ fun medium_enterprise_lifecycle() {
 
         security_ops::execute_unfreeze_proposal_type(
             &mut eng_freeze,
-            &proposal,
-            request,
+            ticket,
         );
 
         // Verify unfrozen
@@ -770,7 +767,7 @@ fun medium_enterprise_lifecycle() {
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(top_dao.emergency_freeze_id());
         clock.set_for_testing(42_000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut top_dao,
             &mut proposal,
             &freeze,
@@ -781,8 +778,7 @@ fun medium_enterprise_lifecycle() {
         treasury_ops::execute_send_coin_to_dao<USDC>(
             &mut top_vault,
             &mut fin_vault,
-            &proposal,
-            request,
+            ticket,
             scenario.ctx(),
         );
 
@@ -839,7 +835,7 @@ fun medium_enterprise_lifecycle() {
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(fin_dao.emergency_freeze_id());
         clock.set_for_testing(52_000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut fin_dao,
             &mut proposal,
             &freeze,
@@ -849,8 +845,7 @@ fun medium_enterprise_lifecycle() {
 
         treasury_ops::execute_send_coin<USDC>(
             &mut fin_vault,
-            &proposal,
-            request,
+            ticket,
             scenario.ctx(),
         );
 

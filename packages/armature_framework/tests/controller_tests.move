@@ -260,7 +260,7 @@ fun authorize_execution_blocks_when_controller_paused() {
             object::id_from_address(@0xBEEF),
         );
         dao.set_controller_paused(true, &req);
-        proposal::consume(req);
+        proposal::consume_execution_request_for_testing(req);
         test_scenario::return_shared(dao);
     };
 
@@ -271,7 +271,7 @@ fun authorize_execution_blocks_when_controller_paused() {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
-        let req = board_voting::authorize_execution(
+        let req = board_voting::ticket_from_vote(
             &mut dao,
             &mut prop,
             &freeze,
@@ -279,7 +279,7 @@ fun authorize_execution_blocks_when_controller_paused() {
             scenario.ctx(),
         );
 
-        proposal::consume(req);
+        req.discharge();
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(prop);
         test_scenario::return_shared(dao);
@@ -322,7 +322,7 @@ fun privileged_submit_rejects_inactive_subdao() {
             object::id_from_address(@0xBEEF),
         );
         subdao.set_migrating(object::id_from_address(@0xDEAD), &req);
-        proposal::consume(req);
+        proposal::consume_execution_request_for_testing(req);
 
         // Try privileged_submit on inactive SubDAO — should abort
         let req = controller::privileged_submit(

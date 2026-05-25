@@ -173,14 +173,14 @@ fun configure_allowlist(
         let mut dao = ts::take_shared<DAO>(scenario);
         let mut p = ts::take_shared<Proposal<ConfigureAutojoin>>(scenario);
         let freeze = ts::take_shared<EmergencyFreeze>(scenario);
-        let req = board_voting::authorize_execution(
+        let req = board_voting::ticket_from_vote(
             &mut dao,
             &mut p,
             &freeze,
             clock,
             scenario.ctx(),
         );
-        configure_autojoin::execute_configure_autojoin(&mut dao, &p, req);
+        configure_autojoin::execute_configure_autojoin(&mut dao, req);
         ts::return_shared(freeze);
         ts::return_shared(p);
         ts::return_shared(dao);
@@ -188,13 +188,8 @@ fun configure_allowlist(
 }
 
 /// Run a complete submit_autojoin + execute_autojoin_dao for the given
-/// character. Production code runs both in the same PTB (the
-/// ExecutionRequest hot-potato enforces this at the type level), but
-/// sui::test_scenario only surfaces shared objects across `next_tx`
-/// boundaries, so we split here and manually thread the request via
-/// `proposal::new_execution_request` in tx 2. The request that
-/// `submit_autojoin` returns is consumed in tx 1; tx 2 fabricates a
-/// matching request because the proposal id is the same.
+/// character. Production code runs both in the same PTB, and since
+/// ExecutionTicket is a hot potato we do both in a single test transaction.
 fun do_autojoin(
     scenario: &mut ts::Scenario,
     clock: &clock::Clock,
@@ -202,9 +197,6 @@ fun do_autojoin(
     character_id: ID,
     sender: address,
 ) {
-    // Tx 1: submit_autojoin shares Proposal<AutojoinDAO>, returns the request.
-    // Discard the request — the proposal is already in Executed status, so
-    // tx 2 can mint a fresh request via the package-internal test seam.
     ts::next_tx(scenario, sender);
     {
         let mut dao = ts::take_shared<DAO>(scenario);
@@ -212,7 +204,7 @@ fun do_autojoin(
         let character = ts::take_shared_by_id<Character>(scenario, character_id);
         let freeze = ts::take_shared<EmergencyFreeze>(scenario);
 
-        let req = autojoin_ops::submit_autojoin(
+        let ticket = autojoin_ops::submit_autojoin(
             &mut dao,
             &vault,
             cap_id,
@@ -221,26 +213,11 @@ fun do_autojoin(
             clock,
             scenario.ctx(),
         );
-        proposal::consume_execution_request(req);
+        autojoin_ops::execute_autojoin_dao(&mut dao, ticket);
 
         ts::return_shared(freeze);
         ts::return_shared(character);
         ts::return_shared(vault);
-        ts::return_shared(dao);
-    };
-
-    // Tx 2: take the now-visible shared Proposal<AutojoinDAO>,
-    // synthesize a matching request, run execute_autojoin_dao.
-    ts::next_tx(scenario, sender);
-    {
-        let mut dao = ts::take_shared<DAO>(scenario);
-        let proposal_obj = ts::take_shared<Proposal<AutojoinDAO>>(scenario);
-        let synthetic_req = proposal::new_execution_request_for_testing<AutojoinDAO>(
-            dao.id(),
-            object::id(&proposal_obj),
-        );
-        autojoin_ops::execute_autojoin_dao(&mut dao, &proposal_obj, synthetic_req);
-        ts::return_shared(proposal_obj);
         ts::return_shared(dao);
     };
 }

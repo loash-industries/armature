@@ -16,7 +16,7 @@ module armature::composite;
 
 use armature::dao::DAO;
 use armature::emergency::EmergencyFreeze;
-use armature::proposal::{Self, ExecutionRequest, Proposal, ProposalConfig};
+use armature::proposal::{Self, ExecutionTicket, ProposalConfig};
 use std::string::String;
 use std::type_name::{Self, TypeName};
 use sui::clock::Clock;
@@ -37,6 +37,16 @@ const EDAONotActive: u64 = 7;
 const EFloorNotMet: u64 = 8;
 const EEmptyFrame: u64 = 9;
 const ECooldownActive: u64 = 10;
+/// A type with cooldown_ms > 0 reached advance_step (defence-in-depth).
+const ECooldownTypeNotComposable: u64 = 11;
+/// begin_pipeline called with an unsealed CompositeFrame.
+const EFrameNotSealed: u64 = 12;
+/// Frame write operation attempted after seal_frame.
+const EFrameAlreadySealed: u64 = 13;
+/// Frame step_type_keys or step_types do not match the voted-on payload.
+const EFrameContentsMismatch: u64 = 14;
+/// delete_exhausted_frame called before all steps have been extracted.
+const EFrameNotExhausted: u64 = 15;
 
 // === Constants ===
 
@@ -60,9 +70,19 @@ public struct StepKey has copy, drop, store { index: u64 }
 
 /// Owned during submission; shared before voting.
 /// Holds per-step payloads as dynamic fields keyed by StepKey { index }.
-/// Immutable after sharing — advance_step only removes fields, never adds.
+/// Immutable after sealing — advance_step only removes fields, never adds.
+///
+/// SECURITY INVARIANT: This module MUST NOT expose `&mut UID` (`uid_mut`) for
+/// CompositeFrame. `df::add` / `df::remove` take `&mut UID` directly and would
+/// bypass the seal check. Only `advance_step` (framework-internal) is permitted
+/// to call `df::remove` on `frame.id`; no public `uid_mut` accessor may exist.
 public struct CompositeFrame has key, store {
     id: UID,
+    /// Set to true by seal_frame; never unset. All public write ops assert !sealed.
+    sealed: bool,
+    /// Tracks how many step payloads have been extracted by advance_step.
+    /// Used by delete_exhausted_frame to verify all steps have run.
+    steps_extracted: u64,
     dao_id: ID,
     step_type_keys: vector<std::ascii::String>,
     step_types: vector<TypeName>,
@@ -109,10 +129,16 @@ public struct CompositeSubmitted has copy, drop {
 // === Submission: frame construction ===
 
 /// Create a new CompositeFrame owned by the caller. Steps are added via add_step<P>.
-/// The frame must be passed to submit_composite before it can be voted on.
+/// Required creation sequence:
+///   1. new_frame(dao_id, ctx)
+///   2. add_step<P>(...) for each step
+///   3. composite::seal_frame(&mut frame)   ← frame is now immutable to callers
+///   4. submit_composite(dao, frame, ...)   ← seals internally if not already sealed
 public fun new_frame(dao_id: ID, ctx: &mut TxContext): CompositeFrame {
     CompositeFrame {
         id: object::new(ctx),
+        sealed: false,
+        steps_extracted: 0,
         dao_id,
         step_type_keys: vector[],
         step_types: vector[],
@@ -131,6 +157,7 @@ public fun add_step<P: store>(
     type_key: std::ascii::String,
     payload: P,
 ) {
+    assert!(!frame.sealed, EFrameAlreadySealed);
     assert!(frame.dao_id == dao.id(), EDAOIdMismatch);
     assert!(frame.step_type_keys.length() < MAX_COMPOSITE_STEPS, EPipelineComplete);
     assert!(type_key != b"Composite".to_ascii_string(), ECompositeNesting);
@@ -157,7 +184,7 @@ public fun add_step<P: store>(
 #[allow(lint(share_owned, custom_state_change))]
 public fun submit_composite(
     dao: &DAO,
-    frame: CompositeFrame,
+    mut frame: CompositeFrame,
     metadata_ipfs: Option<String>,
     clock: &Clock,
     ctx: &mut TxContext,
@@ -189,7 +216,10 @@ public fun submit_composite(
 
     let step_count = frame.step_type_keys.length();
 
-    // Share the frame; it is now immutable to callers (no public mutators).
+    // Seal the frame before sharing so no caller can mutate it after the vote.
+    seal_frame(&mut frame);
+
+    // Share the frame; it is now immutable to callers (sealed + no public write API).
     transfer::public_share_object(frame);
 
     proposal::create<CompositePayload>(
@@ -219,83 +249,87 @@ public fun submit_composite(
 // === Execution: pipeline lifecycle ===
 
 /// Begin pipeline execution for a passed composite proposal.
+/// Takes the ExecutionTicket<CompositePayload> from ticket_from_vote.
+/// Verifies the frame is sealed and its contents match what was voted on.
 /// Returns a Pipeline hot potato that enforces forward-only step ordering.
-/// Must be called after board_voting::authorize_execution<CompositePayload>.
-///
-/// Snapshots dao.last_executed_at() so advance_step can check per-step
-/// cooldowns against pre-composite execution times. This prevents two steps
-/// with the same type_key from blocking each other within one composite.
 public fun begin_pipeline(
     dao: &DAO,
-    proposal: &Proposal<CompositePayload>,
     frame: &CompositeFrame,
-    req: ExecutionRequest<CompositePayload>,
+    ticket: ExecutionTicket<CompositePayload>,
 ): Pipeline {
-    let payload = proposal.payload();
+    let payload = ticket.ticket_payload();
     assert!(payload.frame_id == object::id(frame), EFrameMismatch);
-    assert!(req.req_proposal_id() == object::id(proposal), EFrameMismatch);
+
+    // Verify the frame was sealed at proposal creation and has not been modified.
+    assert!(frame.is_sealed(), EFrameNotSealed);
+    assert!(payload.step_type_keys == frame.step_type_keys(), EFrameContentsMismatch);
+    assert!(payload.step_types == frame.step_types(), EFrameContentsMismatch);
 
     let total_steps = payload.step_type_keys.length();
     let last_executed_snapshot = *dao.last_executed_at();
+    let dao_id = ticket.ticket_dao_id();
+    let composite_proposal_id = ticket.ticket_request().req_proposal_id();
 
-    // Consume the ExecutionRequest — the Pipeline hot potato takes over sequencing.
-    proposal::consume(req);
+    // Consume the composite-level ticket; the Pipeline hot potato takes over.
+    ticket.discharge();
 
     Pipeline {
         frame_id: object::id(frame),
-        dao_id: proposal.dao_id(),
-        composite_proposal_id: object::id(proposal),
+        dao_id,
+        composite_proposal_id,
         current_step: 0,
         total_steps,
         last_executed_snapshot,
     }
 }
 
-/// Advance the pipeline by one step. Validates the caller-supplied type P against
-/// the recorded TypeName at the current step index, enforces per-step freeze and
-/// cooldown, extracts the payload from the frame, and returns:
-///   (payload: P, request: ExecutionRequest<P>, next_pipeline: Pipeline)
+/// Advance the pipeline by one step. Validates the caller-supplied type P
+/// against the recorded TypeName, enforces per-step freeze check, asserts
+/// the type has no cooldown (cooldown-bearing types are prohibited from
+/// composites), extracts the payload, and returns
+///   (ExecutionTicket<P>, next_pipeline: Pipeline)
 ///
-/// Pass the payload and request to the existing `_step` handler variant for P.
-/// The returned Pipeline must be used in the next advance_step or finalize_pipeline call.
+/// Pass the ticket to the unified execute_* handler for P.
+/// The returned Pipeline must be used in the next advance_step or
+/// finalize_pipeline call.
 public fun advance_step<P: store>(
     dao: &mut DAO,
     frame: &mut CompositeFrame,
     pipeline: Pipeline,
     freeze: &EmergencyFreeze,
     clock: &Clock,
-): (P, ExecutionRequest<P>, Pipeline) {
+): (ExecutionTicket<P>, Pipeline) {
     assert!(object::id(frame) == pipeline.frame_id, EFrameMismatch);
     assert!(pipeline.current_step < pipeline.total_steps, EPipelineComplete);
 
     let step_idx = pipeline.current_step;
-
-    // Retrieve the step metadata from the frame (not payload; that's in the df).
     let step_type_key = frame.step_type_keys[step_idx];
     let expected_type = frame.step_types[step_idx];
 
-    // Type safety: abort if caller supplied the wrong P for this step position.
     assert!(type_name::with_defining_ids<P>() == expected_type, EStepTypeMismatch);
 
-    // Per-step freeze check mirrors board_voting::authorize_execution.
     freeze.assert_not_frozen(&step_type_key, clock);
 
-    // Per-step cooldown check against the pre-pipeline snapshot so steps
-    // sharing a type_key don't block each other within the same composite.
     let step_config = *dao.proposal_configs().get(&step_type_key);
-    if (step_config.cooldown_ms() > 0) {
-        if (pipeline.last_executed_snapshot.contains(&step_type_key)) {
-            let last = *pipeline.last_executed_snapshot.get(&step_type_key);
-            assert!(clock.timestamp_ms() >= last + step_config.cooldown_ms(), ECooldownActive);
-        };
-    };
+
+    // Cooldown-bearing types are prohibited from composites unless explicitly
+    // opted-in via composable_allowed (enforced at config-write time by
+    // assert_config_composability). Assert here as defence-in-depth.
+    assert!(
+        step_config.cooldown_ms() == 0 || step_config.composable_allowed(),
+        ECooldownTypeNotComposable,
+    );
 
     dao.record_execution(step_type_key, clock.timestamp_ms());
 
-    // Extract payload from dynamic field — this is the only mutation of the frame.
     let payload: P = df::remove(&mut frame.id, StepKey { index: step_idx });
+    frame.steps_extracted = frame.steps_extracted + 1;
 
-    let req = proposal::new_execution_request<P>(pipeline.dao_id, pipeline.composite_proposal_id);
+    let ticket = proposal::new_ticket_composite<P>(
+        pipeline.dao_id,
+        pipeline.composite_proposal_id,
+        payload,
+    );
 
     let Pipeline {
         frame_id,
@@ -315,7 +349,7 @@ public fun advance_step<P: store>(
         last_executed_snapshot,
     };
 
-    (payload, req, next)
+    (ticket, next)
 }
 
 /// Consume the Pipeline hot potato after all steps have been advanced.
@@ -330,6 +364,48 @@ public fun finalize_pipeline(pipeline: Pipeline) {
         total_steps: _,
         last_executed_snapshot: _,
     } = pipeline;
+}
+
+/// Delete an exhausted CompositeFrame whose every step payload has been extracted.
+/// Safe to call by any party — the on-chain record is preserved in events.
+/// The caller receives the Sui storage rebate.
+/// Aborts if any step payloads remain unextracted (EFrameNotExhausted).
+public fun delete_exhausted_frame(frame: CompositeFrame) {
+    let CompositeFrame {
+        id,
+        sealed: _,
+        steps_extracted,
+        dao_id: _,
+        step_type_keys,
+        step_types: _,
+    } = frame;
+    assert!(steps_extracted == step_type_keys.length(), EFrameNotExhausted);
+    object::delete(id);
+}
+
+// === Sealing ===
+
+/// Lock the frame after all step payloads have been added. Irreversible.
+/// Called by submit_composite automatically; can also be called explicitly
+/// before submit_composite if the caller wants to verify the seal.
+public(package) fun seal_frame(frame: &mut CompositeFrame) {
+    assert!(!frame.sealed, EFrameAlreadySealed);
+    frame.sealed = true;
+}
+
+/// Returns true after seal_frame has been called.
+public fun is_sealed(frame: &CompositeFrame): bool {
+    frame.sealed
+}
+
+/// Read-only accessor for content verification in begin_pipeline.
+public fun step_type_keys(frame: &CompositeFrame): vector<std::ascii::String> {
+    frame.step_type_keys
+}
+
+/// Read-only accessor for content verification in begin_pipeline.
+public fun step_types(frame: &CompositeFrame): vector<TypeName> {
+    frame.step_types
 }
 
 // === Internal ===

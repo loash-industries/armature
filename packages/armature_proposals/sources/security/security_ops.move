@@ -1,7 +1,7 @@
 module armature_proposals::security_ops;
 
 use armature::emergency::{Self, EmergencyFreeze, FreezeAdminCap};
-use armature::proposal::{Self, Proposal, ExecutionRequest};
+use armature::proposal::{ExecutionTicket};
 use armature_proposals::transfer_freeze_admin::TransferFreezeAdmin;
 use armature_proposals::unfreeze_proposal_type::UnfreezeProposalType;
 use armature_proposals::update_freeze_config::UpdateFreezeConfig;
@@ -29,19 +29,17 @@ public struct FreezeConfigUpdated has copy, drop {
 
 /// Execute a TransferFreezeAdmin proposal: unfreeze all frozen types
 /// and transfer the FreezeAdminCap to the new admin.
-/// The current cap holder must include their cap in the execution PTB.
 public fun execute_transfer_freeze_admin(
     freeze: &mut EmergencyFreeze,
     cap: FreezeAdminCap,
-    proposal: &Proposal<TransferFreezeAdmin>,
-    request: ExecutionRequest<TransferFreezeAdmin>,
+    ticket: ExecutionTicket<TransferFreezeAdmin>,
 ) {
-    assert!(freeze.dao_id() == request.req_dao_id(), EFreezeDaoMismatch);
+    assert!(freeze.dao_id() == ticket.ticket_dao_id(), EFreezeDaoMismatch);
     assert!(cap.admin_cap_dao_id() == freeze.dao_id(), ECapDaoMismatch);
 
-    let payload = proposal.payload();
+    let payload = ticket.ticket_payload();
 
-    emergency::unfreeze_all(freeze, &request);
+    emergency::unfreeze_all(freeze, ticket.ticket_request());
 
     event::emit(FreezeAdminTransferred {
         dao_id: freeze.dao_id(),
@@ -50,35 +48,31 @@ public fun execute_transfer_freeze_admin(
 
     transfer::public_transfer(cap, payload.new_admin());
 
-    proposal::finalize(request, proposal);
+    ticket.discharge();
 }
 
 /// Execute an UnfreezeProposalType proposal: unfreeze a single proposal type
 /// via governance, without requiring the FreezeAdminCap.
 public fun execute_unfreeze_proposal_type(
     freeze: &mut EmergencyFreeze,
-    proposal: &Proposal<UnfreezeProposalType>,
-    request: ExecutionRequest<UnfreezeProposalType>,
+    ticket: ExecutionTicket<UnfreezeProposalType>,
 ) {
-    let payload = proposal.payload();
-
-    emergency::governance_unfreeze_type(freeze, payload.type_key(), &request);
-
-    proposal::finalize(request, proposal);
+    let payload = ticket.ticket_payload();
+    emergency::governance_unfreeze_type(freeze, payload.type_key(), ticket.ticket_request());
+    ticket.discharge();
 }
 
 /// Execute an UpdateFreezeConfig proposal: update the max freeze duration.
 public fun execute_update_freeze_config(
     freeze: &mut EmergencyFreeze,
-    proposal: &Proposal<UpdateFreezeConfig>,
-    request: ExecutionRequest<UpdateFreezeConfig>,
+    ticket: ExecutionTicket<UpdateFreezeConfig>,
 ) {
-    let payload = proposal.payload();
+    let payload = ticket.ticket_payload();
 
     emergency::update_freeze_duration(
         freeze,
         payload.new_max_freeze_duration_ms(),
-        &request,
+        ticket.ticket_request(),
     );
 
     event::emit(FreezeConfigUpdated {
@@ -86,27 +80,26 @@ public fun execute_update_freeze_config(
         new_max_freeze_duration_ms: payload.new_max_freeze_duration_ms(),
     });
 
-    proposal::finalize(request, proposal);
+    ticket.discharge();
 }
 
-/// Execute an UpdateFreezeExemptTypes proposal: add or remove types from
-/// the freeze-exempt set on EmergencyFreeze.
+/// Execute an UpdateFreezeExemptTypes proposal.
 public fun execute_update_freeze_exempt_types(
     freeze: &mut EmergencyFreeze,
-    proposal: &Proposal<UpdateFreezeExemptTypes>,
-    request: ExecutionRequest<UpdateFreezeExemptTypes>,
+    ticket: ExecutionTicket<UpdateFreezeExemptTypes>,
 ) {
-    assert!(freeze.dao_id() == request.req_dao_id(), EFreezeDaoMismatch);
+    assert!(freeze.dao_id() == ticket.ticket_dao_id(), EFreezeDaoMismatch);
 
-    let payload = proposal.payload();
+    let payload = ticket.ticket_payload();
+    let req = ticket.ticket_request();
 
     payload.types_to_add().do_ref!(|t| {
-        emergency::add_freeze_exempt_type(freeze, *t, &request);
+        emergency::add_freeze_exempt_type(freeze, *t, req);
     });
 
     payload.types_to_remove().do_ref!(|t| {
-        emergency::remove_freeze_exempt_type(freeze, *t, &request);
+        emergency::remove_freeze_exempt_type(freeze, *t, req);
     });
 
-    proposal::finalize(request, proposal);
+    ticket.discharge();
 }

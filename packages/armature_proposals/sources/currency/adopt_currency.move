@@ -13,7 +13,7 @@ module armature_proposals::adopt_currency;
 /// the "anyone can shove an arbitrary cap into the vault" grief vector that a
 /// permissionless entry would open. A DAO wanting frictionless adoption can
 /// later `EnableBypassType` on this type through the sanctioned bypass path.
-public struct AdoptCurrency<phantom T> has store {}
+public struct AdoptCurrency<phantom T> has drop, store {}
 
 // === Constructor ===
 

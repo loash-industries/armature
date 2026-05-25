@@ -82,7 +82,7 @@ fun test_add_member_e2e() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -90,7 +90,7 @@ fun test_add_member_e2e() {
             scenario.ctx(),
         );
 
-        member_ops::execute_add_member(&mut dao, &proposal, request);
+        member_ops::execute_add_member(&mut dao, ticket);
 
         // 5. Verify the member was added
         let gov = dao.governance();
@@ -161,7 +161,7 @@ fun test_add_member_duplicate_aborts() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -169,7 +169,7 @@ fun test_add_member_duplicate_aborts() {
             scenario.ctx(),
         );
 
-        member_ops::execute_add_member(&mut dao, &proposal, request);
+        member_ops::execute_add_member(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
@@ -247,7 +247,7 @@ fun test_remove_member_e2e() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -255,7 +255,7 @@ fun test_remove_member_e2e() {
             scenario.ctx(),
         );
 
-        member_ops::execute_remove_member(&mut dao, &proposal, request);
+        member_ops::execute_remove_member(&mut dao, ticket);
 
         // 5. Verify the member was removed
         let gov = dao.governance();
@@ -326,7 +326,7 @@ fun test_remove_nonmember_aborts() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -334,7 +334,7 @@ fun test_remove_nonmember_aborts() {
             scenario.ctx(),
         );
 
-        member_ops::execute_remove_member(&mut dao, &proposal, request);
+        member_ops::execute_remove_member(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
@@ -398,7 +398,7 @@ fun test_remove_last_member_aborts() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -406,7 +406,7 @@ fun test_remove_last_member_aborts() {
             scenario.ctx(),
         );
 
-        member_ops::execute_remove_member(&mut dao, &proposal, request);
+        member_ops::execute_remove_member(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
@@ -476,7 +476,7 @@ fun test_batch_add_members_e2e() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -484,7 +484,7 @@ fun test_batch_add_members_e2e() {
             scenario.ctx(),
         );
 
-        member_ops::execute_batch_add_members(&mut dao, &proposal, request);
+        member_ops::execute_batch_add_members(&mut dao, ticket);
 
         let gov = dao.governance();
         assert!(gov.is_board_member(CREATOR));
@@ -558,7 +558,7 @@ fun test_batch_add_members_existing_member_skipped() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -566,7 +566,7 @@ fun test_batch_add_members_existing_member_skipped() {
             scenario.ctx(),
         );
 
-        member_ops::execute_batch_add_members(&mut dao, &proposal, request);
+        member_ops::execute_batch_add_members(&mut dao, ticket);
 
         // New member was added, existing member untouched.
         let gov = dao.governance();
@@ -639,7 +639,7 @@ fun test_batch_add_members_internal_duplicate_aborts() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -647,7 +647,7 @@ fun test_batch_add_members_internal_duplicate_aborts() {
             scenario.ctx(),
         );
 
-        member_ops::execute_batch_add_members(&mut dao, &proposal, request);
+        member_ops::execute_batch_add_members(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
@@ -709,7 +709,7 @@ fun test_batch_add_members_empty_aborts() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -717,7 +717,7 @@ fun test_batch_add_members_empty_aborts() {
             scenario.ctx(),
         );
 
-        member_ops::execute_batch_add_members(&mut dao, &proposal, request);
+        member_ops::execute_batch_add_members(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
@@ -822,7 +822,7 @@ fun test_batch_add_members_oversize_aborts() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -830,7 +830,7 @@ fun test_batch_add_members_oversize_aborts() {
             scenario.ctx(),
         );
 
-        member_ops::execute_batch_add_members(&mut dao, &proposal, request);
+        member_ops::execute_batch_add_members(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);

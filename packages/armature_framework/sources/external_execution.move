@@ -21,7 +21,7 @@ module armature::external_execution;
 use armature::capability_vault::CapabilityVault;
 use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
-use armature::proposal::{Self, ExecutionRequest, ExternalExecutionCap, Proposal, ProposalConfig};
+use armature::proposal::{Self, ExecutionTicket, ExternalExecutionCap, ProposalConfig};
 use armature::utils;
 use std::string::String;
 use std::type_name;
@@ -42,6 +42,10 @@ const EApprovalFloorNotMet: u64 = 8;
 const ESubDAOBlockedType: u64 = 9;
 const ECapNotFound: u64 = 10;
 const ESelfBootstrapDenied: u64 = 11;
+/// ticket_from_cap called for a type key that has no type binding.
+const ETypeBindingRequired: u64 = 12;
+/// Config sets cooldown_ms > 0 and composable_allowed = true simultaneously.
+const EComposableCooldownConflict: u64 = 13;
 
 // === Constants ===
 
@@ -68,10 +72,9 @@ public struct ExternalExecutionCreated has copy, drop {
 
 // === Public Functions ===
 
-/// Create a privileged proposal authorized by an `ExternalExecutionCap<P>`,
-/// bypassing the vote. Mints an in-Executed-status `Proposal<P>` (shared
-/// for audit), returns an `ExecutionRequest<P>` for the same DAO, and
-/// records the execution timestamp for cooldown tracking.
+/// Mint an ExecutionTicket authorized by an `ExternalExecutionCap<P>`,
+/// bypassing the vote. Creates an Executed audit `Proposal<P>` (shared),
+/// and records the execution timestamp for cooldown tracking.
 ///
 /// Asserts (in order):
 ///   1. Cap is scoped to this DAO
@@ -79,17 +82,11 @@ public struct ExternalExecutionCreated has copy, drop {
 ///   3. `type_key` is in the enabled set
 ///   4. DAO execution is not paused
 ///   5. SubDAO is not controller-paused
-///   6. `type_key` is not frozen for this DAO
-///   7. If `type_key` has a type-binding, `P`'s canonical name matches it
-///   8. Cooldown for `type_key` has elapsed
-///
-/// Then mints the request via `proposal::privileged_create` and calls
-/// `dao::record_execution(type_key, now)` for cooldown bookkeeping.
-///
-/// The cap is the sole authorization — the framework does not look at
-/// `ctx.sender()` for permissioning. Extension packages are responsible
-/// for the auth check that gates access to the cap.
-public fun external_executed_create<P: store>(
+///   6. `type_key` is not frozen
+///   7. `type_key` has a type binding (mandatory for all bypass types)
+///   8. `P`'s canonical name matches the binding
+///   9. Cooldown for `type_key` has elapsed
+public fun ticket_from_cap<P: store>(
     cap: &ExternalExecutionCap<P>,
     dao: &mut DAO,
     freeze: &EmergencyFreeze,
@@ -98,7 +95,7 @@ public fun external_executed_create<P: store>(
     payload: P,
     clock: &Clock,
     ctx: &mut TxContext,
-): ExecutionRequest<P> {
+): ExecutionTicket<P> {
     proposal::assert_cap_for_dao(cap, dao.id());
     assert!(dao.status().is_active(), EDAONotActive);
     assert!(dao.enabled_proposal_types().contains(&type_key), ETypeNotEnabled);
@@ -106,10 +103,13 @@ public fun external_executed_create<P: store>(
     assert!(!dao.is_controller_paused(), EControllerPaused);
     freeze.assert_not_frozen(&type_key, clock);
 
-    if (dao.has_type_binding(&type_key)) {
-        let actual = type_name::with_defining_ids<P>().into_string();
-        assert!(dao.type_binding_for(&type_key) == actual, ETypeMismatch);
-    };
+    // Type binding is mandatory for all external-path types: every type accessible
+    // via ticket_from_cap is created by execute_enable_bypass_type, which always
+    // sets a binding. The unconditional check means vote-path types (no binding)
+    // cannot be executed here even if a cap were somehow fabricated.
+    let actual = type_name::with_defining_ids<P>().into_string();
+    assert!(dao.has_type_binding(&type_key), ETypeBindingRequired);
+    assert!(dao.type_binding_for(&type_key) == actual, ETypeMismatch);
 
     let now = clock.timestamp_ms();
     let cooldown_ms = dao.proposal_configs().get(&type_key).cooldown_ms();
@@ -129,15 +129,21 @@ public fun external_executed_create<P: store>(
         submitter: ctx.sender(),
     });
 
-    proposal::privileged_create<P>(
+    // Serialise payload BEFORE moving it into the ticket so the event captures it.
+    let payload_bcs = std::bcs::to_bytes(&payload);
+
+    let req = proposal::privileged_create<P>(
         dao.id(),
         type_key,
         ctx.sender(),
         metadata_ipfs,
-        payload,
         clock,
         ctx,
-    )
+    );
+
+    proposal::emit_payload_created_event(req.req_proposal_id(), dao.id(), payload_bcs);
+
+    proposal::new_ticket_external(req, payload)
 }
 
 // === EnableBypassType / DisableBypassType ===
@@ -209,7 +215,7 @@ public fun disable_cap_id(self: &DisableBypassType): ID { self.cap_id }
 /// Execute an `EnableBypassType` proposal: enable a proposal type AND mint
 /// an `ExternalExecutionCap<NewType>` into the DAO's `CapabilityVault`.
 /// Subsequent submissions of type `NewType` can skip the vote by going
-/// through `external_executed_create` with the cap.
+/// through `ticket_from_cap` with the cap.
 ///
 /// Enforces an 80% approval floor — strictly more consequential than
 /// `EnableProposalType` (66%) because every future submission under this
@@ -217,88 +223,77 @@ public fun disable_cap_id(self: &DisableBypassType): ID { self.cap_id }
 public fun execute_enable_bypass_type<NewType: store>(
     dao: &mut DAO,
     vault: &mut CapabilityVault,
-    proposal: &Proposal<EnableBypassType>,
-    request: ExecutionRequest<EnableBypassType>,
+    ticket: ExecutionTicket<EnableBypassType>,
     ctx: &mut TxContext,
 ) {
-    assert!(dao.id() == request.req_dao_id(), EDAOIdMismatch);
+    assert!(dao.id() == ticket.ticket_dao_id(), EDAOIdMismatch);
     assert!(vault.dao_id() == dao.id(), EVaultDAOMismatch);
 
-    // Deny bypass-enabling the framework's own bypass-meta types. Letting
-    // NewType = EnableBypassType (or DisableBypassType) creates a self-
-    // bootstrap loop: a single cap could mint caps for arbitrary types
-    // via privileged_create-zero-weight proposals.
     assert_not_bypass_forbidden<NewType>();
+    assert_approval_floor_ticket(&ticket, ENABLE_BYPASS_APPROVAL_FLOOR_BPS);
 
-    assert_approval_floor(proposal, ENABLE_BYPASS_APPROVAL_FLOOR_BPS);
-
-    let payload = proposal.payload();
+    let payload = ticket.ticket_payload();
     let type_key = payload.type_key;
     let config = payload.config;
+
+    // Enforce the composability–cooldown mutual exclusion before the config is
+    // committed. A bypass type with cooldown_ms > 0 must not be composable.
+    assert!(config.cooldown_ms() == 0 || !config.composable_allowed(), EComposableCooldownConflict);
 
     if (dao.controller_cap_id().is_some()) {
         assert!(!dao::is_subdao_blocked_type(&type_key), ESubDAOBlockedType);
     };
 
-    dao.enable_proposal_type(type_key, config, &request);
-    dao.bind_type_key<NewType, EnableBypassType>(type_key, &request);
+    let req = ticket.ticket_request();
+    dao.enable_proposal_type(type_key, config, req);
+    dao.bind_type_key<NewType, EnableBypassType>(type_key, req);
 
-    let cap = proposal::new_external_execution_cap<EnableBypassType, NewType>(&request, ctx);
+    let cap = proposal::new_external_execution_cap<EnableBypassType, NewType>(req, ctx);
     let cap_id = object::id(&cap);
-    vault.store_cap(cap, &request);
+    vault.store_cap(cap, req);
 
     event::emit(BypassEnabled { dao_id: dao.id(), type_key, cap_id });
 
-    proposal::finalize(request, proposal);
+    ticket.discharge();
 }
 
 /// Execute a `DisableBypassType` proposal: extract the specified
 /// `ExternalExecutionCap<NewType>` from the vault, destroy it, and remove
 /// the proposal type from the enabled set in one atomic step.
-///
-/// The caller specifies which cap to destroy by ID; the handler verifies
-/// the cap belongs to the type being disabled by checking `type_binding_for`
-/// matches `NewType`. This prevents griefing a different bypass-enabled
-/// type by passing an unrelated cap_id.
 public fun execute_disable_bypass_type<NewType: store>(
     dao: &mut DAO,
     vault: &mut CapabilityVault,
-    proposal: &Proposal<DisableBypassType>,
-    request: ExecutionRequest<DisableBypassType>,
+    ticket: ExecutionTicket<DisableBypassType>,
 ) {
-    assert!(dao.id() == request.req_dao_id(), EDAOIdMismatch);
+    assert!(dao.id() == ticket.ticket_dao_id(), EDAOIdMismatch);
     assert!(vault.dao_id() == dao.id(), EVaultDAOMismatch);
 
-    let payload = proposal.payload();
+    let payload = ticket.ticket_payload();
     let type_key = payload.type_key;
     let cap_id = payload.cap_id;
 
-    // Verify the type is bound to NewType — guards against destroying a cap
-    // for a different type by ID confusion.
     assert!(dao.has_type_binding(&type_key), ETypeNotEnabled);
     let expected = type_name::with_defining_ids<NewType>().into_string();
     assert!(dao.type_binding_for(&type_key) == expected, ETypeMismatch);
 
-    // Verify the cap_id is actually registered in the vault as an EEC<NewType>.
     let cap_ids = vault.ids_for_type<ExternalExecutionCap<NewType>>();
     assert!(cap_ids.contains(&cap_id), ECapNotFound);
 
-    let cap: ExternalExecutionCap<NewType> = vault.extract_cap(cap_id, &request);
-    proposal::destroy_external_execution_cap(cap, &request);
+    let req = ticket.ticket_request();
+    let cap: ExternalExecutionCap<NewType> = vault.extract_cap(cap_id, req);
+    proposal::destroy_external_execution_cap(cap, req);
 
-    dao.disable_proposal_type(type_key, &request);
+    dao.disable_proposal_type(type_key, req);
 
     event::emit(BypassDisabled { dao_id: dao.id(), type_key, cap_id });
 
-    proposal::finalize(request, proposal);
+    ticket.discharge();
 }
 
 // === Internal ===
 
 /// Refuse to bypass-enable any Move type whose canonical name is in
-/// the framework's self-bootstrap denylist. Centralising this guard
-/// means future framework-meta types only need to be added in one place
-/// to stay safe. Aborts with `ESelfBootstrapDenied` on match.
+/// the framework's self-bootstrap denylist.
 fun assert_not_bypass_forbidden<NewType>() {
     let new_type_name = type_name::with_defining_ids<NewType>().into_string();
     let forbidden = bypass_forbidden_type_names();
@@ -309,10 +304,6 @@ fun assert_not_bypass_forbidden<NewType>() {
     };
 }
 
-/// Canonical Move type names that cannot be bypass-enabled. Extend this
-/// list whenever a new framework-meta type is added whose handler runs
-/// inside the bypass path. Centralised so a single edit covers the
-/// invariant rather than scattered assertions.
 fun bypass_forbidden_type_names(): vector<std::ascii::String> {
     vector[
         type_name::with_defining_ids<EnableBypassType>().into_string(),
@@ -320,12 +311,12 @@ fun bypass_forbidden_type_names(): vector<std::ascii::String> {
     ]
 }
 
-fun assert_approval_floor<P: store>(proposal: &Proposal<P>, floor_bps: u64) {
-    let total = proposal.total_snapshot_weight();
-    // Reject zero-weight proposals. gte_bps(0, 0, _) returns true (0 >= 0),
-    // which would let a privileged_create / external_executed_create proposal
-    // (snapshot weight 0) pass any floor vacuously. The floor only has meaning
-    // when there is real voting power behind the proposal.
+/// Approval floor check for Standalone (vote-path) tickets.
+/// Requires a Standalone ticket — path check comes first with a clear error.
+fun assert_approval_floor_ticket<P>(ticket: &ExecutionTicket<P>, floor_bps: u64) {
+    assert!(ticket.ticket_is_standalone(), EApprovalFloorNotMet);
+    let total = ticket.ticket_total_snapshot_weight();
+    // Reject zero-weight proposals (vacuous floor pass).
     assert!(total > 0, EApprovalFloorNotMet);
-    assert!(utils::gte_bps(proposal.yes_weight(), total, floor_bps), EApprovalFloorNotMet);
+    assert!(utils::gte_bps(ticket.ticket_yes_weight(), total, floor_bps), EApprovalFloorNotMet);
 }

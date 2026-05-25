@@ -104,7 +104,7 @@ fun spawn_dao_and_destroy_origin_e2e() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -114,8 +114,7 @@ fun spawn_dao_and_destroy_origin_e2e() {
 
         subdao_ops::execute_spawn_dao(
             &mut dao,
-            &proposal,
-            request,
+            ticket,
             scenario.ctx(),
         );
 
@@ -246,7 +245,7 @@ fun create_subdao_and_spin_out_e2e() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -256,8 +255,7 @@ fun create_subdao_and_spin_out_e2e() {
 
         subdao_ops::execute_create_subdao(
             &mut vault,
-            &proposal,
-            request,
+            ticket,
             scenario.ctx(),
         );
 
@@ -354,7 +352,7 @@ fun create_subdao_and_spin_out_e2e() {
         >(subdao.capability_vault_id());
         clock.set_for_testing(7000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut parent_dao,
             &mut proposal,
             &parent_freeze,
@@ -366,8 +364,7 @@ fun create_subdao_and_spin_out_e2e() {
             &mut parent_vault,
             &mut subdao_vault,
             &mut subdao,
-            &proposal,
-            request,
+            ticket,
             &clock,
             scenario.ctx(),
         );
@@ -477,7 +474,7 @@ fun controller_set_board_via_privileged_submit() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -487,8 +484,7 @@ fun controller_set_board_via_privileged_submit() {
 
         subdao_ops::execute_create_subdao(
             &mut vault,
-            &proposal,
-            request,
+            ticket,
             scenario.ctx(),
         );
 
@@ -558,7 +554,7 @@ fun controller_set_board_via_privileged_submit() {
         clock.set_for_testing(7000);
 
         // Get parent ExecutionRequest (for vault loan authorization)
-        let parent_req = board_voting::authorize_execution(
+        let parent_req = board_voting::ticket_from_vote(
             &mut parent_dao,
             &mut parent_proposal,
             &parent_freeze,
@@ -569,7 +565,7 @@ fun controller_set_board_via_privileged_submit() {
         // Loan SubDAOControl from parent vault
         let (control, loan) = vault.loan_cap<SubDAOControl, SetBoard>(
             control_cap_id,
-            &parent_req,
+            parent_req.ticket_request(),
         );
 
         // Privileged submit: set SubDAO's board to [SUBDAO_MEMBER, CREATOR]
@@ -593,7 +589,7 @@ fun controller_set_board_via_privileged_submit() {
         vault.return_cap(control, loan);
 
         // Consume parent request by applying no-op board change (same members)
-        board_ops::execute_set_board(&mut parent_dao, &parent_proposal, parent_req);
+        board_ops::execute_set_board(&mut parent_dao, parent_req);
 
         // Verify: SubDAO board now includes CREATOR
         assert!(subdao.governance().is_board_member(SUBDAO_MEMBER));
@@ -692,7 +688,7 @@ fun migration_with_transfer_assets_e2e() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -700,7 +696,7 @@ fun migration_with_transfer_assets_e2e() {
             scenario.ctx(),
         );
 
-        subdao_ops::execute_spawn_dao(&mut dao, &proposal, request, scenario.ctx());
+        subdao_ops::execute_spawn_dao(&mut dao, ticket, scenario.ctx());
         assert!(dao.status().is_migrating());
 
         test_scenario::return_shared(freeze);
@@ -773,7 +769,7 @@ fun migration_with_transfer_assets_e2e() {
         let successor_vault = scenario.take_shared_by_id<CapabilityVault>(successor_vault_id);
         clock.set_for_testing(7000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut origin_dao,
             &mut proposal,
             &origin_freeze,
@@ -787,20 +783,19 @@ fun migration_with_transfer_assets_e2e() {
             &origin_vault,
             &successor_treasury,
             &successor_vault,
-            &proposal,
-            &request,
+            &ticket,
         );
 
         // Withdraw from origin, deposit into successor
         let coin = origin_treasury.withdraw<SUI, TransferAssets>(
             500_000,
-            &request,
+            ticket.ticket_request(),
             scenario.ctx(),
         );
         successor_treasury.deposit(coin, scenario.ctx());
 
         // Finalize
-        subdao_ops::finalize_transfer_assets(request, &proposal);
+        subdao_ops::finalize_transfer_assets(ticket);
 
         // Verify balances
         assert!(origin_treasury.balance<SUI>() == 0);

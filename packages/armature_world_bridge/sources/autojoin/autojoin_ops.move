@@ -14,12 +14,11 @@
 ///      The function verifies the character's wallet matches `ctx.sender()`,
 ///      the character's tribe is in the allowlist, the kill-switch is on,
 ///      then hands off to `external_execution::external_executed_create<AutojoinDAO>`
-///      which mints the request after running all the standard cross-cutting
+///      which mints the ticket after running all the standard cross-cutting
 ///      checks (DAO active, type enabled, not frozen/paused, type binding,
 ///      cooldown, record_execution).
-///   4. Same PTB, player calls `execute_autojoin_dao(dao, &proposal, request)`
-///      which re-reads the allowlist (defense-in-depth across PTB steps that
-///      a future refactor might split) and adds the joiner to the board.
+///   4. Same PTB, player calls `execute_autojoin_dao(dao, ticket)`
+///      which re-reads the allowlist (defense-in-depth) and adds the joiner.
 ///
 /// Threat model:
 ///   - World admin is the trust anchor for `character.tribe_id` and
@@ -40,7 +39,7 @@ use armature::capability_vault::CapabilityVault;
 use armature::dao::DAO;
 use armature::emergency::EmergencyFreeze;
 use armature::external_execution;
-use armature::proposal::{Self, ExecutionRequest, Proposal};
+use armature::proposal::{Self, ExecutionRequest, ExecutionTicket};
 use armature_world_bridge::configure_autojoin::ConfigureAutojoin;
 use armature_world_bridge::tribe_allowlist::TribeIdAllowlist;
 use sui::clock::Clock;
@@ -61,7 +60,7 @@ const EZeroTribeIdNotAllowed: u64 = 5;
 /// Per-self-join payload. Recorded for the audit trail; the execute
 /// handler re-reads `dao` and `character` state at execution time
 /// rather than trusting payload values, so the payload is informational.
-public struct AutojoinDAO has store {
+public struct AutojoinDAO has drop, store {
     character_id: ID,
     tribe_id: u32,
     joining_address: address,
@@ -109,7 +108,7 @@ public fun submit_autojoin(
     freeze: &EmergencyFreeze,
     clock: &Clock,
     ctx: &mut TxContext,
-): ExecutionRequest<AutojoinDAO> {
+): ExecutionTicket<AutojoinDAO> {
     let sender = ctx.sender();
 
     // 1. Authenticate the joiner against the character record. The world
@@ -134,11 +133,8 @@ public fun submit_autojoin(
     // 3. Borrow the cap. borrow_external_cap asserts vault.dao_id == members_dao.id().
     let cap = members_vault.borrow_external_cap<AutojoinDAO>(members_dao.id(), cap_id);
 
-    // 4. Hand off to the framework's cap-gated mint. external_executed_create
-    //    re-asserts cap.dao_id == dao.id() (second independent boundary),
-    //    checks DAO active / type enabled / not paused / not frozen / type
-    //    binding match / cooldown, records execution, mints the request.
-    external_execution::external_executed_create<AutojoinDAO>(
+    // 4. Hand off to the framework's cap-gated mint.
+    external_execution::ticket_from_cap<AutojoinDAO>(
         cap,
         members_dao,
         freeze,
@@ -168,25 +164,17 @@ public fun submit_autojoin(
 /// address rather than re-reading `character.character_address()`,
 /// because the payload is the recorded intent and is what indexers
 /// will see in the event.
-public fun execute_autojoin_dao(
-    dao: &mut DAO,
-    proposal: &Proposal<AutojoinDAO>,
-    request: ExecutionRequest<AutojoinDAO>,
-) {
-    assert!(dao.id() == request.req_dao_id(), EDaoMismatch);
-    let payload = proposal.payload();
+public fun execute_autojoin_dao(dao: &mut DAO, ticket: ExecutionTicket<AutojoinDAO>) {
+    assert!(dao.id() == ticket.ticket_dao_id(), EDaoMismatch);
+    let payload = ticket.ticket_payload();
 
-    // Defense-in-depth re-read. submit_autojoin already verified these,
-    // but a same-PTB re-read is cheap and protects against
-    // future-refactor regressions.
+    // Defense-in-depth re-read.
     assert!(dao.has_type_state<ConfigureAutojoin>(), EAllowlistNotInitialized);
     let allowlist: &TribeIdAllowlist = dao.borrow_type_state<ConfigureAutojoin, TribeIdAllowlist>();
     assert!(allowlist.is_enabled(), EAutojoinDisabled);
     assert!(allowlist.contains(payload.tribe_id), ETribeIdNotAllowed);
 
-    // add_board_member_governance aborts on duplicate (governance::EDuplicateBoardMember),
-    // giving us natural double-join protection without any extra check here.
-    dao.add_board_member_governance(payload.joining_address, &request);
+    dao.add_board_member_governance(payload.joining_address, ticket.ticket_request());
 
     event::emit(MemberAutojoined {
         dao_id: dao.id(),
@@ -195,5 +183,5 @@ public fun execute_autojoin_dao(
         character_id: payload.character_id,
     });
 
-    proposal::finalize(request, proposal);
+    ticket.discharge();
 }

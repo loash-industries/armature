@@ -1,7 +1,7 @@
 module armature_proposals::member_ops;
 
 use armature::dao::DAO;
-use armature::proposal::{Self, Proposal, ExecutionRequest};
+use armature::proposal::{ExecutionRequest, ExecutionTicket};
 use armature_proposals::add_member::AddMember;
 use armature_proposals::batch_add_members::BatchAddMembers;
 use armature_proposals::remove_member::RemoveMember;
@@ -45,13 +45,9 @@ public struct MembersBatchAdded has copy, drop {
 
 // === Handlers ===
 
-public fun execute_add_member(
-    dao: &mut DAO,
-    proposal: &Proposal<AddMember>,
-    request: ExecutionRequest<AddMember>,
-) {
-    add_member_impl(dao, proposal.payload(), &request);
-    proposal::finalize(request, proposal);
+public fun execute_add_member(dao: &mut DAO, ticket: ExecutionTicket<AddMember>) {
+    add_member_impl(dao, ticket.ticket_payload(), ticket.ticket_request());
+    ticket.discharge();
 }
 
 /// Execute a BatchAddMembers proposal: add many addresses to the DAO's board.
@@ -67,20 +63,16 @@ public fun execute_add_member(
 /// `added` and `skipped` so the on-chain audit trail reflects what
 /// actually happened. See `dao::add_board_members_governance` for the
 /// rationale.
-public fun execute_batch_add_members(
-    dao: &mut DAO,
-    proposal: &Proposal<BatchAddMembers>,
-    request: ExecutionRequest<BatchAddMembers>,
-) {
-    assert!(dao.id() == request.req_dao_id(), EDaoMismatch);
-    let payload = proposal.payload();
+public fun execute_batch_add_members(dao: &mut DAO, ticket: ExecutionTicket<BatchAddMembers>) {
+    assert!(dao.id() == ticket.ticket_dao_id(), EDaoMismatch);
+    let payload = ticket.ticket_payload();
     let members = payload.members();
 
     let len = members.length();
     assert!(len > 0, EEmptyBatch);
     assert!(len <= MAX_BATCH_SIZE, EBatchTooLarge);
 
-    let (added, skipped) = dao.add_board_members_governance(*members, &request);
+    let (added, skipped) = dao.add_board_members_governance(*members, ticket.ticket_request());
 
     event::emit(MembersBatchAdded {
         dao_id: dao.id(),
@@ -88,34 +80,12 @@ public fun execute_batch_add_members(
         skipped,
     });
 
-    proposal::finalize(request, proposal);
+    ticket.discharge();
 }
 
-public fun execute_add_member_step(
-    dao: &mut DAO,
-    payload: AddMember,
-    request: ExecutionRequest<AddMember>,
-) {
-    add_member_impl(dao, &payload, &request);
-    proposal::consume_execution_request(request);
-}
-
-public fun execute_remove_member(
-    dao: &mut DAO,
-    proposal: &Proposal<RemoveMember>,
-    request: ExecutionRequest<RemoveMember>,
-) {
-    remove_member_impl(dao, proposal.payload(), &request);
-    proposal::finalize(request, proposal);
-}
-
-public fun execute_remove_member_step(
-    dao: &mut DAO,
-    payload: RemoveMember,
-    request: ExecutionRequest<RemoveMember>,
-) {
-    remove_member_impl(dao, &payload, &request);
-    proposal::consume_execution_request(request);
+public fun execute_remove_member(dao: &mut DAO, ticket: ExecutionTicket<RemoveMember>) {
+    remove_member_impl(dao, ticket.ticket_payload(), ticket.ticket_request());
+    ticket.discharge();
 }
 
 // === Internal ===

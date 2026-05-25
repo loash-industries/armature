@@ -115,7 +115,7 @@ fun enable_blocked_type_aborts_for_subdao_with_controller() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut subdao,
             &mut proposal,
             &freeze,
@@ -124,8 +124,7 @@ fun enable_blocked_type_aborts_for_subdao_with_controller() {
         );
         admin_ops::execute_enable_proposal_type<EnableProposalType>(
             &mut subdao,
-            &proposal,
-            request,
+            ticket,
         );
 
         test_scenario::return_shared(freeze);
@@ -158,7 +157,7 @@ fun enable_non_blocked_type_succeeds_for_subdao_with_controller() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut subdao,
             &mut proposal,
             &freeze,
@@ -167,8 +166,7 @@ fun enable_non_blocked_type_succeeds_for_subdao_with_controller() {
         );
         admin_ops::execute_enable_proposal_type<EnableProposalType>(
             &mut subdao,
-            &proposal,
-            request,
+            ticket,
         );
 
         // Verify the type was added
@@ -202,14 +200,14 @@ fun enable_blocked_type_succeeds_for_independent_dao() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_enable_proposal_type<EnableProposalType>(&mut dao, &proposal, request);
+        admin_ops::execute_enable_proposal_type<EnableProposalType>(&mut dao, ticket);
 
         // Verify SpawnDAO is now enabled
         assert!(dao.enabled_proposal_types().contains(&b"SpawnDAO".to_ascii_string()));
@@ -271,14 +269,14 @@ fun disable_core_type_enable_proposal_type_aborts() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_disable_proposal_type(&mut dao, &proposal, request);
+        admin_ops::execute_disable_proposal_type(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
@@ -328,14 +326,14 @@ fun disable_core_type_unfreeze_proposal_type_aborts() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_disable_proposal_type(&mut dao, &proposal, request);
+        admin_ops::execute_disable_proposal_type(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
@@ -618,14 +616,14 @@ fun update_proposal_config_non_self_target_succeeds() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(5000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_update_proposal_config(&mut dao, &proposal, request);
+        admin_ops::execute_update_proposal_config(&mut dao, ticket);
 
         // Verify SetBoard quorum was updated
         let new_config = dao.proposal_configs().get(&b"SetBoard".to_ascii_string());
@@ -696,14 +694,14 @@ fun update_config_below_floor_aborts() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_update_proposal_config(&mut dao, &proposal, request);
+        admin_ops::execute_update_proposal_config(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
@@ -771,14 +769,14 @@ fun enable_type_with_sub_floor_config_aborts() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_enable_proposal_type<EnableProposalType>(&mut dao, &proposal, request);
+        admin_ops::execute_enable_proposal_type<EnableProposalType>(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
@@ -833,14 +831,14 @@ fun run_enable_type<NewType: store>(
         let mut dao = scenario.take_shared<DAO>();
         let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
             clock,
             scenario.ctx(),
         );
-        admin_ops::execute_enable_proposal_type<NewType>(&mut dao, &proposal, request);
+        admin_ops::execute_enable_proposal_type<NewType>(&mut dao, ticket);
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
@@ -991,14 +989,14 @@ fun update_proposal_config_composable_allowed_updates_config() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_update_proposal_config(&mut dao, &proposal, request);
+        admin_ops::execute_update_proposal_config(&mut dao, ticket);
 
         // Composability is now false.
         assert!(!dao.proposal_configs().get(&b"AddMember".to_ascii_string()).composable_allowed());
@@ -1049,14 +1047,14 @@ fun update_proposal_config_composable_allowed_updates_config() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(6000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_update_proposal_config(&mut dao, &proposal, request);
+        admin_ops::execute_update_proposal_config(&mut dao, ticket);
 
         // Composability is restored.
         assert!(dao.proposal_configs().get(&b"AddMember".to_ascii_string()).composable_allowed());

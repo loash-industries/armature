@@ -30,7 +30,7 @@ public fun privileged_submit<P: store>(
     assert!(control.subdao_id() == subdao.id(), EControlMismatch);
     assert!(subdao.status().is_active(), EDAONotActive);
 
-    proposal::privileged_create(
+    proposal::privileged_create_with_payload(
         subdao.id(),
         type_key,
         ctx.sender(),

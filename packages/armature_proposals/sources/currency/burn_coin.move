@@ -4,7 +4,7 @@ module armature_proposals::burn_coin;
 /// The burned coins are withdrawn from the DAO's `TreasuryVault` — the clean,
 /// accountable source — so supply contraction goes through the same balance
 /// the spend proposals draw from.
-public struct BurnCoin<phantom T> has store {
+public struct BurnCoin<phantom T> has drop, store {
     treasury_cap_id: ID,
     amount: u64,
 }

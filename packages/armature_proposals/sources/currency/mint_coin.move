@@ -7,7 +7,7 @@ module armature_proposals::mint_coin;
 /// common path for a sovereign currency the DAO spends through governance.
 /// `recipient = some(addr)` issues directly to an address (e.g. a one-off
 /// grant) without routing through the treasury.
-public struct MintCoin<phantom T> has store {
+public struct MintCoin<phantom T> has drop, store {
     treasury_cap_id: ID,
     amount: u64,
     recipient: Option<address>,
