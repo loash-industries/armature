@@ -5,7 +5,6 @@
 # Stands up:
 #   1. sui-localnet        — Sui node with faucet (port 9000/9123)
 #   2. armature-deploy     — Init: publishes Armature packages + creates test DAO
-#   3. ui                  — Vite dev server with hot reload (port 5173)
 #
 # Optional (requires upstream world-contracts version alignment):
 #   - world-deploy         — Init: deploys EVE Frontier world-contracts
@@ -85,33 +84,6 @@ services:
     command: ["/scripts/deploy-armature.sh"]
     restart: "no"
 
-  # ── UI Dev Server (Vite) ───────────────────────────────────────────────────
-  ui:
-    image: node:22-slim
-    depends_on:
-      armature-deploy:
-        condition: service_completed_successfully
-    working_dir: /app
-    ports:
-      - "5173:5173"
-    volumes:
-      - ./ui:/app
-      - ui-node-modules:/app/node_modules
-      - shared-data:/shared:ro
-    entrypoint: ["bash", "-c"]
-    command:
-      - |
-        # Copy generated env file
-        if [ -f /shared/ui.env.local ]; then
-          cp /shared/ui.env.local /app/.env.local
-          echo "[ui] Loaded .env.local from deployment"
-        fi
-
-        npm install
-        npx vite --host 0.0.0.0
-    restart: unless-stopped
-
 volumes:
   sui-data:
   shared-data:
-  ui-node-modules:

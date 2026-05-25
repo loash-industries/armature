@@ -16,10 +16,6 @@ Run the full Armature stack locally with a single command.
 │  ┌───────────────────▼───────────────────────┐   │
 │  │ armature-deploy  (init — runs once)       │   │
 │  │ publishes Move packages, creates test DAO │   │
-│  └───────────────────┬───────────────────────┘   │
-│                      │                           │
-│  ┌───────────────────▼───────────────────────┐   │
-│  │ ui (Vite)  :5173                          │   │
 │  └───────────────────────────────────────────┘   │
 └──────────────────────────────────────────────────┘
 ```
@@ -27,14 +23,14 @@ Run the full Armature stack locally with a single command.
 With the `world` profile, world-contracts are also deployed before Armature:
 
 ```
-  sui-localnet → world-deploy → armature-deploy → ui
+  sui-localnet → world-deploy → armature-deploy
 ```
 
 ## Prerequisites
 
 - Docker and Docker Compose v2+
 - ~2 GB disk (Sui tools image)
-- Ports 9000, 9123, 5173 available
+- Ports 9000, 9123 available
 
 ## Quick Start
 
@@ -45,9 +41,6 @@ make dev
 # With EVE Frontier world-contracts
 make dev-deps    # clones world-contracts to .world-contracts/
 docker compose -f docker-compose.dev.yml --profile world up --build
-
-# Open the UI
-open http://localhost:5173
 ```
 
 ## Makefile Targets
@@ -70,7 +63,6 @@ open http://localhost:5173
 1. **sui-localnet** starts a Sui v1.67.2 node with `--force-regenesis` and a faucet
 2. *(world profile only)* **world-deploy** clones and deploys EVE Frontier world-contracts, configures fuel/energy/gates
 3. **armature-deploy** publishes `armature_framework` + `armature_proposals` (36 modules), creates 3 test wallets and a test DAO
-4. **ui** copies the generated `.env.local` and starts Vite with hot reload
 
 ### Shared Volume
 
@@ -80,7 +72,6 @@ Deployment artifacts pass between containers via the `shared-data` volume:
 /shared/
 ├── .env.world          # (world profile) WORLD_PACKAGE_ID, governor key
 ├── .env.armature       # ARMATURE_PACKAGE_ID, test DAO IDs, wallet addresses
-├── ui.env.local        # Ready-to-use VITE_* env vars for the UI
 └── world-deployment.json  # (world profile) Full publish transaction output
 ```
 
@@ -98,7 +89,6 @@ If world-contracts updates their Move.lock to a newer Sui framework, bump the im
 ## Development Workflow
 
 - **Move contracts** — Edit files under `packages/`. Run `make dev-reset` to redeploy after changes.
-- **UI** — Edit files under `ui/`. Vite hot-reloads automatically.
 
 ## Troubleshooting
 

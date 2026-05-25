@@ -14,7 +14,7 @@ WORLD_REF   = main
 
 # ── Full-Stack Dev Environment ────────────────────────────────────────────────
 
-## Start the full dev stack (sui-localnet + armature + ui)
+## Start the full dev stack (sui-localnet + armature)
 dev: docker/.env
 	$(COMPOSE_DEV) up --build
 
