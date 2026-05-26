@@ -5,7 +5,7 @@ use armature::controller;
 use armature::dao::{Self, DAO};
 use armature::emergency;
 use armature::governance;
-use armature::proposal::{ExecutionTicket};
+use armature::proposal::ExecutionTicket;
 use armature::treasury_vault::TreasuryVault;
 use armature_proposals::create_subdao::CreateSubDAO;
 use armature_proposals::pause_execution::{Self, PauseSubDAOExecution, UnpauseSubDAOExecution};

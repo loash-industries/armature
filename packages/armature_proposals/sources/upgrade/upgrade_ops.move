@@ -1,7 +1,7 @@
 module armature_proposals::upgrade_ops;
 
 use armature::capability_vault::{CapabilityVault, CapLoan};
-use armature::proposal::{ExecutionTicket};
+use armature::proposal::ExecutionTicket;
 use armature_proposals::propose_upgrade::ProposeUpgrade;
 use sui::event;
 use sui::package::{Self, UpgradeCap, UpgradeTicket, UpgradeReceipt};

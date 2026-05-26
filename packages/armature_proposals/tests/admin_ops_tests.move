@@ -1072,3 +1072,151 @@ fun update_proposal_config_composable_allowed_updates_config() {
     clock.destroy_for_testing();
     scenario.end();
 }
+
+// =========================================================================
+// EComposableCooldownConflict: enable_proposal_type rejects cooldown+composable
+// =========================================================================
+
+#[test, expected_failure(abort_code = armature_proposals::admin_ops::EComposableCooldownConflict)]
+/// execute_enable_proposal_type aborts when config has cooldown > 0 AND composable_allowed = true.
+fun enable_proposal_type_composable_cooldown_conflict_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_dao(&mut scenario);
+
+    // Submit EnableProposalType with a conflicting config: cooldown + composable
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        clock.set_for_testing(1000);
+        let bad_config = proposal::new_config(
+            5_000,
+            6_600,
+            0,
+            604_800_000,
+            0,
+            3_600_000,
+        ).with_composable_allowed(true);
+        let payload = enable_proposal_type::new(
+            b"BadType".to_ascii_string(),
+            bad_config,
+        );
+        board_voting::submit_proposal(
+            &dao,
+            b"EnableProposalType".to_ascii_string(),
+            option::none(),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    // Vote
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
+        clock.set_for_testing(2000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    // Execute — must abort at composable_cooldown check
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        clock.set_for_testing(3000);
+
+        let ticket = board_voting::ticket_from_vote(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+
+        admin_ops::execute_enable_proposal_type<TestPayload>(&mut dao, ticket);
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature_proposals::admin_ops::EComposableCooldownConflict)]
+/// execute_update_proposal_config aborts when updated config has cooldown > 0 AND
+/// composable_allowed = true.
+fun update_proposal_config_composable_cooldown_conflict_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_dao(&mut scenario);
+
+    // Submit UpdateProposalConfig that sets cooldown > 0 and composable_allowed = true for
+    // AddMember
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        clock.set_for_testing(1000);
+        let payload = update_proposal_config::new(
+            b"AddMember".to_ascii_string(),
+            option::none(), // quorum
+            option::none(), // approval_threshold
+            option::none(), // propose_threshold
+            option::none(), // expiry_ms
+            option::none(), // execution_delay_ms
+            option::some(3_600_000u64), // cooldown_ms > 0
+            option::some(true), // composable_allowed = true → CONFLICT
+        );
+        board_voting::submit_proposal(
+            &dao,
+            b"UpdateProposalConfig".to_ascii_string(),
+            option::none(),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    // Vote
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
+        clock.set_for_testing(2000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    // Execute — must abort at composable_cooldown check
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        clock.set_for_testing(3000);
+
+        let ticket = board_voting::ticket_from_vote(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+
+        admin_ops::execute_update_proposal_config(&mut dao, ticket);
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}

@@ -1051,3 +1051,144 @@ fun execute_disable_bypass_type_wrong_cap_id_aborts() {
     clock.destroy_for_testing();
     scenario.end();
 }
+
+// =========================================================================
+// ETypeBindingRequired: ticket_from_cap rejects types without a type binding
+// =========================================================================
+
+#[test, expected_failure(abort_code = armature::external_execution::ETypeBindingRequired)]
+/// ticket_from_cap aborts when the type_key is enabled but has no type binding.
+/// Previously the binding check was optional; now it is mandatory for all bypass types.
+fun ticket_from_cap_no_type_binding_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_test_dao(&mut scenario);
+
+    // Enable the type WITHOUT binding — only test_enable_type, no test_bind_type
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+        dao.test_enable_type(b"DummyBypass".to_ascii_string(), config);
+        // Deliberately NOT calling: dao.test_bind_type<DummyBypass>(...)
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        clock.set_for_testing(1000);
+
+        let cap = proposal::new_external_execution_cap_for_testing<DummyBypass>(
+            dao.id(),
+            scenario.ctx(),
+        );
+
+        // Must abort: type_key is enabled but has no type binding
+        let ticket = external_execution::ticket_from_cap<DummyBypass>(
+            &cap,
+            &mut dao,
+            &freeze,
+            b"DummyBypass".to_ascii_string(),
+            option::none(),
+            DummyBypass { x: 0 },
+            &clock,
+            scenario.ctx(),
+        );
+
+        ticket.discharge();
+        proposal::destroy_external_execution_cap_for_testing(cap);
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// =========================================================================
+// EComposableCooldownConflict: enable_bypass_type rejects cooldown+composable
+// =========================================================================
+
+#[test, expected_failure(abort_code = armature::external_execution::EComposableCooldownConflict)]
+/// execute_enable_bypass_type aborts when config has cooldown_ms > 0 AND composable_allowed = true.
+fun enable_bypass_type_composable_cooldown_conflict_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_test_dao(&mut scenario);
+
+    // Submit EnableBypassType with a config that sets cooldown_ms > 0 and composable_allowed =
+    // true.
+    clock.set_for_testing(1000);
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        // Config with cooldown + composable_allowed — should be rejected
+        let bad_config = proposal::new_config(
+            5_000,
+            8_000,
+            0,
+            604_800_000,
+            0,
+            3_600_000,
+        ).with_composable_allowed(true);
+        let payload = external_execution::new_enable_bypass_type(
+            b"DummyBypass".to_ascii_string(),
+            bad_config,
+        );
+        board_voting::submit_proposal(
+            &dao,
+            b"EnableBypassType".to_ascii_string(),
+            option::none(),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    // Vote
+    clock.set_for_testing(2000);
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    // Execute — must abort at composable_cooldown_conflict check
+    clock.set_for_testing(3000);
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut vault = scenario.take_shared<CapabilityVault>();
+        let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+
+        let ticket = board_voting::ticket_from_vote(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+
+        external_execution::execute_enable_bypass_type<DummyBypass>(
+            &mut dao,
+            &mut vault,
+            ticket,
+            scenario.ctx(),
+        );
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(vault);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}

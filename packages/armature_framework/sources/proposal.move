@@ -900,3 +900,27 @@ public fun privileged_create_for_testing<P: store>(
         closeout: Closeout::Standalone { proposal_id, yes_weight: 0, total_snapshot_weight: 0 },
     }
 }
+
+#[test_only]
+/// Synthesize an ExecutionTicket<P> with Composite closeout.
+/// Allows tests to verify ENotStandaloneTicket abort paths.
+public fun new_composite_ticket_for_testing<P: store>(
+    dao_id: ID,
+    proposal_id: ID,
+    payload: P,
+): ExecutionTicket<P> {
+    let request = ExecutionRequest { dao_id, proposal_id };
+    ExecutionTicket { request, payload, closeout: Closeout::Composite }
+}
+
+#[test_only]
+/// Synthesize an ExecutionTicket<P> with External closeout.
+/// Allows tests to verify ENotStandaloneTicket abort paths.
+public fun new_external_ticket_for_testing<P: store>(
+    dao_id: ID,
+    proposal_id: ID,
+    payload: P,
+): ExecutionTicket<P> {
+    let request = ExecutionRequest { dao_id, proposal_id };
+    ExecutionTicket { request, payload, closeout: Closeout::External }
+}
