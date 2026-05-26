@@ -3,19 +3,18 @@
 # =============================================================================
 
 COMPOSE_DEV = docker compose -f docker-compose.dev.yml
-COMPOSE     = docker compose
 WORLD_DIR   = .world-contracts
 WORLD_REPO  = https://github.com/evefrontier/world-contracts.git
 WORLD_REF   = main
 
 .PHONY: dev dev-up dev-down dev-reset dev-logs dev-ps \
-        dev-deps db db-down \
+        dev-deps \
         deploy-world deploy-armature \
         clean help
 
 # ── Full-Stack Dev Environment ────────────────────────────────────────────────
 
-## Start the full dev stack (sui-localnet + armature + indexer + ui + postgres)
+## Start the full dev stack (sui-localnet + armature)
 dev: docker/.env
 	$(COMPOSE_DEV) up --build
 
@@ -62,16 +61,6 @@ $(WORLD_DIR):
 ## Update world-contracts to latest
 dev-deps-update:
 	cd $(WORLD_DIR) && git fetch origin && git reset --hard origin/$(WORLD_REF)
-
-# ── Individual Services ───────────────────────────────────────────────────────
-
-## Start only PostgreSQL (for local indexer development)
-db:
-	$(COMPOSE) up -d
-
-## Stop PostgreSQL
-db-down:
-	$(COMPOSE) down
 
 # ── Deploy Steps (for re-running individually) ───────────────────────────────
 

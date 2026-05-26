@@ -20,9 +20,6 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      ui: ${{ steps.filter.outputs.ui }}
-      api: ${{ steps.filter.outputs.api }}
-      indexer: ${{ steps.filter.outputs.indexer }}
       move: ${{ steps.filter.outputs.move }}
       whitepaper: ${{ steps.filter.outputs.whitepaper }}
     steps:
@@ -31,136 +28,12 @@ jobs:
         id: filter
         with:
           filters: |
-            ui:
-              - 'ui/**'
-              - '.github/workflows/**'
-            api:
-              - 'api/**'
-              - '.github/workflows/**'
-            indexer:
-              - 'crates/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-              - '.github/workflows/**'
             move:
               - 'packages/**'
               - '.github/workflows/**'
             whitepaper:
               - 'whitepaper/**'
               - '.github/workflows/**'
-
-  # Build API Docker image
-  build-api:
-    runs-on: ubuntu-latest
-    needs:
-      - changes
-    if: needs.changes.outputs.api == 'true'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build API image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./api
-          push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  # Build UI Docker image
-  build-ui:
-    runs-on: ubuntu-latest
-    needs:
-      - changes
-    if: needs.changes.outputs.ui == 'true'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build UI image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./ui
-          push: false
-          build-args: |
-            NPM_PRIVATE_REGISTRY_URL=https://npm.pkg.github.com/
-          secrets: |
-            GH_AUTH_TOKEN=${{ secrets.GH_AUTH_TOKEN }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  # Run unit tests
-  unit-test:
-    runs-on: ubuntu-latest
-    needs:
-      - changes
-    if: needs.changes.outputs.api == 'true'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: yarn
-          cache-dependency-path: api/yarn.lock
-
-      - name: Install dependencies
-        working-directory: api
-        run: yarn install --frozen-lockfile
-
-      - name: Run tests
-        working-directory: api
-        run: yarn test:cov
-
-  # Rust indexer: fmt, clippy, test, build
-  rust-indexer:
-    runs-on: self-hosted
-    needs:
-      - changes
-    if: needs.changes.outputs.indexer == 'true'
-    env:
-      CARGO_TERM_COLOR: always
-      CARGO_INCREMENTAL: 0
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: "1.92"
-          components: clippy,rustfmt
-
-      # On self-hosted runners the target/ dir persists between runs.
-      # Swatinem/rust-cache handles ~/.cargo/registry and prunes stale
-      # artifacts without expensive upload/download of the full target/.
-      - name: Cache cargo registry
-        uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      - name: Install system deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential pkg-config libssl-dev libpq-dev \
-            libclang-dev clang
-
-      - name: cargo fmt (check)
-        run: cargo fmt --all -- --check
-
-      - name: cargo clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
-      - name: cargo test
-        run: cargo test --all-features
-
-      - name: cargo build
-        run: cargo build --release
 
   # Move contracts: fmt, build, test
   move-contracts:
