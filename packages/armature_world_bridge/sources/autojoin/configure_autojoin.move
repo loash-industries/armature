@@ -11,7 +11,7 @@
 module armature_world_bridge::configure_autojoin;
 
 use armature::dao::DAO;
-use armature::proposal::{Self, ExecutionRequest, Proposal};
+use armature::proposal::{Self, ExecutionRequest, ExecutionTicket};
 use armature_world_bridge::tribe_allowlist::{Self, TribeIdAllowlist};
 use sui::event;
 
@@ -34,7 +34,7 @@ const MAX_OPS_PER_CALL: u64 = 16;
 /// Payload: bulk-update the DAO's tribe-id allowlist plus optionally
 /// flip the kill-switch. `set_enabled` is `Option<bool>` so callers
 /// can leave the flag untouched.
-public struct ConfigureAutojoin has store {
+public struct ConfigureAutojoin has drop, store {
     add_tribe_ids: vector<u32>,
     remove_tribe_ids: vector<u32>,
     set_enabled: Option<bool>,
@@ -75,21 +75,14 @@ public fun set_enabled(self: &ConfigureAutojoin): &Option<bool> { &self.set_enab
 /// Per-call bounds (`MAX_OPS_PER_CALL`) are checked before consulting
 /// the allowlist's own bound (`MAX_TRIBE_IDS`) so the cheaper check
 /// fails fast.
-public fun execute_configure_autojoin(
-    dao: &mut DAO,
-    proposal: &Proposal<ConfigureAutojoin>,
-    request: ExecutionRequest<ConfigureAutojoin>,
-) {
-    assert!(dao.id() == request.req_dao_id(), EDaoMismatch);
-    let payload = proposal.payload();
+public fun execute_configure_autojoin(dao: &mut DAO, ticket: ExecutionTicket<ConfigureAutojoin>) {
+    assert!(dao.id() == ticket.ticket_dao_id(), EDaoMismatch);
+    let payload = ticket.ticket_payload();
+    let req = ticket.ticket_request();
 
     assert!(payload.add_tribe_ids.length() <= MAX_OPS_PER_CALL, ETooManyAdds);
     assert!(payload.remove_tribe_ids.length() <= MAX_OPS_PER_CALL, ETooManyRemoves);
 
-    // Reject tribe_id == 0 in adds. world::character::create_character /
-    // update_tribe both reject 0 today (ETribeIdEmpty), but defending at
-    // config time prevents a bad allowlist entry from existing in the
-    // first place — independent of any future world-contracts change.
     let mut i = 0;
     while (i < payload.add_tribe_ids.length()) {
         assert!(payload.add_tribe_ids[i] != 0, EZeroTribeIdNotAllowed);
@@ -99,14 +92,14 @@ public fun execute_configure_autojoin(
     if (!dao.has_type_state<ConfigureAutojoin>()) {
         dao.init_type_state<ConfigureAutojoin, TribeIdAllowlist>(
             tribe_allowlist::empty(),
-            &request,
+            req,
         );
     };
 
     let allowlist: &mut TribeIdAllowlist = dao.borrow_type_state_mut<
         ConfigureAutojoin,
         TribeIdAllowlist,
-    >(&request);
+    >(req);
 
     allowlist.apply(payload.add_tribe_ids, payload.remove_tribe_ids);
     if (payload.set_enabled.is_some()) {
@@ -122,5 +115,5 @@ public fun execute_configure_autojoin(
         enabled,
     });
 
-    proposal::finalize(request, proposal);
+    ticket.discharge();
 }

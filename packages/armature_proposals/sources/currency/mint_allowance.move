@@ -14,7 +14,7 @@ module armature_proposals::mint_allowance;
 /// only throttles. If enforced per-epoch mint budgets are ever wanted, the
 /// seam is a `MintAllowanceState` type-state mirroring `SmallPaymentState`,
 /// checked in `currency_ops::execute_mint_allowance`.
-public struct MintAllowance<phantom T> has store {
+public struct MintAllowance<phantom T> has drop, store {
     treasury_cap_id: ID,
     amount: u64,
     recipient: Option<address>,

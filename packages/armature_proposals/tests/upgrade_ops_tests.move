@@ -109,7 +109,7 @@ fun upgrade_e2e() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -120,8 +120,7 @@ fun upgrade_e2e() {
         // Step 1: authorize upgrade — returns ticket, cap, and loan
         let (ticket, cap, loan) = upgrade_ops::execute_propose_upgrade(
             &mut vault,
-            &proposal,
-            request,
+            ticket,
         );
 
         // Step 2: simulate the PTB Upgrade command
@@ -234,7 +233,7 @@ fun upgrade_vault_mismatch_aborts() {
         test_scenario::return_shared(other_dao);
         let mut wrong_vault = scenario.take_shared_by_id<CapabilityVault>(other_vault_id);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut first_dao,
             &mut proposal,
             &freeze,
@@ -245,8 +244,7 @@ fun upgrade_vault_mismatch_aborts() {
         // This will abort: wrong_vault.dao_id() != request.req_dao_id()
         let (ticket, cap, loan) = upgrade_ops::execute_propose_upgrade(
             &mut wrong_vault,
-            &proposal,
-            request,
+            ticket,
         );
 
         let receipt = package::test_upgrade(ticket);

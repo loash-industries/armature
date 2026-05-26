@@ -101,7 +101,7 @@ fun frozen_type_blocks_execution() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(4000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -109,7 +109,7 @@ fun frozen_type_blocks_execution() {
             scenario.ctx(),
         );
 
-        board_ops::execute_set_board(&mut dao, &proposal, request);
+        board_ops::execute_set_board(&mut dao, ticket);
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
@@ -158,7 +158,7 @@ fun unfreeze_allows_execution() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(4000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -166,7 +166,7 @@ fun unfreeze_allows_execution() {
             scenario.ctx(),
         );
 
-        board_ops::execute_set_board(&mut dao, &proposal, request);
+        board_ops::execute_set_board(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
@@ -225,7 +225,7 @@ fun auto_expiry_allows_execution() {
         // Verify freeze expired
         assert!(!freeze.is_frozen(&b"SetBoard".to_ascii_string(), &clock));
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -233,7 +233,7 @@ fun auto_expiry_allows_execution() {
             scenario.ctx(),
         );
 
-        board_ops::execute_set_board(&mut dao, &proposal, request);
+        board_ops::execute_set_board(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
@@ -300,7 +300,7 @@ fun governance_unfreeze_via_proposal() {
         let mut freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(4000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -308,7 +308,7 @@ fun governance_unfreeze_via_proposal() {
             scenario.ctx(),
         );
 
-        security_ops::execute_unfreeze_proposal_type(&mut freeze, &proposal, request);
+        security_ops::execute_unfreeze_proposal_type(&mut freeze, ticket);
 
         // Verify SetBoard is no longer frozen
         assert!(!freeze.is_frozen(&b"SetBoard".to_ascii_string(), &clock));
@@ -435,7 +435,7 @@ fun update_freeze_config_e2e() {
         let mut freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -443,7 +443,7 @@ fun update_freeze_config_e2e() {
             scenario.ctx(),
         );
 
-        security_ops::execute_update_freeze_config(&mut freeze, &proposal, request);
+        security_ops::execute_update_freeze_config(&mut freeze, ticket);
 
         // Verify duration was updated
         assert!(freeze.max_freeze_duration_ms() == new_duration);
@@ -534,7 +534,7 @@ fun add_freeze_exempt_type_e2e() {
         let mut freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -542,7 +542,7 @@ fun add_freeze_exempt_type_e2e() {
             scenario.ctx(),
         );
 
-        security_ops::execute_update_freeze_exempt_types(&mut freeze, &proposal, request);
+        security_ops::execute_update_freeze_exempt_types(&mut freeze, ticket);
 
         // Verify "SetBoard" is now in the exempt set
         assert!(freeze.freeze_exempt_types().contains(&b"SetBoard".to_ascii_string()));
@@ -619,14 +619,14 @@ fun remove_freeze_exempt_type_e2e() {
         let mut p = scenario.take_shared<Proposal<UpdateFreezeExemptTypes>>();
         let mut freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
-        let req = board_voting::authorize_execution(
+        let req = board_voting::ticket_from_vote(
             &mut dao,
             &mut p,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        security_ops::execute_update_freeze_exempt_types(&mut freeze, &p, req);
+        security_ops::execute_update_freeze_exempt_types(&mut freeze, req);
         assert!(freeze.freeze_exempt_types().contains(&b"SetBoard".to_ascii_string()));
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(p);
@@ -667,14 +667,14 @@ fun remove_freeze_exempt_type_e2e() {
         let mut p = scenario.take_shared<Proposal<UpdateFreezeExemptTypes>>();
         let mut freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(6000);
-        let req = board_voting::authorize_execution(
+        let req = board_voting::ticket_from_vote(
             &mut dao,
             &mut p,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        security_ops::execute_update_freeze_exempt_types(&mut freeze, &p, req);
+        security_ops::execute_update_freeze_exempt_types(&mut freeze, req);
         // Verify "SetBoard" is no longer exempt
         assert!(!freeze.freeze_exempt_types().contains(&b"SetBoard".to_ascii_string()));
         test_scenario::return_shared(freeze);
@@ -750,14 +750,14 @@ fun remove_mandatory_exempt_type_aborts() {
         let mut p = scenario.take_shared<Proposal<UpdateFreezeExemptTypes>>();
         let mut freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
-        let req = board_voting::authorize_execution(
+        let req = board_voting::ticket_from_vote(
             &mut dao,
             &mut p,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        security_ops::execute_update_freeze_exempt_types(&mut freeze, &p, req);
+        security_ops::execute_update_freeze_exempt_types(&mut freeze, req);
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(p);
         test_scenario::return_shared(dao);

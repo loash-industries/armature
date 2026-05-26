@@ -1,7 +1,7 @@
 module armature_proposals::treasury_ops;
 
 use armature::dao::DAO;
-use armature::proposal::{Self, Proposal, ExecutionRequest};
+use armature::proposal::{ExecutionRequest, ExecutionTicket};
 use armature::treasury_vault::TreasuryVault;
 use armature::utils;
 use armature_proposals::send_coin::SendCoin;
@@ -45,44 +45,27 @@ public struct SmallPaymentSent has copy, drop {
 
 public fun execute_send_coin<T>(
     vault: &mut TreasuryVault,
-    proposal: &Proposal<SendCoin<T>>,
-    request: ExecutionRequest<SendCoin<T>>,
+    ticket: ExecutionTicket<SendCoin<T>>,
     ctx: &mut TxContext,
 ) {
-    send_coin_impl(vault, proposal.payload(), &request, ctx);
-    proposal::finalize(request, proposal);
-}
-
-public fun execute_send_coin_step<T>(
-    vault: &mut TreasuryVault,
-    payload: SendCoin<T>,
-    request: ExecutionRequest<SendCoin<T>>,
-    ctx: &mut TxContext,
-) {
-    send_coin_impl(vault, &payload, &request, ctx);
-    proposal::consume_execution_request(request);
+    send_coin_impl(vault, ticket.ticket_payload(), ticket.ticket_request(), ctx);
+    ticket.discharge();
 }
 
 public fun execute_send_coin_to_dao<T>(
     source_vault: &mut TreasuryVault,
     target_vault: &mut TreasuryVault,
-    proposal: &Proposal<SendCoinToDAO<T>>,
-    request: ExecutionRequest<SendCoinToDAO<T>>,
+    ticket: ExecutionTicket<SendCoinToDAO<T>>,
     ctx: &mut TxContext,
 ) {
-    send_coin_to_dao_impl(source_vault, target_vault, proposal.payload(), &request, ctx);
-    proposal::finalize(request, proposal);
-}
-
-public fun execute_send_coin_to_dao_step<T>(
-    source_vault: &mut TreasuryVault,
-    target_vault: &mut TreasuryVault,
-    payload: SendCoinToDAO<T>,
-    request: ExecutionRequest<SendCoinToDAO<T>>,
-    ctx: &mut TxContext,
-) {
-    send_coin_to_dao_impl(source_vault, target_vault, &payload, &request, ctx);
-    proposal::consume_execution_request(request);
+    send_coin_to_dao_impl(
+        source_vault,
+        target_vault,
+        ticket.ticket_payload(),
+        ticket.ticket_request(),
+        ctx,
+    );
+    ticket.discharge();
 }
 
 /// Execute a SendSmallPayment proposal: rate-limited withdrawal from treasury.
@@ -90,17 +73,16 @@ public fun execute_send_coin_to_dao_step<T>(
 public fun execute_send_small_payment<T>(
     dao: &mut DAO,
     vault: &mut TreasuryVault,
-    proposal: &Proposal<SendSmallPayment<T>>,
-    request: ExecutionRequest<SendSmallPayment<T>>,
+    ticket: ExecutionTicket<SendSmallPayment<T>>,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    assert!(vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
+    assert!(vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
 
-    let payload = proposal.payload();
+    let payload = ticket.ticket_payload();
+    let req = ticket.ticket_request();
     let now = clock.timestamp_ms();
 
-    // Lazy-init type state on first execution
     if (!dao.has_type_state<SendSmallPayment<T>>()) {
         let balance = vault.balance<T>();
         let max_spend = utils::mul_bps(balance, send_small_payment::default_spend_limit_bps());
@@ -112,25 +94,22 @@ public fun execute_send_small_payment<T>(
                 send_small_payment::default_epoch_duration_ms(),
                 send_small_payment::default_spend_limit_bps(),
             ),
-            &request,
+            req,
         );
     };
 
-    let state: &mut SmallPaymentState = dao.borrow_type_state_mut(&request);
+    let state: &mut SmallPaymentState = dao.borrow_type_state_mut(req);
 
-    // Epoch rollover: reset spend tracking if the epoch window has elapsed
     if (now >= state.epoch_start_ms() + state.epoch_duration_ms()) {
         let balance = vault.balance<T>();
         let new_max = utils::mul_bps(balance, state.spend_limit_bps());
         state.reset_epoch(now, new_max);
     };
 
-    // Enforce cumulative spend cap
     assert!(state.epoch_spend() + payload.amount() <= state.max_epoch_spend(), EExceedsDailyCap);
     state.add_epoch_spend(payload.amount());
 
-    // Withdraw and transfer
-    let coin = vault.withdraw<T, SendSmallPayment<T>>(payload.amount(), &request, ctx);
+    let coin = vault.withdraw<T, SendSmallPayment<T>>(payload.amount(), req, ctx);
 
     event::emit(SmallPaymentSent {
         dao_id: vault.dao_id(),
@@ -143,7 +122,7 @@ public fun execute_send_small_payment<T>(
 
     transfer::public_transfer(coin, payload.recipient());
 
-    proposal::finalize(request, proposal);
+    ticket.discharge();
 }
 
 // === Internal ===

@@ -77,7 +77,7 @@ fun receive_cap_cross_dao() {
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(dao.emergency_freeze_id());
         clock.set_for_testing(3_000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -91,13 +91,13 @@ fun receive_cap_cross_dao() {
 
         // receive_cap accepts caps regardless of origin DAO — key difference
         // from store_cap which asserts dao_id == req.req_dao_id()
-        vault.receive_cap(foreign, &request);
+        vault.receive_cap(foreign, ticket.ticket_request());
 
         // Verify cap is stored in the vault
         assert!(vault.contains(foreign_id));
 
         // Consume the request via the handler
-        admin_ops::execute_enable_proposal_type<EnableProposalType>(&mut dao, &proposal, request);
+        admin_ops::execute_enable_proposal_type<EnableProposalType>(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);

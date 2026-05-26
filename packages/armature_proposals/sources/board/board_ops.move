@@ -1,7 +1,7 @@
 module armature_proposals::board_ops;
 
 use armature::dao::DAO;
-use armature::proposal::{Self, Proposal, ExecutionRequest};
+use armature::proposal::{ExecutionRequest, ExecutionTicket};
 use armature_proposals::set_board::SetBoard;
 use sui::event;
 
@@ -22,23 +22,9 @@ public struct BoardUpdated has copy, drop {
 /// Execute a SetBoard proposal: replace the DAO's board members.
 /// Validation (non-empty, no duplicates) is enforced
 /// by governance::set_board inside the framework.
-public fun execute_set_board(
-    dao: &mut DAO,
-    proposal: &Proposal<SetBoard>,
-    request: ExecutionRequest<SetBoard>,
-) {
-    set_board_impl(dao, proposal.payload(), &request);
-    proposal::finalize(request, proposal);
-}
-
-/// Composite step variant: execute a SetBoard step extracted from a Pipeline.
-public fun execute_set_board_step(
-    dao: &mut DAO,
-    payload: SetBoard,
-    request: ExecutionRequest<SetBoard>,
-) {
-    set_board_impl(dao, &payload, &request);
-    proposal::consume_execution_request(request);
+public fun execute_set_board(dao: &mut DAO, ticket: ExecutionTicket<SetBoard>) {
+    set_board_impl(dao, ticket.ticket_payload(), ticket.ticket_request());
+    ticket.discharge();
 }
 
 // === Internal ===

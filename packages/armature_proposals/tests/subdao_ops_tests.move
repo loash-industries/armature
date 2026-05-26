@@ -100,7 +100,7 @@ fun create_subdao_e2e() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -110,8 +110,7 @@ fun create_subdao_e2e() {
 
         subdao_ops::execute_create_subdao(
             &mut vault,
-            &proposal,
-            request,
+            ticket,
             scenario.ctx(),
         );
 
@@ -215,7 +214,7 @@ fun create_subdao_vault_mismatch_aborts() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -232,8 +231,7 @@ fun create_subdao_vault_mismatch_aborts() {
 
         subdao_ops::execute_create_subdao(
             &mut vault_b,
-            &proposal,
-            request,
+            ticket,
             scenario.ctx(),
         );
 
@@ -326,7 +324,7 @@ fun setup_parent_and_subdao(
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -336,8 +334,7 @@ fun setup_parent_and_subdao(
 
         subdao_ops::execute_create_subdao(
             &mut vault,
-            &proposal,
-            request,
+            ticket,
             scenario.ctx(),
         );
 
@@ -426,7 +423,7 @@ fun transfer_cap_to_subdao_e2e() {
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(parent_dao.emergency_freeze_id());
         clock.set_for_testing(7000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut parent_dao,
             &mut proposal,
             &freeze,
@@ -437,8 +434,7 @@ fun transfer_cap_to_subdao_e2e() {
         subdao_ops::execute_transfer_cap<TestCap>(
             &mut parent_vault,
             &mut subdao_vault,
-            &proposal,
-            request,
+            ticket,
         );
 
         // Verify: TestCap moved from parent to subdao
@@ -539,7 +535,7 @@ fun reclaim_cap_from_subdao_e2e() {
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(parent_dao.emergency_freeze_id());
         clock.set_for_testing(7000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut parent_dao,
             &mut proposal,
             &freeze,
@@ -550,8 +546,7 @@ fun reclaim_cap_from_subdao_e2e() {
         subdao_ops::execute_reclaim_cap<TestCap>(
             &mut parent_vault,
             &mut subdao_vault,
-            &proposal,
-            request,
+            ticket,
         );
 
         // Verify: TestCap moved from SubDAO back to parent
@@ -638,7 +633,7 @@ fun reclaim_cap_wrong_vault_aborts() {
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(parent_dao.emergency_freeze_id());
         clock.set_for_testing(7000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut parent_dao,
             &mut proposal,
             &freeze,
@@ -650,8 +645,7 @@ fun reclaim_cap_wrong_vault_aborts() {
         subdao_ops::execute_reclaim_cap<TestCap>(
             &mut subdao_vault,
             &mut parent_vault,
-            &proposal,
-            request,
+            ticket,
         );
 
         test_scenario::return_shared(freeze);
@@ -745,7 +739,7 @@ fun pause_and_unpause_subdao_e2e() {
         let mut subdao = scenario.take_shared_by_id<DAO>(subdao_id);
         clock.set_for_testing(12_000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut parent_dao,
             &mut proposal,
             &freeze,
@@ -756,8 +750,7 @@ fun pause_and_unpause_subdao_e2e() {
         subdao_ops::execute_pause_subdao_execution(
             &mut vault,
             &mut subdao,
-            &proposal,
-            request,
+            ticket,
             &clock,
             scenario.ctx(),
         );
@@ -812,7 +805,7 @@ fun pause_and_unpause_subdao_e2e() {
         let mut subdao = scenario.take_shared_by_id<DAO>(subdao_id);
         clock.set_for_testing(22_000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut parent_dao,
             &mut proposal,
             &freeze,
@@ -823,8 +816,7 @@ fun pause_and_unpause_subdao_e2e() {
         subdao_ops::execute_unpause_subdao_execution(
             &mut vault,
             &mut subdao,
-            &proposal,
-            request,
+            ticket,
             &clock,
             scenario.ctx(),
         );
@@ -912,7 +904,7 @@ fun paused_subdao_blocks_execution() {
         let mut subdao = scenario.take_shared_by_id<DAO>(subdao_id);
         clock.set_for_testing(12_000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut parent_dao,
             &mut proposal,
             &freeze,
@@ -923,8 +915,7 @@ fun paused_subdao_blocks_execution() {
         subdao_ops::execute_pause_subdao_execution(
             &mut vault,
             &mut subdao,
-            &proposal,
-            request,
+            ticket,
             &clock,
             scenario.ctx(),
         );
@@ -974,7 +965,7 @@ fun paused_subdao_blocks_execution() {
         clock.set_for_testing(22_000);
 
         // This will abort — SubDAO is controller-paused
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut subdao,
             &mut proposal,
             &freeze,
@@ -985,8 +976,7 @@ fun paused_subdao_blocks_execution() {
         // Unreachable: consume the request so compiler is happy
         armature_proposals::board_ops::execute_set_board(
             &mut subdao,
-            &proposal,
-            request,
+            ticket,
         );
 
         test_scenario::return_shared(freeze);
@@ -1067,7 +1057,7 @@ fun create_multi_member_subdao() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3_000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -1076,8 +1066,7 @@ fun create_multi_member_subdao() {
         );
         subdao_ops::execute_create_subdao(
             &mut vault,
-            &proposal,
-            request,
+            ticket,
             scenario.ctx(),
         );
 

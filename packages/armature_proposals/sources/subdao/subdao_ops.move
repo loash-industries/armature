@@ -5,7 +5,7 @@ use armature::controller;
 use armature::dao::{Self, DAO};
 use armature::emergency;
 use armature::governance;
-use armature::proposal::{Self, Proposal, ExecutionRequest};
+use armature::proposal::ExecutionTicket;
 use armature::treasury_vault::TreasuryVault;
 use armature_proposals::create_subdao::CreateSubDAO;
 use armature_proposals::pause_execution::{Self, PauseSubDAOExecution, UnpauseSubDAOExecution};
@@ -78,81 +78,74 @@ public struct AssetsTransferInitiated has copy, drop {
 
 // === Handlers ===
 
-/// Execute a TransferCapToSubDAO proposal: extract a capability from the DAO's
-/// vault and store it in the target SubDAO's vault.
+/// Execute a TransferCapToSubDAO proposal.
 public fun execute_transfer_cap<T: key + store>(
     source_vault: &mut CapabilityVault,
     target_vault: &mut CapabilityVault,
-    proposal: &Proposal<TransferCapToSubDAO>,
-    request: ExecutionRequest<TransferCapToSubDAO>,
+    ticket: ExecutionTicket<TransferCapToSubDAO>,
 ) {
-    assert!(source_vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
+    assert!(source_vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
 
-    let payload = proposal.payload();
+    let payload = ticket.ticket_payload();
     assert!(target_vault.dao_id() == payload.target_subdao(), ESubDAOVaultMismatch);
 
-    let cap: T = source_vault.extract_cap(payload.cap_id(), &request);
-    target_vault.receive_cap(cap, &request);
+    let cap_id = payload.cap_id();
+    let req = ticket.ticket_request();
+    let cap: T = source_vault.extract_cap(cap_id, req);
+    target_vault.receive_cap(cap, req);
 
     event::emit(CapTransferredToSubDAO {
         dao_id: source_vault.dao_id(),
-        cap_id: payload.cap_id(),
+        cap_id,
         target_vault: object::id(target_vault),
     });
 
-    proposal::finalize(request, proposal);
+    ticket.discharge();
 }
 
-/// Execute a ReclaimCapFromSubDAO proposal: loan the SubDAOControl from the
-/// controller's vault, use it to extract a capability from the SubDAO's vault,
-/// store the reclaimed capability in the controller's vault, and return the loan.
+/// Execute a ReclaimCapFromSubDAO proposal.
 public fun execute_reclaim_cap<T: key + store>(
     controller_vault: &mut CapabilityVault,
     subdao_vault: &mut CapabilityVault,
-    proposal: &Proposal<ReclaimCapFromSubDAO>,
-    request: ExecutionRequest<ReclaimCapFromSubDAO>,
+    ticket: ExecutionTicket<ReclaimCapFromSubDAO>,
 ) {
-    assert!(controller_vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
+    assert!(controller_vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
 
-    let payload = proposal.payload();
+    let payload = ticket.ticket_payload();
     assert!(subdao_vault.dao_id() == payload.subdao_id(), ESubDAOVaultMismatch);
 
-    // Loan SubDAOControl from controller's vault
+    let control_id = payload.control_id();
+    let cap_id = payload.cap_id();
+    let subdao_id = payload.subdao_id();
+    let req = ticket.ticket_request();
+
     let (control, loan) = controller_vault.loan_cap<SubDAOControl, ReclaimCapFromSubDAO>(
-        payload.control_id(),
-        &request,
+        control_id,
+        req,
     );
 
-    // Extract target cap from subdao vault using SubDAOControl authority
-    let cap: T = subdao_vault.privileged_extract(payload.cap_id(), &control);
-
-    // Store reclaimed cap in controller's vault
-    controller_vault.store_cap(cap, &request);
-
-    // Return SubDAOControl loan
+    let cap: T = subdao_vault.privileged_extract(cap_id, &control);
+    controller_vault.store_cap(cap, req);
     controller_vault.return_cap(control, loan);
 
     event::emit(CapReclaimedFromSubDAO {
         dao_id: controller_vault.dao_id(),
-        cap_id: payload.cap_id(),
-        subdao_id: payload.subdao_id(),
+        cap_id,
+        subdao_id,
     });
 
-    proposal::finalize(request, proposal);
+    ticket.discharge();
 }
 
-/// Execute a CreateSubDAO proposal: spawn a new Board-governance child DAO and
-/// store a SubDAOControl token and the child's FreezeAdminCap in the
-/// controller's capability vault.
+/// Execute a CreateSubDAO proposal.
 public fun execute_create_subdao(
     vault: &mut CapabilityVault,
-    proposal: &Proposal<CreateSubDAO>,
-    request: ExecutionRequest<CreateSubDAO>,
+    ticket: ExecutionTicket<CreateSubDAO>,
     ctx: &mut TxContext,
 ) {
-    assert!(vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
+    assert!(vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
 
-    let payload = proposal.payload();
+    let payload = ticket.ticket_payload();
     let gov_init = governance::init_board(*payload.initial_board());
 
     let (subdao, freeze_admin_cap) = dao::create_subdao(
@@ -164,13 +157,10 @@ public fun execute_create_subdao(
     );
 
     let subdao_id = object::id(&subdao);
+    let req = ticket.ticket_request();
 
-    let control_cap_id = vault.create_subdao_control(subdao_id, &request, ctx);
-
-    // Store the child DAO's FreezeAdminCap in the controller's vault
-    vault.store_cap(freeze_admin_cap, &request);
-
-    // Set controller_cap_id on SubDAO and share it
+    let control_cap_id = vault.create_subdao_control(subdao_id, req, ctx);
+    vault.store_cap(freeze_admin_cap, req);
     dao::share_subdao(subdao, control_cap_id);
 
     event::emit(SubDAOCreated {
@@ -179,27 +169,25 @@ public fun execute_create_subdao(
         control_cap_id,
     });
 
-    proposal::finalize(request, proposal);
+    ticket.discharge();
 }
 
-/// Execute a PauseSubDAOExecution proposal: loan SubDAOControl from the
-/// controller's vault, create a privileged proposal on the SubDAO, and set
-/// `controller_paused = true` on the SubDAO.
+/// Execute a PauseSubDAOExecution proposal.
 public fun execute_pause_subdao_execution(
     controller_vault: &mut CapabilityVault,
     subdao: &mut DAO,
-    proposal: &Proposal<PauseSubDAOExecution>,
-    request: ExecutionRequest<PauseSubDAOExecution>,
+    ticket: ExecutionTicket<PauseSubDAOExecution>,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    assert!(controller_vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
+    assert!(controller_vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
 
-    let payload = proposal.payload();
+    let payload = ticket.ticket_payload();
+    let req = ticket.ticket_request();
 
     let (control, loan) = controller_vault.loan_cap<SubDAOControl, PauseSubDAOExecution>(
         payload.pause_control_id(),
-        &request,
+        req,
     );
 
     let subdao_req = controller::privileged_submit(
@@ -213,33 +201,30 @@ public fun execute_pause_subdao_execution(
     );
 
     subdao.set_controller_paused(true, &subdao_req);
-
     controller::privileged_consume(subdao_req, &control);
     controller_vault.return_cap(control, loan);
 
     event::emit(SubDAOExecutionPaused { dao_id: subdao.id() });
 
-    proposal::finalize(request, proposal);
+    ticket.discharge();
 }
 
-/// Execute an UnpauseSubDAOExecution proposal: loan SubDAOControl from the
-/// controller's vault, create a privileged proposal on the SubDAO, and set
-/// `controller_paused = false` on the SubDAO.
+/// Execute an UnpauseSubDAOExecution proposal.
 public fun execute_unpause_subdao_execution(
     controller_vault: &mut CapabilityVault,
     subdao: &mut DAO,
-    proposal: &Proposal<UnpauseSubDAOExecution>,
-    request: ExecutionRequest<UnpauseSubDAOExecution>,
+    ticket: ExecutionTicket<UnpauseSubDAOExecution>,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    assert!(controller_vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
+    assert!(controller_vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
 
-    let payload = proposal.payload();
+    let payload = ticket.ticket_payload();
+    let req = ticket.ticket_request();
 
     let (control, loan) = controller_vault.loan_cap<SubDAOControl, UnpauseSubDAOExecution>(
         payload.unpause_control_id(),
-        &request,
+        req,
     );
 
     let subdao_req = controller::privileged_submit(
@@ -253,26 +238,23 @@ public fun execute_unpause_subdao_execution(
     );
 
     subdao.set_controller_paused(false, &subdao_req);
-
     controller::privileged_consume(subdao_req, &control);
     controller_vault.return_cap(control, loan);
 
     event::emit(SubDAOExecutionUnpaused { dao_id: subdao.id() });
 
-    proposal::finalize(request, proposal);
+    ticket.discharge();
 }
 
-/// Execute a SpawnDAO proposal: create a successor DAO and transition
-/// the current DAO to Migrating status.
+/// Execute a SpawnDAO proposal.
 public fun execute_spawn_dao(
     dao: &mut DAO,
-    proposal: &Proposal<SpawnDAO>,
-    request: ExecutionRequest<SpawnDAO>,
+    ticket: ExecutionTicket<SpawnDAO>,
     ctx: &mut TxContext,
 ) {
-    assert!(dao.id() == request.req_dao_id(), EDAOMismatch);
+    assert!(dao.id() == ticket.ticket_dao_id(), EDAOMismatch);
 
-    let payload = proposal.payload();
+    let payload = ticket.ticket_payload();
 
     let successor_id = dao::create(
         payload.governance_init(),
@@ -282,41 +264,37 @@ public fun execute_spawn_dao(
         ctx,
     );
 
-    dao.set_migrating(successor_id, &request);
+    dao.set_migrating(successor_id, ticket.ticket_request());
 
     event::emit(SuccessorDAOSpawned {
         origin_dao_id: dao.id(),
         successor_dao_id: successor_id,
     });
 
-    proposal::finalize(request, proposal);
+    ticket.discharge();
 }
 
-/// Execute a SpinOutSubDAO proposal: clear the controller relationship on the
-/// SubDAO, re-enable previously blocked proposal types, transfer the SubDAO's
-/// FreezeAdminCap back to it, then destroy the SubDAOControl token —
-/// permanently granting the SubDAO full independence.
+/// Execute a SpinOutSubDAO proposal.
 public fun execute_spin_out_subdao(
     vault: &mut CapabilityVault,
     subdao_vault: &mut CapabilityVault,
     subdao: &mut DAO,
-    proposal: &Proposal<SpinOutSubDAO>,
-    request: ExecutionRequest<SpinOutSubDAO>,
+    ticket: ExecutionTicket<SpinOutSubDAO>,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    assert!(vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
+    assert!(vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
 
-    let payload = proposal.payload();
+    let payload = ticket.ticket_payload();
     assert!(subdao_vault.dao_id() == payload.subdao_id(), ESubDAOVaultMismatch);
 
-    // Loan SubDAOControl to perform privileged ops on the SubDAO
+    let req = ticket.ticket_request();
+
     let (control, loan) = vault.loan_cap<SubDAOControl, SpinOutSubDAO>(
         payload.control_cap_id(),
-        &request,
+        req,
     );
 
-    // Create a privileged request on the SubDAO via controller bypass
     let subdao_req = controller::privileged_submit(
         &control,
         subdao,
@@ -334,10 +312,7 @@ public fun execute_spin_out_subdao(
         ctx,
     );
 
-    // Clear controller relationship (resets controller_cap_id and controller_paused)
     subdao.clear_controller(&subdao_req);
-
-    // Re-enable hierarchy-altering types with governance-specified configs
     subdao.enable_proposal_type(
         b"SpawnDAO".to_ascii_string(),
         *payload.spawn_dao_config(),
@@ -354,61 +329,51 @@ public fun execute_spin_out_subdao(
         &subdao_req,
     );
 
-    // Consume the privileged request and return the loan
     controller::privileged_consume(subdao_req, &control);
     vault.return_cap(control, loan);
 
-    // Transfer SubDAO's FreezeAdminCap from parent vault to SubDAO vault
     let freeze_cap = vault.extract_cap<emergency::FreezeAdminCap, SpinOutSubDAO>(
         payload.freeze_admin_cap_id(),
-        &request,
+        req,
     );
-    subdao_vault.receive_cap(freeze_cap, &request);
+    subdao_vault.receive_cap(freeze_cap, req);
 
-    // Now destroy the SubDAOControl permanently
-    vault.destroy_subdao_control(payload.control_cap_id(), &request);
+    vault.destroy_subdao_control(payload.control_cap_id(), req);
 
     event::emit(SubDAOSpunOut {
         controller_dao_id: vault.dao_id(),
         subdao_id: payload.subdao_id(),
     });
 
-    proposal::finalize(request, proposal);
+    ticket.discharge();
 }
 
-/// Validate a TransferAssets proposal: check ownership and asset count limits,
-/// verify target objects match the proposal payload, and emit the transfer event.
-/// Borrows the ExecutionRequest so the caller can compose typed
-/// `withdraw<T>` / `extract_cap<T>` calls in the same PTB
-/// before calling `finalize_transfer_assets` to consume the request.
+/// Validate a TransferAssets proposal and emit the transfer event.
+/// Borrows the ticket so the caller can compose typed withdraw/extract calls
+/// before calling finalize_transfer_assets.
 ///
 /// PTB flow:
-///   1. `board_voting::authorize_execution` → `ExecutionRequest<TransferAssets>`
-///   2. `validate_transfer_assets(..., &request)` — validates limits + targets, emits event
-///   3. N × `source_treasury.withdraw<T>(amount, &request, ctx)` →
-/// `target_treasury.deposit<T>(coin)`
-///   4. N × `source_vault.extract_cap<T>(cap_id, &request)` →
-/// `target_vault.receive_cap<T>(cap, &request)`
-///   5. `finalize_transfer_assets(request, &proposal)` — consumes the request
+///   1. ticket_from_vote(...) → ExecutionTicket<TransferAssets>
+///   2. validate_transfer_assets(..., &ticket)
+///   3. N × source_treasury.withdraw<T>(amount, ticket.ticket_request(), ctx)
+///   4. N × source_vault.extract_cap<T>(cap_id, ticket.ticket_request())
+///   5. finalize_transfer_assets(ticket)
 public fun validate_transfer_assets(
     source_treasury: &TreasuryVault,
     source_cap_vault: &CapabilityVault,
     target_treasury: &TreasuryVault,
     target_cap_vault: &CapabilityVault,
-    proposal: &Proposal<TransferAssets>,
-    request: &ExecutionRequest<TransferAssets>,
+    ticket: &ExecutionTicket<TransferAssets>,
 ) {
+    let request = ticket.ticket_request();
+    let payload = ticket.ticket_payload();
+
     assert!(source_treasury.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
     assert!(source_cap_vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
-
-    let payload = proposal.payload();
-
-    // Validate target objects match proposal payload
     assert!(object::id(target_treasury) == payload.target_treasury_id(), ETargetTreasuryMismatch);
     assert!(object::id(target_cap_vault) == payload.target_vault_id(), ETargetVaultMismatch);
     assert!(target_treasury.dao_id() == payload.target_dao_id(), ETargetDAOMismatch);
     assert!(target_cap_vault.dao_id() == payload.target_dao_id(), ETargetDAOMismatch);
-
     assert!(
         payload.coin_types().length() + payload.cap_ids().length() <= MAX_TRANSFER_ASSETS,
         EAssetLimitExceeded,
@@ -422,10 +387,7 @@ public fun validate_transfer_assets(
     });
 }
 
-/// Consume the ExecutionRequest after all typed transfers are complete.
-public fun finalize_transfer_assets(
-    request: ExecutionRequest<TransferAssets>,
-    proposal: &Proposal<TransferAssets>,
-) {
-    proposal::finalize(request, proposal);
+/// Consume the ticket after all typed transfers are complete.
+public fun finalize_transfer_assets(ticket: ExecutionTicket<TransferAssets>) {
+    ticket.discharge();
 }

@@ -107,7 +107,7 @@ fun execute_small_payment<T: drop>(scenario: &mut test_scenario::Scenario, clock
         let mut vault = scenario.take_shared<TreasuryVault>();
         let mut proposal = scenario.take_shared<Proposal<SendSmallPayment<T>>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -117,8 +117,7 @@ fun execute_small_payment<T: drop>(scenario: &mut test_scenario::Scenario, clock
         treasury_ops::execute_send_small_payment<T>(
             &mut dao,
             &mut vault,
-            &proposal,
-            request,
+            ticket,
             clock,
             scenario.ctx(),
         );
@@ -397,7 +396,7 @@ fun send_coin_e2e() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -407,8 +406,7 @@ fun send_coin_e2e() {
 
         treasury_ops::execute_send_coin<SUI>(
             &mut vault,
-            &proposal,
-            request,
+            ticket,
             scenario.ctx(),
         );
 
@@ -477,7 +475,7 @@ fun send_coin_insufficient_balance_aborts() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -487,8 +485,7 @@ fun send_coin_insufficient_balance_aborts() {
 
         treasury_ops::execute_send_coin<SUI>(
             &mut vault,
-            &proposal,
-            request,
+            ticket,
             scenario.ctx(),
         );
 
@@ -608,7 +605,7 @@ fun send_coin_to_dao_e2e() {
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(source_dao.emergency_freeze_id());
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut source_dao,
             &mut proposal,
             &freeze,
@@ -619,8 +616,7 @@ fun send_coin_to_dao_e2e() {
         treasury_ops::execute_send_coin_to_dao<SUI>(
             &mut source_vault,
             &mut target_vault,
-            &proposal,
-            request,
+            ticket,
             scenario.ctx(),
         );
 
@@ -740,7 +736,7 @@ fun send_coin_to_dao_target_mismatch_aborts() {
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(source_dao.emergency_freeze_id());
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut source_dao,
             &mut proposal,
             &freeze,
@@ -753,8 +749,7 @@ fun send_coin_to_dao_target_mismatch_aborts() {
         treasury_ops::execute_send_coin_to_dao<SUI>(
             &mut target_vault,
             &mut source_vault,
-            &proposal,
-            request,
+            ticket,
             scenario.ctx(),
         );
 

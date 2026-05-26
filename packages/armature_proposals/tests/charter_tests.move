@@ -87,7 +87,7 @@ fun charter_update_lifecycle() {
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(dao.emergency_freeze_id());
         clock.set_for_testing(3_000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -95,7 +95,7 @@ fun charter_update_lifecycle() {
             scenario.ctx(),
         );
 
-        admin_ops::execute_update_metadata(&mut charter, &proposal, request);
+        admin_ops::execute_update_metadata(&mut charter, ticket);
 
         // Verify metadata updated
         assert!(charter.image_url() == &string::utf8(b"ipfs://QmNewHashV1"));
@@ -138,14 +138,14 @@ fun charter_update_lifecycle() {
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(dao.emergency_freeze_id());
         clock.set_for_testing(12_000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_update_metadata(&mut charter, &proposal, request);
+        admin_ops::execute_update_metadata(&mut charter, ticket);
 
         assert!(charter.image_url() == &string::utf8(b"ipfs://QmNewHashV2"));
 
@@ -236,7 +236,7 @@ fun charter_update_wrong_dao_aborts() {
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(dao.emergency_freeze_id());
         clock.set_for_testing(3_000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -247,8 +247,7 @@ fun charter_update_wrong_dao_aborts() {
         // This should abort with ECharterDaoMismatch
         admin_ops::execute_update_metadata(
             &mut wrong_charter,
-            &proposal,
-            request,
+            ticket,
         );
 
         test_scenario::return_shared(freeze);

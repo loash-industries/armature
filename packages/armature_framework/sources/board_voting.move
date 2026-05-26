@@ -2,7 +2,7 @@ module armature::board_voting;
 
 use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
-use armature::proposal::{Self, ExecutionRequest, Proposal};
+use armature::proposal::{Self, ExecutionTicket, Proposal};
 use std::string::String;
 use std::type_name;
 use sui::clock::Clock;
@@ -89,16 +89,16 @@ public fun submit_proposal<P: store>(
 
 // === Execute ===
 
-/// Authorize execution of a passed proposal for board governance.
+/// Mint an ExecutionTicket for a passed proposal. Replaces authorize_execution.
 /// Validates: DAO is active, proposal belongs to this DAO, type not frozen.
-/// Looks up last_executed_at for cooldown, then records the execution timestamp.
-public fun authorize_execution<P: store>(
+/// Records the execution timestamp for cooldown tracking.
+public fun ticket_from_vote<P: store>(
     dao: &mut DAO,
     prop: &mut Proposal<P>,
     freeze: &EmergencyFreeze,
     clock: &Clock,
     ctx: &TxContext,
-): ExecutionRequest<P> {
+): ExecutionTicket<P> {
     let type_key = prop.type_key();
     let is_active = dao.status().is_active();
     let is_migration_ok =
@@ -116,7 +116,11 @@ public fun authorize_execution<P: store>(
         option::none()
     };
 
-    let req = proposal::execute(
+    // Read vote weights before execute() mutates proposal state.
+    let yes_weight = prop.yes_weight();
+    let total_snapshot_weight = prop.total_snapshot_weight();
+
+    let (payload, req) = proposal::execute(
         prop,
         dao.governance(),
         last_ms,
@@ -127,5 +131,5 @@ public fun authorize_execution<P: store>(
 
     dao.record_execution(type_key, clock.timestamp_ms());
 
-    req
+    proposal::new_ticket_standalone(req, payload, yes_weight, total_snapshot_weight)
 }

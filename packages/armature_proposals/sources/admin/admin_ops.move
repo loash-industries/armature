@@ -3,7 +3,7 @@ module armature_proposals::admin_ops;
 use armature::board_voting;
 use armature::charter::Charter;
 use armature::dao::{Self, DAO};
-use armature::proposal::{Self, Proposal, ExecutionRequest};
+use armature::proposal::{Self, ExecutionRequest, ExecutionTicket};
 use armature_proposals::disable_proposal_type::DisableProposalType;
 use armature_proposals::enable_proposal_type::EnableProposalType;
 use armature_proposals::update_metadata::UpdateMetadata;
@@ -22,6 +22,8 @@ const EThresholdBelowFloor: u64 = 5;
 /// Proposal's approval_threshold is below the hardcoded floor for this type.
 /// Enforced at submission time by propose_update_proposal_config.
 const EFloorNotMet: u64 = 6;
+/// Config sets cooldown_ms > 0 and composable_allowed = true simultaneously.
+const EComposableCooldownConflict: u64 = 7;
 
 // === Constants ===
 
@@ -66,65 +68,38 @@ public struct MetadataUpdated has copy, drop {
 /// TransferFreezeAdmin, UnfreezeProposalType).
 public fun execute_disable_proposal_type(
     dao: &mut DAO,
-    proposal: &Proposal<DisableProposalType>,
-    request: ExecutionRequest<DisableProposalType>,
+    ticket: ExecutionTicket<DisableProposalType>,
 ) {
-    assert!(dao.id() == request.req_dao_id(), EDaoMismatch);
-
-    let payload = proposal.payload();
-    let type_key = payload.type_key();
-
+    assert!(dao.id() == ticket.ticket_dao_id(), EDaoMismatch);
+    let type_key = ticket.ticket_payload().type_key();
     assert_disableable(&type_key);
-
-    dao.disable_proposal_type(type_key, &request);
-
-    event::emit(ProposalTypeDisabled {
-        dao_id: dao.id(),
-        type_key,
-    });
-
-    proposal::finalize(request, proposal);
+    dao.disable_proposal_type(type_key, ticket.ticket_request());
+    event::emit(ProposalTypeDisabled { dao_id: dao.id(), type_key });
+    ticket.discharge();
 }
 
 /// Execute an EnableProposalType proposal: add a type to the enabled set and bind
 /// the canonical Move type `NewType` to the type_key so future proposals cannot
 /// substitute a different payload type under the same key.
-/// The 66% approval floor is enforced at submission time in board_voting::submit_proposal;
-/// no execution-time floor check is needed here.
 public fun execute_enable_proposal_type<NewType: store>(
     dao: &mut DAO,
-    proposal: &Proposal<EnableProposalType>,
-    request: ExecutionRequest<EnableProposalType>,
+    ticket: ExecutionTicket<EnableProposalType>,
 ) {
-    enable_proposal_type_impl<NewType>(dao, proposal.payload(), &request);
-    proposal::finalize(request, proposal);
-}
-
-/// Composite step variant: enable a proposal type from within a composite pipeline.
-public fun execute_enable_proposal_type_step<NewType: store>(
-    dao: &mut DAO,
-    payload: EnableProposalType,
-    request: ExecutionRequest<EnableProposalType>,
-) {
-    enable_proposal_type_impl<NewType>(dao, &payload, &request);
-    proposal::consume_execution_request(request);
+    enable_proposal_type_impl<NewType>(dao, ticket.ticket_payload(), ticket.ticket_request());
+    ticket.discharge();
 }
 
 /// Execute an UpdateProposalConfig proposal: merge optional field overrides
 /// into the existing config for the target type.
-/// The 80% self-targeting floor is enforced at submission time by
-/// propose_update_proposal_config; no execution-time floor check is needed here.
 public fun execute_update_proposal_config(
     dao: &mut DAO,
-    proposal: &Proposal<UpdateProposalConfig>,
-    request: ExecutionRequest<UpdateProposalConfig>,
+    ticket: ExecutionTicket<UpdateProposalConfig>,
 ) {
-    assert!(dao.id() == request.req_dao_id(), EDaoMismatch);
+    assert!(dao.id() == ticket.ticket_dao_id(), EDaoMismatch);
 
-    let payload = proposal.payload();
+    let payload = ticket.ticket_payload();
     let target_key = payload.target_type_key();
 
-    // Merge: use payload value if present, otherwise keep existing
     let existing = dao.proposal_configs().get(&target_key);
     let new_config = proposal::new_config(
         payload.quorum().destroy_with_default(existing.quorum()),
@@ -137,38 +112,23 @@ public fun execute_update_proposal_config(
         .composable_allowed()
         .destroy_with_default(existing.composable_allowed()));
 
-    // Enforce minimum approval_threshold for types with execution floors.
-    // Prevents painting the DAO into a deadlock where proposals pass but cannot execute.
     assert_threshold_meets_floor(&target_key, &new_config);
+    assert_config_composability(&new_config);
 
-    dao.update_proposal_config(target_key, new_config, &request);
+    dao.update_proposal_config(target_key, new_config, ticket.ticket_request());
 
     event::emit(ProposalConfigUpdated {
         dao_id: dao.id(),
         target_type_key: target_key,
     });
 
-    proposal::finalize(request, proposal);
+    ticket.discharge();
 }
 
 /// Execute an UpdateMetadata proposal: update the DAO charter's IPFS CID.
-public fun execute_update_metadata(
-    charter: &mut Charter,
-    proposal: &Proposal<UpdateMetadata>,
-    request: ExecutionRequest<UpdateMetadata>,
-) {
-    update_metadata_impl(charter, proposal.payload(), &request);
-    proposal::finalize(request, proposal);
-}
-
-/// Composite step variant: execute an UpdateMetadata step extracted from a Pipeline.
-public fun execute_update_metadata_step(
-    charter: &mut Charter,
-    payload: UpdateMetadata,
-    request: ExecutionRequest<UpdateMetadata>,
-) {
-    update_metadata_impl(charter, &payload, &request);
-    proposal::consume_execution_request(request);
+public fun execute_update_metadata(charter: &mut Charter, ticket: ExecutionTicket<UpdateMetadata>) {
+    update_metadata_impl(charter, ticket.ticket_payload(), ticket.ticket_request());
+    ticket.discharge();
 }
 
 // === Internal ===
@@ -188,6 +148,7 @@ fun enable_proposal_type_impl<NewType: store>(
     };
 
     assert_threshold_meets_floor(&type_key, &config);
+    assert_config_composability(&config);
 
     dao.enable_proposal_type(type_key, config, request);
     dao.bind_type_key<NewType, EnableProposalType>(type_key, request);
@@ -264,6 +225,14 @@ fun assert_threshold_meets_floor(type_key: &std::ascii::String, config: &proposa
     if (floor > 0) {
         assert!((config.approval_threshold() as u64) >= floor, EThresholdBelowFloor);
     };
+}
+
+/// Enforce the composability–cooldown mutual exclusion:
+/// a config with cooldown_ms > 0 must not have composable_allowed = true.
+/// Composite pipelines check cooldown against a frozen snapshot and cannot
+/// enforce inter-step cooldown, so the combination is prohibited at config-write time.
+fun assert_config_composability(config: &proposal::ProposalConfig) {
+    assert!(config.cooldown_ms() == 0 || !config.composable_allowed(), EComposableCooldownConflict);
 }
 
 /// Return the execution floor (in basis points) for a given type key.

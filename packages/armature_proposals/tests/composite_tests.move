@@ -118,7 +118,7 @@ fun composite_two_add_member_steps_e2e() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -126,27 +126,27 @@ fun composite_two_add_member_steps_e2e() {
             scenario.ctx(),
         );
 
-        let pipeline = composite::begin_pipeline(&dao, &proposal, &frame, request);
+        let pipeline = composite::begin_pipeline(&dao, &frame, ticket);
 
         // Step 0: AddMember(MEMBER_C)
-        let (payload_c, req_c, pipeline) = composite::advance_step<AddMember>(
+        let (payload_c_ticket, pipeline) = composite::advance_step<AddMember>(
             &mut dao,
             &mut frame,
             pipeline,
             &freeze,
             &clock,
         );
-        member_ops::execute_add_member_step(&mut dao, payload_c, req_c);
+        member_ops::execute_add_member(&mut dao, payload_c_ticket);
 
         // Step 1: AddMember(MEMBER_D)
-        let (payload_d, req_d, pipeline) = composite::advance_step<AddMember>(
+        let (payload_d_ticket, pipeline) = composite::advance_step<AddMember>(
             &mut dao,
             &mut frame,
             pipeline,
             &freeze,
             &clock,
         );
-        member_ops::execute_add_member_step(&mut dao, payload_d, req_d);
+        member_ops::execute_add_member(&mut dao, payload_d_ticket);
 
         composite::finalize_pipeline(pipeline);
 
@@ -215,7 +215,7 @@ fun composite_add_then_remove_member_e2e() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -223,25 +223,25 @@ fun composite_add_then_remove_member_e2e() {
             scenario.ctx(),
         );
 
-        let pipeline = composite::begin_pipeline(&dao, &proposal, &frame, request);
+        let pipeline = composite::begin_pipeline(&dao, &frame, ticket);
 
-        let (payload_add, req_add, pipeline) = composite::advance_step<AddMember>(
+        let (payload_add_ticket, pipeline) = composite::advance_step<AddMember>(
             &mut dao,
             &mut frame,
             pipeline,
             &freeze,
             &clock,
         );
-        member_ops::execute_add_member_step(&mut dao, payload_add, req_add);
+        member_ops::execute_add_member(&mut dao, payload_add_ticket);
 
-        let (payload_remove, req_remove, pipeline) = composite::advance_step<RemoveMember>(
+        let (payload_remove_ticket, pipeline) = composite::advance_step<RemoveMember>(
             &mut dao,
             &mut frame,
             pipeline,
             &freeze,
             &clock,
         );
-        member_ops::execute_remove_member_step(&mut dao, payload_remove, req_remove);
+        member_ops::execute_remove_member(&mut dao, payload_remove_ticket);
 
         composite::finalize_pipeline(pipeline);
 
@@ -379,7 +379,7 @@ fun finalize_pipeline_incomplete_aborts() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -387,17 +387,17 @@ fun finalize_pipeline_incomplete_aborts() {
             scenario.ctx(),
         );
 
-        let pipeline = composite::begin_pipeline(&dao, &proposal, &frame, request);
+        let pipeline = composite::begin_pipeline(&dao, &frame, ticket);
 
         // Only advance step 0 — skip step 1.
-        let (payload, req, pipeline) = composite::advance_step<AddMember>(
+        let (payload_ticket, pipeline) = composite::advance_step<AddMember>(
             &mut dao,
             &mut frame,
             pipeline,
             &freeze,
             &clock,
         );
-        member_ops::execute_add_member_step(&mut dao, payload, req);
+        member_ops::execute_add_member(&mut dao, payload_ticket);
 
         // finalize with step 1 remaining — should abort with EPipelineIncomplete.
         composite::finalize_pipeline(pipeline);
@@ -454,7 +454,7 @@ fun advance_step_wrong_type_aborts() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -462,17 +462,17 @@ fun advance_step_wrong_type_aborts() {
             scenario.ctx(),
         );
 
-        let pipeline = composite::begin_pipeline(&dao, &proposal, &frame, request);
+        let pipeline = composite::begin_pipeline(&dao, &frame, ticket);
 
         // Step 0 is AddMember but we try to advance with RemoveMember — should abort.
-        let (payload, req, pipeline) = composite::advance_step<RemoveMember>(
+        let (payload_ticket, pipeline) = composite::advance_step<RemoveMember>(
             &mut dao,
             &mut frame,
             pipeline,
             &freeze,
             &clock,
         );
-        member_ops::execute_remove_member_step(&mut dao, payload, req);
+        member_ops::execute_remove_member(&mut dao, payload_ticket);
 
         composite::finalize_pipeline(pipeline);
 
@@ -562,23 +562,23 @@ fun composite_send_coin_step_e2e() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        let pipeline = composite::begin_pipeline(&dao, &proposal, &frame, request);
+        let pipeline = composite::begin_pipeline(&dao, &frame, ticket);
 
-        let (payload, req, pipeline) = composite::advance_step<SendCoin<SUI>>(
+        let (payload_ticket, pipeline) = composite::advance_step<SendCoin<SUI>>(
             &mut dao,
             &mut frame,
             pipeline,
             &freeze,
             &clock,
         );
-        treasury_ops::execute_send_coin_step<SUI>(&mut vault, payload, req, scenario.ctx());
+        treasury_ops::execute_send_coin<SUI>(&mut vault, payload_ticket, scenario.ctx());
 
         composite::finalize_pipeline(pipeline);
 
@@ -709,27 +709,26 @@ fun composite_send_coin_to_dao_step_e2e() {
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(source_freeze_id);
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        let pipeline = composite::begin_pipeline(&dao, &proposal, &frame, request);
+        let pipeline = composite::begin_pipeline(&dao, &frame, ticket);
 
-        let (payload, req, pipeline) = composite::advance_step<SendCoinToDAO<SUI>>(
+        let (payload_ticket, pipeline) = composite::advance_step<SendCoinToDAO<SUI>>(
             &mut dao,
             &mut frame,
             pipeline,
             &freeze,
             &clock,
         );
-        treasury_ops::execute_send_coin_to_dao_step<SUI>(
+        treasury_ops::execute_send_coin_to_dao<SUI>(
             &mut source_vault,
             &mut target_vault,
-            payload,
-            req,
+            payload_ticket,
             scenario.ctx(),
         );
 
@@ -790,23 +789,23 @@ fun composite_set_board_step_e2e() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        let pipeline = composite::begin_pipeline(&dao, &proposal, &frame, request);
+        let pipeline = composite::begin_pipeline(&dao, &frame, ticket);
 
-        let (payload, req, pipeline) = composite::advance_step<SetBoard>(
+        let (payload_ticket, pipeline) = composite::advance_step<SetBoard>(
             &mut dao,
             &mut frame,
             pipeline,
             &freeze,
             &clock,
         );
-        board_ops::execute_set_board_step(&mut dao, payload, req);
+        board_ops::execute_set_board(&mut dao, payload_ticket);
 
         composite::finalize_pipeline(pipeline);
 
@@ -873,23 +872,23 @@ fun composite_update_metadata_step_e2e() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        let pipeline = composite::begin_pipeline(&dao, &proposal, &frame, request);
+        let pipeline = composite::begin_pipeline(&dao, &frame, ticket);
 
-        let (payload, req, pipeline) = composite::advance_step<UpdateMetadata>(
+        let (payload_ticket, pipeline) = composite::advance_step<UpdateMetadata>(
             &mut dao,
             &mut frame,
             pipeline,
             &freeze,
             &clock,
         );
-        admin_ops::execute_update_metadata_step(&mut charter, payload, req);
+        admin_ops::execute_update_metadata(&mut charter, payload_ticket);
 
         composite::finalize_pipeline(pipeline);
 
@@ -996,34 +995,34 @@ fun composite_same_type_cooldown_snapshot_succeeds() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        let pipeline = composite::begin_pipeline(&dao, &proposal, &frame, request);
+        let pipeline = composite::begin_pipeline(&dao, &frame, ticket);
 
-        let (payload_c, req_c, pipeline) = composite::advance_step<AddMember>(
+        let (payload_c_ticket, pipeline) = composite::advance_step<AddMember>(
             &mut dao,
             &mut frame,
             pipeline,
             &freeze,
             &clock,
         );
-        member_ops::execute_add_member_step(&mut dao, payload_c, req_c);
+        member_ops::execute_add_member(&mut dao, payload_c_ticket);
 
         // Step 1 shares the same type_key and runs at the same timestamp.
         // Without the snapshot fix this would abort ECooldownActive.
-        let (payload_d, req_d, pipeline) = composite::advance_step<AddMember>(
+        let (payload_d_ticket, pipeline) = composite::advance_step<AddMember>(
             &mut dao,
             &mut frame,
             pipeline,
             &freeze,
             &clock,
         );
-        member_ops::execute_add_member_step(&mut dao, payload_d, req_d);
+        member_ops::execute_add_member(&mut dao, payload_d_ticket);
 
         composite::finalize_pipeline(pipeline);
 
@@ -1097,28 +1096,312 @@ fun composite_enable_proposal_type_step_e2e() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        let pipeline = composite::begin_pipeline(&dao, &proposal, &frame, request);
+        let pipeline = composite::begin_pipeline(&dao, &frame, ticket);
 
-        let (payload, req, pipeline) = composite::advance_step<EnableProposalType>(
+        let (payload_ticket, pipeline) = composite::advance_step<EnableProposalType>(
             &mut dao,
             &mut frame,
             pipeline,
             &freeze,
             &clock,
         );
-        admin_ops::execute_enable_proposal_type_step<TestPayload>(&mut dao, payload, req);
+        admin_ops::execute_enable_proposal_type<TestPayload>(&mut dao, payload_ticket);
 
         composite::finalize_pipeline(pipeline);
 
         assert!(dao.enabled_proposal_types().contains(&b"MyGrant".to_ascii_string()));
         assert!(dao.has_type_binding(&b"MyGrant".to_ascii_string()));
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(frame);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// =========================================================================
+// delete_exhausted_frame tests
+// =========================================================================
+
+#[test]
+/// delete_exhausted_frame succeeds after all step payloads have been extracted.
+fun composite_delete_exhausted_frame_succeeds() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_dao_two_members(&mut scenario);
+
+    // Submit a 1-step composite
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        clock.set_for_testing(1000);
+        let mut frame = composite::new_frame(dao.id(), scenario.ctx());
+        composite::add_step<AddMember>(
+            &mut frame,
+            &dao,
+            b"AddMember".to_ascii_string(),
+            add_member::new(MEMBER_C),
+        );
+        composite::submit_composite(&dao, frame, option::none(), &clock, scenario.ctx());
+        test_scenario::return_shared(dao);
+    };
+
+    // Vote
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<CompositePayload>>();
+        clock.set_for_testing(2000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    // Execute: advance step → finalize → delete frame
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut proposal = scenario.take_shared<Proposal<CompositePayload>>();
+        let mut frame = scenario.take_shared<CompositeFrame>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        clock.set_for_testing(3000);
+
+        let ticket = board_voting::ticket_from_vote(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        let pipeline = composite::begin_pipeline(&dao, &frame, ticket);
+
+        let (payload_ticket, pipeline) = composite::advance_step<AddMember>(
+            &mut dao,
+            &mut frame,
+            pipeline,
+            &freeze,
+            &clock,
+        );
+        member_ops::execute_add_member(&mut dao, payload_ticket);
+        composite::finalize_pipeline(pipeline);
+
+        // Frame is now exhausted — delete it
+        composite::delete_exhausted_frame(frame);
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::composite::EFrameNotExhausted)]
+/// delete_exhausted_frame aborts when steps have not been extracted.
+fun composite_delete_exhausted_frame_not_exhausted_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_dao_two_members(&mut scenario);
+
+    // Submit a 1-step composite
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        clock.set_for_testing(1000);
+        let mut frame = composite::new_frame(dao.id(), scenario.ctx());
+        composite::add_step<AddMember>(
+            &mut frame,
+            &dao,
+            b"AddMember".to_ascii_string(),
+            add_member::new(MEMBER_C),
+        );
+        composite::submit_composite(&dao, frame, option::none(), &clock, scenario.ctx());
+        test_scenario::return_shared(dao);
+    };
+
+    // Try to delete the frame before any execution — steps_extracted == 0, length == 1
+    scenario.next_tx(CREATOR);
+    {
+        let frame = scenario.take_shared<CompositeFrame>();
+        composite::delete_exhausted_frame(frame);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// =========================================================================
+// seal_frame / EFrameAlreadySealed tests
+// =========================================================================
+
+#[test, expected_failure(abort_code = armature::composite::EFrameAlreadySealed)]
+/// add_step aborts after the frame has been sealed via submit_composite.
+fun composite_add_step_after_seal_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_dao_two_members(&mut scenario);
+
+    // Submit composite (seals the frame)
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        clock.set_for_testing(1000);
+        let mut frame = composite::new_frame(dao.id(), scenario.ctx());
+        composite::add_step<AddMember>(
+            &mut frame,
+            &dao,
+            b"AddMember".to_ascii_string(),
+            add_member::new(MEMBER_C),
+        );
+        composite::submit_composite(&dao, frame, option::none(), &clock, scenario.ctx());
+        test_scenario::return_shared(dao);
+    };
+
+    // Attempt to add a step to the now-shared sealed frame — must abort
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        let mut frame = scenario.take_shared<CompositeFrame>();
+        composite::add_step<AddMember>(
+            &mut frame,
+            &dao,
+            b"AddMember".to_ascii_string(),
+            add_member::new(MEMBER_D),
+        );
+        test_scenario::return_shared(frame);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+/// is_sealed returns true after submit_composite.
+fun composite_frame_is_sealed_after_submit() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_dao_two_members(&mut scenario);
+
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        clock.set_for_testing(1000);
+        let mut frame = composite::new_frame(dao.id(), scenario.ctx());
+        // Not sealed yet
+        assert!(!frame.is_sealed());
+        composite::add_step<AddMember>(
+            &mut frame,
+            &dao,
+            b"AddMember".to_ascii_string(),
+            add_member::new(MEMBER_C),
+        );
+        composite::submit_composite(&dao, frame, option::none(), &clock, scenario.ctx());
+        test_scenario::return_shared(dao);
+    };
+
+    // Verify the shared frame is sealed
+    scenario.next_tx(CREATOR);
+    {
+        let frame = scenario.take_shared<CompositeFrame>();
+        assert!(frame.is_sealed());
+        test_scenario::return_shared(frame);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// =========================================================================
+// ECooldownTypeNotComposable: advance_step rejects cooldown types not opted in
+// =========================================================================
+
+#[test, expected_failure(abort_code = armature::composite::ECooldownTypeNotComposable)]
+/// advance_step aborts when a type has cooldown_ms > 0 without composable_allowed.
+/// This is a defense-in-depth check: composable_allowed is validated at add_step,
+/// but if the config is changed between submission and execution, advance_step catches it.
+fun composite_cooldown_type_not_composable_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_dao_two_members(&mut scenario);
+
+    // Submit composite with AddMember (composable_allowed = true by default, cooldown = 0)
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        clock.set_for_testing(1000);
+        let mut frame = composite::new_frame(dao.id(), scenario.ctx());
+        composite::add_step<AddMember>(
+            &mut frame,
+            &dao,
+            b"AddMember".to_ascii_string(),
+            add_member::new(MEMBER_C),
+        );
+        composite::submit_composite(&dao, frame, option::none(), &clock, scenario.ctx());
+        test_scenario::return_shared(dao);
+    };
+
+    // Vote
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<CompositePayload>>();
+        clock.set_for_testing(2000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    // AFTER vote passes, change the config: add cooldown and disable composable.
+    // This simulates a governance config change between submission and execution.
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let bad_config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 1_000);
+        // composable_allowed defaults to false, cooldown = 1000ms → the conflict
+        dao.test_update_config(b"AddMember".to_ascii_string(), bad_config);
+        test_scenario::return_shared(dao);
+    };
+
+    // Execute — advance_step must abort because cooldown > 0 and !composable_allowed
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut proposal = scenario.take_shared<Proposal<CompositePayload>>();
+        let mut frame = scenario.take_shared<CompositeFrame>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        clock.set_for_testing(3000);
+
+        let ticket = board_voting::ticket_from_vote(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        let pipeline = composite::begin_pipeline(&dao, &frame, ticket);
+
+        let (payload_ticket, pipeline) = composite::advance_step<AddMember>(
+            &mut dao,
+            &mut frame,
+            pipeline,
+            &freeze,
+            &clock,
+        );
+        member_ops::execute_add_member(&mut dao, payload_ticket);
+        composite::finalize_pipeline(pipeline);
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(frame);

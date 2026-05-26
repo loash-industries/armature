@@ -160,7 +160,7 @@ fun test_status_passed_to_executed() {
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
         let dao = scenario.take_shared<DAO>();
-        let req = prop.execute(
+        let (_payload, req) = prop.execute(
             dao.governance(),
             option::none(),
             false,
@@ -268,7 +268,13 @@ fun test_cannot_vote_on_executed_aborts() {
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
         let dao = scenario.take_shared<DAO>();
-        let req = prop.execute(dao.governance(), option::none(), false, &clock, scenario.ctx());
+        let (_payload, req) = prop.execute(
+            dao.governance(),
+            option::none(),
+            false,
+            &clock,
+            scenario.ctx(),
+        );
         proposal::consume(req);
         test_scenario::return_shared(prop);
         test_scenario::return_shared(dao);
@@ -312,7 +318,13 @@ fun test_cannot_execute_expired_aborts() {
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
         let dao = scenario.take_shared<DAO>();
-        let req = prop.execute(dao.governance(), option::none(), false, &clock, scenario.ctx());
+        let (_payload, req) = prop.execute(
+            dao.governance(),
+            option::none(),
+            false,
+            &clock,
+            scenario.ctx(),
+        );
         proposal::consume(req);
         test_scenario::return_shared(prop);
         test_scenario::return_shared(dao);
@@ -446,7 +458,13 @@ fun test_non_board_member_cannot_execute_aborts() {
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
         let dao = scenario.take_shared<DAO>();
-        let req = prop.execute(dao.governance(), option::none(), false, &clock, scenario.ctx());
+        let (_payload, req) = prop.execute(
+            dao.governance(),
+            option::none(),
+            false,
+            &clock,
+            scenario.ctx(),
+        );
         proposal::consume(req);
         test_scenario::return_shared(prop);
         test_scenario::return_shared(dao);
@@ -481,7 +499,13 @@ fun test_board_member_can_execute() {
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
         let dao = scenario.take_shared<DAO>();
-        let req = prop.execute(dao.governance(), option::none(), false, &clock, scenario.ctx());
+        let (_payload, req) = prop.execute(
+            dao.governance(),
+            option::none(),
+            false,
+            &clock,
+            scenario.ctx(),
+        );
         assert!(prop.status().is_executed());
         proposal::consume(req);
         test_scenario::return_shared(prop);
@@ -519,7 +543,13 @@ fun test_passed_proposal_retryable_after_failure() {
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
         let dao = scenario.take_shared<DAO>();
-        let req = prop.execute(dao.governance(), option::none(), false, &clock, scenario.ctx());
+        let (_payload, req) = prop.execute(
+            dao.governance(),
+            option::none(),
+            false,
+            &clock,
+            scenario.ctx(),
+        );
         assert!(prop.status().is_executed());
         proposal::consume(req);
         test_scenario::return_shared(prop);
@@ -665,7 +695,13 @@ fun test_execute_delay_not_elapsed_aborts() {
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
         let dao = scenario.take_shared<DAO>();
-        let req = prop.execute(dao.governance(), option::none(), false, &clock, scenario.ctx());
+        let (_payload, req) = prop.execute(
+            dao.governance(),
+            option::none(),
+            false,
+            &clock,
+            scenario.ctx(),
+        );
         proposal::consume(req);
         test_scenario::return_shared(prop);
         test_scenario::return_shared(dao);
@@ -729,7 +765,13 @@ fun test_execute_delay_elapsed_succeeds() {
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
         let dao = scenario.take_shared<DAO>();
-        let req = prop.execute(dao.governance(), option::none(), false, &clock, scenario.ctx());
+        let (_payload, req) = prop.execute(
+            dao.governance(),
+            option::none(),
+            false,
+            &clock,
+            scenario.ctx(),
+        );
         assert!(prop.status().is_executed());
         proposal::consume(req);
         test_scenario::return_shared(prop);
@@ -792,7 +834,7 @@ fun test_execute_cooldown_active_aborts() {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
         let dao = scenario.take_shared<DAO>();
         // Last executed 500ms ago — within 1hr cooldown
-        let req = prop.execute(
+        let (_payload, req) = prop.execute(
             dao.governance(),
             option::some(999_500),
             false,
@@ -860,7 +902,7 @@ fun test_execute_cooldown_elapsed_succeeds() {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
         let dao = scenario.take_shared<DAO>();
         // Last executed 2 hours ago — cooldown elapsed
-        let req = prop.execute(
+        let (_payload, req) = prop.execute(
             dao.governance(),
             option::some(10_000_000 - 7_200_000),
             false,
@@ -899,7 +941,13 @@ fun test_execute_paused_aborts() {
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
         let dao = scenario.take_shared<DAO>();
-        let req = prop.execute(dao.governance(), option::none(), true, &clock, scenario.ctx());
+        let (_payload, req) = prop.execute(
+            dao.governance(),
+            option::none(),
+            true,
+            &clock,
+            scenario.ctx(),
+        );
         proposal::consume(req);
         test_scenario::return_shared(prop);
         test_scenario::return_shared(dao);
@@ -923,7 +971,7 @@ fun consume_execution_request_destroys_hot_potato() {
     assert!(req.req_dao_id() == dao_id);
     assert!(req.req_proposal_id() == proposal_id);
 
-    proposal::consume_execution_request(req);
+    proposal::consume_execution_request_for_testing(req);
 }
 
 #[test]
@@ -947,13 +995,196 @@ fun consume_execution_request_works_after_governance_execution() {
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
         let dao = scenario.take_shared<DAO>();
-        let req = prop.execute(dao.governance(), option::none(), false, &clock, scenario.ctx());
+        let (_payload, req) = prop.execute(
+            dao.governance(),
+            option::none(),
+            false,
+            &clock,
+            scenario.ctx(),
+        );
         // Consume without passing the Proposal object — the hot potato is sufficient proof.
-        proposal::consume_execution_request(req);
+        proposal::consume_execution_request_for_testing(req);
         test_scenario::return_shared(prop);
         test_scenario::return_shared(dao);
     };
 
     clock.destroy_for_testing();
     scenario.end();
+}
+
+// =========================================================================
+// ExecutionTicket accessor tests
+// =========================================================================
+
+#[test]
+/// ticket_is_standalone returns true for Standalone tickets.
+fun test_ticket_is_standalone_true() {
+    let dao_id = object::id_from_address(@0xDA0);
+    let proposal_id = object::id_from_address(@0xBEEF);
+    let ticket = proposal::new_standalone_ticket_for_testing<TestPayload>(
+        dao_id,
+        proposal_id,
+        TestPayload { value: 1 },
+        100,
+        200,
+    );
+    assert!(ticket.ticket_is_standalone());
+    assert!(ticket.ticket_yes_weight() == 100);
+    assert!(ticket.ticket_total_snapshot_weight() == 200);
+    assert!(ticket.ticket_dao_id() == dao_id);
+    ticket.discharge();
+}
+
+#[test, expected_failure(abort_code = armature::proposal::ENotStandaloneTicket)]
+/// ticket_yes_weight aborts on Composite tickets.
+fun test_ticket_yes_weight_aborts_on_composite() {
+    let dao_id = object::id_from_address(@0xDA0);
+    let proposal_id = object::id_from_address(@0xBEEF);
+    let ticket = proposal::new_composite_ticket_for_testing<TestPayload>(
+        dao_id,
+        proposal_id,
+        TestPayload { value: 1 },
+    );
+    // Composite ticket — this must abort
+    let _w = ticket.ticket_yes_weight();
+    ticket.discharge();
+}
+
+#[test, expected_failure(abort_code = armature::proposal::ENotStandaloneTicket)]
+/// ticket_total_snapshot_weight aborts on External tickets.
+fun test_ticket_total_snapshot_weight_aborts_on_external() {
+    let dao_id = object::id_from_address(@0xDA0);
+    let proposal_id = object::id_from_address(@0xBEEF);
+    let ticket = proposal::new_external_ticket_for_testing<TestPayload>(
+        dao_id,
+        proposal_id,
+        TestPayload { value: 1 },
+    );
+    // External ticket — this must abort
+    let _w = ticket.ticket_total_snapshot_weight();
+    ticket.discharge();
+}
+
+#[test]
+/// ticket_is_standalone returns false for Composite tickets.
+fun test_ticket_is_standalone_false_for_composite() {
+    let dao_id = object::id_from_address(@0xDA0);
+    let proposal_id = object::id_from_address(@0xBEEF);
+    let ticket = proposal::new_composite_ticket_for_testing<TestPayload>(
+        dao_id,
+        proposal_id,
+        TestPayload { value: 1 },
+    );
+    assert!(!ticket.ticket_is_standalone());
+    ticket.discharge();
+}
+
+#[test]
+/// ticket_is_standalone returns false for External tickets.
+fun test_ticket_is_standalone_false_for_external() {
+    let dao_id = object::id_from_address(@0xDA0);
+    let proposal_id = object::id_from_address(@0xBEEF);
+    let ticket = proposal::new_external_ticket_for_testing<TestPayload>(
+        dao_id,
+        proposal_id,
+        TestPayload { value: 1 },
+    );
+    assert!(!ticket.ticket_is_standalone());
+    ticket.discharge();
+}
+
+// =========================================================================
+// delete_executed_proposal tests
+// =========================================================================
+
+#[test]
+/// delete_executed_proposal succeeds on an executed proposal with payload=None.
+fun test_delete_executed_proposal_succeeds() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let clock = clock::create_for_testing(scenario.ctx());
+
+    create_test_dao(&mut scenario);
+    create_test_proposal(&mut scenario, &clock);
+
+    // Vote to pass
+    scenario.next_tx(CREATOR);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        prop.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(prop);
+    };
+
+    // Execute (extracts payload)
+    scenario.next_tx(CREATOR);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let dao = scenario.take_shared<DAO>();
+        let (_payload, req) = prop.execute(
+            dao.governance(),
+            option::none(),
+            false,
+            &clock,
+            scenario.ctx(),
+        );
+        proposal::consume_execution_request_for_testing(req);
+        test_scenario::return_shared(prop);
+        test_scenario::return_shared(dao);
+    };
+
+    // Delete the executed proposal
+    scenario.next_tx(CREATOR);
+    {
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        proposal::delete_executed_proposal(prop);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::proposal::ENotExecuted)]
+/// delete_executed_proposal aborts when status is not Executed.
+fun test_delete_executed_proposal_not_executed_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let clock = clock::create_for_testing(scenario.ctx());
+
+    create_test_dao(&mut scenario);
+    create_test_proposal(&mut scenario, &clock);
+
+    // Try to delete while still Active (not voted on)
+    scenario.next_tx(CREATOR);
+    {
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        proposal::delete_executed_proposal(prop);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// =========================================================================
+// discharge_returning_payload tests
+// =========================================================================
+
+/// Payload type without drop — only has store.
+public struct NonDropPayload has store {
+    value: u64,
+}
+
+#[test]
+/// discharge_returning_payload returns the payload from a Standalone ticket.
+fun test_discharge_returning_payload() {
+    let dao_id = object::id_from_address(@0xDA0);
+    let proposal_id = object::id_from_address(@0xBEEF);
+    let ticket = proposal::new_standalone_ticket_for_testing<NonDropPayload>(
+        dao_id,
+        proposal_id,
+        NonDropPayload { value: 42 },
+        100,
+        200,
+    );
+    let payload = proposal::discharge_returning_payload(ticket);
+    assert!(payload.value == 42);
+    // Manually destructure since NonDropPayload has no drop
+    let NonDropPayload { value: _ } = payload;
 }

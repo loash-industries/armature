@@ -76,7 +76,7 @@ fun test_set_board_e2e() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
@@ -85,7 +85,7 @@ fun test_set_board_e2e() {
         );
 
         // Handler: apply the board change and consume the request
-        board_ops::execute_set_board(&mut dao, &proposal, request);
+        board_ops::execute_set_board(&mut dao, ticket);
 
         // 5. Verify the board was updated
         let gov = dao.governance();
@@ -157,14 +157,14 @@ fun test_set_board_empty_members_aborts() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        board_ops::execute_set_board(&mut dao, &proposal, request);
+        board_ops::execute_set_board(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
@@ -246,14 +246,14 @@ fun test_full_board_replacement() {
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(dao.emergency_freeze_id());
         clock.set_for_testing(3_000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        board_ops::execute_set_board(&mut dao, &proposal, request);
+        board_ops::execute_set_board(&mut dao, ticket);
 
         // Old members gone
         assert!(!dao.governance().is_board_member(CREATOR));
@@ -322,14 +322,14 @@ fun test_shrink_board_to_single_member() {
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(dao.emergency_freeze_id());
         clock.set_for_testing(3_000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        board_ops::execute_set_board(&mut dao, &proposal, request);
+        board_ops::execute_set_board(&mut dao, ticket);
 
         assert!(dao.governance().is_board_member(CREATOR));
         assert!(!dao.governance().is_board_member(MEMBER_B));
@@ -386,14 +386,14 @@ fun test_grow_board_from_single() {
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(dao.emergency_freeze_id());
         clock.set_for_testing(3_000);
 
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        board_ops::execute_set_board(&mut dao, &proposal, request);
+        board_ops::execute_set_board(&mut dao, ticket);
 
         assert!(dao.governance().is_board_member(CREATOR));
         assert!(dao.governance().is_board_member(MEMBER_B));
@@ -451,14 +451,14 @@ fun test_sequential_board_changes() {
         let mut proposal = scenario.take_shared<Proposal<SetBoard>>();
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(dao.emergency_freeze_id());
         clock.set_for_testing(3_000);
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        board_ops::execute_set_board(&mut dao, &proposal, request);
+        board_ops::execute_set_board(&mut dao, ticket);
         assert!(dao.governance().is_board_member(CREATOR));
         assert!(dao.governance().is_board_member(NEW_MEMBER));
         assert!(!dao.governance().is_board_member(MEMBER_B));
@@ -497,14 +497,14 @@ fun test_sequential_board_changes() {
         let mut proposal = scenario.take_shared<Proposal<SetBoard>>();
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(dao.emergency_freeze_id());
         clock.set_for_testing(12_000);
-        let request = board_voting::authorize_execution(
+        let ticket = board_voting::ticket_from_vote(
             &mut dao,
             &mut proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        board_ops::execute_set_board(&mut dao, &proposal, request);
+        board_ops::execute_set_board(&mut dao, ticket);
         assert!(!dao.governance().is_board_member(CREATOR));
         assert!(dao.governance().is_board_member(NEW_MEMBER));
         assert!(dao.governance().is_board_member(MEMBER_D));

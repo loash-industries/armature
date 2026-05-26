@@ -5,7 +5,7 @@ module armature_proposals::return_currency_cap;
 /// from the DAO's custody. The escape hatch / handoff path — without it a cap
 /// would be locked in the vault forever, blocking sub-DAO spin-outs and
 /// migrations. Vote-gated, symmetric to `AdoptCurrency`.
-public struct ReturnCurrencyCap<phantom T> has store {
+public struct ReturnCurrencyCap<phantom T> has drop, store {
     treasury_cap_id: ID,
     recipient: address,
 }
@@ -21,3 +21,7 @@ public fun new<T>(treasury_cap_id: ID, recipient: address): ReturnCurrencyCap<T>
 public fun treasury_cap_id<T>(self: &ReturnCurrencyCap<T>): ID { self.treasury_cap_id }
 
 public fun recipient<T>(self: &ReturnCurrencyCap<T>): address { self.recipient }
+
+public fun destroy<T>(self: ReturnCurrencyCap<T>) {
+    let ReturnCurrencyCap { treasury_cap_id: _, recipient: _ } = self;
+}

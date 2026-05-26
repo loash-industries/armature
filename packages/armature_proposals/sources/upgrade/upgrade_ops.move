@@ -1,7 +1,7 @@
 module armature_proposals::upgrade_ops;
 
 use armature::capability_vault::{CapabilityVault, CapLoan};
-use armature::proposal::{Self, Proposal, ExecutionRequest};
+use armature::proposal::ExecutionTicket;
 use armature_proposals::propose_upgrade::ProposeUpgrade;
 use sui::event;
 use sui::package::{Self, UpgradeCap, UpgradeTicket, UpgradeReceipt};
@@ -28,19 +28,18 @@ public struct UpgradeAuthorized has copy, drop {
 /// after the PTB `Upgrade` command.
 public fun execute_propose_upgrade(
     vault: &mut CapabilityVault,
-    proposal: &Proposal<ProposeUpgrade>,
-    request: ExecutionRequest<ProposeUpgrade>,
+    ticket: ExecutionTicket<ProposeUpgrade>,
 ): (UpgradeTicket, UpgradeCap, CapLoan) {
-    assert!(vault.dao_id() == request.req_dao_id(), EVaultDaoMismatch);
+    assert!(vault.dao_id() == ticket.ticket_dao_id(), EVaultDaoMismatch);
 
-    let payload = proposal.payload();
+    let payload = ticket.ticket_payload();
 
     let (mut cap, loan) = vault.loan_cap<UpgradeCap, ProposeUpgrade>(
         payload.cap_id(),
-        &request,
+        ticket.ticket_request(),
     );
 
-    let ticket = package::authorize_upgrade(
+    let upgrade_ticket = package::authorize_upgrade(
         &mut cap,
         payload.policy(),
         *payload.digest(),
@@ -53,9 +52,9 @@ public fun execute_propose_upgrade(
         policy: payload.policy(),
     });
 
-    proposal::finalize(request, proposal);
+    ticket.discharge();
 
-    (ticket, cap, loan)
+    (upgrade_ticket, cap, loan)
 }
 
 /// Step 2: Commit the upgrade and return the UpgradeCap to the vault.
