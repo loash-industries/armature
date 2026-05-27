@@ -5,6 +5,7 @@ version = "0.0.1"
 
 [dependencies]
 armature = { local = "../armature_framework", env = "testnet_wip" }
+multicoin = { local = "../../../../multicoin-example/packages/multicoin" }
 
 [environments]
 testnet_wip = "0x0"

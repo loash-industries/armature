@@ -1,3 +1,4 @@
+#[allow(deprecated_usage)]
 module armature::treasury_vault;
 
 use armature::proposal::ExecutionRequest;
@@ -234,7 +235,7 @@ public fun deposit_multicoin(
     let coll_key = CollectionKey { collection_id };
     let asset_key = AssetKey { asset_id };
 
-    if (!dof::exists(&self.id, coll_key)) {
+    if (!dof::exists_(&self.id, coll_key)) {
         let record = CollectionRecord {
             id: object::new(ctx),
             collection_id,
@@ -246,7 +247,7 @@ public fun deposit_multicoin(
 
     let record: &mut CollectionRecord = dof::borrow_mut(&mut self.id, coll_key);
 
-    if (dof::exists(&record.id, asset_key)) {
+    if (dof::exists_(&record.id, asset_key)) {
         let existing: &mut MultiCoinBalance = dof::borrow_mut(&mut record.id, asset_key);
         existing.join(balance, ctx);
     } else {
@@ -281,9 +282,9 @@ public fun withdraw_multicoin<P>(
     let asset_key = AssetKey { asset_id };
 
     assert!(
-        dof::exists(&self.id, coll_key) && {
+        dof::exists_(&self.id, coll_key) && {
             let record: &CollectionRecord = dof::borrow(&self.id, coll_key);
-            dof::exists(&record.id, asset_key) && {
+            dof::exists_(&record.id, asset_key) && {
                 let bal: &MultiCoinBalance = dof::borrow(&record.id, asset_key);
                 bal.value() >= amount
             }
@@ -353,9 +354,9 @@ public fun balance<T>(self: &TreasuryVault): u64 {
 public fun multicoin_balance(self: &TreasuryVault, collection_id: ID, asset_id: u64): u64 {
     let coll_key = CollectionKey { collection_id };
     let asset_key = AssetKey { asset_id };
-    if (dof::exists(&self.id, coll_key)) {
+    if (dof::exists_(&self.id, coll_key)) {
         let record: &CollectionRecord = dof::borrow(&self.id, coll_key);
-        if (dof::exists(&record.id, asset_key)) {
+        if (dof::exists_(&record.id, asset_key)) {
             let bal: &MultiCoinBalance = dof::borrow(&record.id, asset_key);
             bal.value()
         } else {
@@ -369,7 +370,7 @@ public fun multicoin_balance(self: &TreasuryVault, collection_id: ID, asset_id: 
 /// Returns the number of distinct asset IDs held for a collection, or 0 if not present.
 public fun collection_item_count(self: &TreasuryVault, collection_id: ID): u64 {
     let coll_key = CollectionKey { collection_id };
-    if (dof::exists(&self.id, coll_key)) {
+    if (dof::exists_(&self.id, coll_key)) {
         let record: &CollectionRecord = dof::borrow(&self.id, coll_key);
         record.item_count
     } else {
