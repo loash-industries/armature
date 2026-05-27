@@ -5,7 +5,7 @@ version = "0.0.1"
 
 [dependencies]
 Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "framework/testnet" }
-multicoin = { local = "../../../../multicoin-example/packages/multicoin" }
+multicoin = { git = "https://github.com/Algorithmic-Warfare/multicoin", subdir = "packages/multicoin", rev = "c7a97f2f42ffbddbe2d44686cbc9eebd1810b8d6" }
 
 [addresses]
 armature = "0x0"

@@ -6,7 +6,7 @@ use armature::treasury_vault::TreasuryVault;
 use armature::utils;
 use armature_proposals::multicoin_item::MultiCoinItem;
 use armature_proposals::send_batch_multicoin_to_dao::SendBatchMulticoinToDAO;
-use armature_proposals::send_batch_multicoin_to_player::SendBatchMulticoinToPlayer;
+use armature_proposals::send_batch_multicoin_to_player::SendBatchMulticoinToAddress;
 use armature_proposals::send_coin::SendCoin;
 use armature_proposals::send_coin_to_dao::SendCoinToDAO;
 use armature_proposals::send_small_payment::{Self, SendSmallPayment, SmallPaymentState};
@@ -45,7 +45,7 @@ public struct SmallPaymentSent has copy, drop {
     max_epoch_spend: u64,
 }
 
-public struct BatchMulticoinSentToPlayer has copy, drop {
+public struct BatchMulticoinSentToAddress has copy, drop {
     dao_id: ID,
     recipient: address,
     item_count: u64,
@@ -143,7 +143,7 @@ public fun execute_send_small_payment<T>(
 
 public fun execute_send_batch_multicoin_to_player(
     vault: &mut TreasuryVault,
-    ticket: ExecutionTicket<SendBatchMulticoinToPlayer>,
+    ticket: ExecutionTicket<SendBatchMulticoinToAddress>,
     ctx: &mut TxContext,
 ) {
     let payload = ticket.ticket_payload();
@@ -161,7 +161,7 @@ public fun execute_send_batch_multicoin_to_player(
         );
         transfer::public_transfer(balance, recipient);
     });
-    event::emit(BatchMulticoinSentToPlayer {
+    event::emit(BatchMulticoinSentToAddress {
         dao_id: vault.dao_id(),
         recipient,
         item_count,
