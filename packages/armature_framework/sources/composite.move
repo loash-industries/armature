@@ -36,7 +36,6 @@ const EDAOIdMismatch: u64 = 6;
 const EDAONotActive: u64 = 7;
 const EFloorNotMet: u64 = 8;
 const EEmptyFrame: u64 = 9;
-const ECooldownActive: u64 = 10;
 /// A type with cooldown_ms > 0 reached advance_step (defence-in-depth).
 const ECooldownTypeNotComposable: u64 = 11;
 /// begin_pipeline called with an unsealed CompositeFrame.

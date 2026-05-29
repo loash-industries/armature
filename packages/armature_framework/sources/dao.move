@@ -787,6 +787,7 @@ public fun create_subdao(
 
 /// Share a SubDAO after setting its controller_cap_id.
 /// Consumes the DAO by value — can only be called on an un-shared DAO.
+#[allow(lint(custom_state_change, share_owned))]
 public fun share_subdao(mut dao: DAO, controller_cap_id: ID) {
     dao.controller_cap_id = option::some(controller_cap_id);
     transfer::share_object(dao);
