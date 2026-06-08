@@ -332,6 +332,64 @@ public(package) fun create<P: store>(
     transfer::share_object(proposal);
 }
 
+/// Like create(), but returns the owned Proposal instead of sharing it.
+///
+/// INVARIANT: This function may only be called by board_voting::submit_vote_execute.
+/// The caller MUST call transfer::share_object on the returned proposal after
+/// execution completes. Using transfer::transfer instead would strand an Active
+/// proposal in an owned-object state that can never complete its lifecycle, while
+/// the ProposalCreated event would still exist on-chain.
+public(package) fun create_returning<P: store>(
+    dao_id: ID,
+    type_key: std::ascii::String,
+    proposer: address,
+    metadata_ipfs: Option<String>,
+    payload: P,
+    config: ProposalConfig,
+    governance: &GovernanceConfig,
+    is_dao_active: bool,
+    clock: &Clock,
+    ctx: &mut TxContext,
+): Proposal<P> {
+    assert!(is_dao_active, EDAONotActive);
+    let (vote_snapshot, total_snapshot_weight) = governance.board_vote_snapshot();
+
+    let payload_bcs = std::bcs::to_bytes(&payload);
+
+    let proposal = Proposal<P> {
+        id: object::new(ctx),
+        dao_id,
+        type_key,
+        proposer,
+        metadata_ipfs,
+        payload: option::some(payload),
+        vote_snapshot,
+        total_snapshot_weight,
+        votes_cast: vec_map::empty(),
+        yes_weight: 0,
+        no_weight: 0,
+        config,
+        created_at_ms: clock.timestamp_ms(),
+        passed_at_ms: option::none(),
+        status: ProposalStatus::Active,
+    };
+
+    let proposal_id = object::id(&proposal);
+
+    event::emit(ProposalCreated { proposal_id, dao_id, type_key, proposer });
+    event::emit(ProposalPayloadCreated { proposal_id, dao_id, payload_bcs });
+
+    proposal
+}
+
+/// Share a proposal returned by create_returning. Called by board_voting::submit_vote_execute
+/// after executing the proposal, so the Executed object becomes the permanent audit record.
+/// Wraps transfer::share_object, which must be called within this module for key-only types.
+#[allow(lint(share_owned, custom_state_change))]
+public(package) fun share_proposal<P: store>(proposal: Proposal<P>) {
+    transfer::share_object(proposal);
+}
+
 /// Emit the ProposalPayloadCreated event. Used by external_execution::ticket_from_cap,
 /// which must serialise the payload before moving it into the ticket.
 public(package) fun emit_payload_created_event(
