@@ -5,9 +5,7 @@ version = "0.0.1"
 
 [dependencies]
 armature = { local = "../armature_framework", env = "testnet_wip" }
-# env = "testnet_stillness": multicoin ships the same address for testnet_wip and
-# testnet_stillness. Using this bridge until multicoin's git manifest declares testnet_wip.
-multicoin = { git = "https://github.com/Algorithmic-Warfare/multicoin", subdir = "packages/multicoin", rev = "c7a97f2f42ffbddbe2d44686cbc9eebd1810b8d6", env = "testnet_stillness" }
+multicoin = { git = "https://github.com/Algorithmic-Warfare/multicoin", subdir = "packages/multicoin", rev = "330d339336f2b62ae216fb7398dbbf165bdb3c3f" }
 
 [environments]
-testnet_wip = "0x0"
+testnet_wip = "4c78adac"
