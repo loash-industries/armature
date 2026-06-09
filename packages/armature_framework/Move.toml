@@ -4,7 +4,9 @@ edition = "2024"
 version = "0.0.1"
 
 [dependencies]
-multicoin = { git = "https://github.com/Algorithmic-Warfare/multicoin", subdir = "packages/multicoin", rev = "c7a97f2f42ffbddbe2d44686cbc9eebd1810b8d6" }
+# env = "testnet_stillness": multicoin ships the same address for testnet_wip and
+# testnet_stillness. Using this bridge until multicoin's git manifest declares testnet_wip.
+multicoin = { git = "https://github.com/Algorithmic-Warfare/multicoin", subdir = "packages/multicoin", rev = "c7a97f2f42ffbddbe2d44686cbc9eebd1810b8d6", env = "testnet_stillness" }
 
 [environments]
-testnet_wip = "0x6f993d7a6fe02bcc2ae077d2a8f71d62613e84900fc130c47232514cb5374ab4"
+testnet_wip = "0x0"
