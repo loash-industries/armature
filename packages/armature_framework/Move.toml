@@ -7,4 +7,4 @@ version = "0.0.1"
 multicoin = { git = "https://github.com/Algorithmic-Warfare/multicoin", subdir = "packages/multicoin", rev = "330d339336f2b62ae216fb7398dbbf165bdb3c3f" }
 
 [environments]
-testnet_wip = "4c78adac"
+testnet_wip = "0x1c491fc787b7d93ae1147ca45f5d6db492190dd75b58995189cb5673ca991de8"
