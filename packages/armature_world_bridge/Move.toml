@@ -5,10 +5,16 @@ version = "0.0.1"
 
 [dependencies]
 armature = { local = "../armature_framework" }
-# Pinned to v0.0.23 (commit 02b75e3) so CI can resolve without the local
-# .world-contracts checkout. Bump alongside the world-contracts upgrade
-# whenever the Character / admin-gating surface changes.
-world = { git = "https://github.com/evefrontier/world-contracts.git", subdir = "contracts/world", rev = "v0.0.23" }
+# world bumped from v0.0.23 (02b75e3) to 8e2e97b to match the world rev that
+# warehouse-receipts / multicoin receipts are minted against, so the
+# StorageUnit / Character types are identical across the deposit boundary (#153).
+world = { git = "https://github.com/evefrontier/world-contracts.git", subdir = "contracts/world", rev = "8e2e97b50fd6bbf605284bcdaae54a33a5475e89" }
+# multicoin pinned to c7a97f2 (same as warehouse-receipts / armature-trading /
+# triexbook) so `multicoin::Balance` receipts are the same on-chain type.
+# override = true: armature (framework) transitively pins 330d339; we
+# intentionally unify on c7a97f2 for the receipt-vault arc. See RFC #153.
+multicoin = { git = "https://github.com/Algorithmic-Warfare/multicoin.git", subdir = "packages/multicoin", rev = "c7a97f2f42ffbddbe2d44686cbc9eebd1810b8d6", override = true }
 
 [environments]
 testnet_internal = "4c78adac"
+testnet_stillness = "4c78adac"
