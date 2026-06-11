@@ -64,6 +64,15 @@ public fun is_board_member(self: &GovernanceConfig, addr: address): bool {
     }
 }
 
+/// Returns the current board members as a plain vector.
+/// Returns an empty vector for non-Board governance (Direct / Weighted).
+public(package) fun board_member_vec(self: &GovernanceConfig): vector<address> {
+    match (self) {
+        GovernanceConfig::Board { members } => *members.keys(),
+        _ => vector[],
+    }
+}
+
 /// Assert that addr is a current board member.
 public(package) fun assert_board_member(self: &GovernanceConfig, addr: address) {
     assert!(self.is_board_member(addr), ENotBoardMember);

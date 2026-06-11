@@ -165,6 +165,13 @@ public struct DAOCreated has copy, drop {
     creator: address,
 }
 
+/// Emitted immediately after DAOCreated to record the initial board members.
+/// Kept as a separate event so DAOCreated's layout remains stable across upgrades.
+public struct DAOBoardInitialized has copy, drop {
+    dao_id: ID,
+    initial_members: vector<address>,
+}
+
 /// Emitted when the encryption epoch is incremented, either automatically on
 /// member removal via SetBoard or explicitly via rotate_encryption_epoch.
 public struct EncryptionEpochRotated has copy, drop {
@@ -198,6 +205,7 @@ public fun create(
 
     // Build governance config from init payload (Board only for now)
     let governance = governance::new_board(gov_init);
+    let initial_members = governance.board_member_vec();
 
     // Create a placeholder DAO ID so companion objects can reference it
     let dao_uid = object::new(ctx);
@@ -250,6 +258,7 @@ public fun create(
         emergency_freeze_id,
         creator,
     });
+    event::emit(DAOBoardInitialized { dao_id, initial_members });
 
     // Share all objects
     transfer::share_object(dao);
@@ -282,6 +291,7 @@ public(package) fun create_returning_vault(
     let creator = ctx.sender();
 
     let governance = governance::new_board(gov_init);
+    let initial_members = governance.board_member_vec();
 
     let dao_uid = object::new(ctx);
     let dao_id = dao_uid.to_inner();
@@ -329,6 +339,7 @@ public(package) fun create_returning_vault(
         emergency_freeze_id,
         creator,
     });
+    event::emit(DAOBoardInitialized { dao_id, initial_members });
 
     transfer::share_object(dao);
     treasury_vault::share(treasury_vault);
@@ -657,6 +668,7 @@ public(package) fun create_subdao_returning_vault(
     assert!(description.length() > 0, EInvalidDescription);
 
     let governance = governance::new_board(gov_init);
+    let initial_members = governance.board_member_vec();
 
     let dao_uid = object::new(ctx);
     let dao_id = dao_uid.to_inner();
@@ -704,6 +716,7 @@ public(package) fun create_subdao_returning_vault(
         emergency_freeze_id,
         creator: ctx.sender(),
     });
+    event::emit(DAOBoardInitialized { dao_id, initial_members });
 
     treasury_vault::share(treasury_vault);
     charter::share(dao_charter);
@@ -729,6 +742,7 @@ public fun create_subdao(
     assert!(description.length() > 0, EInvalidDescription);
 
     let governance = governance::new_board(gov_init);
+    let initial_members = governance.board_member_vec();
 
     let dao_uid = object::new(ctx);
     let dao_id = dao_uid.to_inner();
@@ -776,6 +790,7 @@ public fun create_subdao(
         emergency_freeze_id,
         creator: ctx.sender(),
     });
+    event::emit(DAOBoardInitialized { dao_id, initial_members });
 
     treasury_vault::share(treasury_vault);
     capability_vault::share(cap_vault);
