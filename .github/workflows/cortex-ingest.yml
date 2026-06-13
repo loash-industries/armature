@@ -5,6 +5,8 @@ on:
     branches: ["main"]
     paths:
       - .cortex/**
+      - .github/workflows/cortex-ingest.yml
+      - docs/**
 
 jobs:
   cortex-ingest:
