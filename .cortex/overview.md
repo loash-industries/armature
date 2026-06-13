@@ -7,10 +7,10 @@ Built for the EVE Frontier ecosystem, but general-purpose by design. Organizatio
 ## Architecture
 
 ```
-Move contracts (Sui)  →  armature-indexer (Rust)  →  PostgreSQL  →  React UI
+Move contracts (Sui)  →  armature-indexer (separate repo)  →  PostgreSQL  →  UI (separate repo)
 ```
 
-The `armature` repo owns the on-chain Move contracts and the React dashboard UI. Indexing and data persistence live in the separate `armature-indexer` service.
+This repo contains only the on-chain Move smart contracts. Indexing lives in `armature-indexer`; the dashboard UI lives in `ui`.
 
 ## Move Packages
 
@@ -30,22 +30,6 @@ The `armature` repo owns the on-chain Move contracts and the React dashboard UI.
 - **`board_voting`** — Board member weighted voting
 - **`controller`** — Privileged execution path (bypasses voting)
 - **`emergency`** — Protocol freeze and recovery
-
-## UI
-
-React 19 + Vite + TanStack + shadcn/ui dashboard at `ui/`. Provides a DAO management interface for proposal creation, voting, treasury, and membership.
-
-## Dev Stack
-
-Full local stack via `docker-compose.dev.yml`:
-- `sui-localnet` — local Sui node
-- Move packages deployed on startup
-- PostgreSQL (for indexer)
-- React UI at `http://localhost:5173`
-
-```bash
-make dev   # start full stack
-```
 
 ## Notable Design Patterns
 
