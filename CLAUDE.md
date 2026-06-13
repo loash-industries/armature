@@ -15,8 +15,8 @@ This repo is managed by Cortex. For full service context, conventions, and org-w
 ### Key Commands
 
 - To get this repo's full context: use `search_context` with `service_id: "armature"`
-- To get general org conventions: use `getConventions` with `scope: "general"`
-- To get TypeScript/React conventions: use `getConventions` with `language: "typescript"`
+- To get general org conventions: use `get_conventions` with `scope: "general"`
+- To get TypeScript/React conventions: use `get_conventions` with `language: "typescript"`
 
 ## Before Committing
 
@@ -70,10 +70,10 @@ All AI coding agents in this org have access to a shared knowledge base via the 
 | Situation | Tool to call |
 |---|---|
 | Understanding how any service in the org works | `search_context` |
-| Before writing code in any framework we use | `getConventions` |
+| Before writing code in any framework we use | `get_conventions` |
 | Before committing any change | `chronicle_changes` |
 | Finding which service owns a domain, endpoint, or topic | `search_context` |
-| Checking org-wide security, logging, or git standards | `getConventions` with `scope: "general"` |
+| Checking org-wide security, logging, or git standards | `get_conventions` with `scope: "general"` |
 
 ## Tool reference
 
@@ -82,11 +82,11 @@ All AI coding agents in this org have access to a shared knowledge base via the 
 search_context({ query: "how does auth work", service_id?: "signer-api" })
 ```
 
-**`getConventions`** — fetch coding conventions by framework, language, or scope
+**`get_conventions`** — fetch coding conventions by framework, language, or scope
 ```
-getConventions({ framework: "nestjs" })
-getConventions({ language: "typescript" })
-getConventions({ scope: "general" })
+get_conventions({ framework: "nestjs" })
+get_conventions({ language: "typescript" })
+get_conventions({ scope: "general" })
 ```
 
 **`chronicle_changes`** — generate a changelog entry before committing. Always call this.
@@ -101,7 +101,7 @@ chronicle_changes({
 ## What NOT to do
 
 - Do not read source files to answer architectural questions about other services — use `search_context` instead
-- Do not write new code without first calling `getConventions` for that language/framework
+- Do not write new code without first calling `get_conventions` for that language/framework
 - Do not commit without calling `chronicle_changes` and including the updated `.cortex/` files
 
 ## Service-specific context

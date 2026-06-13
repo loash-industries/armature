@@ -20,12 +20,12 @@ Use this to understand any service, domain, or system in the org.
 - "What events does signer-api publish?" → `search_context({ query: "signer-api events" })`
 - "Which service owns the ledger?" → `search_context({ query: "ledger ownership" })`
 
-### `getConventions`
+### `get_conventions`
 
 Use this before writing any new code. Always fetch conventions for the framework/language in use.
-- NestJS service → `getConventions({ framework: "nestjs" })`
-- TypeScript file → `getConventions({ language: "typescript" })`
-- General org rules → `getConventions({ scope: "general" })`
+- NestJS service → `get_conventions({ framework: "nestjs" })`
+- TypeScript file → `get_conventions({ language: "typescript" })`
+- General org rules → `get_conventions({ scope: "general" })`
 
 ### `chronicle_changes`
 
