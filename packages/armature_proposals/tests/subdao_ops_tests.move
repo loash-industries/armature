@@ -2,11 +2,13 @@
 module armature_proposals::subdao_ops_tests;
 
 use armature::board_voting;
-use armature::capability_vault::{CapabilityVault, SubDAOControl};
+use armature::capability_vault::{Self, CapabilityVault, SubDAOControl};
 use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
 use armature::proposal::{Self, Proposal};
+use armature_proposals::controller_batch_add_members::{Self, ControllerBatchAddMembers};
+use armature_proposals::controller_batch_remove_members::{Self, ControllerBatchRemoveMembers};
 use armature_proposals::create_subdao::{Self, CreateSubDAO};
 use armature_proposals::pause_execution;
 use armature_proposals::reclaim_cap_from_subdao::{Self, ReclaimCapFromSubDAO};
@@ -19,6 +21,7 @@ use sui::test_scenario;
 const CREATOR: address = @0xA;
 const MEMBER_B: address = @0xB;
 const SUBDAO_MEMBER: address = @0xC;
+const NEW_SUBDAO_MEMBER: address = @0xD;
 
 #[test]
 /// E2E: Create DAO → enable CreateSubDAO type → submit CreateSubDAO proposal
@@ -1007,7 +1010,7 @@ fun create_multi_member_subdao() {
                 &init,
                 string::utf8(b"Parent DAO"),
                 string::utf8(b"Multi-member SubDAO test"),
-                string::utf8(b""),
+                string::utf8(b"x"),
                 scenario.ctx(),
             );
     };
@@ -1033,7 +1036,7 @@ fun create_multi_member_subdao() {
                 string::utf8(b"Engineering"),
                 string::utf8(b"Multi-member"),
                 vector[SUBDAO_MEMBER, CREATOR, MEMBER_B],
-                string::utf8(b""),
+                string::utf8(b"x"),
             ),
             &clock,
             scenario.ctx(),
@@ -1086,6 +1089,781 @@ fun create_multi_member_subdao() {
         assert!(subdao.governance().is_board_member(MEMBER_B));
         test_scenario::return_shared(subdao);
         test_scenario::return_shared(parent);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// =========================================================================
+// ControllerBatchAddMembers tests
+// =========================================================================
+
+#[test]
+/// E2E: Controller proposes adding two members to a SubDAO → vote → execute →
+/// verify both appear on the SubDAO board.
+fun controller_batch_add_members_e2e() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    let (parent_dao_id, control_cap_id) = setup_parent_and_subdao(&mut scenario, &mut clock);
+
+    let subdao_id;
+    scenario.next_tx(CREATOR);
+    {
+        let parent = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let subdao = scenario.take_shared<DAO>();
+        subdao_id = subdao.id();
+        test_scenario::return_shared(subdao);
+        test_scenario::return_shared(parent);
+    };
+
+    // Enable ControllerBatchAddMembers on parent
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+        dao.test_enable_type(b"ControllerBatchAddMembers".to_ascii_string(), config);
+        test_scenario::return_shared(dao);
+    };
+
+    // Submit ControllerBatchAddMembers proposal on parent
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        clock.set_for_testing(10_000);
+        board_voting::submit_proposal(
+            &dao,
+            b"ControllerBatchAddMembers".to_ascii_string(),
+            option::some(string::utf8(b"Add two members to SubDAO")),
+            controller_batch_add_members::new(control_cap_id, vector[CREATOR, NEW_SUBDAO_MEMBER]),
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    // Vote yes (CREATOR — 1/2 = 50%, passes)
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<ControllerBatchAddMembers>>();
+        clock.set_for_testing(11_000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    // Execute
+    scenario.next_tx(CREATOR);
+    {
+        let mut parent_dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let mut vault = scenario.take_shared_by_id<
+            CapabilityVault,
+        >(parent_dao.capability_vault_id());
+        let mut subdao = scenario.take_shared_by_id<DAO>(subdao_id);
+        let mut proposal = scenario.take_shared<Proposal<ControllerBatchAddMembers>>();
+        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(parent_dao.emergency_freeze_id());
+        clock.set_for_testing(12_000);
+
+        let ticket = board_voting::ticket_from_vote(
+            &mut parent_dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+
+        subdao_ops::execute_controller_batch_add_members(
+            &mut vault,
+            &mut subdao,
+            ticket,
+            &clock,
+            scenario.ctx(),
+        );
+
+        let gov = subdao.governance();
+        assert!(gov.is_board_member(SUBDAO_MEMBER));
+        assert!(gov.is_board_member(CREATOR));
+        assert!(gov.is_board_member(NEW_SUBDAO_MEMBER));
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(subdao);
+        test_scenario::return_shared(vault);
+        test_scenario::return_shared(parent_dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+/// Adding an address already on the SubDAO board is silently skipped.
+fun controller_batch_add_members_existing_skipped() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    let (parent_dao_id, control_cap_id) = setup_parent_and_subdao(&mut scenario, &mut clock);
+
+    let subdao_id;
+    scenario.next_tx(CREATOR);
+    {
+        let parent = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let subdao = scenario.take_shared<DAO>();
+        subdao_id = subdao.id();
+        test_scenario::return_shared(subdao);
+        test_scenario::return_shared(parent);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+        dao.test_enable_type(b"ControllerBatchAddMembers".to_ascii_string(), config);
+        test_scenario::return_shared(dao);
+    };
+
+    // Batch includes SUBDAO_MEMBER (already on board) + NEW_SUBDAO_MEMBER (new)
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        clock.set_for_testing(10_000);
+        board_voting::submit_proposal(
+            &dao,
+            b"ControllerBatchAddMembers".to_ascii_string(),
+            option::some(string::utf8(b"Add with one existing")),
+            controller_batch_add_members::new(
+                control_cap_id,
+                vector[SUBDAO_MEMBER, NEW_SUBDAO_MEMBER],
+            ),
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<ControllerBatchAddMembers>>();
+        clock.set_for_testing(11_000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut parent_dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let mut vault = scenario.take_shared_by_id<
+            CapabilityVault,
+        >(parent_dao.capability_vault_id());
+        let mut subdao = scenario.take_shared_by_id<DAO>(subdao_id);
+        let mut proposal = scenario.take_shared<Proposal<ControllerBatchAddMembers>>();
+        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(parent_dao.emergency_freeze_id());
+        clock.set_for_testing(12_000);
+
+        let ticket = board_voting::ticket_from_vote(
+            &mut parent_dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+
+        subdao_ops::execute_controller_batch_add_members(
+            &mut vault,
+            &mut subdao,
+            ticket,
+            &clock,
+            scenario.ctx(),
+        );
+
+        // NEW_SUBDAO_MEMBER added; SUBDAO_MEMBER still present (was skipped, not removed)
+        let gov = subdao.governance();
+        assert!(gov.is_board_member(SUBDAO_MEMBER));
+        assert!(gov.is_board_member(NEW_SUBDAO_MEMBER));
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(subdao);
+        test_scenario::return_shared(vault);
+        test_scenario::return_shared(parent_dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// =========================================================================
+// ControllerBatchRemoveMembers tests
+// =========================================================================
+
+#[test]
+/// E2E: Use ControllerBatchAddMembers to seat two members, then
+/// ControllerBatchRemoveMembers to remove them — verifies both handlers
+/// chain correctly and the SubDAO board reaches the expected final state.
+fun controller_batch_remove_members_e2e() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    let (parent_dao_id, control_cap_id) = setup_parent_and_subdao(&mut scenario, &mut clock);
+
+    let subdao_id;
+    scenario.next_tx(CREATOR);
+    {
+        let parent = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let subdao = scenario.take_shared<DAO>();
+        subdao_id = subdao.id();
+        test_scenario::return_shared(subdao);
+        test_scenario::return_shared(parent);
+    };
+
+    // Enable both controller types on parent
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+        dao.test_enable_type(b"ControllerBatchAddMembers".to_ascii_string(), config);
+        dao.test_enable_type(b"ControllerBatchRemoveMembers".to_ascii_string(), config);
+        test_scenario::return_shared(dao);
+    };
+
+    // ── Add CREATOR + NEW_SUBDAO_MEMBER to SubDAO via controller ──
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        clock.set_for_testing(10_000);
+        board_voting::submit_proposal(
+            &dao,
+            b"ControllerBatchAddMembers".to_ascii_string(),
+            option::none(),
+            controller_batch_add_members::new(
+                control_cap_id,
+                vector[CREATOR, NEW_SUBDAO_MEMBER],
+            ),
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<ControllerBatchAddMembers>>();
+        clock.set_for_testing(11_000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut parent_dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let mut vault = scenario.take_shared_by_id<
+            CapabilityVault,
+        >(parent_dao.capability_vault_id());
+        let mut subdao = scenario.take_shared_by_id<DAO>(subdao_id);
+        let mut proposal = scenario.take_shared<Proposal<ControllerBatchAddMembers>>();
+        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(parent_dao.emergency_freeze_id());
+        clock.set_for_testing(12_000);
+
+        let ticket = board_voting::ticket_from_vote(
+            &mut parent_dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+
+        subdao_ops::execute_controller_batch_add_members(
+            &mut vault,
+            &mut subdao,
+            ticket,
+            &clock,
+            scenario.ctx(),
+        );
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(subdao);
+        test_scenario::return_shared(vault);
+        test_scenario::return_shared(parent_dao);
+    };
+
+    // ── Now remove CREATOR + NEW_SUBDAO_MEMBER via controller ──
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        clock.set_for_testing(20_000);
+        board_voting::submit_proposal(
+            &dao,
+            b"ControllerBatchRemoveMembers".to_ascii_string(),
+            option::none(),
+            controller_batch_remove_members::new(
+                control_cap_id,
+                vector[CREATOR, NEW_SUBDAO_MEMBER],
+            ),
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<ControllerBatchRemoveMembers>>();
+        clock.set_for_testing(21_000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut parent_dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let mut vault = scenario.take_shared_by_id<
+            CapabilityVault,
+        >(parent_dao.capability_vault_id());
+        let mut subdao = scenario.take_shared_by_id<DAO>(subdao_id);
+        let mut proposal = scenario.take_shared<Proposal<ControllerBatchRemoveMembers>>();
+        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(parent_dao.emergency_freeze_id());
+        clock.set_for_testing(22_000);
+
+        let ticket = board_voting::ticket_from_vote(
+            &mut parent_dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+
+        subdao_ops::execute_controller_batch_remove_members(
+            &mut vault,
+            &mut subdao,
+            ticket,
+            &clock,
+            scenario.ctx(),
+        );
+
+        // Only SUBDAO_MEMBER should remain
+        let gov = subdao.governance();
+        assert!(gov.is_board_member(SUBDAO_MEMBER));
+        assert!(!gov.is_board_member(CREATOR));
+        assert!(!gov.is_board_member(NEW_SUBDAO_MEMBER));
+        // encrypt_epoch incremented once by the remove batch
+        assert!(subdao.encrypt_epoch() == 1);
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(subdao);
+        test_scenario::return_shared(vault);
+        test_scenario::return_shared(parent_dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::governance::ENotBoardMember)]
+/// Removing a non-member from a SubDAO via controller aborts.
+fun controller_batch_remove_members_nonmember_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    let (parent_dao_id, control_cap_id) = setup_parent_and_subdao(&mut scenario, &mut clock);
+
+    let subdao_id;
+    scenario.next_tx(CREATOR);
+    {
+        let parent = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let subdao = scenario.take_shared<DAO>();
+        subdao_id = subdao.id();
+        test_scenario::return_shared(subdao);
+        test_scenario::return_shared(parent);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+        dao.test_enable_type(b"ControllerBatchRemoveMembers".to_ascii_string(), config);
+        test_scenario::return_shared(dao);
+    };
+
+    // CREATOR is not on the SubDAO board (SubDAO has only SUBDAO_MEMBER)
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        clock.set_for_testing(10_000);
+        board_voting::submit_proposal(
+            &dao,
+            b"ControllerBatchRemoveMembers".to_ascii_string(),
+            option::none(),
+            controller_batch_remove_members::new(control_cap_id, vector[CREATOR]),
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<ControllerBatchRemoveMembers>>();
+        clock.set_for_testing(11_000);
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut parent_dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let mut vault = scenario.take_shared_by_id<
+            CapabilityVault,
+        >(parent_dao.capability_vault_id());
+        let mut subdao = scenario.take_shared_by_id<DAO>(subdao_id);
+        let mut proposal = scenario.take_shared<Proposal<ControllerBatchRemoveMembers>>();
+        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(parent_dao.emergency_freeze_id());
+        clock.set_for_testing(12_000);
+
+        let ticket = board_voting::ticket_from_vote(
+            &mut parent_dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+
+        subdao_ops::execute_controller_batch_remove_members(
+            &mut vault,
+            &mut subdao,
+            ticket,
+            &clock,
+            scenario.ctx(),
+        );
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(subdao);
+        test_scenario::return_shared(vault);
+        test_scenario::return_shared(parent_dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// ── Batch-guard parity tests for controller handlers ──────────────────────
+// These tests use proposal::new_standalone_ticket_for_testing to synthesize
+// an ExecutionTicket directly, bypassing the full governance flow. This keeps
+// the tests fast and avoids hitting the per-test gas limit.
+
+#[test, expected_failure(abort_code = armature_proposals::subdao_ops::EEmptyBatch)]
+/// Empty ControllerBatchAddMembers aborts before any sub-DAO mutation.
+fun controller_batch_add_members_empty_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let clock = clock::create_for_testing(scenario.ctx());
+
+    // Create two DAOs: parent (holds the vault) and members_dao (the target).
+    let parent_dao_id;
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR]);
+        parent_dao_id =
+            dao::create(
+                &init,
+                string::utf8(b"P"),
+                string::utf8(b"x"),
+                string::utf8(b"x"),
+                scenario.ctx(),
+            );
+    };
+
+    let members_dao_id;
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR]);
+        members_dao_id =
+            dao::create(
+                &init,
+                string::utf8(b"M"),
+                string::utf8(b"x"),
+                string::utf8(b"x"),
+                scenario.ctx(),
+            );
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let parent_dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let mut vault = scenario.take_shared_by_id<
+            CapabilityVault,
+        >(parent_dao.capability_vault_id());
+        let mut members_dao = scenario.take_shared_by_id<DAO>(members_dao_id);
+
+        // Synthesize a SubDAOControl and store it in the vault without governance.
+        let control = capability_vault::new_subdao_control_for_testing(
+            members_dao_id,
+            scenario.ctx(),
+        );
+        let control_id = object::id(&control);
+        vault.store_cap_for_testing(control);
+
+        // Synthesize a ticket with an empty members list — should abort EEmptyBatch.
+        let ticket = proposal::new_standalone_ticket_for_testing<ControllerBatchAddMembers>(
+            parent_dao_id,
+            object::id_from_address(@0x1),
+            controller_batch_add_members::new(control_id, vector[]),
+            0,
+            0,
+        );
+
+        subdao_ops::execute_controller_batch_add_members(
+            &mut vault,
+            &mut members_dao,
+            ticket,
+            &clock,
+            scenario.ctx(),
+        );
+
+        test_scenario::return_shared(parent_dao);
+        test_scenario::return_shared(vault);
+        test_scenario::return_shared(members_dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature_proposals::subdao_ops::EEmptyBatch)]
+/// Empty ControllerBatchRemoveMembers aborts before any sub-DAO mutation.
+fun controller_batch_remove_members_empty_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let clock = clock::create_for_testing(scenario.ctx());
+
+    let parent_dao_id;
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR]);
+        parent_dao_id =
+            dao::create(
+                &init,
+                string::utf8(b"P"),
+                string::utf8(b"x"),
+                string::utf8(b"x"),
+                scenario.ctx(),
+            );
+    };
+
+    let members_dao_id;
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR]);
+        members_dao_id =
+            dao::create(
+                &init,
+                string::utf8(b"M"),
+                string::utf8(b"x"),
+                string::utf8(b"x"),
+                scenario.ctx(),
+            );
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let parent_dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let mut vault = scenario.take_shared_by_id<
+            CapabilityVault,
+        >(parent_dao.capability_vault_id());
+        let mut members_dao = scenario.take_shared_by_id<DAO>(members_dao_id);
+
+        let control = capability_vault::new_subdao_control_for_testing(
+            members_dao_id,
+            scenario.ctx(),
+        );
+        let control_id = object::id(&control);
+        vault.store_cap_for_testing(control);
+
+        let ticket = proposal::new_standalone_ticket_for_testing<ControllerBatchRemoveMembers>(
+            parent_dao_id,
+            object::id_from_address(@0x1),
+            controller_batch_remove_members::new(control_id, vector[]),
+            0,
+            0,
+        );
+
+        subdao_ops::execute_controller_batch_remove_members(
+            &mut vault,
+            &mut members_dao,
+            ticket,
+            &clock,
+            scenario.ctx(),
+        );
+
+        test_scenario::return_shared(parent_dao);
+        test_scenario::return_shared(vault);
+        test_scenario::return_shared(members_dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature_proposals::subdao_ops::EBatchTooLarge)]
+/// ControllerBatchAddMembers with 101 entries aborts before any sub-DAO mutation.
+fun controller_batch_add_members_oversize_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let clock = clock::create_for_testing(scenario.ctx());
+
+    let parent_dao_id;
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR]);
+        parent_dao_id =
+            dao::create(
+                &init,
+                string::utf8(b"P"),
+                string::utf8(b"x"),
+                string::utf8(b"x"),
+                scenario.ctx(),
+            );
+    };
+
+    let members_dao_id;
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR]);
+        members_dao_id =
+            dao::create(
+                &init,
+                string::utf8(b"M"),
+                string::utf8(b"x"),
+                string::utf8(b"x"),
+                scenario.ctx(),
+            );
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let parent_dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let mut vault = scenario.take_shared_by_id<
+            CapabilityVault,
+        >(parent_dao.capability_vault_id());
+        let mut members_dao = scenario.take_shared_by_id<DAO>(members_dao_id);
+
+        let control = capability_vault::new_subdao_control_for_testing(
+            members_dao_id,
+            scenario.ctx(),
+        );
+        let control_id = object::id(&control);
+        vault.store_cap_for_testing(control);
+
+        // Build 101 addresses — content doesn't matter since EBatchTooLarge fires
+        // before any address processing.
+        let mut addrs = vector::empty<address>();
+        let mut i = 0u64;
+        while (i < 101) {
+            addrs.push_back(@0xDEAD);
+            i = i + 1;
+        };
+
+        let ticket = proposal::new_standalone_ticket_for_testing<ControllerBatchAddMembers>(
+            parent_dao_id,
+            object::id_from_address(@0x1),
+            controller_batch_add_members::new(control_id, addrs),
+            0,
+            0,
+        );
+
+        subdao_ops::execute_controller_batch_add_members(
+            &mut vault,
+            &mut members_dao,
+            ticket,
+            &clock,
+            scenario.ctx(),
+        );
+
+        test_scenario::return_shared(parent_dao);
+        test_scenario::return_shared(vault);
+        test_scenario::return_shared(members_dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature_proposals::subdao_ops::EBatchTooLarge)]
+/// ControllerBatchRemoveMembers with 101 entries aborts before any sub-DAO mutation.
+fun controller_batch_remove_members_oversize_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let clock = clock::create_for_testing(scenario.ctx());
+
+    let parent_dao_id;
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR]);
+        parent_dao_id =
+            dao::create(
+                &init,
+                string::utf8(b"P"),
+                string::utf8(b"x"),
+                string::utf8(b"x"),
+                scenario.ctx(),
+            );
+    };
+
+    let members_dao_id;
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR]);
+        members_dao_id =
+            dao::create(
+                &init,
+                string::utf8(b"M"),
+                string::utf8(b"x"),
+                string::utf8(b"x"),
+                scenario.ctx(),
+            );
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let parent_dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let mut vault = scenario.take_shared_by_id<
+            CapabilityVault,
+        >(parent_dao.capability_vault_id());
+        let mut members_dao = scenario.take_shared_by_id<DAO>(members_dao_id);
+
+        let control = capability_vault::new_subdao_control_for_testing(
+            members_dao_id,
+            scenario.ctx(),
+        );
+        let control_id = object::id(&control);
+        vault.store_cap_for_testing(control);
+
+        // Build 101 addresses — content doesn't matter since EBatchTooLarge fires
+        // before any address processing.
+        let mut addrs = vector::empty<address>();
+        let mut i = 0u64;
+        while (i < 101) {
+            addrs.push_back(@0xDEAD);
+            i = i + 1;
+        };
+
+        let ticket = proposal::new_standalone_ticket_for_testing<ControllerBatchRemoveMembers>(
+            parent_dao_id,
+            object::id_from_address(@0x1),
+            controller_batch_remove_members::new(control_id, addrs),
+            0,
+            0,
+        );
+
+        subdao_ops::execute_controller_batch_remove_members(
+            &mut vault,
+            &mut members_dao,
+            ticket,
+            &clock,
+            scenario.ctx(),
+        );
+
+        test_scenario::return_shared(parent_dao);
+        test_scenario::return_shared(vault);
+        test_scenario::return_shared(members_dao);
     };
 
     clock.destroy_for_testing();

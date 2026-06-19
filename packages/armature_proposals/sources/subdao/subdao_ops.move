@@ -7,6 +7,10 @@ use armature::emergency;
 use armature::governance;
 use armature::proposal::ExecutionTicket;
 use armature::treasury_vault::TreasuryVault;
+use armature_proposals::batch_add_members::{Self, BatchAddMembers};
+use armature_proposals::batch_remove_members::{Self, BatchRemoveMembers};
+use armature_proposals::controller_batch_add_members::ControllerBatchAddMembers;
+use armature_proposals::controller_batch_remove_members::ControllerBatchRemoveMembers;
 use armature_proposals::create_subdao::CreateSubDAO;
 use armature_proposals::pause_execution::{Self, PauseSubDAOExecution, UnpauseSubDAOExecution};
 use armature_proposals::reclaim_cap_from_subdao::ReclaimCapFromSubDAO;
@@ -22,14 +26,18 @@ use sui::event;
 const EVaultDAOMismatch: u64 = 0;
 const ESubDAOVaultMismatch: u64 = 1;
 const EDAOMismatch: u64 = 2;
+const EEmptyBatch: u64 = 3;
 const EAssetLimitExceeded: u64 = 4;
 const ETargetTreasuryMismatch: u64 = 5;
 const ETargetVaultMismatch: u64 = 6;
 const ETargetDAOMismatch: u64 = 7;
+const EBatchTooLarge: u64 = 8;
 
 // === Constants ===
 
 const MAX_TRANSFER_ASSETS: u64 = 50;
+/// Must match MAX_BATCH_SIZE — Move constants are module-private.
+const MAX_BATCH_SIZE: u64 = 100;
 
 // === Events ===
 
@@ -67,6 +75,19 @@ public struct SuccessorDAOSpawned has copy, drop {
 public struct SubDAOSpunOut has copy, drop {
     controller_dao_id: ID,
     subdao_id: ID,
+}
+
+public struct ControllerMembersBatchAdded has copy, drop {
+    controller_dao_id: ID,
+    subdao_id: ID,
+    added: vector<address>,
+    skipped: vector<address>,
+}
+
+public struct ControllerMembersBatchRemoved has copy, drop {
+    controller_dao_id: ID,
+    subdao_id: ID,
+    removed: vector<address>,
 }
 
 public struct AssetsTransferInitiated has copy, drop {
@@ -343,6 +364,100 @@ public fun execute_spin_out_subdao(
     event::emit(SubDAOSpunOut {
         controller_dao_id: vault.dao_id(),
         subdao_id: payload.subdao_id(),
+    });
+
+    ticket.discharge();
+}
+
+/// Execute a ControllerBatchAddMembers proposal.
+public fun execute_controller_batch_add_members(
+    controller_vault: &mut CapabilityVault,
+    members_dao: &mut DAO,
+    ticket: ExecutionTicket<ControllerBatchAddMembers>,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
+    assert!(controller_vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
+
+    let payload = ticket.ticket_payload();
+    let req = ticket.ticket_request();
+
+    let len = payload.members().length();
+    assert!(len > 0, EEmptyBatch);
+    assert!(len <= MAX_BATCH_SIZE, EBatchTooLarge);
+
+    let (control, loan) = controller_vault.loan_cap<SubDAOControl, ControllerBatchAddMembers>(
+        payload.control_id(),
+        req,
+    );
+
+    let members_req = controller::privileged_submit<BatchAddMembers>(
+        &control,
+        members_dao,
+        b"BatchAddMembers".to_ascii_string(),
+        option::none(),
+        batch_add_members::new(*payload.members()),
+        clock,
+        ctx,
+    );
+
+    let (added, skipped) = members_dao.add_board_members_governance(
+        *payload.members(),
+        &members_req,
+    );
+    controller::privileged_consume(members_req, &control);
+    controller_vault.return_cap(control, loan);
+
+    event::emit(ControllerMembersBatchAdded {
+        controller_dao_id: controller_vault.dao_id(),
+        subdao_id: members_dao.id(),
+        added,
+        skipped,
+    });
+
+    ticket.discharge();
+}
+
+/// Execute a ControllerBatchRemoveMembers proposal.
+public fun execute_controller_batch_remove_members(
+    controller_vault: &mut CapabilityVault,
+    members_dao: &mut DAO,
+    ticket: ExecutionTicket<ControllerBatchRemoveMembers>,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
+    assert!(controller_vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
+
+    let payload = ticket.ticket_payload();
+    let req = ticket.ticket_request();
+
+    let len = payload.members().length();
+    assert!(len > 0, EEmptyBatch);
+    assert!(len <= MAX_BATCH_SIZE, EBatchTooLarge);
+
+    let (control, loan) = controller_vault.loan_cap<SubDAOControl, ControllerBatchRemoveMembers>(
+        payload.control_id(),
+        req,
+    );
+
+    let members_req = controller::privileged_submit<BatchRemoveMembers>(
+        &control,
+        members_dao,
+        b"BatchRemoveMembers".to_ascii_string(),
+        option::none(),
+        batch_remove_members::new(*payload.members()),
+        clock,
+        ctx,
+    );
+
+    let removed = members_dao.remove_board_members_governance(*payload.members(), &members_req);
+    controller::privileged_consume(members_req, &control);
+    controller_vault.return_cap(control, loan);
+
+    event::emit(ControllerMembersBatchRemoved {
+        controller_dao_id: controller_vault.dao_id(),
+        subdao_id: members_dao.id(),
+        removed,
     });
 
     ticket.discharge();

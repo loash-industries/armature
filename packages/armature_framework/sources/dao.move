@@ -40,6 +40,7 @@ const DEFAULT_PROPOSAL_TYPES: vector<vector<u8>> = vector[
     b"AddMember",
     b"RemoveMember",
     b"BatchAddMembers",
+    b"BatchRemoveMembers",
     b"CharterUpdate",
     b"EnableProposalType",
     b"EnableBypassType",
@@ -608,6 +609,20 @@ public fun remove_board_member_governance<P>(
     assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
     self.governance.remove_board_member(member);
     self.increment_encrypt_epoch();
+}
+
+/// Remove multiple members from the DAO's board atomically.
+/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+/// Auto-increments encrypt_epoch once for the batch.
+public fun remove_board_members_governance<P>(
+    self: &mut DAO,
+    members: vector<address>,
+    req: &ExecutionRequest<P>,
+): vector<address> {
+    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    let removed = self.governance.remove_board_members(members);
+    self.increment_encrypt_epoch();
+    removed
 }
 
 /// Remove a proposal type from the enabled set and its config.
@@ -1222,7 +1237,10 @@ fun min_approval_threshold_for_type(type_key: &std::ascii::String): u16 {
 /// Return the per-type default ProposalConfig for a given type key.
 /// Types with hardcoded execution floors in admin_ops use a threshold that
 /// matches the floor so the config threshold is never misleadingly low.
-/// composable_allowed is true only for types that have a _step handler variant.
+/// composable_allowed is true for single-operation types that make sense as steps
+/// inside a CompositeFrame. Batch types (BatchAddMembers, BatchRemoveMembers) are
+/// excluded: they have no _step handler variant and BatchAddMembers carries an
+/// explicit regression test guarding its deny-by-default status.
 fun config_for_type(type_key: &std::ascii::String): ProposalConfig {
     let min = min_approval_threshold_for_type(type_key);
     let approval_threshold = if (min > 0) { min } else { DEFAULT_APPROVAL_THRESHOLD };

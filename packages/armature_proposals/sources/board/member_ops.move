@@ -4,6 +4,7 @@ use armature::dao::DAO;
 use armature::proposal::{ExecutionRequest, ExecutionTicket};
 use armature_proposals::add_member::AddMember;
 use armature_proposals::batch_add_members::BatchAddMembers;
+use armature_proposals::batch_remove_members::BatchRemoveMembers;
 use armature_proposals::remove_member::RemoveMember;
 use sui::event;
 
@@ -43,6 +44,12 @@ public struct MembersBatchAdded has copy, drop {
     skipped: vector<address>,
 }
 
+/// Emitted when a batch of members is removed from the board via governance.
+public struct MembersBatchRemoved has copy, drop {
+    dao_id: ID,
+    removed: vector<address>,
+}
+
 // === Handlers ===
 
 public fun execute_add_member(dao: &mut DAO, ticket: ExecutionTicket<AddMember>) {
@@ -80,6 +87,29 @@ public fun execute_batch_add_members(dao: &mut DAO, ticket: ExecutionTicket<Batc
         skipped,
     });
 
+    ticket.discharge();
+}
+
+/// Execute a BatchRemoveMembers proposal: remove many addresses from the DAO's board.
+///
+/// Aborts on:
+///   - empty batch (`EEmptyBatch`)
+///   - batch larger than `MAX_BATCH_SIZE` (`EBatchTooLarge`)
+///   - any address not on the board (`governance::ENotBoardMember`)
+///   - any duplicate address in the batch (`governance::EDuplicateBoardMember`)
+///   - removal would leave the board empty (`governance::EEmptyBoard`)
+public fun execute_batch_remove_members(
+    dao: &mut DAO,
+    ticket: ExecutionTicket<BatchRemoveMembers>,
+) {
+    assert!(dao.id() == ticket.ticket_dao_id(), EDaoMismatch);
+    let payload = ticket.ticket_payload();
+    let members = payload.members();
+    let len = members.length();
+    assert!(len > 0, EEmptyBatch);
+    assert!(len <= MAX_BATCH_SIZE, EBatchTooLarge);
+    let removed = dao.remove_board_members_governance(*members, ticket.ticket_request());
+    event::emit(MembersBatchRemoved { dao_id: dao.id(), removed });
     ticket.discharge();
 }
 
