@@ -393,7 +393,10 @@ public fun execute_controller_batch_add_members(
         ctx,
     );
 
-    let (added, skipped) = members_dao.add_board_members_governance(*payload.members(), &members_req);
+    let (added, skipped) = members_dao.add_board_members_governance(
+        *payload.members(),
+        &members_req,
+    );
     controller::privileged_consume(members_req, &control);
     controller_vault.return_cap(control, loan);
 

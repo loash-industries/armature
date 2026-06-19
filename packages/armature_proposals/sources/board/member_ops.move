@@ -98,7 +98,10 @@ public fun execute_batch_add_members(dao: &mut DAO, ticket: ExecutionTicket<Batc
 ///   - any address not on the board (`governance::ENotBoardMember`)
 ///   - any duplicate address in the batch (`governance::EDuplicateBoardMember`)
 ///   - removal would leave the board empty (`governance::EEmptyBoard`)
-public fun execute_batch_remove_members(dao: &mut DAO, ticket: ExecutionTicket<BatchRemoveMembers>) {
+public fun execute_batch_remove_members(
+    dao: &mut DAO,
+    ticket: ExecutionTicket<BatchRemoveMembers>,
+) {
     assert!(dao.id() == ticket.ticket_dao_id(), EDaoMismatch);
     let payload = ticket.ticket_payload();
     let members = payload.members();

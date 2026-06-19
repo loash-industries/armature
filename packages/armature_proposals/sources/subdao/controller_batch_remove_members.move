@@ -17,4 +17,5 @@ public fun new(control_id: ID, members: vector<address>): ControllerBatchRemoveM
 // === Accessors ===
 
 public fun control_id(self: &ControllerBatchRemoveMembers): ID { self.control_id }
+
 public fun members(self: &ControllerBatchRemoveMembers): &vector<address> { &self.members }
