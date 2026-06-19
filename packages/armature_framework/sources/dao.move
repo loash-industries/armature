@@ -29,6 +29,8 @@ const EEntryIdNotFound: u64 = 9;
 const ETypeBindingMismatch: u64 = 10;
 /// Attempted to add or override a blocked proposal type (hierarchy-altering or bypass-meta).
 const EBlockedProposalType: u64 = 11;
+/// Override sets approval_threshold below the hardcoded minimum for the type.
+const EThresholdBelowMinimum: u64 = 12;
 
 // === Constants ===
 
@@ -1156,6 +1158,7 @@ fun vec_contains_key(keys: &vector<vector<u8>>, target: &std::ascii::String): bo
 /// - Key already enabled: replace its ProposalConfig.
 /// - Key not yet enabled: insert into both maps (enables the type at construction time).
 /// - Key is a blocked type: abort with EBlockedProposalType.
+/// - Config sets approval_threshold below the hardcoded minimum: abort with EThresholdBelowMinimum.
 fun apply_proposal_config_overrides(
     configs: &mut VecMap<std::ascii::String, ProposalConfig>,
     enabled: &mut VecSet<std::ascii::String>,
@@ -1166,6 +1169,14 @@ fun apply_proposal_config_overrides(
         let key = keys.pop_back();
         let value = values.pop_back();
         assert!(!is_subdao_blocked_type(&key), EBlockedProposalType);
+        let floor = if (key == b"EnableProposalType".to_ascii_string()) {
+            ENABLE_PROPOSAL_TYPE_MIN_THRESHOLD
+        } else if (key == b"UpdateProposalConfig".to_ascii_string()) {
+            UPDATE_PROPOSAL_CONFIG_MIN_THRESHOLD
+        } else {
+            0u16
+        };
+        assert!(value.approval_threshold() >= floor, EThresholdBelowMinimum);
         if (enabled.contains(&key)) {
             *configs.get_mut(&key) = value;
         } else {
