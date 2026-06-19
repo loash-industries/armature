@@ -357,8 +357,9 @@ public(package) fun create_returning_vault(
 
 /// Like `create_returning_vault` but applies `config_overrides` over the default
 /// proposal configs before constructing the DAO. Existing types have their config replaced;
-/// non-blocked types not yet enabled are inserted and enabled. Blocked types abort with
-/// EBlockedProposalType. Only callable within the framework package.
+/// types not yet enabled are inserted and enabled. No types are blocked for parent DAOs —
+/// hierarchy-altering types (CreateSubDAO, SpawnDAO, etc.) are legitimately part of the
+/// default parent config. Only callable within the framework package.
 public(package) fun create_returning_vault_configured(
     gov_init: &GovernanceTypeInit,
     name: String,
@@ -397,6 +398,7 @@ public(package) fun create_returning_vault_configured(
         &mut proposal_configs,
         &mut enabled_proposal_types,
         config_overrides,
+        false,
     );
 
     let dao = DAO {
@@ -780,6 +782,7 @@ public(package) fun create_subdao_returning_vault_configured(
         &mut proposal_configs,
         &mut enabled_proposal_types,
         config_overrides,
+        true,
     );
 
     let dao = DAO {
@@ -1005,6 +1008,7 @@ public fun create_subdao_configured(
         &mut proposal_configs,
         &mut enabled_proposal_types,
         config_overrides,
+        true,
     );
 
     let dao = DAO {
@@ -1155,30 +1159,28 @@ fun vec_contains_key(keys: &vector<vector<u8>>, target: &std::ascii::String): bo
 // === Internal ===
 
 /// Apply `overrides` to an already-built `configs`/`enabled` pair.
-/// - Key already enabled: replace its ProposalConfig.
+/// - Key already enabled: replace its ProposalConfig, preserving composable_allowed.
 /// - Key not yet enabled: insert into both maps (enables the type at construction time).
-/// - Key is a blocked type: abort with EBlockedProposalType.
+/// - Key is a SubDAO-blocked type AND `check_subdao_blocked` is true: abort with
+/// EBlockedProposalType.
+///   Pass false for parent DAOs, which legitimately have these types (e.g. CreateSubDAO).
 /// - Config sets approval_threshold below the hardcoded minimum: abort with EThresholdBelowMinimum.
 fun apply_proposal_config_overrides(
     configs: &mut VecMap<std::ascii::String, ProposalConfig>,
     enabled: &mut VecSet<std::ascii::String>,
     overrides: VecMap<std::ascii::String, ProposalConfig>,
+    check_subdao_blocked: bool,
 ) {
     let (mut keys, mut values) = overrides.into_keys_values();
     while (!keys.is_empty()) {
         let key = keys.pop_back();
         let value = values.pop_back();
-        assert!(!is_subdao_blocked_type(&key), EBlockedProposalType);
-        let floor = if (key == b"EnableProposalType".to_ascii_string()) {
-            ENABLE_PROPOSAL_TYPE_MIN_THRESHOLD
-        } else if (key == b"UpdateProposalConfig".to_ascii_string()) {
-            UPDATE_PROPOSAL_CONFIG_MIN_THRESHOLD
-        } else {
-            0u16
-        };
+        assert!(!check_subdao_blocked || !is_subdao_blocked_type(&key), EBlockedProposalType);
+        let floor = min_approval_threshold_for_type(&key);
         assert!(value.approval_threshold() >= floor, EThresholdBelowMinimum);
         if (enabled.contains(&key)) {
-            *configs.get_mut(&key) = value;
+            let composable = configs.get(&key).composable_allowed();
+            *configs.get_mut(&key) = value.with_composable_allowed(composable);
         } else {
             configs.insert(key, value);
             enabled.insert(key);
@@ -1202,20 +1204,28 @@ fun subdao_proposal_configs(): (
     build_proposal_configs(DEFAULT_PROPOSAL_TYPES, SUBDAO_BLOCKED_TYPES)
 }
 
-/// Return the per-type default ProposalConfig for a given type key.
-/// Types with hardcoded execution floors in admin_ops use a threshold that
-/// matches the floor so the config threshold is never misleadingly low.
-/// composable_allowed is true only for types that have a _step handler variant.
-fun config_for_type(type_key: &std::ascii::String): ProposalConfig {
-    let approval_threshold = if (*type_key == b"EnableProposalType".to_ascii_string()) {
+/// Return the hardcoded minimum approval_threshold for a type, or 0 if no floor applies.
+/// This is the single source of truth consumed by both config_for_type and
+/// apply_proposal_config_overrides so the two cannot drift apart.
+fun min_approval_threshold_for_type(type_key: &std::ascii::String): u16 {
+    if (*type_key == b"EnableProposalType".to_ascii_string()) {
         ENABLE_PROPOSAL_TYPE_MIN_THRESHOLD
     } else if (*type_key == b"UpdateProposalConfig".to_ascii_string()) {
         UPDATE_PROPOSAL_CONFIG_MIN_THRESHOLD
     } else if (*type_key == b"EnableBypassType".to_ascii_string()) {
         ENABLE_BYPASS_TYPE_MIN_THRESHOLD
     } else {
-        DEFAULT_APPROVAL_THRESHOLD
-    };
+        0u16
+    }
+}
+
+/// Return the per-type default ProposalConfig for a given type key.
+/// Types with hardcoded execution floors in admin_ops use a threshold that
+/// matches the floor so the config threshold is never misleadingly low.
+/// composable_allowed is true only for types that have a _step handler variant.
+fun config_for_type(type_key: &std::ascii::String): ProposalConfig {
+    let min = min_approval_threshold_for_type(type_key);
+    let approval_threshold = if (min > 0) { min } else { DEFAULT_APPROVAL_THRESHOLD };
     let composable =
         *type_key == b"AddMember".to_ascii_string()
         || *type_key == b"RemoveMember".to_ascii_string()

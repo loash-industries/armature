@@ -365,6 +365,7 @@ fun do_create_parent_and_wired_subdao(scenario: &mut test_scenario::Scenario): (
         string::utf8(b"https://example.com/parent.png"),
         scenario.ctx(),
     );
+    let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
     let subdao_id = tribe::create_wired_subdao(
         vector[OFFICER_A],
         string::utf8(b"SubDAO"),
@@ -372,9 +373,11 @@ fun do_create_parent_and_wired_subdao(scenario: &mut test_scenario::Scenario): (
         string::utf8(b"https://example.com/sub.png"),
         SUBDAO_ADMIN,
         &mut parent_vault,
+        &req,
         vec_map::empty(),
         scenario.ctx(),
     );
+    proposal::consume(req);
     capability_vault::share(parent_vault);
     (parent_id, subdao_id)
 }
@@ -515,7 +518,7 @@ fun create_wired_subdao_config_override_applied() {
     scenario.next_tx(CREATOR);
     {
         let gov = governance::init_board(vector[CREATOR]);
-        let (_, mut parent_vault) = dao::create_returning_vault(
+        let (parent_id, mut parent_vault) = dao::create_returning_vault(
             &gov,
             string::utf8(b"Parent DAO"),
             string::utf8(b"Parent"),
@@ -531,6 +534,7 @@ fun create_wired_subdao_config_override_applied() {
             proposal::new_config(7_500, 7_500, 0, 604_800_000, 0, 0),
         );
 
+        let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
         subdao_id =
             tribe::create_wired_subdao(
                 vector[OFFICER_A],
@@ -539,9 +543,11 @@ fun create_wired_subdao_config_override_applied() {
                 string::utf8(b"https://example.com/sub.png"),
                 SUBDAO_ADMIN,
                 &mut parent_vault,
+                &req,
                 overrides,
                 scenario.ctx(),
             );
+        proposal::consume(req);
         capability_vault::share(parent_vault);
     };
 
@@ -568,7 +574,7 @@ fun create_wired_subdao_new_type_enabled_via_override() {
     scenario.next_tx(CREATOR);
     {
         let gov = governance::init_board(vector[CREATOR]);
-        let (_, mut parent_vault) = dao::create_returning_vault(
+        let (parent_id, mut parent_vault) = dao::create_returning_vault(
             &gov,
             string::utf8(b"Parent DAO"),
             string::utf8(b"Parent"),
@@ -583,6 +589,7 @@ fun create_wired_subdao_new_type_enabled_via_override() {
             default_config(),
         );
 
+        let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
         subdao_id =
             tribe::create_wired_subdao(
                 vector[OFFICER_A],
@@ -591,9 +598,11 @@ fun create_wired_subdao_new_type_enabled_via_override() {
                 string::utf8(b"https://example.com/sub.png"),
                 SUBDAO_ADMIN,
                 &mut parent_vault,
+                &req,
                 overrides,
                 scenario.ctx(),
             );
+        proposal::consume(req);
         capability_vault::share(parent_vault);
     };
 
@@ -616,7 +625,7 @@ fun create_wired_subdao_aborts_on_blocked_type() {
     scenario.next_tx(CREATOR);
     {
         let gov = governance::init_board(vector[CREATOR]);
-        let (_, mut parent_vault) = dao::create_returning_vault(
+        let (parent_id, mut parent_vault) = dao::create_returning_vault(
             &gov,
             string::utf8(b"Parent DAO"),
             string::utf8(b"Parent"),
@@ -631,6 +640,7 @@ fun create_wired_subdao_aborts_on_blocked_type() {
             default_config(),
         );
 
+        let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
         tribe::create_wired_subdao(
             vector[OFFICER_A],
             string::utf8(b"SubDAO"),
@@ -638,9 +648,11 @@ fun create_wired_subdao_aborts_on_blocked_type() {
             string::utf8(b"https://example.com/sub.png"),
             SUBDAO_ADMIN,
             &mut parent_vault,
+            &req,
             overrides,
             scenario.ctx(),
         );
+        proposal::consume(req);
         capability_vault::share(parent_vault);
     };
     scenario.end();
@@ -655,7 +667,7 @@ fun create_wired_subdao_aborts_on_enable_proposal_type_below_floor() {
     scenario.next_tx(CREATOR);
     {
         let gov = governance::init_board(vector[CREATOR]);
-        let (_, mut parent_vault) = dao::create_returning_vault(
+        let (parent_id, mut parent_vault) = dao::create_returning_vault(
             &gov,
             string::utf8(b"Parent DAO"),
             string::utf8(b"Parent"),
@@ -670,6 +682,7 @@ fun create_wired_subdao_aborts_on_enable_proposal_type_below_floor() {
             proposal::new_config(5_000, 6_599, 0, 604_800_000, 0, 0),
         );
 
+        let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
         tribe::create_wired_subdao(
             vector[OFFICER_A],
             string::utf8(b"SubDAO"),
@@ -677,9 +690,11 @@ fun create_wired_subdao_aborts_on_enable_proposal_type_below_floor() {
             string::utf8(b"https://example.com/sub.png"),
             SUBDAO_ADMIN,
             &mut parent_vault,
+            &req,
             overrides,
             scenario.ctx(),
         );
+        proposal::consume(req);
         capability_vault::share(parent_vault);
     };
     scenario.end();
@@ -694,7 +709,7 @@ fun create_wired_subdao_aborts_on_update_proposal_config_below_floor() {
     scenario.next_tx(CREATOR);
     {
         let gov = governance::init_board(vector[CREATOR]);
-        let (_, mut parent_vault) = dao::create_returning_vault(
+        let (parent_id, mut parent_vault) = dao::create_returning_vault(
             &gov,
             string::utf8(b"Parent DAO"),
             string::utf8(b"Parent"),
@@ -709,6 +724,7 @@ fun create_wired_subdao_aborts_on_update_proposal_config_below_floor() {
             proposal::new_config(5_000, 7_999, 0, 604_800_000, 0, 0),
         );
 
+        let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
         tribe::create_wired_subdao(
             vector[OFFICER_A],
             string::utf8(b"SubDAO"),
@@ -716,9 +732,11 @@ fun create_wired_subdao_aborts_on_update_proposal_config_below_floor() {
             string::utf8(b"https://example.com/sub.png"),
             SUBDAO_ADMIN,
             &mut parent_vault,
+            &req,
             overrides,
             scenario.ctx(),
         );
+        proposal::consume(req);
         capability_vault::share(parent_vault);
     };
     scenario.end();
@@ -734,7 +752,7 @@ fun create_wired_subdao_enable_proposal_type_at_floor_passes() {
     scenario.next_tx(CREATOR);
     {
         let gov = governance::init_board(vector[CREATOR]);
-        let (_, mut parent_vault) = dao::create_returning_vault(
+        let (parent_id, mut parent_vault) = dao::create_returning_vault(
             &gov,
             string::utf8(b"Parent DAO"),
             string::utf8(b"Parent"),
@@ -749,6 +767,7 @@ fun create_wired_subdao_enable_proposal_type_at_floor_passes() {
             proposal::new_config(5_000, 6_600, 0, 604_800_000, 0, 0),
         );
 
+        let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
         subdao_id =
             tribe::create_wired_subdao(
                 vector[OFFICER_A],
@@ -757,9 +776,11 @@ fun create_wired_subdao_enable_proposal_type_at_floor_passes() {
                 string::utf8(b"https://example.com/sub.png"),
                 SUBDAO_ADMIN,
                 &mut parent_vault,
+                &req,
                 overrides,
                 scenario.ctx(),
             );
+        proposal::consume(req);
         capability_vault::share(parent_vault);
     };
 
@@ -994,45 +1015,6 @@ fun create_tribe_configured_new_type_enabled_via_member_override() {
     scenario.end();
 }
 
-// === Test 24: blocked type in tribe overrides aborts ===
-
-#[test, expected_failure(abort_code = dao::EBlockedProposalType)]
-/// Passing a blocked type (CreateSubDAO) in tribe_config_overrides aborts.
-fun create_tribe_configured_aborts_on_blocked_type_in_tribe_overrides() {
-    let mut scenario = test_scenario::begin(CREATOR);
-    scenario.next_tx(CREATOR);
-    {
-        let mut tribe_overrides = vec_map::empty<std::ascii::String, proposal::ProposalConfig>();
-        vec_map::insert(
-            &mut tribe_overrides,
-            b"CreateSubDAO".to_ascii_string(),
-            default_config(),
-        );
-
-        tribe::create_tribe_configured(
-            vector[CREATOR],
-            vector[OFFICER_A],
-            vector[MEMBER_A],
-            string::utf8(b"Tribe DAO"),
-            string::utf8(b"Officers"),
-            string::utf8(b"Members"),
-            string::utf8(b"The tribe"),
-            string::utf8(b"Officer channel"),
-            string::utf8(b"Member channel"),
-            string::utf8(b"https://tribe.example/logo.png"),
-            string::utf8(b"https://tribe.example/officers.png"),
-            string::utf8(b"https://tribe.example/members.png"),
-            OFFICER_ADMIN,
-            MEMBER_ADMIN,
-            tribe_overrides,
-            vec_map::empty(),
-            vec_map::empty(),
-            scenario.ctx(),
-        );
-    };
-    scenario.end();
-}
-
 // === Test 25: UpdateProposalConfig below floor in officer overrides aborts ===
 
 #[test, expected_failure(abort_code = dao::EThresholdBelowMinimum)]
@@ -1159,5 +1141,156 @@ fun create_tribe_configured_update_config_at_floor_passes() {
         test_scenario::return_shared(tribe);
     };
 
+    scenario.end();
+}
+
+// === Test 28: composable_allowed preserved when overriding a composable type ===
+
+#[test]
+/// Overriding AddMember (composable by default) via create_wired_subdao must not
+/// silently strip composable_allowed — it should remain true after the override.
+fun create_wired_subdao_preserves_composable_allowed_on_override() {
+    let mut scenario = test_scenario::begin(CREATOR);
+
+    let subdao_id: ID;
+    scenario.next_tx(CREATOR);
+    {
+        let gov = governance::init_board(vector[CREATOR]);
+        let (parent_id, mut parent_vault) = dao::create_returning_vault(
+            &gov,
+            string::utf8(b"Parent DAO"),
+            string::utf8(b"Parent"),
+            string::utf8(b"https://example.com/parent.png"),
+            scenario.ctx(),
+        );
+
+        // Override AddMember with a higher quorum — composable_allowed must be preserved.
+        let mut overrides = vec_map::empty<std::ascii::String, proposal::ProposalConfig>();
+        vec_map::insert(
+            &mut overrides,
+            b"AddMember".to_ascii_string(),
+            proposal::new_config(7_500, 7_500, 0, 604_800_000, 0, 0),
+        );
+
+        let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
+        subdao_id =
+            tribe::create_wired_subdao(
+                vector[OFFICER_A],
+                string::utf8(b"SubDAO"),
+                string::utf8(b"Sub"),
+                string::utf8(b"https://example.com/sub.png"),
+                SUBDAO_ADMIN,
+                &mut parent_vault,
+                &req,
+                overrides,
+                scenario.ctx(),
+            );
+        proposal::consume(req);
+        capability_vault::share(parent_vault);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let subdao = scenario.take_shared_by_id<DAO>(subdao_id);
+        let config = subdao.proposal_configs().get(&b"AddMember".to_ascii_string());
+        assert!(config.quorum() == 7_500);
+        assert!(config.approval_threshold() == 7_500);
+        assert!(config.composable_allowed());
+        test_scenario::return_shared(subdao);
+    };
+
+    scenario.end();
+}
+
+// === Test 29: parent DAO can override a subdao-blocked type at construction ===
+
+#[test]
+/// CreateSubDAO is blocked for SubDAOs but must be overridable for a parent tribe DAO,
+/// which legitimately has it enabled by default.
+fun create_tribe_configured_parent_can_override_subdao_blocked_type() {
+    let mut scenario = test_scenario::begin(CREATOR);
+
+    let tribe_id: ID;
+    scenario.next_tx(CREATOR);
+    {
+        let mut tribe_overrides = vec_map::empty<std::ascii::String, proposal::ProposalConfig>();
+        vec_map::insert(
+            &mut tribe_overrides,
+            b"CreateSubDAO".to_ascii_string(),
+            proposal::new_config(8_000, 8_000, 0, 604_800_000, 0, 0),
+        );
+
+        (tribe_id, _, _) =
+            tribe::create_tribe_configured(
+                vector[CREATOR],
+                vector[OFFICER_A],
+                vector[MEMBER_A],
+                string::utf8(b"Tribe DAO"),
+                string::utf8(b"Officers"),
+                string::utf8(b"Members"),
+                string::utf8(b"The tribe"),
+                string::utf8(b"Officer channel"),
+                string::utf8(b"Member channel"),
+                string::utf8(b"https://tribe.example/logo.png"),
+                string::utf8(b"https://tribe.example/officers.png"),
+                string::utf8(b"https://tribe.example/members.png"),
+                OFFICER_ADMIN,
+                MEMBER_ADMIN,
+                tribe_overrides,
+                vec_map::empty(),
+                vec_map::empty(),
+                scenario.ctx(),
+            );
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let tribe = scenario.take_shared_by_id<DAO>(tribe_id);
+        let config = tribe.proposal_configs().get(&b"CreateSubDAO".to_ascii_string());
+        assert!(config.quorum() == 8_000);
+        assert!(config.approval_threshold() == 8_000);
+        test_scenario::return_shared(tribe);
+    };
+
+    scenario.end();
+}
+
+// === Test 30: subdao path still rejects subdao-blocked types ===
+
+#[test, expected_failure(abort_code = dao::EBlockedProposalType)]
+/// Passing CreateSubDAO in officer_config_overrides (a SubDAO) still aborts —
+/// the fix only relaxes the check on the parent DAO path.
+fun create_tribe_configured_subdao_still_rejects_blocked_type() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    scenario.next_tx(CREATOR);
+    {
+        let mut officer_overrides = vec_map::empty<std::ascii::String, proposal::ProposalConfig>();
+        vec_map::insert(
+            &mut officer_overrides,
+            b"CreateSubDAO".to_ascii_string(),
+            proposal::new_config(8_000, 8_000, 0, 604_800_000, 0, 0),
+        );
+
+        tribe::create_tribe_configured(
+            vector[CREATOR],
+            vector[OFFICER_A],
+            vector[MEMBER_A],
+            string::utf8(b"Tribe DAO"),
+            string::utf8(b"Officers"),
+            string::utf8(b"Members"),
+            string::utf8(b"The tribe"),
+            string::utf8(b"Officer channel"),
+            string::utf8(b"Member channel"),
+            string::utf8(b"https://tribe.example/logo.png"),
+            string::utf8(b"https://tribe.example/officers.png"),
+            string::utf8(b"https://tribe.example/members.png"),
+            OFFICER_ADMIN,
+            MEMBER_ADMIN,
+            vec_map::empty(),
+            officer_overrides,
+            vec_map::empty(),
+            scenario.ctx(),
+        );
+    };
     scenario.end();
 }

@@ -4,7 +4,7 @@ use armature::capability_vault;
 use armature::dao;
 use armature::emergency;
 use armature::governance;
-use armature::proposal::ProposalConfig;
+use armature::proposal::{ExecutionRequest, ProposalConfig};
 use std::string::String;
 use sui::vec_map::VecMap;
 
@@ -17,17 +17,20 @@ use sui::vec_map::VecMap;
 /// existing types have their config replaced; non-blocked types not yet in the enabled
 /// set are inserted and enabled. Passing an empty map produces the standard SubDAO defaults.
 ///
-/// Works both during initial tribe construction (parent vault un-shared) and post-creation
-/// (parent vault already shared — borrow it mutably in the PTB).
+/// Requires an `ExecutionRequest` from the parent DAO's governance, which ensures the
+/// caller is authorized to mutate `parent_vault`. Use `proposal::ticket_request` to
+/// obtain the request from a `board_voting::submit_vote_execute` or standard two-PTB
+/// execution ticket.
 ///
 /// Returns the new SubDAO's ID.
-public fun create_wired_subdao(
+public fun create_wired_subdao<P>(
     board: vector<address>,
     name: String,
     description: String,
     image_url: String,
     freeze_admin: address,
     parent_vault: &mut capability_vault::CapabilityVault,
+    req: &ExecutionRequest<P>,
     config_overrides: VecMap<std::ascii::String, ProposalConfig>,
     ctx: &mut TxContext,
 ): ID {
@@ -44,7 +47,7 @@ public fun create_wired_subdao(
 
     let ctrl = capability_vault::new_subdao_control(subdao_id, ctx);
     let ctrl_id = object::id(&ctrl);
-    capability_vault::store_cap_init(parent_vault, ctrl);
+    capability_vault::store_cap(parent_vault, ctrl, req);
 
     dao::share_subdao(subdao, ctrl_id);
     emergency::transfer_admin_cap(freeze_cap, freeze_admin);
