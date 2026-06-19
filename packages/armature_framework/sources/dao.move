@@ -1237,14 +1237,16 @@ fun min_approval_threshold_for_type(type_key: &std::ascii::String): u16 {
 /// Return the per-type default ProposalConfig for a given type key.
 /// Types with hardcoded execution floors in admin_ops use a threshold that
 /// matches the floor so the config threshold is never misleadingly low.
-/// composable_allowed is true only for types that have a _step handler variant.
+/// composable_allowed is true for single-operation types that make sense as steps
+/// inside a CompositeFrame. Batch types (BatchAddMembers, BatchRemoveMembers) are
+/// excluded: they have no _step handler variant and BatchAddMembers carries an
+/// explicit regression test guarding its deny-by-default status.
 fun config_for_type(type_key: &std::ascii::String): ProposalConfig {
     let min = min_approval_threshold_for_type(type_key);
     let approval_threshold = if (min > 0) { min } else { DEFAULT_APPROVAL_THRESHOLD };
     let composable =
         *type_key == b"AddMember".to_ascii_string()
         || *type_key == b"RemoveMember".to_ascii_string()
-        || *type_key == b"BatchRemoveMembers".to_ascii_string()
         || *type_key == b"SetBoard".to_ascii_string()
         || *type_key == b"CharterUpdate".to_ascii_string()
         || *type_key == b"EnableProposalType".to_ascii_string();

@@ -26,14 +26,18 @@ use sui::event;
 const EVaultDAOMismatch: u64 = 0;
 const ESubDAOVaultMismatch: u64 = 1;
 const EDAOMismatch: u64 = 2;
+const EEmptyBatch: u64 = 3;
 const EAssetLimitExceeded: u64 = 4;
 const ETargetTreasuryMismatch: u64 = 5;
 const ETargetVaultMismatch: u64 = 6;
 const ETargetDAOMismatch: u64 = 7;
+const EBatchTooLarge: u64 = 8;
 
 // === Constants ===
 
 const MAX_TRANSFER_ASSETS: u64 = 50;
+/// Must match MAX_BATCH_SIZE — Move constants are module-private.
+const MAX_BATCH_SIZE: u64 = 100;
 
 // === Events ===
 
@@ -378,6 +382,10 @@ public fun execute_controller_batch_add_members(
     let payload = ticket.ticket_payload();
     let req = ticket.ticket_request();
 
+    let len = payload.members().length();
+    assert!(len > 0, EEmptyBatch);
+    assert!(len <= MAX_BATCH_SIZE, EBatchTooLarge);
+
     let (control, loan) = controller_vault.loan_cap<SubDAOControl, ControllerBatchAddMembers>(
         payload.control_id(),
         req,
@@ -422,6 +430,10 @@ public fun execute_controller_batch_remove_members(
 
     let payload = ticket.ticket_payload();
     let req = ticket.ticket_request();
+
+    let len = payload.members().length();
+    assert!(len > 0, EEmptyBatch);
+    assert!(len <= MAX_BATCH_SIZE, EBatchTooLarge);
 
     let (control, loan) = controller_vault.loan_cap<SubDAOControl, ControllerBatchRemoveMembers>(
         payload.control_id(),
