@@ -7,6 +7,8 @@ use armature::emergency;
 use armature::governance;
 use armature::proposal::ExecutionTicket;
 use armature::treasury_vault::TreasuryVault;
+use armature_proposals::add_member::{Self, AddMember};
+use armature_proposals::controller_add_member::ControllerAddMember;
 use armature_proposals::create_subdao::CreateSubDAO;
 use armature_proposals::pause_execution::{Self, PauseSubDAOExecution, UnpauseSubDAOExecution};
 use armature_proposals::reclaim_cap_from_subdao::ReclaimCapFromSubDAO;
@@ -67,6 +69,12 @@ public struct SuccessorDAOSpawned has copy, drop {
 public struct SubDAOSpunOut has copy, drop {
     controller_dao_id: ID,
     subdao_id: ID,
+}
+
+public struct ControllerMemberAdded has copy, drop {
+    controller_dao_id: ID,
+    subdao_id: ID,
+    member: address,
 }
 
 public struct AssetsTransferInitiated has copy, drop {
@@ -343,6 +351,47 @@ public fun execute_spin_out_subdao(
     event::emit(SubDAOSpunOut {
         controller_dao_id: vault.dao_id(),
         subdao_id: payload.subdao_id(),
+    });
+
+    ticket.discharge();
+}
+
+/// Execute a ControllerAddMember proposal.
+public fun execute_controller_add_member(
+    controller_vault: &mut CapabilityVault,
+    members_dao: &mut DAO,
+    ticket: ExecutionTicket<ControllerAddMember>,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
+    assert!(controller_vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
+
+    let payload = ticket.ticket_payload();
+    let req = ticket.ticket_request();
+
+    let (control, loan) = controller_vault.loan_cap<SubDAOControl, ControllerAddMember>(
+        payload.control_id(),
+        req,
+    );
+
+    let members_req = controller::privileged_submit<AddMember>(
+        &control,
+        members_dao,
+        b"AddMember".to_ascii_string(),
+        option::none(),
+        add_member::new(payload.member()),
+        clock,
+        ctx,
+    );
+
+    members_dao.add_board_member_governance(payload.member(), &members_req);
+    controller::privileged_consume(members_req, &control);
+    controller_vault.return_cap(control, loan);
+
+    event::emit(ControllerMemberAdded {
+        controller_dao_id: controller_vault.dao_id(),
+        subdao_id: members_dao.id(),
+        member: payload.member(),
     });
 
     ticket.discharge();
