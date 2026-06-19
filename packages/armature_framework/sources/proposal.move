@@ -76,7 +76,7 @@ public struct ExecutionRequest<phantom P> {
 /// receives one of these in its `CapabilityVault`. Extension packages
 /// that wrap an external authorization condition (Character ownership,
 /// token balance, attestation, oracle assertion, etc.) borrow the cap
-/// and pass it to `external_execution::external_executed_create`.
+/// and pass it to `external_execution::ticket_from_cap`.
 ///
 /// Scoped per (DAO, proposal type): a cap for tribe Alpha's AutojoinDAO
 /// cannot mint a request for tribe Beta, nor for any other proposal type.
@@ -702,7 +702,7 @@ public(package) fun destroy_external_execution_cap<Auth, P>(
 }
 
 /// Assert the cap is scoped to the given DAO. Framework-internal —
-/// used by `external_execution::external_executed_create`.
+/// used by `external_execution::ticket_from_cap`.
 public(package) fun assert_cap_for_dao<P>(cap: &ExternalExecutionCap<P>, dao_id: ID) {
     assert!(cap.dao_id == dao_id, ECapDAOMismatch);
 }

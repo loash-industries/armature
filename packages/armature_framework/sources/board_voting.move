@@ -66,8 +66,8 @@ public fun submit_proposal<P: store>(
 
     // Submission-time floor enforcement for EnableProposalType.
     // The proposal's approval_threshold must be >= 66% so that the vote guarantee
-    // (yes/total_voted >= threshold >= floor) holds at execution time without
-    // needing &Proposal<P> access in _step composite variants.
+    // (yes/total_voted >= threshold >= floor) is locked in at proposal creation time
+    // rather than re-checked at execution (where only the ticket, not the proposal, is live).
     if (type_key == b"EnableProposalType".to_ascii_string()) {
         assert!((config.approval_threshold() as u64) >= ENABLE_APPROVAL_FLOOR_BPS, EFloorNotMet);
     };

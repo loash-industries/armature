@@ -1,3 +1,7 @@
+> **Status: IMPLEMENTED.** The `ExecutionTicket<P>` refactor described in this document has been fully shipped. All `_step` twins are removed, `authorize_execution` / `external_executed_create` / `finalize` / `consume_execution_request` are removed from the public API, and the acceptance criteria below are all satisfied. See `unify_invocation_impl.md` for the engineering reference.
+
+---
+
 ### Summary
 
 Composition is currently opt-in **per proposal type** at the source level: a type can only appear as a step in a composite if a maintainer hand-writes a `_step` sister handler for it. Today **7 of ~25** proposal types have one. This makes composability a privilege the framework grants type-by-type rather than an ambient property of *being* a proposal type — friction that grows linearly with the proposal set and works against the goal of giving DAOs an open, expressive governance language.
@@ -98,7 +102,7 @@ Scope: ~8 mint/handler sites in `armature_proposals`, plus `composite.move`, `ex
 
 ### Acceptance criteria
 
-- One `execute_*` handler per proposal type; no `_step` twins.
-- A newly added proposal type is composite-executable with zero composition-specific code (only `composable_allowed`, if that gate is retained).
-- All three execution paths produce `ExecutionTicket<P>`; `ExecutionRequest<P>` remains the vault-auth token, borrowable from the ticket.
-- Existing test suite passes; new tests cover the same type used standalone, in a composite, and via external cap through the *same* handler.
+- [x] One `execute_*` handler per proposal type; no `_step` twins.
+- [x] A newly added proposal type is composite-executable with zero composition-specific code (only `composable_allowed`, if that gate is retained).
+- [x] All three execution paths produce `ExecutionTicket<P>`; `ExecutionRequest<P>` remains the vault-auth token, borrowable from the ticket.
+- [x] Existing test suite passes; new tests cover the same type used standalone, in a composite, and via external cap through the *same* handler.

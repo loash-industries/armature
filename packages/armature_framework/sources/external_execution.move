@@ -1,14 +1,14 @@
 /// External-authorization bypass execution.
 ///
-/// This module is the single sanctioned third path to mint an `ExecutionRequest<P>`,
-/// alongside `board_voting::authorize_execution` (vote-then-execute) and
+/// This module is the single sanctioned third path to mint an `ExecutionTicket<P>`,
+/// alongside `board_voting::ticket_from_vote` (vote-then-execute) and
 /// `controller::privileged_submit` (parent-board override via `SubDAOControl`).
 ///
 /// Extension packages that gate execution on *external state* — Character
 /// ownership, token balance, soulbound attestation, oracle assertion, ZK proof —
 /// implement their own authorization check, then present the DAO's
 /// `ExternalExecutionCap<P>` (which the DAO received via `EnableBypassType<P>`)
-/// to `external_executed_create` to mint the `ExecutionRequest<P>`.
+/// to `ticket_from_cap` to mint the `ExecutionTicket<P>`.
 ///
 /// All the safety machinery a vote-then-execute path runs through
 /// (type-binding anti-spoof, freeze, execution pause, controller pause,

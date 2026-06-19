@@ -13,7 +13,7 @@
 ///   3. Player calls `submit_autojoin(dao, vault, cap_id, character, freeze, clock, ctx)`.
 ///      The function verifies the character's wallet matches `ctx.sender()`,
 ///      the character's tribe is in the allowlist, the kill-switch is on,
-///      then hands off to `external_execution::external_executed_create<AutojoinDAO>`
+///      then hands off to `external_execution::ticket_from_cap<AutojoinDAO>`
 ///      which mints the ticket after running all the standard cross-cutting
 ///      checks (DAO active, type enabled, not frozen/paused, type binding,
 ///      cooldown, record_execution).
@@ -28,7 +28,7 @@
 ///   - `Character` is shared; the `&Character` reference cannot be fabricated.
 ///   - `&CapabilityVault` is shared and read-only here; `borrow_external_cap`
 ///     asserts `vault.dao_id == dao.id()` so a wrong vault aborts at the source.
-///   - `external_executed_create` re-asserts `cap.dao_id == dao.id()` and runs
+///   - `ticket_from_cap` re-asserts `cap.dao_id == dao.id()` and runs
 ///     the full cross-cutting check set. Two independent dao-id boundaries.
 ///   - Allowlist re-read at execute time means a hypothetical PTB split
 ///     (submit in tx A, execute in tx B) would still be safe: if the DAO
@@ -95,10 +95,10 @@ public fun joining_address(self: &AutojoinDAO): address { self.joining_address }
 ///   - Allowlist type-state missing — `ConfigureAutojoin` has never run.
 ///   - Allowlist `enabled == false` — kill-switch.
 ///   - `character.tribe()` not in allowlist.
-///   - Any check inside `external_executed_create` (DAO active, type enabled,
+///   - Any check inside `ticket_from_cap` (DAO active, type enabled,
 ///     not paused/frozen, type binding mismatch, cooldown, etc).
 ///
-/// The returned `ExecutionRequest<AutojoinDAO>` must be consumed in the
+/// The returned `ExecutionTicket<AutojoinDAO>` must be consumed in the
 /// same PTB by `execute_autojoin_dao`.
 public fun submit_autojoin(
     members_dao: &mut DAO,

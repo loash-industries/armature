@@ -29,7 +29,7 @@ Add a single address to the DAO's board. Lighter-weight alternative to `SetBoard
 Remove a single address from the DAO's board. Lighter-weight alternative to `SetBoard` when only one address needs to be removed.
 
 ### `BatchAddMembers`
-Add multiple addresses to the board in a single proposal. Aborts atomically if any address is already a board member, the batch contains duplicates, or the batch exceeds the per-proposal cap.
+Add multiple addresses to the board in a single proposal. Silently skips addresses already on the board (both `added` and `skipped` are reported in the `MembersBatchAdded` event). Aborts on duplicates within the batch, an empty batch, or a batch exceeding the per-proposal cap (100 addresses).
 
 ### `BatchRemoveMembers`
 Remove multiple addresses from the board in a single proposal. Aborts atomically if any address is not on the board, the batch contains duplicates, or removal would leave the board empty.

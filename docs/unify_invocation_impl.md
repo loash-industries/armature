@@ -181,6 +181,11 @@ stronger than the old `finalize` status check: it is an unforgeable cross-refere
 the request (created from the vote path) and the specific proposal that authorised it.
 `finalize` is removed from the public API.
 
+An additional `discharge_returning_payload<P: store>(ticket) → P` variant is also provided
+for payload types that do not have `drop`. This was not in the original spec but is present
+in the implementation. It performs the same closeout logic and returns the payload rather than
+dropping it, enabling callers to inspect or re-use the payload value after discharge.
+
 ### 1.5 Framework-internal ticket constructors
 
 ```move
@@ -1406,24 +1411,24 @@ call sites are updated.
 
 ## 10. Acceptance Checklist
 
-- [ ] One `execute_*` handler per proposal type; no `_step` twins remain.
-- [ ] `proposal::consume_execution_request` is removed from the public API.
-- [ ] `proposal::finalize` is removed from the public API.
-- [ ] `board_voting::authorize_execution` is removed (or is a clearly deprecated shim).
-- [ ] `external_execution::external_executed_create` is removed (or is a clearly deprecated shim).
-- [ ] `composite::advance_step` returns `(ExecutionTicket<P>, Pipeline)`.
-- [ ] `composite::begin_pipeline` takes `ExecutionTicket<CompositePayload>` with no `&Proposal<CompositePayload>`.
-- [ ] `ProposalPayloadCreated` event is emitted for every proposal creation path (vote and external).
-- [ ] A newly added proposal type with only `execute_*` is immediately usable in all three paths with zero composition-specific code (subject to `composable_allowed = true`).
-- [ ] Pre-migration config audit (§9 step 0) completed: no live DAO has a stored config with `cooldown_ms > 0` and `composable_allowed = true`.
-- [ ] `assert_config_composability` is called in `enable_proposal_type_impl`, `execute_update_proposal_config`, and `execute_enable_bypass_type`; no config with `cooldown_ms > 0` and `composable_allowed = true` can be stored.
-- [ ] `composite::advance_step` asserts `step_config.cooldown_ms() == 0` with `ECooldownTypeNotComposable`; the old snapshot-based cooldown block is removed.
-- [ ] `proposal::delete_executed_proposal` exists and is covered by tests confirming it (a) succeeds for `Executed + None` proposals, (b) aborts for non-executed proposals, and (c) aborts when `payload.is_some()`.
-- [ ] `ticket_from_cap` checks `dao.has_type_binding` unconditionally before the type-name comparison; `ETypeBindingRequired` aborts if no binding exists.
-- [ ] `ticket_yes_weight` and `ticket_total_snapshot_weight` abort with `ENotStandaloneTicket` for non-Standalone tickets (no longer return 0).
-- [ ] `ticket_is_standalone` accessor exists and is used as the first guard in `assert_approval_floor_ticket`.
-- [ ] `CompositeFrame` has a `sealed: bool` field; `seal_frame` is `public(package)`; all frame write operations assert `!frame.sealed`.
-- [ ] Composite proposal creation calls `seal_frame` before creating the proposal object; tests confirm a frame cannot be modified after sealing.
-- [ ] `begin_pipeline` asserts `frame.is_sealed()`, `payload.step_type_keys == frame.step_type_keys()`, and `payload.step_types == frame.step_types()`; tests confirm mismatched or unsealed frames are rejected.
-- [ ] Full test suite passes.
-- [ ] New cross-path tests cover at least one type exercised via vote, composite, and external cap through the same handler.
+- [x] One `execute_*` handler per proposal type; no `_step` twins remain.
+- [x] `proposal::consume_execution_request` is removed from the public API.
+- [x] `proposal::finalize` is removed from the public API.
+- [x] `board_voting::authorize_execution` is removed (or is a clearly deprecated shim).
+- [x] `external_execution::external_executed_create` is removed (or is a clearly deprecated shim).
+- [x] `composite::advance_step` returns `(ExecutionTicket<P>, Pipeline)`.
+- [x] `composite::begin_pipeline` takes `ExecutionTicket<CompositePayload>` with no `&Proposal<CompositePayload>`.
+- [x] `ProposalPayloadCreated` event is emitted for every proposal creation path (vote and external).
+- [x] A newly added proposal type with only `execute_*` is immediately usable in all three paths with zero composition-specific code (subject to `composable_allowed = true`).
+- [x] Pre-migration config audit (§9 step 0) completed: no live DAO has a stored config with `cooldown_ms > 0` and `composable_allowed = true`.
+- [x] `assert_config_composability` is called in `enable_proposal_type_impl`, `execute_update_proposal_config`, and `execute_enable_bypass_type`; no config with `cooldown_ms > 0` and `composable_allowed = true` can be stored.
+- [x] `composite::advance_step` asserts `step_config.cooldown_ms() == 0` with `ECooldownTypeNotComposable`; the old snapshot-based cooldown block is removed.
+- [x] `proposal::delete_executed_proposal` exists and is covered by tests confirming it (a) succeeds for `Executed + None` proposals, (b) aborts for non-executed proposals, and (c) aborts when `payload.is_some()`.
+- [x] `ticket_from_cap` checks `dao.has_type_binding` unconditionally before the type-name comparison; `ETypeBindingRequired` aborts if no binding exists.
+- [x] `ticket_yes_weight` and `ticket_total_snapshot_weight` abort with `ENotStandaloneTicket` for non-Standalone tickets (no longer return 0).
+- [x] `ticket_is_standalone` accessor exists and is used as the first guard in `assert_approval_floor_ticket`.
+- [x] `CompositeFrame` has a `sealed: bool` field; `seal_frame` is `public(package)`; all frame write operations assert `!frame.sealed`.
+- [x] Composite proposal creation calls `seal_frame` before creating the proposal object; tests confirm a frame cannot be modified after sealing.
+- [x] `begin_pipeline` asserts `frame.is_sealed()`, `payload.step_type_keys == frame.step_type_keys()`, and `payload.step_types == frame.step_types()`; tests confirm mismatched or unsealed frames are rejected.
+- [x] Full test suite passes.
+- [x] New cross-path tests cover at least one type exercised via vote, composite, and external cap through the same handler.

@@ -91,6 +91,6 @@ ControllerMembersBatchRemoved { subdao_id, removed, ... }
 
 **`BoardUpdated` is a full replacement.** Do not diff — discard the previous board state for that DAO and seed from `new_members`.
 
-**All creation paths emit `DAOBoardInitialized`.** This covers `dao::create`, `dao::create_subdao`, `dao::create_returning_vault`, and `dao::create_returning_vault_configured`. The preceding `DAOCreated` event carries companion object IDs but not member addresses; `DAOBoardInitialized` carries member addresses but not companion object IDs. Both events are emitted in the same transaction.
+**All creation paths emit `DAOBoardInitialized`.** Public entry points that create DAOs: `dao::create`, `dao::create_subdao`, `dao::create_subdao_configured`, `tribe::create_wired_subdao`, `tribe::create_tribe_configured`. The internal `public(package)` helpers (`create_returning_vault`, `create_returning_vault_configured`, `create_subdao_returning_vault`, `create_subdao_returning_vault_configured`) are called by proposal handlers (`CreateSubDAO`, `SpawnDAO`) and also emit the event. The preceding `DAOCreated` event carries companion object IDs but not member addresses; `DAOBoardInitialized` carries member addresses but not companion object IDs. Both events are emitted in the same transaction.
 
 **`EncryptionEpochRotated` is not a membership event.** It fires whenever the encrypt epoch increments (on `BatchRemoveMembers`, `ControllerBatchRemoveMembers`, and `SetBoard` when members are removed). It does not add or remove any address.

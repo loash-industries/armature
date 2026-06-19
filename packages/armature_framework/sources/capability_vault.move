@@ -156,7 +156,7 @@ public fun borrow_cap<T: key + store, P>(
 /// The caller MUST pass the `dao_id` of the DAO it intends to act on, and
 /// this function asserts the vault belongs to that DAO. Combined with the
 /// cap's own `dao_id` (re-checked at the use site by
-/// `external_execution::external_executed_create`), this is two independent
+/// `external_execution::ticket_from_cap`), this is two independent
 /// boundaries between a borrowed cap and a DAO mutation. Don't rely on the
 /// use-site check alone — a future consumer that forgets it would otherwise
 /// have an authority leak.
