@@ -354,9 +354,9 @@ public(package) fun create_returning_vault(
 }
 
 /// Like `create_returning_vault` but applies `config_overrides` over the default
-/// proposal configs before constructing the DAO. Overrides are only permitted for
-/// types already in the enabled set; an unknown key aborts with EOverrideForUnenabledType.
-/// Only callable within the framework package.
+/// proposal configs before constructing the DAO. Existing types have their config replaced;
+/// non-blocked types not yet enabled are inserted and enabled. Blocked types abort with
+/// EBlockedProposalType. Only callable within the framework package.
 public(package) fun create_returning_vault_configured(
     gov_init: &GovernanceTypeInit,
     name: String,
@@ -739,9 +739,9 @@ public(package) fun record_execution(
 }
 
 /// Like `create_subdao_returning_vault` but applies `config_overrides` over the
-/// subdao default proposal configs before constructing the DAO. Overrides are only
-/// permitted for types already in the enabled set; an unknown key aborts.
-/// Only callable within the framework package.
+/// subdao default proposal configs before constructing the DAO. Existing types have
+/// their config replaced; non-blocked types not yet enabled are inserted and enabled.
+/// Blocked types abort with EBlockedProposalType. Only callable within the framework package.
 public(package) fun create_subdao_returning_vault_configured(
     gov_init: &GovernanceTypeInit,
     name: String,
@@ -964,8 +964,9 @@ public fun create_subdao(
 }
 
 /// Like `create_subdao` but applies `config_overrides` over the subdao default
-/// proposal configs before constructing the DAO. Overrides are only permitted for
-/// types already in the enabled set; an unknown key aborts with EOverrideForUnenabledType.
+/// proposal configs before constructing the DAO. Existing types have their config replaced;
+/// non-blocked types not yet enabled are inserted and enabled. Blocked types abort with
+/// EBlockedProposalType.
 public fun create_subdao_configured(
     gov_init: &GovernanceTypeInit,
     name: String,
