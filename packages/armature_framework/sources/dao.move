@@ -27,6 +27,10 @@ const EEntriesNotEmpty: u64 = 8;
 const EEntryIdNotFound: u64 = 9;
 /// Attempted to bind a type key whose binding already exists with a different Move type.
 const ETypeBindingMismatch: u64 = 10;
+/// Attempted to add or override a blocked proposal type (hierarchy-altering or bypass-meta).
+const EBlockedProposalType: u64 = 11;
+/// Override sets approval_threshold below the hardcoded minimum for the type.
+const EThresholdBelowMinimum: u64 = 12;
 
 // === Constants ===
 
@@ -311,6 +315,91 @@ public(package) fun create_returning_vault(
     let freeze_admin_cap = emergency::new_admin_cap(dao_id, ctx);
 
     let (proposal_configs, enabled_proposal_types) = default_proposal_configs();
+
+    let dao = DAO {
+        id: dao_uid,
+        status: DAOStatus::Active,
+        governance,
+        proposal_configs,
+        enabled_proposal_types,
+        type_bindings: vec_map::empty(),
+        last_executed_at: vec_map::empty(),
+        treasury_id,
+        capability_vault_id,
+        charter_id,
+        emergency_freeze_id,
+        execution_paused: false,
+        controller_cap_id: option::none(),
+        controller_paused: false,
+        encrypt_epoch: 0,
+        entries: vector[],
+    };
+
+    event::emit(DAOCreated {
+        dao_id,
+        treasury_id,
+        capability_vault_id,
+        charter_id,
+        emergency_freeze_id,
+        creator,
+    });
+    event::emit(DAOBoardInitialized { dao_id, initial_members });
+
+    transfer::share_object(dao);
+    treasury_vault::share(treasury_vault);
+    charter::share(dao_charter);
+    emergency::share(emergency_freeze);
+
+    emergency::transfer_admin_cap(freeze_admin_cap, creator);
+
+    (dao_id, cap_vault)
+}
+
+/// Like `create_returning_vault` but applies `config_overrides` over the default
+/// proposal configs before constructing the DAO. Existing types have their config replaced;
+/// types not yet enabled are inserted and enabled. No types are blocked for parent DAOs —
+/// hierarchy-altering types (CreateSubDAO, SpawnDAO, etc.) are legitimately part of the
+/// default parent config. Only callable within the framework package.
+public(package) fun create_returning_vault_configured(
+    gov_init: &GovernanceTypeInit,
+    name: String,
+    description: String,
+    image_url: String,
+    config_overrides: VecMap<std::ascii::String, ProposalConfig>,
+    ctx: &mut TxContext,
+): (ID, capability_vault::CapabilityVault) {
+    assert!(name.length() > 0, EInvalidName);
+    assert!(description.length() > 0, EInvalidDescription);
+
+    let creator = ctx.sender();
+
+    let governance = governance::new_board(gov_init);
+    let initial_members = governance.board_member_vec();
+
+    let dao_uid = object::new(ctx);
+    let dao_id = dao_uid.to_inner();
+
+    let treasury_vault = treasury_vault::new(dao_id, ctx);
+    let treasury_id = object::id(&treasury_vault);
+
+    let cap_vault = capability_vault::new(dao_id, ctx);
+    let capability_vault_id = object::id(&cap_vault);
+
+    let dao_charter = charter::new(dao_id, name, description, image_url, ctx);
+    let charter_id = object::id(&dao_charter);
+
+    let emergency_freeze = emergency::new(dao_id, ctx);
+    let emergency_freeze_id = object::id(&emergency_freeze);
+
+    let freeze_admin_cap = emergency::new_admin_cap(dao_id, ctx);
+
+    let (mut proposal_configs, mut enabled_proposal_types) = default_proposal_configs();
+    apply_proposal_config_overrides(
+        &mut proposal_configs,
+        &mut enabled_proposal_types,
+        config_overrides,
+        false,
+    );
 
     let dao = DAO {
         id: dao_uid,
@@ -653,6 +742,85 @@ public(package) fun record_execution(
     };
 }
 
+/// Like `create_subdao_returning_vault` but applies `config_overrides` over the
+/// subdao default proposal configs before constructing the DAO. Existing types have
+/// their config replaced; non-blocked types not yet enabled are inserted and enabled.
+/// Blocked types abort with EBlockedProposalType. Only callable within the framework package.
+public(package) fun create_subdao_returning_vault_configured(
+    gov_init: &GovernanceTypeInit,
+    name: String,
+    description: String,
+    image_url: String,
+    config_overrides: VecMap<std::ascii::String, ProposalConfig>,
+    ctx: &mut TxContext,
+): (DAO, emergency::FreezeAdminCap, capability_vault::CapabilityVault) {
+    assert!(name.length() > 0, EInvalidName);
+    assert!(description.length() > 0, EInvalidDescription);
+
+    let governance = governance::new_board(gov_init);
+    let initial_members = governance.board_member_vec();
+
+    let dao_uid = object::new(ctx);
+    let dao_id = dao_uid.to_inner();
+
+    let treasury_vault = treasury_vault::new(dao_id, ctx);
+    let treasury_id = object::id(&treasury_vault);
+
+    let cap_vault = capability_vault::new(dao_id, ctx);
+    let capability_vault_id = object::id(&cap_vault);
+
+    let dao_charter = charter::new(dao_id, name, description, image_url, ctx);
+    let charter_id = object::id(&dao_charter);
+
+    let emergency_freeze = emergency::new(dao_id, ctx);
+    let emergency_freeze_id = object::id(&emergency_freeze);
+
+    let freeze_admin_cap = emergency::new_admin_cap(dao_id, ctx);
+
+    let (mut proposal_configs, mut enabled_proposal_types) = subdao_proposal_configs();
+    apply_proposal_config_overrides(
+        &mut proposal_configs,
+        &mut enabled_proposal_types,
+        config_overrides,
+        true,
+    );
+
+    let dao = DAO {
+        id: dao_uid,
+        status: DAOStatus::Active,
+        governance,
+        proposal_configs,
+        enabled_proposal_types,
+        type_bindings: vec_map::empty(),
+        last_executed_at: vec_map::empty(),
+        treasury_id,
+        capability_vault_id,
+        charter_id,
+        emergency_freeze_id,
+        execution_paused: false,
+        controller_cap_id: option::none(),
+        controller_paused: false,
+        encrypt_epoch: 0,
+        entries: vector[],
+    };
+
+    event::emit(DAOCreated {
+        dao_id,
+        treasury_id,
+        capability_vault_id,
+        charter_id,
+        emergency_freeze_id,
+        creator: ctx.sender(),
+    });
+    event::emit(DAOBoardInitialized { dao_id, initial_members });
+
+    treasury_vault::share(treasury_vault);
+    charter::share(dao_charter);
+    emergency::share(emergency_freeze);
+
+    (dao, freeze_admin_cap, cap_vault)
+}
+
 /// Like `create_subdao` but returns the CapabilityVault un-shared so the caller
 /// can store capabilities in it before sharing. Treasury, charter, and emergency
 /// freeze are shared internally; the FreezeAdminCap is returned to the caller.
@@ -762,6 +930,86 @@ public fun create_subdao(
     let freeze_admin_cap = emergency::new_admin_cap(dao_id, ctx);
 
     let (proposal_configs, enabled_proposal_types) = subdao_proposal_configs();
+
+    let dao = DAO {
+        id: dao_uid,
+        status: DAOStatus::Active,
+        governance,
+        proposal_configs,
+        enabled_proposal_types,
+        type_bindings: vec_map::empty(),
+        last_executed_at: vec_map::empty(),
+        treasury_id,
+        capability_vault_id,
+        charter_id,
+        emergency_freeze_id,
+        execution_paused: false,
+        controller_cap_id: option::none(),
+        controller_paused: false,
+        encrypt_epoch: 0,
+        entries: vector[],
+    };
+
+    event::emit(DAOCreated {
+        dao_id,
+        treasury_id,
+        capability_vault_id,
+        charter_id,
+        emergency_freeze_id,
+        creator: ctx.sender(),
+    });
+    event::emit(DAOBoardInitialized { dao_id, initial_members });
+
+    treasury_vault::share(treasury_vault);
+    capability_vault::share(cap_vault);
+    charter::share(dao_charter);
+    emergency::share(emergency_freeze);
+
+    (dao, freeze_admin_cap)
+}
+
+/// Like `create_subdao` but applies `config_overrides` over the subdao default
+/// proposal configs before constructing the DAO. Existing types have their config replaced;
+/// non-blocked types not yet enabled are inserted and enabled. Blocked types abort with
+/// EBlockedProposalType.
+public fun create_subdao_configured(
+    gov_init: &GovernanceTypeInit,
+    name: String,
+    description: String,
+    image_url: String,
+    config_overrides: VecMap<std::ascii::String, ProposalConfig>,
+    ctx: &mut TxContext,
+): (DAO, emergency::FreezeAdminCap) {
+    assert!(name.length() > 0, EInvalidName);
+    assert!(description.length() > 0, EInvalidDescription);
+
+    let governance = governance::new_board(gov_init);
+    let initial_members = governance.board_member_vec();
+
+    let dao_uid = object::new(ctx);
+    let dao_id = dao_uid.to_inner();
+
+    let treasury_vault = treasury_vault::new(dao_id, ctx);
+    let treasury_id = object::id(&treasury_vault);
+
+    let cap_vault = capability_vault::new(dao_id, ctx);
+    let capability_vault_id = object::id(&cap_vault);
+
+    let dao_charter = charter::new(dao_id, name, description, image_url, ctx);
+    let charter_id = object::id(&dao_charter);
+
+    let emergency_freeze = emergency::new(dao_id, ctx);
+    let emergency_freeze_id = object::id(&emergency_freeze);
+
+    let freeze_admin_cap = emergency::new_admin_cap(dao_id, ctx);
+
+    let (mut proposal_configs, mut enabled_proposal_types) = subdao_proposal_configs();
+    apply_proposal_config_overrides(
+        &mut proposal_configs,
+        &mut enabled_proposal_types,
+        config_overrides,
+        true,
+    );
 
     let dao = DAO {
         id: dao_uid,
@@ -910,6 +1158,36 @@ fun vec_contains_key(keys: &vector<vector<u8>>, target: &std::ascii::String): bo
 
 // === Internal ===
 
+/// Apply `overrides` to an already-built `configs`/`enabled` pair.
+/// - Key already enabled: replace its ProposalConfig, preserving composable_allowed.
+/// - Key not yet enabled: insert into both maps (enables the type at construction time).
+/// - Key is a SubDAO-blocked type AND `check_subdao_blocked` is true: abort with
+/// EBlockedProposalType.
+///   Pass false for parent DAOs, which legitimately have these types (e.g. CreateSubDAO).
+/// - Config sets approval_threshold below the hardcoded minimum: abort with EThresholdBelowMinimum.
+fun apply_proposal_config_overrides(
+    configs: &mut VecMap<std::ascii::String, ProposalConfig>,
+    enabled: &mut VecSet<std::ascii::String>,
+    overrides: VecMap<std::ascii::String, ProposalConfig>,
+    check_subdao_blocked: bool,
+) {
+    let (mut keys, mut values) = overrides.into_keys_values();
+    while (!keys.is_empty()) {
+        let key = keys.pop_back();
+        let value = values.pop_back();
+        assert!(!check_subdao_blocked || !is_subdao_blocked_type(&key), EBlockedProposalType);
+        let floor = min_approval_threshold_for_type(&key);
+        assert!(value.approval_threshold() >= floor, EThresholdBelowMinimum);
+        if (enabled.contains(&key)) {
+            let composable = configs.get(&key).composable_allowed();
+            *configs.get_mut(&key) = value.with_composable_allowed(composable);
+        } else {
+            configs.insert(key, value);
+            enabled.insert(key);
+        };
+    };
+}
+
 /// Build the default proposal config map and enabled types set.
 fun default_proposal_configs(): (
     VecMap<std::ascii::String, ProposalConfig>,
@@ -926,20 +1204,28 @@ fun subdao_proposal_configs(): (
     build_proposal_configs(DEFAULT_PROPOSAL_TYPES, SUBDAO_BLOCKED_TYPES)
 }
 
-/// Return the per-type default ProposalConfig for a given type key.
-/// Types with hardcoded execution floors in admin_ops use a threshold that
-/// matches the floor so the config threshold is never misleadingly low.
-/// composable_allowed is true only for types that have a _step handler variant.
-fun config_for_type(type_key: &std::ascii::String): ProposalConfig {
-    let approval_threshold = if (*type_key == b"EnableProposalType".to_ascii_string()) {
+/// Return the hardcoded minimum approval_threshold for a type, or 0 if no floor applies.
+/// This is the single source of truth consumed by both config_for_type and
+/// apply_proposal_config_overrides so the two cannot drift apart.
+fun min_approval_threshold_for_type(type_key: &std::ascii::String): u16 {
+    if (*type_key == b"EnableProposalType".to_ascii_string()) {
         ENABLE_PROPOSAL_TYPE_MIN_THRESHOLD
     } else if (*type_key == b"UpdateProposalConfig".to_ascii_string()) {
         UPDATE_PROPOSAL_CONFIG_MIN_THRESHOLD
     } else if (*type_key == b"EnableBypassType".to_ascii_string()) {
         ENABLE_BYPASS_TYPE_MIN_THRESHOLD
     } else {
-        DEFAULT_APPROVAL_THRESHOLD
-    };
+        0u16
+    }
+}
+
+/// Return the per-type default ProposalConfig for a given type key.
+/// Types with hardcoded execution floors in admin_ops use a threshold that
+/// matches the floor so the config threshold is never misleadingly low.
+/// composable_allowed is true only for types that have a _step handler variant.
+fun config_for_type(type_key: &std::ascii::String): ProposalConfig {
+    let min = min_approval_threshold_for_type(type_key);
+    let approval_threshold = if (min > 0) { min } else { DEFAULT_APPROVAL_THRESHOLD };
     let composable =
         *type_key == b"AddMember".to_ascii_string()
         || *type_key == b"RemoveMember".to_ascii_string()
