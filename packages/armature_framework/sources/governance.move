@@ -199,6 +199,40 @@ public(package) fun proposer_weight(self: &GovernanceConfig, addr: address): u64
     }
 }
 
+/// Remove multiple members from the board atomically. Aborts if the input
+/// contains duplicates, if any address is not on the board, or if removal
+/// would leave the board empty. All checks run before any mutation.
+public(package) fun remove_board_members(
+    self: &mut GovernanceConfig,
+    members_to_remove: vector<address>,
+): vector<address> {
+    match (self) {
+        GovernanceConfig::Board { members } => {
+            let mut seen = vec_set::empty<address>();
+            let mut i = 0;
+            while (i < members_to_remove.length()) {
+                let addr = members_to_remove[i];
+                assert!(!seen.contains(&addr), EDuplicateBoardMember);
+                seen.insert(addr);
+                i = i + 1;
+            };
+            let mut j = 0;
+            while (j < members_to_remove.length()) {
+                assert!(members.contains(&members_to_remove[j]), ENotBoardMember);
+                j = j + 1;
+            };
+            assert!(members.length() > members_to_remove.length(), EEmptyBoard);
+            let mut k = 0;
+            while (k < members_to_remove.length()) {
+                members.remove(&members_to_remove[k]);
+                k = k + 1;
+            };
+            members_to_remove
+        },
+        _ => abort 0,
+    }
+}
+
 /// Remove a single member from the board. Aborts if not present or if
 /// removal would leave the board empty.
 public(package) fun remove_board_member(self: &mut GovernanceConfig, member: address) {

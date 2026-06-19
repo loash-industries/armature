@@ -40,6 +40,7 @@ const DEFAULT_PROPOSAL_TYPES: vector<vector<u8>> = vector[
     b"AddMember",
     b"RemoveMember",
     b"BatchAddMembers",
+    b"BatchRemoveMembers",
     b"CharterUpdate",
     b"EnableProposalType",
     b"EnableBypassType",
@@ -608,6 +609,20 @@ public fun remove_board_member_governance<P>(
     assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
     self.governance.remove_board_member(member);
     self.increment_encrypt_epoch();
+}
+
+/// Remove multiple members from the DAO's board atomically.
+/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+/// Auto-increments encrypt_epoch once for the batch.
+public fun remove_board_members_governance<P>(
+    self: &mut DAO,
+    members: vector<address>,
+    req: &ExecutionRequest<P>,
+): vector<address> {
+    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    let removed = self.governance.remove_board_members(members);
+    self.increment_encrypt_epoch();
+    removed
 }
 
 /// Remove a proposal type from the enabled set and its config.
@@ -1229,6 +1244,7 @@ fun config_for_type(type_key: &std::ascii::String): ProposalConfig {
     let composable =
         *type_key == b"AddMember".to_ascii_string()
         || *type_key == b"RemoveMember".to_ascii_string()
+        || *type_key == b"BatchRemoveMembers".to_ascii_string()
         || *type_key == b"SetBoard".to_ascii_string()
         || *type_key == b"CharterUpdate".to_ascii_string()
         || *type_key == b"EnableProposalType".to_ascii_string();
