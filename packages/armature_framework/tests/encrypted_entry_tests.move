@@ -27,7 +27,6 @@ fun create_dao(scenario: &mut test_scenario::Scenario) {
     dao::create(
         &init,
         string::utf8(b"Tribe"),
-        string::utf8(b"Test tribe"),
         string::utf8(b"https://example.com/img.png"),
         scenario.ctx(),
     );
@@ -42,7 +41,6 @@ fun create_two_daos(scenario: &mut test_scenario::Scenario): (ID, ID) {
         dao::create(
             &init,
             string::utf8(b"DAO One"),
-            string::utf8(b"First"),
             string::utf8(b"https://one.example"),
             scenario.ctx(),
         )
@@ -53,7 +51,6 @@ fun create_two_daos(scenario: &mut test_scenario::Scenario): (ID, ID) {
         dao::create(
             &init,
             string::utf8(b"DAO Two"),
-            string::utf8(b"Second"),
             string::utf8(b"https://two.example"),
             scenario.ctx(),
         )
@@ -991,7 +988,6 @@ fun test_setboard_multiple_removals_each_rotate_epoch() {
         dao::create(
             &init,
             string::utf8(b"Multi-member"),
-            string::utf8(b"Three members"),
             string::utf8(b"https://example.com"),
             scenario.ctx(),
         );

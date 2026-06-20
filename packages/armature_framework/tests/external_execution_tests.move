@@ -27,7 +27,6 @@ fun create_test_dao(scenario: &mut test_scenario::Scenario) {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"External-execution test DAO"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -508,7 +507,6 @@ fun execute_enable_bypass_type_below_floor_aborts() {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"2-member DAO"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );

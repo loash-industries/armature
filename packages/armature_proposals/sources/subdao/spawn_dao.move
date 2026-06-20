@@ -7,19 +7,13 @@ use std::string::String;
 public struct SpawnDAO has drop, store {
     governance_init: GovernanceTypeInit,
     name: String,
-    description: String,
-    metadata_ipfs: String,
+    metadata_uri: String,
 }
 
 // === Constructor ===
 
-public fun new(
-    governance_init: GovernanceTypeInit,
-    name: String,
-    description: String,
-    metadata_ipfs: String,
-): SpawnDAO {
-    SpawnDAO { governance_init, name, description, metadata_ipfs }
+public fun new(governance_init: GovernanceTypeInit, name: String, metadata_uri: String): SpawnDAO {
+    SpawnDAO { governance_init, name, metadata_uri }
 }
 
 // === Accessors ===
@@ -28,6 +22,4 @@ public fun governance_init(self: &SpawnDAO): &GovernanceTypeInit { &self.governa
 
 public fun name(self: &SpawnDAO): &String { &self.name }
 
-public fun description(self: &SpawnDAO): &String { &self.description }
-
-public fun metadata_ipfs(self: &SpawnDAO): &String { &self.metadata_ipfs }
+public fun metadata_uri(self: &SpawnDAO): &String { &self.metadata_uri }

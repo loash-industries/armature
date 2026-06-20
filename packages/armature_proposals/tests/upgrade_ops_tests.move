@@ -25,7 +25,6 @@ fun create_dao(scenario: &mut test_scenario::Scenario) {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Upgrade ops test"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -157,7 +156,6 @@ fun upgrade_vault_mismatch_aborts() {
             dao::create(
                 &init,
                 string::utf8(b"First DAO"),
-                string::utf8(b"First DAO"),
                 string::utf8(b"https://example.com/first.png"),
                 scenario.ctx(),
             );
@@ -170,7 +168,6 @@ fun upgrade_vault_mismatch_aborts() {
         dao::create(
             &init,
             string::utf8(b"Other DAO"),
-            string::utf8(b"Second DAO"),
             string::utf8(b"https://example.com/other.png"),
             scenario.ctx(),
         );

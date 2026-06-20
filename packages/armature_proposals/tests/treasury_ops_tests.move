@@ -32,7 +32,6 @@ fun create_dao(scenario: &mut test_scenario::Scenario) {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"A test DAO"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -519,7 +518,6 @@ fun send_coin_to_dao_e2e() {
             dao::create(
                 &init,
                 string::utf8(b"Source DAO"),
-                string::utf8(b"Source DAO"),
                 string::utf8(b"https://example.com/source.png"),
                 scenario.ctx(),
             );
@@ -531,7 +529,6 @@ fun send_coin_to_dao_e2e() {
         let init = governance::init_board(vector[CREATOR]);
         dao::create(
             &init,
-            string::utf8(b"Target DAO"),
             string::utf8(b"Target DAO"),
             string::utf8(b"https://example.com/target.png"),
             scenario.ctx(),
@@ -650,7 +647,6 @@ fun send_coin_to_dao_target_mismatch_aborts() {
             dao::create(
                 &init,
                 string::utf8(b"Source DAO"),
-                string::utf8(b"Source DAO"),
                 string::utf8(b"https://example.com/source.png"),
                 scenario.ctx(),
             );
@@ -661,7 +657,6 @@ fun send_coin_to_dao_target_mismatch_aborts() {
         let init = governance::init_board(vector[CREATOR]);
         dao::create(
             &init,
-            string::utf8(b"Target DAO"),
             string::utf8(b"Target DAO"),
             string::utf8(b"https://example.com/target.png"),
             scenario.ctx(),

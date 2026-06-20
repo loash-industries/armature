@@ -16,7 +16,6 @@ use sui::vec_set::{Self, VecSet};
 // === Errors ===
 
 const EInvalidName: u64 = 0;
-const EInvalidDescription: u64 = 1;
 const EDAOIdMismatch: u64 = 2;
 const ENotMigrating: u64 = 3;
 const ETreasuryIdMismatch: u64 = 4;
@@ -199,12 +198,10 @@ public struct DAODestroyed has copy, drop {
 public fun create(
     gov_init: &GovernanceTypeInit,
     name: String,
-    description: String,
-    image_url: String,
+    metadata_uri: String,
     ctx: &mut TxContext,
 ): ID {
     assert!(name.length() > 0, EInvalidName);
-    assert!(description.length() > 0, EInvalidDescription);
 
     let creator = ctx.sender();
 
@@ -223,7 +220,7 @@ public fun create(
     let cap_vault = capability_vault::new(dao_id, ctx);
     let capability_vault_id = object::id(&cap_vault);
 
-    let dao_charter = charter::new(dao_id, name, description, image_url, ctx);
+    let dao_charter = charter::new(dao_id, name, metadata_uri, ctx);
     let charter_id = object::id(&dao_charter);
 
     let emergency_freeze = emergency::new(dao_id, ctx);
@@ -286,12 +283,10 @@ public fun create(
 public(package) fun create_returning_vault(
     gov_init: &GovernanceTypeInit,
     name: String,
-    description: String,
-    image_url: String,
+    metadata_uri: String,
     ctx: &mut TxContext,
 ): (ID, capability_vault::CapabilityVault) {
     assert!(name.length() > 0, EInvalidName);
-    assert!(description.length() > 0, EInvalidDescription);
 
     let creator = ctx.sender();
 
@@ -307,7 +302,7 @@ public(package) fun create_returning_vault(
     let cap_vault = capability_vault::new(dao_id, ctx);
     let capability_vault_id = object::id(&cap_vault);
 
-    let dao_charter = charter::new(dao_id, name, description, image_url, ctx);
+    let dao_charter = charter::new(dao_id, name, metadata_uri, ctx);
     let charter_id = object::id(&dao_charter);
 
     let emergency_freeze = emergency::new(dao_id, ctx);
@@ -364,13 +359,11 @@ public(package) fun create_returning_vault(
 public(package) fun create_returning_vault_configured(
     gov_init: &GovernanceTypeInit,
     name: String,
-    description: String,
-    image_url: String,
+    metadata_uri: String,
     config_overrides: VecMap<std::ascii::String, ProposalConfig>,
     ctx: &mut TxContext,
 ): (ID, capability_vault::CapabilityVault) {
     assert!(name.length() > 0, EInvalidName);
-    assert!(description.length() > 0, EInvalidDescription);
 
     let creator = ctx.sender();
 
@@ -386,7 +379,7 @@ public(package) fun create_returning_vault_configured(
     let cap_vault = capability_vault::new(dao_id, ctx);
     let capability_vault_id = object::id(&cap_vault);
 
-    let dao_charter = charter::new(dao_id, name, description, image_url, ctx);
+    let dao_charter = charter::new(dao_id, name, metadata_uri, ctx);
     let charter_id = object::id(&dao_charter);
 
     let emergency_freeze = emergency::new(dao_id, ctx);
@@ -764,13 +757,11 @@ public(package) fun record_execution(
 public(package) fun create_subdao_returning_vault_configured(
     gov_init: &GovernanceTypeInit,
     name: String,
-    description: String,
-    image_url: String,
+    metadata_uri: String,
     config_overrides: VecMap<std::ascii::String, ProposalConfig>,
     ctx: &mut TxContext,
 ): (DAO, emergency::FreezeAdminCap, capability_vault::CapabilityVault) {
     assert!(name.length() > 0, EInvalidName);
-    assert!(description.length() > 0, EInvalidDescription);
 
     let governance = governance::new_board(gov_init);
     let initial_members = governance.board_member_vec();
@@ -784,7 +775,7 @@ public(package) fun create_subdao_returning_vault_configured(
     let cap_vault = capability_vault::new(dao_id, ctx);
     let capability_vault_id = object::id(&cap_vault);
 
-    let dao_charter = charter::new(dao_id, name, description, image_url, ctx);
+    let dao_charter = charter::new(dao_id, name, metadata_uri, ctx);
     let charter_id = object::id(&dao_charter);
 
     let emergency_freeze = emergency::new(dao_id, ctx);
@@ -843,12 +834,10 @@ public(package) fun create_subdao_returning_vault_configured(
 public(package) fun create_subdao_returning_vault(
     gov_init: &GovernanceTypeInit,
     name: String,
-    description: String,
-    image_url: String,
+    metadata_uri: String,
     ctx: &mut TxContext,
 ): (DAO, emergency::FreezeAdminCap, capability_vault::CapabilityVault) {
     assert!(name.length() > 0, EInvalidName);
-    assert!(description.length() > 0, EInvalidDescription);
 
     let governance = governance::new_board(gov_init);
     let initial_members = governance.board_member_vec();
@@ -862,7 +851,7 @@ public(package) fun create_subdao_returning_vault(
     let cap_vault = capability_vault::new(dao_id, ctx);
     let capability_vault_id = object::id(&cap_vault);
 
-    let dao_charter = charter::new(dao_id, name, description, image_url, ctx);
+    let dao_charter = charter::new(dao_id, name, metadata_uri, ctx);
     let charter_id = object::id(&dao_charter);
 
     let emergency_freeze = emergency::new(dao_id, ctx);
@@ -917,12 +906,10 @@ public(package) fun create_subdao_returning_vault(
 public fun create_subdao(
     gov_init: &GovernanceTypeInit,
     name: String,
-    description: String,
-    image_url: String,
+    metadata_uri: String,
     ctx: &mut TxContext,
 ): (DAO, emergency::FreezeAdminCap) {
     assert!(name.length() > 0, EInvalidName);
-    assert!(description.length() > 0, EInvalidDescription);
 
     let governance = governance::new_board(gov_init);
     let initial_members = governance.board_member_vec();
@@ -936,7 +923,7 @@ public fun create_subdao(
     let cap_vault = capability_vault::new(dao_id, ctx);
     let capability_vault_id = object::id(&cap_vault);
 
-    let dao_charter = charter::new(dao_id, name, description, image_url, ctx);
+    let dao_charter = charter::new(dao_id, name, metadata_uri, ctx);
     let charter_id = object::id(&dao_charter);
 
     let emergency_freeze = emergency::new(dao_id, ctx);
@@ -990,13 +977,11 @@ public fun create_subdao(
 public fun create_subdao_configured(
     gov_init: &GovernanceTypeInit,
     name: String,
-    description: String,
-    image_url: String,
+    metadata_uri: String,
     config_overrides: VecMap<std::ascii::String, ProposalConfig>,
     ctx: &mut TxContext,
 ): (DAO, emergency::FreezeAdminCap) {
     assert!(name.length() > 0, EInvalidName);
-    assert!(description.length() > 0, EInvalidDescription);
 
     let governance = governance::new_board(gov_init);
     let initial_members = governance.board_member_vec();
@@ -1010,7 +995,7 @@ public fun create_subdao_configured(
     let cap_vault = capability_vault::new(dao_id, ctx);
     let capability_vault_id = object::id(&cap_vault);
 
-    let dao_charter = charter::new(dao_id, name, description, image_url, ctx);
+    let dao_charter = charter::new(dao_id, name, metadata_uri, ctx);
     let charter_id = object::id(&dao_charter);
 
     let emergency_freeze = emergency::new(dao_id, ctx);

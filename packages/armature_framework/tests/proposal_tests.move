@@ -29,7 +29,6 @@ fun create_test_dao(scenario: &mut test_scenario::Scenario) {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"A test DAO"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );

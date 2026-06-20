@@ -34,7 +34,6 @@ fun create_dao(scenario: &mut test_scenario::Scenario) {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"A test DAO"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -49,7 +48,6 @@ fun create_and_share_subdao(scenario: &mut test_scenario::Scenario) {
         let (subdao, freeze_cap) = dao::create_subdao(
             &init,
             string::utf8(b"Sub DAO"),
-            string::utf8(b"A test sub-DAO"),
             string::utf8(b"https://example.com/sub.png"),
             scenario.ctx(),
         );
@@ -535,7 +533,6 @@ fun update_proposal_config_non_self_target_succeeds() {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Non-self update test"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );

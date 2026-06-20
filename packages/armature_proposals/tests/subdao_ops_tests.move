@@ -38,7 +38,6 @@ fun create_subdao_e2e() {
         dao::create(
             &init,
             string::utf8(b"Parent DAO"),
-            string::utf8(b"SubDAO creation e2e test"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -68,7 +67,6 @@ fun create_subdao_e2e() {
 
         let payload = create_subdao::new(
             string::utf8(b"Child DAO"),
-            string::utf8(b"A managed sub-DAO"),
             vector[SUBDAO_MEMBER],
             string::utf8(b"https://example.com/child.png"),
         );
@@ -147,7 +145,6 @@ fun create_subdao_vault_mismatch_aborts() {
         dao::create(
             &init,
             string::utf8(b"DAO A"),
-            string::utf8(b"First DAO"),
             string::utf8(b"https://example.com/a.png"),
             scenario.ctx(),
         );
@@ -159,7 +156,6 @@ fun create_subdao_vault_mismatch_aborts() {
         dao::create(
             &init,
             string::utf8(b"DAO B"),
-            string::utf8(b"Second DAO"),
             string::utf8(b"https://example.com/b.png"),
             scenario.ctx(),
         );
@@ -182,7 +178,6 @@ fun create_subdao_vault_mismatch_aborts() {
 
         let payload = create_subdao::new(
             string::utf8(b"Child DAO"),
-            string::utf8(b"Mismatch test"),
             vector[SUBDAO_MEMBER],
             string::utf8(b"https://example.com/child.png"),
         );
@@ -271,7 +266,6 @@ fun setup_parent_and_subdao(
             dao::create(
                 &init,
                 string::utf8(b"Parent DAO"),
-                string::utf8(b"Cap transfer test"),
                 string::utf8(b"https://example.com/parent.png"),
                 scenario.ctx(),
             );
@@ -295,7 +289,6 @@ fun setup_parent_and_subdao(
         clock.set_for_testing(1000);
         let payload = create_subdao::new(
             string::utf8(b"Child DAO"),
-            string::utf8(b"Managed child"),
             vector[SUBDAO_MEMBER],
             string::utf8(b"https://example.com/child.png"),
         );
@@ -1009,7 +1002,6 @@ fun create_multi_member_subdao() {
             dao::create(
                 &init,
                 string::utf8(b"Parent DAO"),
-                string::utf8(b"Multi-member SubDAO test"),
                 string::utf8(b"x"),
                 scenario.ctx(),
             );
@@ -1034,7 +1026,6 @@ fun create_multi_member_subdao() {
             option::some(string::utf8(b"Create 3-member SubDAO")),
             create_subdao::new(
                 string::utf8(b"Engineering"),
-                string::utf8(b"Multi-member"),
                 vector[SUBDAO_MEMBER, CREATOR, MEMBER_B],
                 string::utf8(b"x"),
             ),
@@ -1569,7 +1560,6 @@ fun controller_batch_add_members_empty_aborts() {
                 &init,
                 string::utf8(b"P"),
                 string::utf8(b"x"),
-                string::utf8(b"x"),
                 scenario.ctx(),
             );
     };
@@ -1582,7 +1572,6 @@ fun controller_batch_add_members_empty_aborts() {
             dao::create(
                 &init,
                 string::utf8(b"M"),
-                string::utf8(b"x"),
                 string::utf8(b"x"),
                 scenario.ctx(),
             );
@@ -1645,7 +1634,6 @@ fun controller_batch_remove_members_empty_aborts() {
                 &init,
                 string::utf8(b"P"),
                 string::utf8(b"x"),
-                string::utf8(b"x"),
                 scenario.ctx(),
             );
     };
@@ -1658,7 +1646,6 @@ fun controller_batch_remove_members_empty_aborts() {
             dao::create(
                 &init,
                 string::utf8(b"M"),
-                string::utf8(b"x"),
                 string::utf8(b"x"),
                 scenario.ctx(),
             );
@@ -1719,7 +1706,6 @@ fun controller_batch_add_members_oversize_aborts() {
                 &init,
                 string::utf8(b"P"),
                 string::utf8(b"x"),
-                string::utf8(b"x"),
                 scenario.ctx(),
             );
     };
@@ -1732,7 +1718,6 @@ fun controller_batch_add_members_oversize_aborts() {
             dao::create(
                 &init,
                 string::utf8(b"M"),
-                string::utf8(b"x"),
                 string::utf8(b"x"),
                 scenario.ctx(),
             );
@@ -1802,7 +1787,6 @@ fun controller_batch_remove_members_oversize_aborts() {
                 &init,
                 string::utf8(b"P"),
                 string::utf8(b"x"),
-                string::utf8(b"x"),
                 scenario.ctx(),
             );
     };
@@ -1815,7 +1799,6 @@ fun controller_batch_remove_members_oversize_aborts() {
             dao::create(
                 &init,
                 string::utf8(b"M"),
-                string::utf8(b"x"),
                 string::utf8(b"x"),
                 scenario.ctx(),
             );

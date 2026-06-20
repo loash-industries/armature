@@ -90,7 +90,6 @@ fun setup_dao_with_autojoin(scenario: &mut ts::Scenario): (ID, ID, ID) {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Bridge e2e test DAO"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );

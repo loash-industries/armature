@@ -172,8 +172,7 @@ public fun execute_create_subdao(
     let (subdao, freeze_admin_cap) = dao::create_subdao(
         &gov_init,
         *payload.name(),
-        *payload.description(),
-        *payload.metadata_ipfs(),
+        *payload.metadata_uri(),
         ctx,
     );
 
@@ -280,8 +279,7 @@ public fun execute_spawn_dao(
     let successor_id = dao::create(
         payload.governance_init(),
         *payload.name(),
-        *payload.description(),
-        *payload.metadata_ipfs(),
+        *payload.metadata_uri(),
         ctx,
     );
 

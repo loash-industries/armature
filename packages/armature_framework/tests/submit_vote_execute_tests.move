@@ -30,7 +30,6 @@ fun create_single_member_dao(scenario: &mut test_scenario::Scenario) {
         dao::create(
             &init,
             string::utf8(b"Fast DAO"),
-            string::utf8(b"Single-operator trading DAO"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -44,7 +43,6 @@ fun create_two_member_dao(scenario: &mut test_scenario::Scenario) {
         dao::create(
             &init,
             string::utf8(b"Two-Member DAO"),
-            string::utf8(b"Two-member test DAO"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -58,7 +56,6 @@ fun create_three_member_dao(scenario: &mut test_scenario::Scenario) {
         dao::create(
             &init,
             string::utf8(b"Three-Member DAO"),
-            string::utf8(b"Three-member test DAO"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );

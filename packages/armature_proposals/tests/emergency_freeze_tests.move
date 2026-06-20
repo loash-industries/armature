@@ -27,7 +27,6 @@ fun create_dao(scenario: &mut test_scenario::Scenario): ID {
     dao::create(
         &init,
         string::utf8(b"Test DAO"),
-        string::utf8(b"Emergency freeze test"),
         string::utf8(b"https://example.com/logo.png"),
         scenario.ctx(),
     )
