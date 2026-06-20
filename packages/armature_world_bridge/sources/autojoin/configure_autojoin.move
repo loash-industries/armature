@@ -35,8 +35,8 @@ const MAX_OPS_PER_CALL: u64 = 16;
 /// flip the kill-switch. `set_enabled` is `Option<bool>` so callers
 /// can leave the flag untouched.
 public struct ConfigureAutojoin has drop, store {
-    add_owner_ids: vector<u32>,
-    remove_owner_ids: vector<u32>,
+    add_tribe_ids: vector<u32>,
+    remove_tribe_ids: vector<u32>,
     set_enabled: Option<bool>,
 }
 
@@ -52,18 +52,18 @@ public struct AutojoinAllowlistUpdated has copy, drop {
 // === Constructor ===
 
 public fun new(
-    add_owner_ids: vector<u32>,
-    remove_owner_ids: vector<u32>,
+    add_tribe_ids: vector<u32>,
+    remove_tribe_ids: vector<u32>,
     set_enabled: Option<bool>,
 ): ConfigureAutojoin {
-    ConfigureAutojoin { add_owner_ids, remove_owner_ids, set_enabled }
+    ConfigureAutojoin { add_tribe_ids, remove_tribe_ids, set_enabled }
 }
 
 // === Accessors ===
 
-public fun add_owner_ids(self: &ConfigureAutojoin): &vector<u32> { &self.add_owner_ids }
+public fun add_tribe_ids(self: &ConfigureAutojoin): &vector<u32> { &self.add_tribe_ids }
 
-public fun remove_owner_ids(self: &ConfigureAutojoin): &vector<u32> { &self.remove_owner_ids }
+public fun remove_tribe_ids(self: &ConfigureAutojoin): &vector<u32> { &self.remove_tribe_ids }
 
 public fun set_enabled(self: &ConfigureAutojoin): &Option<bool> { &self.set_enabled }
 
@@ -80,12 +80,12 @@ public fun execute_configure_autojoin(dao: &mut DAO, ticket: ExecutionTicket<Con
     let payload = ticket.ticket_payload();
     let req = ticket.ticket_request();
 
-    assert!(payload.add_owner_ids.length() <= MAX_OPS_PER_CALL, ETooManyAdds);
-    assert!(payload.remove_owner_ids.length() <= MAX_OPS_PER_CALL, ETooManyRemoves);
+    assert!(payload.add_tribe_ids.length() <= MAX_OPS_PER_CALL, ETooManyAdds);
+    assert!(payload.remove_tribe_ids.length() <= MAX_OPS_PER_CALL, ETooManyRemoves);
 
     let mut i = 0;
-    while (i < payload.add_owner_ids.length()) {
-        assert!(payload.add_owner_ids[i] != 0, EZeroTribeIdNotAllowed);
+    while (i < payload.add_tribe_ids.length()) {
+        assert!(payload.add_tribe_ids[i] != 0, EZeroTribeIdNotAllowed);
         i = i + 1;
     };
 
@@ -101,7 +101,7 @@ public fun execute_configure_autojoin(dao: &mut DAO, ticket: ExecutionTicket<Con
         TribeIdAllowlist,
     >(req);
 
-    allowlist.apply(payload.add_owner_ids, payload.remove_owner_ids);
+    allowlist.apply(payload.add_tribe_ids, payload.remove_tribe_ids);
     if (payload.set_enabled.is_some()) {
         allowlist.set_enabled(*payload.set_enabled.borrow());
     };
@@ -110,8 +110,8 @@ public fun execute_configure_autojoin(dao: &mut DAO, ticket: ExecutionTicket<Con
 
     event::emit(AutojoinAllowlistUpdated {
         dao_id: dao.id(),
-        added: payload.add_owner_ids,
-        removed: payload.remove_owner_ids,
+        added: payload.add_tribe_ids,
+        removed: payload.remove_tribe_ids,
         enabled,
     });
 

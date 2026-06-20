@@ -34,7 +34,7 @@ MembersBatchRemoved  { dao_id: ID, removed: vector<address> }
 BoardUpdated         { dao_id: ID, new_members: vector<address> }
 
 // armature_world_bridge::autojoin_ops
-MemberAutojoined     { dao_id: ID, member: address, owner_id: u32, character_id: ID }
+MemberAutojoined     { dao_id: ID, member: address, tribe_id: u32, character_id: ID }
 
 // armature_proposals::subdao_ops
 ControllerMembersBatchAdded   { controller_dao_id: ID, subdao_id: ID,

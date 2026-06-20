@@ -34,7 +34,7 @@ const MAX_TRIBE_IDS: u64 = 8;
 /// only writer; `submit_autojoin` is the only on-path reader.
 public struct TribeIdAllowlist has store {
     enabled: bool,
-    owner_ids: VecSet<u32>,
+    tribe_ids: VecSet<u32>,
 }
 
 // === Constructor ===
@@ -44,7 +44,7 @@ public struct TribeIdAllowlist has store {
 public(package) fun empty(): TribeIdAllowlist {
     TribeIdAllowlist {
         enabled: false,
-        owner_ids: vec_set::empty(),
+        tribe_ids: vec_set::empty(),
     }
 }
 
@@ -52,11 +52,11 @@ public(package) fun empty(): TribeIdAllowlist {
 
 public fun is_enabled(self: &TribeIdAllowlist): bool { self.enabled }
 
-public fun contains(self: &TribeIdAllowlist, owner_id: u32): bool {
-    self.owner_ids.contains(&owner_id)
+public fun contains(self: &TribeIdAllowlist, tribe_id: u32): bool {
+    self.tribe_ids.contains(&tribe_id)
 }
 
-public fun size(self: &TribeIdAllowlist): u64 { self.owner_ids.size() }
+public fun size(self: &TribeIdAllowlist): u64 { self.tribe_ids.size() }
 
 public fun max_size(): u64 { MAX_TRIBE_IDS }
 
@@ -83,7 +83,7 @@ public(package) fun apply(
     // compute the post-apply size. Internal duplicates in either input
     // collapse naturally since we check membership before counting.
     let mut sim = vec_set::empty<u32>();
-    let existing_keys = self.owner_ids.keys();
+    let existing_keys = self.tribe_ids.keys();
     let mut k = 0;
     while (k < existing_keys.length()) {
         sim.insert(existing_keys[k]);
@@ -108,13 +108,13 @@ public(package) fun apply(
     let mut ri = 0;
     while (ri < remove_ids.length()) {
         let id = remove_ids[ri];
-        if (self.owner_ids.contains(&id)) { self.owner_ids.remove(&id); };
+        if (self.tribe_ids.contains(&id)) { self.tribe_ids.remove(&id); };
         ri = ri + 1;
     };
     let mut ai = 0;
     while (ai < add_ids.length()) {
         let id = add_ids[ai];
-        if (!self.owner_ids.contains(&id)) { self.owner_ids.insert(id); };
+        if (!self.tribe_ids.contains(&id)) { self.tribe_ids.insert(id); };
         ai = ai + 1;
     };
 }
@@ -126,14 +126,14 @@ public(package) fun set_enabled(self: &mut TribeIdAllowlist, enabled: bool) {
 // === Test helpers ===
 
 #[test_only]
-public fun new_for_testing(enabled: bool, owner_ids: vector<u32>): TribeIdAllowlist {
+public fun new_for_testing(enabled: bool, tribe_ids: vector<u32>): TribeIdAllowlist {
     let mut set = vec_set::empty<u32>();
     let mut i = 0;
-    while (i < owner_ids.length()) {
-        if (!set.contains(&owner_ids[i])) {
-            set.insert(owner_ids[i]);
+    while (i < tribe_ids.length()) {
+        if (!set.contains(&tribe_ids[i])) {
+            set.insert(tribe_ids[i]);
         };
         i = i + 1;
     };
-    TribeIdAllowlist { enabled, owner_ids: set }
+    TribeIdAllowlist { enabled, tribe_ids: set }
 }

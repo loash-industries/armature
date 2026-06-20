@@ -7,7 +7,7 @@
 ///      with `NewType = AutojoinDAO`, depositing an `ExternalExecutionCap<AutojoinDAO>`
 ///      in the DAO's CapabilityVault.
 ///   2. DAO has previously passed `EnableProposalType { type_key: "ConfigureAutojoin", .. }`
-///      with `NewType = ConfigureAutojoin`, then `ConfigureAutojoin { add_owner_ids: [N],
+///      with `NewType = ConfigureAutojoin`, then `ConfigureAutojoin { add_tribe_ids: [N],
 /// set_enabled: some(true), .. }`
 ///      to populate the allowlist.
 ///   3. Player calls `submit_autojoin(dao, vault, cap_id, character, freeze, clock, ctx)`.
@@ -21,7 +21,7 @@
 ///      which re-reads the allowlist (defense-in-depth) and adds the joiner.
 ///
 /// Threat model:
-///   - World admin is the trust anchor for `character.owner_id` and
+///   - World admin is the trust anchor for `character.tribe_id` and
 ///     `character.character_address`. Both are written only by
 ///     `world::character::create_character` / `update_tribe` / `update_address`,
 ///     all of which call `admin_acl.verify_sponsor(ctx)`.
@@ -62,7 +62,7 @@ const EZeroTribeIdNotAllowed: u64 = 5;
 /// rather than trusting payload values, so the payload is informational.
 public struct AutojoinDAO has drop, store {
     character_id: ID,
-    owner_id: u32,
+    tribe_id: u32,
     joining_address: address,
 }
 
@@ -71,7 +71,7 @@ public struct AutojoinDAO has drop, store {
 public struct MemberAutojoined has copy, drop {
     dao_id: ID,
     member: address,
-    owner_id: u32,
+    tribe_id: u32,
     character_id: ID,
 }
 
@@ -79,7 +79,7 @@ public struct MemberAutojoined has copy, drop {
 
 public fun character_id(self: &AutojoinDAO): ID { self.character_id }
 
-public fun owner_id(self: &AutojoinDAO): u32 { self.owner_id }
+public fun tribe_id(self: &AutojoinDAO): u32 { self.tribe_id }
 
 public fun joining_address(self: &AutojoinDAO): address { self.joining_address }
 
@@ -123,12 +123,12 @@ public fun submit_autojoin(
         TribeIdAllowlist,
     >();
     assert!(allowlist.is_enabled(), EAutojoinDisabled);
-    let owner_id = character.tribe();
-    // Reject owner_id == 0 at the use site too. ConfigureAutojoin rejects 0
+    let tribe_id = character.tribe();
+    // Reject tribe_id == 0 at the use site too. ConfigureAutojoin rejects 0
     // on adds, but defense-in-depth: if the world-contracts admin gate ever
     // changes and produces a 0-tribe Character, this catches it independently.
-    assert!(owner_id != 0, EZeroTribeIdNotAllowed);
-    assert!(allowlist.contains(owner_id), ETribeIdNotAllowed);
+    assert!(tribe_id != 0, EZeroTribeIdNotAllowed);
+    assert!(allowlist.contains(tribe_id), ETribeIdNotAllowed);
 
     // 3. Borrow the cap. borrow_external_cap asserts vault.dao_id == members_dao.id().
     let cap = members_vault.borrow_external_cap<AutojoinDAO>(members_dao.id(), cap_id);
@@ -142,7 +142,7 @@ public fun submit_autojoin(
         option::none(),
         AutojoinDAO {
             character_id: object::id(character),
-            owner_id,
+            tribe_id,
             joining_address: sender,
         },
         clock,
@@ -172,14 +172,14 @@ public fun execute_autojoin_dao(dao: &mut DAO, ticket: ExecutionTicket<AutojoinD
     assert!(dao.has_type_state<ConfigureAutojoin>(), EAllowlistNotInitialized);
     let allowlist: &TribeIdAllowlist = dao.borrow_type_state<ConfigureAutojoin, TribeIdAllowlist>();
     assert!(allowlist.is_enabled(), EAutojoinDisabled);
-    assert!(allowlist.contains(payload.owner_id), ETribeIdNotAllowed);
+    assert!(allowlist.contains(payload.tribe_id), ETribeIdNotAllowed);
 
     dao.add_board_member_governance(payload.joining_address, ticket.ticket_request());
 
     event::emit(MemberAutojoined {
         dao_id: dao.id(),
         member: payload.joining_address,
-        owner_id: payload.owner_id,
+        tribe_id: payload.tribe_id,
         character_id: payload.character_id,
     });
 
