@@ -53,11 +53,11 @@ fun setup_world(scenario: &mut ts::Scenario) {
     };
 }
 
-/// Create + share a Character with the given game_id, tribe_id, and wallet.
+/// Create + share a Character with the given game_id, owner_id, and wallet.
 fun create_character(
     scenario: &mut ts::Scenario,
     game_id: u32,
-    tribe_id: u32,
+    owner_id: u32,
     wallet: address,
 ): ID {
     ts::next_tx(scenario, ADMIN);
@@ -68,7 +68,7 @@ fun create_character(
         &admin_acl,
         game_id,
         TENANT.to_string(),
-        tribe_id,
+        owner_id,
         wallet,
         string::utf8(b"test character"),
         scenario.ctx(),
@@ -90,7 +90,6 @@ fun setup_dao_with_autojoin(scenario: &mut ts::Scenario): (ID, ID, ID) {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Bridge e2e test DAO"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -363,7 +362,7 @@ fun autojoin_uninitialized_allowlist_aborts() {
     ),
 ]
 /// ConfigureAutojoin rejects 0 in adds (config-time guard).
-fun configure_rejects_zero_tribe_id() {
+fun configure_rejects_zero_owner_id() {
     let mut scenario = ts::begin(GOVERNOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 

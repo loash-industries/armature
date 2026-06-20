@@ -26,8 +26,7 @@ use sui::vec_map::VecMap;
 public fun create_wired_subdao<P>(
     board: vector<address>,
     name: String,
-    description: String,
-    image_url: String,
+    metadata_uri: String,
     freeze_admin: address,
     parent_vault: &mut capability_vault::CapabilityVault,
     req: &ExecutionRequest<P>,
@@ -38,8 +37,7 @@ public fun create_wired_subdao<P>(
     let (subdao, freeze_cap) = dao::create_subdao_configured(
         &gov,
         name,
-        description,
-        image_url,
+        metadata_uri,
         config_overrides,
         ctx,
     );
@@ -73,12 +71,9 @@ public fun create_tribe(
     tribe_name: String,
     officer_name: String,
     member_name: String,
-    tribe_description: String,
-    officer_description: String,
-    member_description: String,
-    tribe_image_url: String,
-    officer_image_url: String,
-    member_image_url: String,
+    tribe_metadata_uri: String,
+    officer_metadata_uri: String,
+    member_metadata_uri: String,
     officer_freeze_admin: address,
     member_freeze_admin: address,
     ctx: &mut TxContext,
@@ -91,8 +86,7 @@ public fun create_tribe(
     let (tribe_dao_id, mut tribe_vault) = dao::create_returning_vault(
         &tribe_gov,
         tribe_name,
-        tribe_description,
-        tribe_image_url,
+        tribe_metadata_uri,
         ctx,
     );
 
@@ -100,8 +94,7 @@ public fun create_tribe(
     let (officer_dao, officer_freeze_cap, mut officer_vault) = dao::create_subdao_returning_vault(
         &officer_gov,
         officer_name,
-        officer_description,
-        officer_image_url,
+        officer_metadata_uri,
         ctx,
     );
     let officer_dao_id = object::id(&officer_dao);
@@ -110,8 +103,7 @@ public fun create_tribe(
     let (member_dao, member_freeze_cap) = dao::create_subdao(
         &member_gov,
         member_name,
-        member_description,
-        member_image_url,
+        member_metadata_uri,
         ctx,
     );
     let member_dao_id = object::id(&member_dao);
@@ -155,12 +147,9 @@ public fun create_tribe_configured(
     tribe_name: String,
     officer_name: String,
     member_name: String,
-    tribe_description: String,
-    officer_description: String,
-    member_description: String,
-    tribe_image_url: String,
-    officer_image_url: String,
-    member_image_url: String,
+    tribe_metadata_uri: String,
+    officer_metadata_uri: String,
+    member_metadata_uri: String,
     officer_freeze_admin: address,
     member_freeze_admin: address,
     tribe_config_overrides: VecMap<std::ascii::String, ProposalConfig>,
@@ -176,8 +165,7 @@ public fun create_tribe_configured(
     let (tribe_dao_id, mut tribe_vault) = dao::create_returning_vault_configured(
         &tribe_gov,
         tribe_name,
-        tribe_description,
-        tribe_image_url,
+        tribe_metadata_uri,
         tribe_config_overrides,
         ctx,
     );
@@ -190,8 +178,7 @@ public fun create_tribe_configured(
     ) = dao::create_subdao_returning_vault_configured(
         &officer_gov,
         officer_name,
-        officer_description,
-        officer_image_url,
+        officer_metadata_uri,
         officer_config_overrides,
         ctx,
     );
@@ -201,8 +188,7 @@ public fun create_tribe_configured(
     let (member_dao, member_freeze_cap) = dao::create_subdao_configured(
         &member_gov,
         member_name,
-        member_description,
-        member_image_url,
+        member_metadata_uri,
         member_config_overrides,
         ctx,
     );

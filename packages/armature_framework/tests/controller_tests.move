@@ -32,7 +32,6 @@ fun create_dao(scenario: &mut test_scenario::Scenario) {
         dao::create(
             &init,
             string::utf8(b"Parent DAO"),
-            string::utf8(b"Controller test DAO"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -59,7 +58,6 @@ fun privileged_submit_creates_executed_proposal() {
         let (subdao, freeze_cap) = dao::create_subdao(
             &init,
             string::utf8(b"SubDAO"),
-            string::utf8(b"Test SubDAO"),
             string::utf8(b"https://example.com/sub.png"),
             scenario.ctx(),
         );
@@ -121,7 +119,6 @@ fun privileged_submit_rejects_wrong_control() {
         let (subdao, freeze_cap) = dao::create_subdao(
             &init,
             string::utf8(b"SubDAO"),
-            string::utf8(b"Test SubDAO"),
             string::utf8(b"https://example.com/sub.png"),
             scenario.ctx(),
         );
@@ -170,7 +167,6 @@ fun privileged_consume_rejects_wrong_control() {
         let (subdao, freeze_cap) = dao::create_subdao(
             &init,
             string::utf8(b"SubDAO"),
-            string::utf8(b"Test SubDAO"),
             string::utf8(b"https://example.com/sub.png"),
             scenario.ctx(),
         );
@@ -306,7 +302,6 @@ fun privileged_submit_rejects_inactive_subdao() {
         let (mut subdao, freeze_cap) = dao::create_subdao(
             &init,
             string::utf8(b"SubDAO"),
-            string::utf8(b"Test SubDAO"),
             string::utf8(b"https://example.com/sub.png"),
             scenario.ctx(),
         );

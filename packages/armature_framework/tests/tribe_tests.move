@@ -39,9 +39,6 @@ fun do_create_tribe(scenario: &mut test_scenario::Scenario): (ID, ID, ID) {
         string::utf8(b"Tribe DAO"),
         string::utf8(b"Officers"),
         string::utf8(b"Members"),
-        string::utf8(b"The tribe"),
-        string::utf8(b"Officer channel"),
-        string::utf8(b"Member channel"),
         string::utf8(b"https://tribe.example/logo.png"),
         string::utf8(b"https://tribe.example/officers.png"),
         string::utf8(b"https://tribe.example/members.png"),
@@ -57,10 +54,10 @@ fun do_create_tribe(scenario: &mut test_scenario::Scenario): (ID, ID, ID) {
 /// create_tribe returns three distinct IDs.
 fun create_tribe_returns_distinct_dao_ids() {
     let mut scenario = test_scenario::begin(CREATOR);
-    let (tribe_id, officer_id, member_id) = do_create_tribe(&mut scenario);
+    let (owner_id, officer_id, member_id) = do_create_tribe(&mut scenario);
 
-    assert!(tribe_id != officer_id);
-    assert!(tribe_id != member_id);
+    assert!(owner_id != officer_id);
+    assert!(owner_id != member_id);
     assert!(officer_id != member_id);
 
     scenario.end();
@@ -72,11 +69,11 @@ fun create_tribe_returns_distinct_dao_ids() {
 /// Each DAO is Active and seeded with the correct board members.
 fun create_tribe_daos_are_active_with_correct_boards() {
     let mut scenario = test_scenario::begin(CREATOR);
-    let (tribe_id, officer_id, member_id) = do_create_tribe(&mut scenario);
+    let (owner_id, officer_id, member_id) = do_create_tribe(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
-        let tribe_dao = scenario.take_shared_by_id<DAO>(tribe_id);
+        let tribe_dao = scenario.take_shared_by_id<DAO>(owner_id);
         let officer_dao = scenario.take_shared_by_id<DAO>(officer_id);
         let member_dao = scenario.take_shared_by_id<DAO>(member_id);
 
@@ -111,11 +108,11 @@ fun create_tribe_daos_are_active_with_correct_boards() {
 /// Officers vault holds one SubDAOControl pointing at the Members SubDAO.
 fun create_tribe_control_hierarchy_is_tribe_officers_members() {
     let mut scenario = test_scenario::begin(CREATOR);
-    let (tribe_id, officer_id, member_id) = do_create_tribe(&mut scenario);
+    let (owner_id, officer_id, member_id) = do_create_tribe(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
-        let tribe_dao = scenario.take_shared_by_id<DAO>(tribe_id);
+        let tribe_dao = scenario.take_shared_by_id<DAO>(owner_id);
         let officer_dao = scenario.take_shared_by_id<DAO>(officer_id);
         let tribe_vault_id = tribe_dao.capability_vault_id();
         let officer_vault_id = officer_dao.capability_vault_id();
@@ -200,20 +197,20 @@ fun create_tribe_freeze_caps_routed_correctly() {
 /// Each of the three DAOs has its four companion objects shared on-chain.
 fun create_tribe_all_companion_objects_are_shared() {
     let mut scenario = test_scenario::begin(CREATOR);
-    let (tribe_id, officer_id, member_id) = do_create_tribe(&mut scenario);
+    let (owner_id, officer_id, member_id) = do_create_tribe(&mut scenario);
 
     // Verify IDs stored on each DAO reference distinct shared objects.
     scenario.next_tx(CREATOR);
     {
-        let tribe_dao = scenario.take_shared_by_id<DAO>(tribe_id);
+        let tribe_dao = scenario.take_shared_by_id<DAO>(owner_id);
         let officer_dao = scenario.take_shared_by_id<DAO>(officer_id);
         let member_dao = scenario.take_shared_by_id<DAO>(member_id);
 
         // All companion IDs are non-zero and distinct from their parent DAO.
-        assert!(tribe_dao.treasury_id()         != tribe_id);
-        assert!(tribe_dao.capability_vault_id() != tribe_id);
-        assert!(tribe_dao.charter_id()          != tribe_id);
-        assert!(tribe_dao.emergency_freeze_id() != tribe_id);
+        assert!(tribe_dao.treasury_id()         != owner_id);
+        assert!(tribe_dao.capability_vault_id() != owner_id);
+        assert!(tribe_dao.charter_id()          != owner_id);
+        assert!(tribe_dao.emergency_freeze_id() != owner_id);
 
         assert!(officer_dao.treasury_id()         != officer_id);
         assert!(officer_dao.capability_vault_id() != officer_id);
@@ -275,9 +272,6 @@ fun create_tribe_aborts_on_empty_tribe_board() {
         string::utf8(b"Tribe DAO"),
         string::utf8(b"Officers"),
         string::utf8(b"Members"),
-        string::utf8(b"The tribe"),
-        string::utf8(b"Officer channel"),
-        string::utf8(b"Member channel"),
         string::utf8(b"https://tribe.example/logo.png"),
         string::utf8(b"https://tribe.example/officers.png"),
         string::utf8(b"https://tribe.example/members.png"),
@@ -302,9 +296,6 @@ fun create_tribe_aborts_on_empty_officer_board() {
         string::utf8(b"Tribe DAO"),
         string::utf8(b"Officers"),
         string::utf8(b"Members"),
-        string::utf8(b"The tribe"),
-        string::utf8(b"Officer channel"),
-        string::utf8(b"Member channel"),
         string::utf8(b"https://tribe.example/logo.png"),
         string::utf8(b"https://tribe.example/officers.png"),
         string::utf8(b"https://tribe.example/members.png"),
@@ -329,9 +320,6 @@ fun create_tribe_aborts_on_empty_member_board() {
         string::utf8(b"Tribe DAO"),
         string::utf8(b"Officers"),
         string::utf8(b"Members"),
-        string::utf8(b"The tribe"),
-        string::utf8(b"Officer channel"),
-        string::utf8(b"Member channel"),
         string::utf8(b"https://tribe.example/logo.png"),
         string::utf8(b"https://tribe.example/officers.png"),
         string::utf8(b"https://tribe.example/members.png"),
@@ -361,7 +349,6 @@ fun do_create_parent_and_wired_subdao(scenario: &mut test_scenario::Scenario): (
     let (parent_id, mut parent_vault) = dao::create_returning_vault(
         &gov,
         string::utf8(b"Parent DAO"),
-        string::utf8(b"A parent DAO"),
         string::utf8(b"https://example.com/parent.png"),
         scenario.ctx(),
     );
@@ -369,7 +356,6 @@ fun do_create_parent_and_wired_subdao(scenario: &mut test_scenario::Scenario): (
     let subdao_id = tribe::create_wired_subdao(
         vector[OFFICER_A],
         string::utf8(b"SubDAO"),
-        string::utf8(b"A sub DAO"),
         string::utf8(b"https://example.com/sub.png"),
         SUBDAO_ADMIN,
         &mut parent_vault,
@@ -521,7 +507,6 @@ fun create_wired_subdao_config_override_applied() {
         let (parent_id, mut parent_vault) = dao::create_returning_vault(
             &gov,
             string::utf8(b"Parent DAO"),
-            string::utf8(b"Parent"),
             string::utf8(b"https://example.com/parent.png"),
             scenario.ctx(),
         );
@@ -539,7 +524,6 @@ fun create_wired_subdao_config_override_applied() {
             tribe::create_wired_subdao(
                 vector[OFFICER_A],
                 string::utf8(b"SubDAO"),
-                string::utf8(b"Sub"),
                 string::utf8(b"https://example.com/sub.png"),
                 SUBDAO_ADMIN,
                 &mut parent_vault,
@@ -577,7 +561,6 @@ fun create_wired_subdao_new_type_enabled_via_override() {
         let (parent_id, mut parent_vault) = dao::create_returning_vault(
             &gov,
             string::utf8(b"Parent DAO"),
-            string::utf8(b"Parent"),
             string::utf8(b"https://example.com/parent.png"),
             scenario.ctx(),
         );
@@ -594,7 +577,6 @@ fun create_wired_subdao_new_type_enabled_via_override() {
             tribe::create_wired_subdao(
                 vector[OFFICER_A],
                 string::utf8(b"SubDAO"),
-                string::utf8(b"Sub"),
                 string::utf8(b"https://example.com/sub.png"),
                 SUBDAO_ADMIN,
                 &mut parent_vault,
@@ -628,7 +610,6 @@ fun create_wired_subdao_aborts_on_blocked_type() {
         let (parent_id, mut parent_vault) = dao::create_returning_vault(
             &gov,
             string::utf8(b"Parent DAO"),
-            string::utf8(b"Parent"),
             string::utf8(b"https://example.com/parent.png"),
             scenario.ctx(),
         );
@@ -644,7 +625,6 @@ fun create_wired_subdao_aborts_on_blocked_type() {
         tribe::create_wired_subdao(
             vector[OFFICER_A],
             string::utf8(b"SubDAO"),
-            string::utf8(b"Sub"),
             string::utf8(b"https://example.com/sub.png"),
             SUBDAO_ADMIN,
             &mut parent_vault,
@@ -670,7 +650,6 @@ fun create_wired_subdao_aborts_on_enable_proposal_type_below_floor() {
         let (parent_id, mut parent_vault) = dao::create_returning_vault(
             &gov,
             string::utf8(b"Parent DAO"),
-            string::utf8(b"Parent"),
             string::utf8(b"https://example.com/parent.png"),
             scenario.ctx(),
         );
@@ -686,7 +665,6 @@ fun create_wired_subdao_aborts_on_enable_proposal_type_below_floor() {
         tribe::create_wired_subdao(
             vector[OFFICER_A],
             string::utf8(b"SubDAO"),
-            string::utf8(b"Sub"),
             string::utf8(b"https://example.com/sub.png"),
             SUBDAO_ADMIN,
             &mut parent_vault,
@@ -712,7 +690,6 @@ fun create_wired_subdao_aborts_on_update_proposal_config_below_floor() {
         let (parent_id, mut parent_vault) = dao::create_returning_vault(
             &gov,
             string::utf8(b"Parent DAO"),
-            string::utf8(b"Parent"),
             string::utf8(b"https://example.com/parent.png"),
             scenario.ctx(),
         );
@@ -728,7 +705,6 @@ fun create_wired_subdao_aborts_on_update_proposal_config_below_floor() {
         tribe::create_wired_subdao(
             vector[OFFICER_A],
             string::utf8(b"SubDAO"),
-            string::utf8(b"Sub"),
             string::utf8(b"https://example.com/sub.png"),
             SUBDAO_ADMIN,
             &mut parent_vault,
@@ -755,7 +731,6 @@ fun create_wired_subdao_enable_proposal_type_at_floor_passes() {
         let (parent_id, mut parent_vault) = dao::create_returning_vault(
             &gov,
             string::utf8(b"Parent DAO"),
-            string::utf8(b"Parent"),
             string::utf8(b"https://example.com/parent.png"),
             scenario.ctx(),
         );
@@ -772,7 +747,6 @@ fun create_wired_subdao_enable_proposal_type_at_floor_passes() {
             tribe::create_wired_subdao(
                 vector[OFFICER_A],
                 string::utf8(b"SubDAO"),
-                string::utf8(b"Sub"),
                 string::utf8(b"https://example.com/sub.png"),
                 SUBDAO_ADMIN,
                 &mut parent_vault,
@@ -808,9 +782,6 @@ fun do_create_tribe_configured(scenario: &mut test_scenario::Scenario): (ID, ID,
         string::utf8(b"Tribe DAO"),
         string::utf8(b"Officers"),
         string::utf8(b"Members"),
-        string::utf8(b"The tribe"),
-        string::utf8(b"Officer channel"),
-        string::utf8(b"Member channel"),
         string::utf8(b"https://tribe.example/logo.png"),
         string::utf8(b"https://tribe.example/officers.png"),
         string::utf8(b"https://tribe.example/members.png"),
@@ -830,15 +801,15 @@ fun do_create_tribe_configured(scenario: &mut test_scenario::Scenario): (ID, ID,
 /// three-DAO structure (distinct IDs, correct boards, control hierarchy) as create_tribe.
 fun create_tribe_configured_empty_overrides_matches_create_tribe() {
     let mut scenario = test_scenario::begin(CREATOR);
-    let (tribe_id, officer_id, member_id) = do_create_tribe_configured(&mut scenario);
+    let (owner_id, officer_id, member_id) = do_create_tribe_configured(&mut scenario);
 
-    assert!(tribe_id != officer_id);
-    assert!(tribe_id != member_id);
+    assert!(owner_id != officer_id);
+    assert!(owner_id != member_id);
     assert!(officer_id != member_id);
 
     scenario.next_tx(CREATOR);
     {
-        let tribe = scenario.take_shared_by_id<DAO>(tribe_id);
+        let tribe = scenario.take_shared_by_id<DAO>(owner_id);
         let officer = scenario.take_shared_by_id<DAO>(officer_id);
         let member = scenario.take_shared_by_id<DAO>(member_id);
 
@@ -868,7 +839,7 @@ fun create_tribe_configured_empty_overrides_matches_create_tribe() {
 fun create_tribe_configured_override_applied_to_tribe_dao() {
     let mut scenario = test_scenario::begin(CREATOR);
 
-    let tribe_id: ID;
+    let owner_id: ID;
     scenario.next_tx(CREATOR);
     {
         let mut tribe_overrides = vec_map::empty<std::ascii::String, proposal::ProposalConfig>();
@@ -878,7 +849,7 @@ fun create_tribe_configured_override_applied_to_tribe_dao() {
             proposal::new_config(8_000, 8_000, 0, 604_800_000, 0, 0),
         );
 
-        (tribe_id, _, _) =
+        (owner_id, _, _) =
             tribe::create_tribe_configured(
                 vector[CREATOR],
                 vector[OFFICER_A],
@@ -886,9 +857,6 @@ fun create_tribe_configured_override_applied_to_tribe_dao() {
                 string::utf8(b"Tribe DAO"),
                 string::utf8(b"Officers"),
                 string::utf8(b"Members"),
-                string::utf8(b"The tribe"),
-                string::utf8(b"Officer channel"),
-                string::utf8(b"Member channel"),
                 string::utf8(b"https://tribe.example/logo.png"),
                 string::utf8(b"https://tribe.example/officers.png"),
                 string::utf8(b"https://tribe.example/members.png"),
@@ -903,7 +871,7 @@ fun create_tribe_configured_override_applied_to_tribe_dao() {
 
     scenario.next_tx(CREATOR);
     {
-        let tribe = scenario.take_shared_by_id<DAO>(tribe_id);
+        let tribe = scenario.take_shared_by_id<DAO>(owner_id);
         let config = tribe.proposal_configs().get(&b"AddMember".to_ascii_string());
         assert!(config.quorum() == 8_000);
         assert!(config.approval_threshold() == 8_000);
@@ -938,9 +906,6 @@ fun create_tribe_configured_override_applied_to_officer_subdao() {
                 string::utf8(b"Tribe DAO"),
                 string::utf8(b"Officers"),
                 string::utf8(b"Members"),
-                string::utf8(b"The tribe"),
-                string::utf8(b"Officer channel"),
-                string::utf8(b"Member channel"),
                 string::utf8(b"https://tribe.example/logo.png"),
                 string::utf8(b"https://tribe.example/officers.png"),
                 string::utf8(b"https://tribe.example/members.png"),
@@ -990,9 +955,6 @@ fun create_tribe_configured_new_type_enabled_via_member_override() {
                 string::utf8(b"Tribe DAO"),
                 string::utf8(b"Officers"),
                 string::utf8(b"Members"),
-                string::utf8(b"The tribe"),
-                string::utf8(b"Officer channel"),
-                string::utf8(b"Member channel"),
                 string::utf8(b"https://tribe.example/logo.png"),
                 string::utf8(b"https://tribe.example/officers.png"),
                 string::utf8(b"https://tribe.example/members.png"),
@@ -1037,9 +999,6 @@ fun create_tribe_configured_aborts_on_update_config_below_floor() {
             string::utf8(b"Tribe DAO"),
             string::utf8(b"Officers"),
             string::utf8(b"Members"),
-            string::utf8(b"The tribe"),
-            string::utf8(b"Officer channel"),
-            string::utf8(b"Member channel"),
             string::utf8(b"https://tribe.example/logo.png"),
             string::utf8(b"https://tribe.example/officers.png"),
             string::utf8(b"https://tribe.example/members.png"),
@@ -1076,9 +1035,6 @@ fun create_tribe_configured_aborts_on_enable_type_below_floor() {
             string::utf8(b"Tribe DAO"),
             string::utf8(b"Officers"),
             string::utf8(b"Members"),
-            string::utf8(b"The tribe"),
-            string::utf8(b"Officer channel"),
-            string::utf8(b"Member channel"),
             string::utf8(b"https://tribe.example/logo.png"),
             string::utf8(b"https://tribe.example/officers.png"),
             string::utf8(b"https://tribe.example/members.png"),
@@ -1100,7 +1056,7 @@ fun create_tribe_configured_aborts_on_enable_type_below_floor() {
 fun create_tribe_configured_update_config_at_floor_passes() {
     let mut scenario = test_scenario::begin(CREATOR);
 
-    let tribe_id: ID;
+    let owner_id: ID;
     scenario.next_tx(CREATOR);
     {
         let mut tribe_overrides = vec_map::empty<std::ascii::String, proposal::ProposalConfig>();
@@ -1110,7 +1066,7 @@ fun create_tribe_configured_update_config_at_floor_passes() {
             proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0),
         );
 
-        (tribe_id, _, _) =
+        (owner_id, _, _) =
             tribe::create_tribe_configured(
                 vector[CREATOR],
                 vector[OFFICER_A],
@@ -1118,9 +1074,6 @@ fun create_tribe_configured_update_config_at_floor_passes() {
                 string::utf8(b"Tribe DAO"),
                 string::utf8(b"Officers"),
                 string::utf8(b"Members"),
-                string::utf8(b"The tribe"),
-                string::utf8(b"Officer channel"),
-                string::utf8(b"Member channel"),
                 string::utf8(b"https://tribe.example/logo.png"),
                 string::utf8(b"https://tribe.example/officers.png"),
                 string::utf8(b"https://tribe.example/members.png"),
@@ -1135,7 +1088,7 @@ fun create_tribe_configured_update_config_at_floor_passes() {
 
     scenario.next_tx(CREATOR);
     {
-        let tribe = scenario.take_shared_by_id<DAO>(tribe_id);
+        let tribe = scenario.take_shared_by_id<DAO>(owner_id);
         let config = tribe.proposal_configs().get(&b"UpdateProposalConfig".to_ascii_string());
         assert!(config.approval_threshold() == 8_000);
         test_scenario::return_shared(tribe);
@@ -1159,7 +1112,6 @@ fun create_wired_subdao_preserves_composable_allowed_on_override() {
         let (parent_id, mut parent_vault) = dao::create_returning_vault(
             &gov,
             string::utf8(b"Parent DAO"),
-            string::utf8(b"Parent"),
             string::utf8(b"https://example.com/parent.png"),
             scenario.ctx(),
         );
@@ -1177,7 +1129,6 @@ fun create_wired_subdao_preserves_composable_allowed_on_override() {
             tribe::create_wired_subdao(
                 vector[OFFICER_A],
                 string::utf8(b"SubDAO"),
-                string::utf8(b"Sub"),
                 string::utf8(b"https://example.com/sub.png"),
                 SUBDAO_ADMIN,
                 &mut parent_vault,
@@ -1210,7 +1161,7 @@ fun create_wired_subdao_preserves_composable_allowed_on_override() {
 fun create_tribe_configured_parent_can_override_subdao_blocked_type() {
     let mut scenario = test_scenario::begin(CREATOR);
 
-    let tribe_id: ID;
+    let owner_id: ID;
     scenario.next_tx(CREATOR);
     {
         let mut tribe_overrides = vec_map::empty<std::ascii::String, proposal::ProposalConfig>();
@@ -1220,7 +1171,7 @@ fun create_tribe_configured_parent_can_override_subdao_blocked_type() {
             proposal::new_config(8_000, 8_000, 0, 604_800_000, 0, 0),
         );
 
-        (tribe_id, _, _) =
+        (owner_id, _, _) =
             tribe::create_tribe_configured(
                 vector[CREATOR],
                 vector[OFFICER_A],
@@ -1228,9 +1179,6 @@ fun create_tribe_configured_parent_can_override_subdao_blocked_type() {
                 string::utf8(b"Tribe DAO"),
                 string::utf8(b"Officers"),
                 string::utf8(b"Members"),
-                string::utf8(b"The tribe"),
-                string::utf8(b"Officer channel"),
-                string::utf8(b"Member channel"),
                 string::utf8(b"https://tribe.example/logo.png"),
                 string::utf8(b"https://tribe.example/officers.png"),
                 string::utf8(b"https://tribe.example/members.png"),
@@ -1245,7 +1193,7 @@ fun create_tribe_configured_parent_can_override_subdao_blocked_type() {
 
     scenario.next_tx(CREATOR);
     {
-        let tribe = scenario.take_shared_by_id<DAO>(tribe_id);
+        let tribe = scenario.take_shared_by_id<DAO>(owner_id);
         let config = tribe.proposal_configs().get(&b"CreateSubDAO".to_ascii_string());
         assert!(config.quorum() == 8_000);
         assert!(config.approval_threshold() == 8_000);
@@ -1278,9 +1226,6 @@ fun create_tribe_configured_subdao_still_rejects_blocked_type() {
             string::utf8(b"Tribe DAO"),
             string::utf8(b"Officers"),
             string::utf8(b"Members"),
-            string::utf8(b"The tribe"),
-            string::utf8(b"Officer channel"),
-            string::utf8(b"Member channel"),
             string::utf8(b"https://tribe.example/logo.png"),
             string::utf8(b"https://tribe.example/officers.png"),
             string::utf8(b"https://tribe.example/members.png"),

@@ -38,7 +38,6 @@ fun create_named_dao(scenario: &mut test_scenario::Scenario, name: vector<u8>): 
     dao::create(
         &init,
         string::utf8(name),
-        string::utf8(name),
         string::utf8(b""),
         scenario.ctx(),
     )

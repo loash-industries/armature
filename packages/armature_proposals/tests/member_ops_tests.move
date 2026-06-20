@@ -39,7 +39,6 @@ fun test_add_member_e2e() {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Add member e2e test"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -122,7 +121,6 @@ fun test_add_member_duplicate_aborts() {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Duplicate add test"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -198,7 +196,6 @@ fun test_remove_member_e2e() {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Remove member e2e test"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -287,7 +284,6 @@ fun test_remove_nonmember_aborts() {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Remove non-member test"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -359,7 +355,6 @@ fun test_remove_last_member_aborts() {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Remove last member test"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -434,7 +429,6 @@ fun test_batch_add_members_e2e() {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Batch add e2e"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -519,7 +513,6 @@ fun test_batch_add_members_existing_member_skipped() {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Batch with existing"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -596,7 +589,6 @@ fun test_batch_add_members_internal_duplicate_aborts() {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Internal dup"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -671,7 +663,6 @@ fun test_batch_add_members_empty_aborts() {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Empty batch"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -751,7 +742,6 @@ fun test_batch_remove_members_e2e() {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Batch remove e2e"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -834,7 +824,6 @@ fun test_batch_remove_members_nonmember_aborts() {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Non-member remove"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -902,7 +891,6 @@ fun test_batch_remove_members_internal_duplicate_aborts() {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Internal dup remove"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -980,7 +968,6 @@ fun test_batch_remove_members_would_empty_aborts() {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Would empty board"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -1056,7 +1043,6 @@ fun test_batch_remove_members_empty_aborts() {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Empty batch remove"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -1123,7 +1109,6 @@ fun test_batch_add_members_oversize_aborts() {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Oversize batch"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );

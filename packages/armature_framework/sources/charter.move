@@ -14,8 +14,7 @@ public struct Charter has key, store {
     id: UID,
     dao_id: ID,
     name: std::string::String,
-    description: std::string::String,
-    image_url: std::string::String,
+    metadata_uri: std::string::String,
 }
 
 // === Constructor ===
@@ -24,16 +23,14 @@ public struct Charter has key, store {
 public(package) fun new(
     dao_id: ID,
     name: std::string::String,
-    description: std::string::String,
-    image_url: std::string::String,
+    metadata_uri: std::string::String,
     ctx: &mut TxContext,
 ): Charter {
     Charter {
         id: object::new(ctx),
         dao_id,
         name,
-        description,
-        image_url,
+        metadata_uri,
     }
 }
 
@@ -51,27 +48,24 @@ public fun dao_id(self: &Charter): ID { self.dao_id }
 /// Returns the DAO name.
 public fun name(self: &Charter): &std::string::String { &self.name }
 
-/// Returns the DAO description.
-public fun description(self: &Charter): &std::string::String { &self.description }
-
-/// Returns the DAO image URL.
-public fun image_url(self: &Charter): &std::string::String { &self.image_url }
+/// Returns the DAO metadata URL.
+public fun metadata_uri(self: &Charter): &std::string::String { &self.metadata_uri }
 
 /// Destroy a Charter object.
 public(package) fun destroy(charter: Charter) {
-    let Charter { id, dao_id: _, name: _, description: _, image_url: _ } = charter;
+    let Charter { id, dao_id: _, name: _, metadata_uri: _ } = charter;
     id.delete();
 }
 
 // === Public Mutators (ExecutionRequest-gated) ===
 
-/// Update the DAO's metadata IPFS CID (stored as image_url).
+/// Update the DAO's metadata URL.
 /// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
 public fun update_metadata<P>(
     self: &mut Charter,
-    new_ipfs_cid: std::string::String,
+    new_metadata_uri: std::string::String,
     req: &ExecutionRequest<P>,
 ) {
     assert!(self.dao_id == req.req_dao_id(), EDaoMismatch);
-    self.image_url = new_ipfs_cid;
+    self.metadata_uri = new_metadata_uri;
 }

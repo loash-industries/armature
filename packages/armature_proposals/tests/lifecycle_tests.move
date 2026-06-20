@@ -58,7 +58,6 @@ fun small_startup_lifecycle() {
             dao::create(
                 &init,
                 string::utf8(b"Startup DAO"),
-                string::utf8(b"Small team governance"),
                 string::utf8(b"https://example.com/startup.png"),
                 scenario.ctx(),
             );
@@ -329,7 +328,6 @@ fun medium_enterprise_lifecycle() {
             dao::create(
                 &init,
                 string::utf8(b"Enterprise DAO"),
-                string::utf8(b"Medium enterprise with subdaos"),
                 string::utf8(b"https://example.com/enterprise.png"),
                 scenario.ctx(),
             );
@@ -364,7 +362,6 @@ fun medium_enterprise_lifecycle() {
         clock.set_for_testing(1_000);
         let payload = create_subdao::new(
             string::utf8(b"Engineering"),
-            string::utf8(b"Engineering team subdao"),
             vector[ENG1, ENG2, ROGUE],
             string::utf8(b"https://example.com/eng.png"),
         );
@@ -449,7 +446,6 @@ fun medium_enterprise_lifecycle() {
         clock.set_for_testing(5_000);
         let payload = create_subdao::new(
             string::utf8(b"Finance"),
-            string::utf8(b"Finance team subdao"),
             vector[FIN1, FIN2],
             string::utf8(b"https://example.com/fin.png"),
         );

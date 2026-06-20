@@ -31,7 +31,6 @@ fun test_set_board_e2e() {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Board update e2e test"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -115,7 +114,6 @@ fun test_set_board_empty_members_aborts() {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Empty board test"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -193,7 +191,6 @@ fun setup_dao_with_board(
             dao::create(
                 &init,
                 string::utf8(b"Test DAO"),
-                string::utf8(b"Board ops test"),
                 string::utf8(b"https://example.com/logo.png"),
                 scenario.ctx(),
             );

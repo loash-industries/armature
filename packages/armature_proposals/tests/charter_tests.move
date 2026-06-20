@@ -32,7 +32,6 @@ fun charter_update_lifecycle() {
             dao::create(
                 &init,
                 string::utf8(b"Charter DAO"),
-                string::utf8(b"Charter update test"),
                 string::utf8(b"https://old-logo.png"),
                 scenario.ctx(),
             );
@@ -45,7 +44,7 @@ fun charter_update_lifecycle() {
         let dao = scenario.take_shared_by_id<DAO>(dao_id);
         charter_id = dao.charter_id();
         let charter = scenario.take_shared_by_id<Charter>(charter_id);
-        assert!(charter.image_url() == &string::utf8(b"https://old-logo.png"));
+        assert!(charter.metadata_uri() == &string::utf8(b"https://old-logo.png"));
         test_scenario::return_shared(charter);
         test_scenario::return_shared(dao);
     };
@@ -98,7 +97,7 @@ fun charter_update_lifecycle() {
         admin_ops::execute_update_metadata(&mut charter, ticket);
 
         // Verify metadata updated
-        assert!(charter.image_url() == &string::utf8(b"ipfs://QmNewHashV1"));
+        assert!(charter.metadata_uri() == &string::utf8(b"ipfs://QmNewHashV1"));
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(charter);
@@ -147,7 +146,7 @@ fun charter_update_lifecycle() {
         );
         admin_ops::execute_update_metadata(&mut charter, ticket);
 
-        assert!(charter.image_url() == &string::utf8(b"ipfs://QmNewHashV2"));
+        assert!(charter.metadata_uri() == &string::utf8(b"ipfs://QmNewHashV2"));
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(charter);
@@ -174,7 +173,6 @@ fun charter_update_wrong_dao_aborts() {
             dao::create(
                 &init,
                 string::utf8(b"DAO A"),
-                string::utf8(b"First"),
                 string::utf8(b""),
                 scenario.ctx(),
             );
@@ -186,7 +184,6 @@ fun charter_update_wrong_dao_aborts() {
         dao::create(
             &init,
             string::utf8(b"DAO B"),
-            string::utf8(b"Second"),
             string::utf8(b""),
             scenario.ctx(),
         );

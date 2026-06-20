@@ -36,7 +36,6 @@ fun receive_cap_cross_dao() {
             dao::create(
                 &init,
                 string::utf8(b"Receiving DAO"),
-                string::utf8(b"Cross-DAO receive test"),
                 string::utf8(b""),
                 scenario.ctx(),
             );

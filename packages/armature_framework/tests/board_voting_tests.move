@@ -42,7 +42,6 @@ fun create_dao_with_members(scenario: &mut test_scenario::Scenario, members: vec
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"A test DAO"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );

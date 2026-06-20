@@ -47,7 +47,6 @@ fun spawn_dao_and_destroy_origin_e2e() {
             dao::create(
                 &init,
                 string::utf8(b"Origin DAO"),
-                string::utf8(b"Migration e2e test"),
                 string::utf8(b"https://example.com/origin.png"),
                 scenario.ctx(),
             );
@@ -71,7 +70,6 @@ fun spawn_dao_and_destroy_origin_e2e() {
         let payload = spawn_dao::new(
             governance::init_board(vector[CREATOR, MEMBER_B]),
             string::utf8(b"Successor DAO"),
-            string::utf8(b"The new DAO after migration"),
             string::utf8(b"https://example.com/successor.png"),
         );
 
@@ -181,7 +179,6 @@ fun create_subdao_and_spin_out_e2e() {
             dao::create(
                 &init,
                 string::utf8(b"Parent DAO"),
-                string::utf8(b"SubDAO spin-out e2e test"),
                 string::utf8(b"https://example.com/parent.png"),
                 scenario.ctx(),
             );
@@ -207,7 +204,6 @@ fun create_subdao_and_spin_out_e2e() {
 
         let payload = create_subdao::new(
             string::utf8(b"Child DAO"),
-            string::utf8(b"A managed sub-DAO for spin-out"),
             vector[SUBDAO_MEMBER],
             string::utf8(b"https://example.com/child.png"),
         );
@@ -419,7 +415,6 @@ fun controller_set_board_via_privileged_submit() {
             dao::create(
                 &init,
                 string::utf8(b"Parent DAO"),
-                string::utf8(b"Controller SetBoard test"),
                 string::utf8(b"https://example.com/parent.png"),
                 scenario.ctx(),
             );
@@ -441,7 +436,6 @@ fun controller_set_board_via_privileged_submit() {
         clock.set_for_testing(1000);
         let payload = create_subdao::new(
             string::utf8(b"Child DAO"),
-            string::utf8(b"Managed child"),
             vector[SUBDAO_MEMBER],
             string::utf8(b"https://example.com/child.png"),
         );
@@ -625,7 +619,6 @@ fun migration_with_transfer_assets_e2e() {
             dao::create(
                 &init,
                 string::utf8(b"Origin DAO"),
-                string::utf8(b"Migration + TransferAssets test"),
                 string::utf8(b"https://example.com/origin.png"),
                 scenario.ctx(),
             );
@@ -659,7 +652,6 @@ fun migration_with_transfer_assets_e2e() {
         let payload = spawn_dao::new(
             governance::init_board(vector[CREATOR, MEMBER_B]),
             string::utf8(b"Successor DAO"),
-            string::utf8(b"The successor"),
             string::utf8(b"https://example.com/successor.png"),
         );
         board_voting::submit_proposal(

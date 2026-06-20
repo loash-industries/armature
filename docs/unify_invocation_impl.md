@@ -1175,7 +1175,7 @@ pub fun submit_autojoin(
         option::none(),
         AutojoinDAO {
             character_id: object::id(character),
-            tribe_id,
+            owner_id,
             joining_address: sender,
         },
         clock,
@@ -1198,14 +1198,14 @@ pub fun execute_autojoin_dao(
     let allowlist: &TribeIdAllowlist =
         dao.borrow_type_state<ConfigureAutojoin, TribeIdAllowlist>();
     assert!(allowlist.is_enabled(), EAutojoinDisabled);
-    assert!(allowlist.contains(payload.tribe_id), ETribeIdNotAllowed);
+    assert!(allowlist.contains(payload.owner_id), ETribeIdNotAllowed);
 
     dao.add_board_member_governance(payload.joining_address, ticket.ticket_request());
 
     event::emit(MemberAutojoined {
         dao_id: dao.id(),
         member: payload.joining_address,
-        tribe_id: payload.tribe_id,
+        owner_id: payload.owner_id,
         character_id: payload.character_id,
     });
 

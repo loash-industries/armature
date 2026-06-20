@@ -45,7 +45,6 @@ fun create_dao_two_members(scenario: &mut test_scenario::Scenario) {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Composite test DAO"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -499,7 +498,6 @@ fun composite_send_coin_step_e2e() {
         dao::create(
             &init,
             string::utf8(b"Treasury DAO"),
-            string::utf8(b"Composite treasury test"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -617,7 +615,6 @@ fun composite_send_coin_to_dao_step_e2e() {
             dao::create(
                 &init,
                 string::utf8(b"Source DAO"),
-                string::utf8(b"Source"),
                 string::utf8(b"https://example.com/source.png"),
                 scenario.ctx(),
             );
@@ -631,7 +628,6 @@ fun composite_send_coin_to_dao_step_e2e() {
             dao::create(
                 &init,
                 string::utf8(b"Target DAO"),
-                string::utf8(b"Target"),
                 string::utf8(b"https://example.com/target.png"),
                 scenario.ctx(),
             );
@@ -892,7 +888,7 @@ fun composite_update_metadata_step_e2e() {
 
         composite::finalize_pipeline(pipeline);
 
-        assert!(charter.image_url() == &string::utf8(b"ipfs://QmCompositeTest"));
+        assert!(charter.metadata_uri() == &string::utf8(b"ipfs://QmCompositeTest"));
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(frame);
@@ -1054,7 +1050,6 @@ fun composite_enable_proposal_type_step_e2e() {
         dao::create(
             &init,
             string::utf8(b"Enable Step DAO"),
-            string::utf8(b"Test DAO for enable_proposal_type_step"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );

@@ -37,7 +37,6 @@ fun setup_dao(scenario: &mut test_scenario::Scenario) {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Test"),
             string::utf8(b""),
             scenario.ctx(),
         );

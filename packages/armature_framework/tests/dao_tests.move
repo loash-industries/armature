@@ -21,8 +21,7 @@ fun create_test_dao(scenario: &mut test_scenario::Scenario) {
         dao::create(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"A test DAO for unit testing"),
-            string::utf8(b"https://example.com/logo.png"),
+            string::utf8(b"https://example.com/metadata.json"),
             scenario.ctx(),
         );
     };
@@ -68,7 +67,6 @@ fun test_create_dao() {
     {
         let charter = scenario.take_shared<Charter>();
         assert!(charter.name() == &string::utf8(b"Test DAO"));
-        assert!(charter.description() == &string::utf8(b"A test DAO for unit testing"));
         test_scenario::return_shared(charter);
     };
 
@@ -283,7 +281,6 @@ fun test_create_returning_vault_ids_are_consistent() {
         let (dao_id, vault) = dao::create_returning_vault(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Description"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -313,7 +310,6 @@ fun test_create_returning_vault_vault_starts_empty() {
         let (_, vault) = dao::create_returning_vault(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"Description"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -337,7 +333,6 @@ fun test_create_returning_vault_other_companions_are_shared() {
         let (_, vault) = dao::create_returning_vault(
             &init,
             string::utf8(b"Test DAO"),
-            string::utf8(b"A description"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
