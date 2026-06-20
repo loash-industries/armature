@@ -13,3 +13,12 @@ version = 1
 toolchain-version = "1.68.0"
 build-config = { flavor = "sui", edition = "2024" }
 upgrade-capability = "0x10665e418e654238a00966317faee92d7fa2acf58c84505b61fe098bf4b94c7d"
+
+[[published]]
+source = { local = "/Users/michaelhahn/books/triex/armature/armature/packages/armature_framework" }
+published-at = "0x757bcf9cb76f867793dbcdd831bd25ffc6a7f05e553aac8a554d3f7c9b736c6f"
+original-id = "0x757bcf9cb76f867793dbcdd831bd25ffc6a7f05e553aac8a554d3f7c9b736c6f"
+version = 1
+toolchain-version = "1.73.1"
+build-config = { flavor = "sui", edition = "2024" }
+upgrade-capability = "0x2854e268a5abf4e7edf4243e2a455e9dfcba6fdf75be3cdb07fdcf4477c147c2"

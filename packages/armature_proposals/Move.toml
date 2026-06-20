@@ -8,4 +8,4 @@ armature = { local = "../armature_framework", env = "testnet_wip" }
 multicoin = { git = "https://github.com/Algorithmic-Warfare/multicoin", subdir = "packages/multicoin", rev = "330d339336f2b62ae216fb7398dbbf165bdb3c3f" }
 
 [environments]
-testnet_wip = "0x5f739ba4256113a8e137404cd2e0a49e652fcb94c7ae4855402ff434d4038057"
+testnet_wip = "4c78adac"
