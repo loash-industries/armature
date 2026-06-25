@@ -9,3 +9,4 @@ multicoin = { git = "https://github.com/Algorithmic-Warfare/multicoin", subdir =
 
 [environments]
 testnet_wip = "4c78adac"
+testnet_stillness = "4c78adac"

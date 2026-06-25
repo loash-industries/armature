@@ -5,7 +5,11 @@ version = "0.0.1"
 
 [dependencies]
 armature = { local = "../armature_framework", env = "testnet_wip" }
-world = { git = "https://github.com/evefrontier/world-contracts.git", subdir = "contracts/world", rev = "8e2e97b50fd6bbf605284bcdaae54a33a5475e89" }
+world = { git = "https://github.com/evefrontier/world-contracts.git", subdir = "contracts/world", rev = "32300a2ab6dc95c25ff42e30b89990492ad4dcaa" }
 
 [environments]
 testnet_wip = "4c78adac"
+testnet_stillness = "4c78adac"
+
+[dep-replacements.testnet_stillness]
+armature = { local = "../armature_framework" }

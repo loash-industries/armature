@@ -2,6 +2,15 @@
 # This file contains metadata about published versions of this package in different environments
 # This file SHOULD be committed to source control
 
+[published.testnet_stillness]
+chain-id = "4c78adac"
+published-at = "0x2b9ae782bf85f3b87ce6de7ad89534b2d7646a4c46e92a3f4e00001560578d56"
+original-id = "0x2b9ae782bf85f3b87ce6de7ad89534b2d7646a4c46e92a3f4e00001560578d56"
+version = 1
+toolchain-version = "1.73.1"
+build-config = { flavor = "sui", edition = "2024" }
+upgrade-capability = "0x5784d5ed037465b1747d65df64f7745aad7cd02b21afefd52c9b96841baa8f76"
+
 [published.testnet_wip]
 chain-id = "4c78adac"
 published-at = "0xa2850b4d652e54f21b4fa9becc2bd07174f25e803dbf33148411a3bd39b2966f"
