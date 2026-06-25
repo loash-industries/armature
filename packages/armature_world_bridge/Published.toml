@@ -4,12 +4,12 @@
 
 [published.testnet_stillness]
 chain-id = "4c78adac"
-published-at = "0x2b9ae782bf85f3b87ce6de7ad89534b2d7646a4c46e92a3f4e00001560578d56"
-original-id = "0x2b9ae782bf85f3b87ce6de7ad89534b2d7646a4c46e92a3f4e00001560578d56"
+published-at = "0x0b341844de4bac0dc824f2dd0bc6820c1dee8c7bd83ed23a827d0a859759e087"
+original-id = "0x0b341844de4bac0dc824f2dd0bc6820c1dee8c7bd83ed23a827d0a859759e087"
 version = 1
 toolchain-version = "1.73.1"
 build-config = { flavor = "sui", edition = "2024" }
-upgrade-capability = "0x5784d5ed037465b1747d65df64f7745aad7cd02b21afefd52c9b96841baa8f76"
+upgrade-capability = "0xbc250d5942222770e6641ac8b9c508e68788fede9e024bbca5a14df0430a3e11"
 
 [published.testnet_wip]
 chain-id = "4c78adac"
