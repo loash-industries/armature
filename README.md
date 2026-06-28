@@ -18,42 +18,36 @@ Players use Armature to represent their tribes, alliances, and syndicates on-cha
 Move contracts (Sui)  →  Rust indexer  →  PostgreSQL  →  React UI
 ```
 
-| Layer | Location | Purpose |
-|-------|----------|---------|
-| **Smart contracts** | `packages/` | On-chain DAO primitive, proposal execution, governance |
-| **Indexer** | `crates/indexer/` | Processes Sui checkpoints, indexes DAO events |
-| **Schema** | `crates/schema/` | Diesel ORM models and PostgreSQL migrations |
-| **UI** | `ui/` | React dashboard for DAO management |
-| **API** | `api/` | Express server (CI/CD placeholder) |
+This repo contains the on-chain Move packages only. The indexer lives in `armature-indexer` (separate repo).
 
 ## Repository Structure
 
 ```
 ├── packages/
-│   ├── armature_framework/     # Core Move modules (11)
+│   ├── armature_framework/     # Core Move modules (15)
 │   │   └── sources/            #   dao, proposal, governance, treasury_vault,
 │   │                           #   capability_vault, charter, emergency,
-│   │                           #   board_voting, controller, utils
-│   └── armature_proposals/     # Proposal type modules (25)
-│       └── sources/
-│           ├── admin/          #   metadata, proposal config, enable/disable types
-│           ├── board/          #   set board
-│           ├── security/       #   freeze config, exemptions, admin transfer
-│           ├── subdao/         #   create, spawn, spin-out, pause, asset/cap transfer
-│           ├── treasury/       #   send coin, small payments, inter-DAO transfers
-│           └── upgrade/        #   package upgrades
-├── crates/
-│   ├── indexer/                # Rust event indexer + Axum REST API
-│   └── schema/                 # Diesel schema & migrations
-├── ui/                         # React 19 + Vite + TanStack + shadcn/ui
-├── api/                        # Express API server
+│   │                           #   board_voting, controller, tribe, composite,
+│   │                           #   encrypted_entry, external_execution,
+│   │                           #   spend_guard, utils
+│   ├── armature_proposals/     # Proposal type modules
+│   │   └── sources/
+│   │       ├── admin/          #   metadata, proposal config, enable/disable types
+│   │       ├── board/          #   set board
+│   │       ├── currency/       #   mint, burn, allowances, currency ops
+│   │       ├── security/       #   freeze config, exemptions, admin transfer
+│   │       ├── subdao/         #   create, spawn, spin-out, pause, asset/cap transfer
+│   │       ├── treasury/       #   send coin, small payments, inter-DAO transfers
+│   │       └── upgrade/        #   package upgrades
+│   └── armature_world_bridge/  # EVE Frontier world integration
+├── specs/                      # Design docs, ADRs, and formal spec
+├── proposals/                  # Proposal design docs and e2e tests
+├── testing/                    # Test utilities
+├── docs/                       # Development guides
+├── scripts/                    # Deploy and utility scripts
 ├── docker/                     # Dockerfiles and deploy scripts
 ├── whitepaper/                 # Typst source and compiled PDF
-├── docs/                       # Development guides
-├── .github/workflows/          # CI/CD pipelines
 ├── docker-compose.dev.yml      # Full dev stack
-├── docker-compose.yml          # PostgreSQL only
-├── Cargo.toml                  # Rust workspace root
 ├── Makefile                    # Dev task automation
 └── package.json                # Node workspace root
 ```
@@ -64,7 +58,7 @@ Move contracts (Sui)  →  Rust indexer  →  PostgreSQL  →  React UI
 
 - Docker and Docker Compose v2+
 - ~2 GB disk (for the Sui tools image)
-- Ports 9000, 9123, 5173, 5432 available
+- Ports 9000, 9123 available
 
 ### Run the full stack
 
@@ -72,9 +66,15 @@ Move contracts (Sui)  →  Rust indexer  →  PostgreSQL  →  React UI
 make dev
 ```
 
-This starts sui-localnet, deploys Move packages, creates a test DAO, starts PostgreSQL, and launches the UI at **http://localhost:5173**.
+This starts sui-localnet, deploys Armature packages, and creates a test DAO.
 
-See [docs/local-dev.md](docs/local-dev.md) for the full development guide, including the world-contracts profile and troubleshooting.
+To include EVE Frontier world-contracts (requires `make dev-deps` first):
+
+```bash
+docker compose -f docker-compose.dev.yml --profile world up
+```
+
+See [docs/local-dev.md](docs/local-dev.md) for the full development guide and troubleshooting.
 
 ### Makefile targets
 
@@ -85,16 +85,22 @@ See [docs/local-dev.md](docs/local-dev.md) for the full development guide, inclu
 | `make dev-down` | Stop all services |
 | `make dev-reset` | Wipe volumes and redeploy from scratch |
 | `make dev-logs` | Tail logs for all services |
-| `make db` | Start only PostgreSQL (for local indexer dev) |
+| `make dev-ps` | Show running services |
+| `make dev-deps` | Clone world-contracts (needed for `--profile world`) |
+| `make dev-deps-update` | Update world-contracts to latest |
+| `make deploy-world` | Re-run world-contracts deployment only |
+| `make deploy-armature` | Re-run Armature deployment only |
 | `make dev-docs` | Watch and recompile the whitepaper |
+| `make build-docs` | Build the whitepaper PDF for release |
 | `make clean` | Remove all Docker volumes and generated config |
 
 ## Move Contracts
 
-The protocol is split into two packages:
+The protocol is split into three packages:
 
-- **armature_framework** — Core DAO primitive: lifecycle, governance config, treasury vault, capability vault, charter, emergency freeze, board voting, and the proposal execution engine (hot-potato pattern).
-- **armature_proposals** — Concrete proposal types organized by domain: admin, board, security, sub-DAO, treasury, and upgrades.
+- **armature_framework** — Core DAO primitive: lifecycle, governance config, treasury vault, capability vault, charter, emergency freeze, board voting, tribe management, and the proposal execution engine (hot-potato pattern).
+- **armature_proposals** — Concrete proposal types organized by domain: admin, board, currency, security, sub-DAO, treasury, and upgrades.
+- **armature_world_bridge** — Integration layer for the EVE Frontier world-contracts.
 
 ```bash
 # Build
@@ -105,20 +111,6 @@ sui move test --path packages/armature_framework
 
 # Format
 bunx prettier-move -c packages/armature_framework/sources/**/*.move --write
-```
-
-## Rust Indexer
-
-The indexer processes Sui checkpoint data, filters for Armature events across the core modules (`dao`, `proposals`, `governance`, `treasury`), and writes indexed state to PostgreSQL via Diesel.
-
-```bash
-# Start PostgreSQL
-make db
-
-# Run the indexer
-cargo run --bin armature-indexer -- \
-  --db-url postgres://postgres:postgrespw@localhost:5432/armature \
-  --remote-store-url http://localhost:9000
 ```
 
 ## License
