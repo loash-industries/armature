@@ -18,7 +18,7 @@ The Charter is designed to have two aspects, each serving a different audience. 
 
 The first aspect is a human-readable document. It expresses the organization's mission, its values, the social contract between members, and the intent behind its rules. This is what members read when they join, what they reference during disputes, and what they amend when the organization's direction changes.
 
-Today, the on-chain Charter object is deliberately minimal: it holds the organization's name and a metadata URI --- an IPFS content identifier --- that points to the current document. The document itself lives off-chain. Amending the charter is a governance action that updates this pointer, and the on-chain proposal log records every amendment: which proposal changed the reference, when, and to what. Anyone can reconstruct the constitutional evolution of the organization from that log.
+Today, the on-chain Charter object is deliberately minimal: it holds the organization's name and a metadata URI --- a link to the current document, by convention an IPFS reference such as `ipfs://…`. The URI is stored as a free-form string; the document itself lives off-chain. Amending the charter is a governance action that updates this pointer, and the on-chain proposal log records every amendment: which proposal changed the reference, when, and to what. Anyone can reconstruct the constitutional evolution of the organization from that log.
 
 #aside[
   _Planned._ Future versions of the Charter object will hold a content hash for on-chain integrity verification and an explicit version number, so the object itself --- not just the surrounding event log --- attests to what the charter said at any point in time.
