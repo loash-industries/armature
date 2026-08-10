@@ -12,22 +12,24 @@ Growth creates internal structure. A tribe that starts as a single DAO eventuall
 
 A Sub-DAO is not a permission scope or a lightweight proxy. It is a complete organization in its own right, operating with genuine autonomy within the boundaries set by its parent. It governs itself, manages its own resources, and amends its own charter.
 
-The parent retains oversight. It can replace a compromised board, pause operations, reclaim delegated capabilities, or grant full independence. These controls exist for the same reason a board of directors can override a department head --- accountability flows upward even when authority flows down.
+The parent retains oversight. It can add or remove the child's board members, pause its operations, reclaim delegated capabilities, or grant full independence. These controls exist for the same reason a board of directors can override a department head --- accountability flows upward even when authority flows down.
 
 A department that outgrows its parent can be spun out into a sovereign DAO. The control relationship is destroyed permanently. The former department is now a peer, free to form its own relationships. The protocol does not mandate this path --- it provides the mechanism.
 
-== Abstraction
+== Abstraction (Planned)
 
-Organizations also compose upward. Peer DAOs may voluntarily form federations --- associations that pool resources and coordinate policy without surrendering sovereignty. Unlike the parent-child relationship, federation membership is symmetric. No member controls another. Any member can exit through their own governance.
+Organizations should also compose upward. The federation layer described here is planned, not yet implemented: the downward, parent-child direction is built today, but symmetric peer association is future work.
 
-Federations can maintain collective treasuries, conduct multi-layer voting, and coordinate policy across member organizations. A department must be spun out to independence before it can join a federation --- federation is a right of sovereign entities.
+In the planned design, peer DAOs may voluntarily form federations --- associations that pool resources and coordinate policy without surrendering sovereignty. Unlike the parent-child relationship, federation membership is symmetric. No member controls another. Any member can exit through its own governance.
+
+Federations would maintain collective treasuries, conduct multi-layer voting, and coordinate policy across member organizations. A department must be spun out to independence before it can join a federation --- federation is a right of sovereign entities. Some of the pieces this depends on already exist: any DAO can fund another DAO's treasury directly today, which is the primitive a shared federation treasury builds on.
 
 == The Civilization Mesh
 
 A single DAO can simultaneously be a department of a tribe, a member of a cross-tribe alliance, and the controller of its own sub-departments. These relationships compose without interference. The result is not a tree but a mesh --- a web of organizational relationships at every scale.
 
 #principle[The Mesh][
-  Downward is control. Upward is membership. Sideways is alliance. The DAO sits at the intersection of all three, and the mesh emerges from organizations exercising these relationships independently.
+  Downward is control. Upward is membership. Sideways is alliance. The DAO sits at the intersection of all three, and the mesh emerges from organizations exercising these relationships independently. The downward axis is built today; the upward and sideways axes arrive with the planned federation layer.
 ]
 
 Within this mesh, a _tempo gradient_ emerges naturally.

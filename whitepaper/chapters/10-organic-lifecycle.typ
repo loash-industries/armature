@@ -20,7 +20,7 @@ This self-referential capacity --- the ability of the rules to change the rules 
 
 A DAO creates Sub-DAOs. The offspring is a full cell --- same architecture, same capabilities, same lifecycle potential. It operates with genuine autonomy within the boundaries set by its parent.
 
-The parent can relinquish control entirely, granting the offspring sovereignty. This emancipation is irreversible. The former department becomes a peer, free to reproduce, federate, and evolve independently.
+The parent can relinquish control entirely, granting the offspring sovereignty. This emancipation is irreversible: spinning out destroys the parent's control capability and unlocks the hierarchy-altering proposal types that were blocked while the child was controlled. The former department becomes a peer, free to reproduce and evolve independently --- and, once the federation layer ships, to associate with peers of its own.
 
 == Metabolism
 
@@ -30,9 +30,9 @@ In hierarchical structures, metabolism extends across the organizational tree. P
 
 == Death and Succession
 
-A DAO can die deliberately. Migration creates a successor with a new governance model, transfers all vault contents --- including the ticker capability --- and archives the original. The identity persists; the organism is reborn.
+A DAO can die deliberately. Migration spawns a successor DAO and moves the original into a terminal migrating state; the founders then transfer the treasury and capabilities across to the successor. The lineage is preserved on-chain, linking old to new.
 
-This is not a failure mode. It is how organizations evolve past the limits of their original design. A tribe that outgrows board governance migrates to a stake-weighted model. The ticker resolves to the successor. The history is preserved. Life continues.
+This is not a failure mode. It is how organizations evolve past the limits of their original design. A tribe that outgrows board governance migrates to a successor --- and once the additional governance models ship, that successor can adopt a stake-weighted or delegated style. The history is preserved. Life continues. When the planned ticker registry lands, a migrating DAO will carry its ticker across to the successor, so external references keep resolving through the change.
 
 == The Civilizational Substrate
 

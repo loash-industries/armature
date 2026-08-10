@@ -1,12 +1,16 @@
-= Addressing Scheme
+= Addressing Scheme (Planned)
 
 #import "../lib/template.typ": aside, principle
+
+#aside[
+  *Status: planned.* The addressing scheme described in this chapter is a design, not a shipped feature. None of it --- the ticker registry, recursive paths, or the ticker capability --- exists in the current framework. DAOs today are referenced by their on-chain object IDs. Read the whole chapter as a description of intended design.
+]
 
 Organizations need names. On-chain object IDs are precise but meaningless to humans. A DAO that wants to be found, recognized, and trusted needs an identity that is stable, scarce, and legible.
 
 == The Ticker Registry
 
-Armature provides a protocol-level Ticker Registry. A ticker is a short identifier --- five characters maximum --- that maps to a DAO's object ID. Think of it as a domain name for organizations.
+Armature will provide a protocol-level Ticker Registry. A ticker is a short identifier --- five characters maximum --- that maps to a DAO's object ID. Think of it as a domain name for organizations.
 
 `TRIB` maps to a DAO. `FORGE` maps to another. The registry is the canonical lookup: given a ticker, anyone can resolve the DAO behind it.
 
@@ -50,7 +54,4 @@ The full addressing scheme --- `TRIB/ENG/UI` --- is more than a lookup mechanism
 
 It tells you that UI is a team within Engineering, which is a department of TRIB. It tells you the depth. It tells you the chain of accountability. And because each segment is a ticker governed by the segment above it, it tells you that the structure was deliberate --- each level was named by its parent through governance.
 
-// ? What are the rules for ticker syntax --- allowed characters, case sensitivity, reserved names?
-// ? How are ticker disputes resolved --- first-come-first-served, auction, governance vote?
-// ? Can tickers be transferred between unrelated DAOs, or only through migration?
-// ? How does the registry handle expired or abandoned tickers --- do they return to the pool?
+The design still has open questions to settle before implementation: the exact ticker syntax (allowed characters, case sensitivity, reserved names); how competing claims are resolved (first-come-first-served, auction, or governance vote); whether tickers can move between unrelated DAOs or only through migration; and how the registry reclaims expired or abandoned tickers.
