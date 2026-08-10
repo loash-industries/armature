@@ -4,6 +4,10 @@
 
 A DAO is a composable, self-governing primitive on the SUI blockchain.
 
+#aside[
+  *A note on status.* This paper describes both what Armature does today and where it is going. Features that are implemented in the current framework are described in the present tense. Features that are designed but not yet implemented are explicitly marked as _planned_. The core primitive --- the five objects, the proposal engine, board governance, the vaults, composite proposals, and the Sub-DAO hierarchy --- is implemented today. Federation and the addressing scheme are planned.
+]
+
 Traditional governance frameworks treat the organization as a single contract. Armature does the opposite: it breaks the DAO into independent shared objects that can be accessed at the same time, upgraded separately, and combined in any configuration.
 
 == Architecture Overview
@@ -16,9 +20,9 @@ Every DAO is made of five shared objects. Each one exists independently on-chain
 
 #defbox[CapabilityVault][Storage for any SUI object with `key + store` abilities --- gate controller caps, upgrade caps, admin tokens. It supports immutable borrow, mutable borrow, temporary loan with guaranteed return, and permanent extraction. All under governance custody.]
 
-#defbox[Charter][More than a document. Today, the Charter references a human-readable document stored on Walrus (decentralized blob storage), with an on-chain content hash for integrity and a full amendment history. In the future, the Charter will carry codified rules directly on-chain --- governance parameters, membership constraints, proposal thresholds --- and these rules will be used to parametrize proposals. The Charter becomes the constitution that the system reads and enforces, not just one that humans interpret.]
+#defbox[Charter][The organization's constitution. Today the Charter is a lightweight on-chain object holding the DAO's name and a metadata URI --- an IPFS content identifier --- that points to the human-readable constitution. Amendments update this pointer through a governance proposal, and the on-chain proposal log records every change. _Planned:_ the Charter will additionally carry an integrity hash, explicit versioning, and codified rules --- governance parameters, membership constraints, proposal thresholds --- that parametrize proposals directly, so the constitution is one the system reads and enforces, not just one humans interpret.]
 
-#defbox[EmergencyFreeze][The circuit breaker. It allows selective, time-bounded freezing of individual proposal types. The `FreezeAdminCap` is itself stored in the CapabilityVault, so it can only be accessed through governance. Freezes auto-expire after a configurable maximum duration.]
+#defbox[EmergencyFreeze][The circuit breaker. It allows selective, time-bounded freezing of individual proposal types. Freezing is triggered by a `FreezeAdminCap`, issued to the DAO at creation and transferable or placeable under governance custody. Unfreezing, transferring the admin cap, and changing freeze configuration all require governance proposals. Freezes auto-expire after a configurable maximum duration (7 days by default), and the unfreeze and transfer-admin proposal types are permanently exempt from freezing, so the emergency system can never lock out governance.]
 
 Why five separate objects?
 

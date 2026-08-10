@@ -10,9 +10,9 @@ Authorization tokens produced during proposal execution cannot be forged, stored
 
 == Governance Thresholds
 
-Every action carries an approval threshold, a quorum requirement, and timing constraints. Critical actions carry higher bars --- expanding the DAO's vocabulary requires a supermajority, changing governance rules requires near-unanimity.
+Every action carries an approval threshold, a quorum requirement, and timing constraints. Critical actions carry higher bars --- expanding the DAO's vocabulary requires a two-thirds supermajority (a 66% floor), while changing a proposal type's own governance parameters, or enabling the external-authorization bypass, requires an 80% supermajority.
 
-These floors are framework-enforced. Governance cannot lower them below the protocol minimums. Governance cannot be captured through its own mechanisms.
+These floors are framework-enforced constants. Governance cannot lower them below the protocol minimums. Governance cannot be captured through its own mechanisms.
 
 == Timing Controls
 
@@ -26,13 +26,13 @@ Three timing mechanisms prevent velocity-based attacks.
 
 Individual proposal types can be frozen while all other DAO operations continue unaffected. The freeze is targeted, not total.
 
-The freeze capability is itself governed --- it lives in the DAO's vault and can only be accessed through a proposal. Freezes auto-expire after a configurable duration. And the ability to unfreeze can never itself be frozen, ensuring the emergency system cannot permanently lock out governance.
+Freezing is deliberately asymmetric. A freeze is triggered fast, by holding the `FreezeAdminCap` --- issued to the DAO at creation and transferable to or held under governance custody --- so a trusted responder can halt a suspect proposal type without waiting for a vote. Undoing a freeze is slower and always collective: unfreezing, transferring the admin cap, and changing freeze configuration each require a governance proposal. Freezes auto-expire after a configurable duration (7 days by default), and the unfreeze and transfer-admin proposal types are permanently exempt from freezing, so the emergency system can never permanently lock out governance.
 
 == Hierarchy Controls
 
 The organizational hierarchy provides isolation between parent and child DAOs.
 
-A parent can pause a compromised child's execution instantly, replace its board, and reclaim delegated capabilities --- all in a single atomic transaction. Controlled Sub-DAOs cannot create their own Sub-DAOs or declare independence without explicit authorization from the parent.
+A parent can pause a controlled child's execution, add or remove its board members, and reclaim delegated capabilities. Each is an atomic governance action on the parent side, and several can be bundled into a single composite proposal --- pause, reshuffle the board, and reclaim a capability in one vote and one execution. Controlled Sub-DAOs cannot create their own Sub-DAOs, spawn successors, or declare independence: those hierarchy-altering proposal types are framework-blocked for a controlled DAO and can only be unlocked when the parent spins it out.
 
 Delegation does not mean loss of control.
 
@@ -47,7 +47,7 @@ A compromised DAO cannot access another DAO's resources. Cross-DAO interaction r
 These layers compose into unconditional invariants:
 
 + *No admin keys.* No entity holds privileged access outside the governance system.
-+ *No backdoors.* All authority flows through proposals. There is no escape hatch.
++ *No backdoors.* All authority is rooted in governance. The two non-vote execution paths --- a parent's override of a Sub-DAO it controls, and the opt-in external-authorization bypass --- are not escape hatches: the first exists only for a DAO the parent already governs, and the second must be switched on by an 80% supermajority proposal and can be frozen or disabled the same way.
 + *Atomic execution.* Every proposal executes as a single transaction. If any step fails, everything reverts.
 + *Blast radius isolation.* A vulnerability in one DAO cannot reach another.
 + *On-chain auditability.* Every state change, every vote, every amendment is recorded permanently.
