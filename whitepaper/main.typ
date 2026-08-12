@@ -1,5 +1,10 @@
 #import "lib/template.typ": armature-paper
 
+// Single source of truth for the whitepaper version.
+// The release workflow greps this line and requires it to match the
+// pushed `whitepaper/v*` tag. Bump it in the PR, not at tag time.
+#let version = "v0.2.0"
+
 #show: armature-paper.with(
   title: [Armature Project],
   subtitle: [A Programmable Organization Framework\ for Frontier Civilization],
@@ -13,7 +18,7 @@
       affiliation: "michael@loash.xyz",
     ),
   ),
-  date: [Draft (v0.2) --- August 2026],
+  date: [Draft (#version) --- August 2026],
   abstract: [
     EVE Frontier provides powerful programmable primitives --- Smart Assemblies ---
     designed to be the backbone of player-driven gameplay, yet players lack the

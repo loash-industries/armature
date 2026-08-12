@@ -10,7 +10,7 @@ Built for the [EVE Frontier](https://evefrontier.com) ecosystem, but general-pur
 
 Players use Armature to represent their tribes, alliances, and syndicates on-chain. It gives organizations the tools to scale, capture player-generated value, and build relationships backed by code guarantees — no handshake deals, no trust assumptions. The goal: a civilizational mesh woven from one repeated, powerful primitive.
 
-> **[Watch the demo →](https://youtu.be/P60Oe7JcIio)** | **[Read the whitepaper →](https://github.com/loash-industries/armature/releases/tag/whitepaper/v0.1.0)** | **[View the roadmap →](ROADMAP.md)**
+> **[Watch the demo →](https://youtu.be/P60Oe7JcIio)** | **[Read the whitepaper →](https://github.com/loash-industries/armature/releases/latest)** | **[View the roadmap →](ROADMAP.md)**
 
 ## Architecture
 
@@ -46,7 +46,7 @@ This repo contains the on-chain Move packages only. The indexer lives in `armatu
 ├── docs/                       # Development guides
 ├── scripts/                    # Deploy and utility scripts
 ├── docker/                     # Dockerfiles and deploy scripts
-├── whitepaper/                 # Typst source and compiled PDF
+├── whitepaper/                 # Typst source (PDF is built, not committed)
 ├── docker-compose.dev.yml      # Full dev stack
 ├── Makefile                    # Dev task automation
 └── package.json                # Node workspace root
@@ -93,6 +93,8 @@ See [docs/local-dev.md](docs/local-dev.md) for the full development guide and tr
 | `make dev-docs` | Watch and recompile the whitepaper |
 | `make build-docs` | Build the whitepaper PDF for release |
 | `make clean` | Remove all Docker volumes and generated config |
+
+To cut a new whitepaper version, see [docs/whitepaper-release.md](docs/whitepaper-release.md).
 
 ## Move Contracts
 
