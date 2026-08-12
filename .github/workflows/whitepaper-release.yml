@@ -1,0 +1,57 @@
+name: Whitepaper Release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - 'whitepaper/v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The version in whitepaper/main.typ is the source of truth. Fail loudly
+      # if someone tags a version the document itself does not claim to be.
+      - name: Verify document version matches tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#whitepaper/}"
+          if ! grep -qF "#let version = \"$VERSION\"" whitepaper/main.typ; then
+            echo "::error::Tag is $VERSION but whitepaper/main.typ declares:"
+            grep -F '#let version' whitepaper/main.typ >&2 || echo "  (no version line found)" >&2
+            echo "::error::Bump the version in whitepaper/main.typ, then re-tag."
+            exit 1
+          fi
+          echo "Releasing whitepaper $VERSION"
+
+      - name: Install Typst
+        uses: typst-community/setup-typst@v4
+
+      - name: Build whitepaper
+        run: typst compile --root . whitepaper/main.typ armature-whitepaper.pdf
+
+      # Notes are hand-written and reviewed in the PR that bumps the version.
+      # Fall back to auto-generated notes if that file is missing.
+      - name: Resolve release notes
+        id: notes
+        run: |
+          VERSION="${GITHUB_REF_NAME#whitepaper/}"
+          NOTES="whitepaper/releases/$VERSION.md"
+          if [ -f "$NOTES" ]; then
+            echo "path=$NOTES" >> "$GITHUB_OUTPUT"
+            echo "generate=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::No $NOTES found; falling back to generated notes."
+            echo "generate=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Whitepaper ${{ github.ref_name }}"
+          files: armature-whitepaper.pdf
+          body_path: ${{ steps.notes.outputs.path }}
+          generate_release_notes: ${{ steps.notes.outputs.generate }}
