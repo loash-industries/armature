@@ -5,18 +5,18 @@ use armature::board_voting;
 use armature::capability_vault::{CapabilityVault, SubDAOControl};
 use armature::charter::Charter;
 use armature::controller;
+use armature::create_subdao::{Self, CreateSubDAO};
 use armature::dao::{Self, DAO};
 use armature::emergency::{EmergencyFreeze, FreezeAdminCap};
 use armature::governance;
 use armature::proposal::{Self, Proposal};
+use armature::set_board::{Self, SetBoard};
+use armature::spawn_dao::{Self, SpawnDAO};
+use armature::spin_out_subdao::{Self, SpinOutSubDAO};
+use armature::transfer_assets::{Self, TransferAssets};
 use armature::treasury_vault::TreasuryVault;
 use armature_proposals::board_ops;
-use armature_proposals::create_subdao::{Self, CreateSubDAO};
-use armature_proposals::set_board::{Self, SetBoard};
-use armature_proposals::spawn_dao::{Self, SpawnDAO};
-use armature_proposals::spin_out_subdao::{Self, SpinOutSubDAO};
 use armature_proposals::subdao_ops;
-use armature_proposals::transfer_assets::{Self, TransferAssets};
 use std::string;
 use sui::clock;
 use sui::coin;
@@ -57,7 +57,7 @@ fun spawn_dao_and_destroy_origin_e2e() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"SpawnDAO".to_ascii_string(), config);
+        dao.test_enable_type<SpawnDAO>(b"SpawnDAO".to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
 
@@ -75,7 +75,6 @@ fun spawn_dao_and_destroy_origin_e2e() {
 
         board_voting::submit_proposal(
             &dao,
-            b"SpawnDAO".to_ascii_string(),
             option::some(string::utf8(b"Spawn successor DAO for migration")),
             payload,
             &clock,
@@ -189,8 +188,8 @@ fun create_subdao_and_spin_out_e2e() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"CreateSubDAO".to_ascii_string(), config);
-        dao.test_enable_type(b"SpinOutSubDAO".to_ascii_string(), config);
+        dao.test_enable_type<CreateSubDAO>(b"CreateSubDAO".to_ascii_string(), config);
+        dao.test_enable_type<SpinOutSubDAO>(b"SpinOutSubDAO".to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
 
@@ -210,7 +209,6 @@ fun create_subdao_and_spin_out_e2e() {
 
         board_voting::submit_proposal(
             &dao,
-            b"CreateSubDAO".to_ascii_string(),
             option::some(string::utf8(b"Create child DAO")),
             payload,
             &clock,
@@ -285,9 +283,9 @@ fun create_subdao_and_spin_out_e2e() {
         // Verify SubDAO has controller set
         assert!(child.controller_cap_id().is_some());
         // Verify SubDAO does NOT have SpawnDAO/SpinOutSubDAO/CreateSubDAO enabled
-        assert!(!child.enabled_proposal_types().contains(&b"SpawnDAO".to_ascii_string()));
-        assert!(!child.enabled_proposal_types().contains(&b"SpinOutSubDAO".to_ascii_string()));
-        assert!(!child.enabled_proposal_types().contains(&b"CreateSubDAO".to_ascii_string()));
+        assert!(!child.is_type_enabled<SpawnDAO>());
+        assert!(!child.is_type_enabled<SpinOutSubDAO>());
+        assert!(!child.is_type_enabled<CreateSubDAO>());
 
         test_scenario::return_shared(child);
     };
@@ -312,7 +310,6 @@ fun create_subdao_and_spin_out_e2e() {
 
         board_voting::submit_proposal(
             &dao,
-            b"SpinOutSubDAO".to_ascii_string(),
             option::some(string::utf8(b"Spin out child DAO to independence")),
             payload,
             &clock,
@@ -370,9 +367,9 @@ fun create_subdao_and_spin_out_e2e() {
         assert!(!subdao.is_controller_paused());
 
         // Verify: SubDAO now has SpawnDAO, SpinOutSubDAO, CreateSubDAO enabled
-        assert!(subdao.enabled_proposal_types().contains(&b"SpawnDAO".to_ascii_string()));
-        assert!(subdao.enabled_proposal_types().contains(&b"SpinOutSubDAO".to_ascii_string()));
-        assert!(subdao.enabled_proposal_types().contains(&b"CreateSubDAO".to_ascii_string()));
+        assert!(subdao.is_type_enabled<SpawnDAO>());
+        assert!(subdao.is_type_enabled<SpinOutSubDAO>());
+        assert!(subdao.is_type_enabled<CreateSubDAO>());
 
         // Verify: Parent vault no longer holds SubDAOControl or FreezeAdminCap
         assert!(parent_vault.is_empty());
@@ -425,7 +422,7 @@ fun controller_set_board_via_privileged_submit() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"CreateSubDAO".to_ascii_string(), config);
+        dao.test_enable_type<CreateSubDAO>(b"CreateSubDAO".to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
 
@@ -441,7 +438,6 @@ fun controller_set_board_via_privileged_submit() {
         );
         board_voting::submit_proposal(
             &dao,
-            b"CreateSubDAO".to_ascii_string(),
             option::some(string::utf8(b"Create child")),
             payload,
             &clock,
@@ -515,7 +511,6 @@ fun controller_set_board_via_privileged_submit() {
         let payload = set_board::new(vector[CREATOR, MEMBER_B]);
         board_voting::submit_proposal(
             &dao,
-            b"SetBoard".to_ascii_string(),
             option::some(string::utf8(b"Vehicle for controller op")),
             payload,
             &clock,
@@ -533,7 +528,7 @@ fun controller_set_board_via_privileged_submit() {
     };
 
     // 7. Execute: loan SubDAOControl → privileged_submit SetBoard on SubDAO
-    //    → set_board_governance → privileged_consume → return_cap → consume parent request
+    // → set_board_governance → privileged_consume → return_cap → consume parent request
     scenario.next_tx(CREATOR);
     {
         let mut parent_dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
@@ -629,8 +624,8 @@ fun migration_with_transfer_assets_e2e() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"SpawnDAO".to_ascii_string(), config);
-        dao.test_enable_type(b"TransferAssets".to_ascii_string(), config);
+        dao.test_enable_type<SpawnDAO>(b"SpawnDAO".to_ascii_string(), config);
+        dao.test_enable_type<TransferAssets>(b"TransferAssets".to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
 
@@ -656,7 +651,6 @@ fun migration_with_transfer_assets_e2e() {
         );
         board_voting::submit_proposal(
             &dao,
-            b"SpawnDAO".to_ascii_string(),
             option::some(string::utf8(b"Spawn successor")),
             payload,
             &clock,
@@ -724,7 +718,6 @@ fun migration_with_transfer_assets_e2e() {
         );
         board_voting::submit_proposal(
             &dao,
-            b"TransferAssets".to_ascii_string(),
             option::some(string::utf8(b"Transfer all assets to successor")),
             payload,
             &clock,

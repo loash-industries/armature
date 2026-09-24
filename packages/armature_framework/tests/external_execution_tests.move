@@ -4,11 +4,14 @@ module armature::external_execution_tests;
 use armature::board_voting;
 use armature::capability_vault::CapabilityVault;
 use armature::dao::{Self, DAO};
+use armature::disable_bypass_type::DisableBypassType;
 use armature::emergency::EmergencyFreeze;
-use armature::external_execution::{Self, DisableBypassType, EnableBypassType};
+use armature::enable_bypass_type::EnableBypassType;
+use armature::external_execution;
 use armature::governance;
 use armature::proposal::{Self, ExternalExecutionCap, Proposal};
 use std::string;
+use std::type_name;
 use sui::clock;
 use sui::test_scenario;
 
@@ -17,7 +20,7 @@ const CREATOR: address = @0xA;
 /// Stand-in payload type for external-execution tests.
 public struct DummyBypass has drop, store { x: u64 }
 
-/// Second payload type for verifying type-binding mismatch.
+/// Second payload type for verifying type-slot mismatches.
 public struct OtherBypass has drop, store {}
 
 fun create_test_dao(scenario: &mut test_scenario::Scenario) {
@@ -34,14 +37,13 @@ fun create_test_dao(scenario: &mut test_scenario::Scenario) {
 }
 
 /// Enable a custom proposal type on the DAO without going through governance.
-/// Used to make `DummyBypass` recognizable to external_executed_create.
+/// Gives `DummyBypass` a slot so ticket_from_cap recognizes it.
 fun enable_dummy_type(scenario: &mut test_scenario::Scenario) {
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"DummyBypass".to_ascii_string(), config);
-        dao.test_bind_type<DummyBypass>(b"DummyBypass".to_ascii_string());
+        dao.test_enable_type<DummyBypass>(b"DummyBypass".to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
 }
@@ -63,11 +65,11 @@ fun run_enable_bypass<NewType: store>(
         let config = proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0);
         let payload = external_execution::new_enable_bypass_type(
             type_key.to_ascii_string(),
+            type_name::with_defining_ids<NewType>(),
             config,
         );
         board_voting::submit_proposal(
             &dao,
-            b"EnableBypassType".to_ascii_string(),
             option::none(),
             payload,
             clock,
@@ -143,7 +145,6 @@ fun external_executed_create_happy_path() {
             &cap,
             &mut dao,
             &freeze,
-            b"DummyBypass".to_ascii_string(),
             option::none(),
             DummyBypass { x: 42 },
             &clock,
@@ -153,7 +154,7 @@ fun external_executed_create_happy_path() {
         // Request is for this DAO
         assert!(ticket.ticket_dao_id() == dao.id());
         // record_execution updated
-        assert!(dao.last_executed_at().contains(&b"DummyBypass".to_ascii_string()));
+        assert!(dao.last_executed_ms<DummyBypass>().is_some());
 
         ticket.discharge();
         proposal::destroy_external_execution_cap_for_testing(cap);
@@ -192,7 +193,6 @@ fun external_executed_create_cap_for_wrong_dao_aborts() {
             &cap,
             &mut dao,
             &freeze,
-            b"DummyBypass".to_ascii_string(),
             option::none(),
             DummyBypass { x: 0 },
             &clock,
@@ -233,7 +233,6 @@ fun external_executed_create_type_not_enabled_aborts() {
             &cap,
             &mut dao,
             &freeze,
-            b"DummyBypass".to_ascii_string(),
             option::none(),
             DummyBypass { x: 0 },
             &clock,
@@ -263,8 +262,7 @@ fun external_executed_create_cooldown_enforced() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 60_000); // 60s cooldown
-        dao.test_enable_type(b"DummyBypass".to_ascii_string(), config);
-        dao.test_bind_type<DummyBypass>(b"DummyBypass".to_ascii_string());
+        dao.test_enable_type<DummyBypass>(b"DummyBypass".to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
 
@@ -284,7 +282,6 @@ fun external_executed_create_cooldown_enforced() {
             &cap,
             &mut dao,
             &freeze,
-            b"DummyBypass".to_ascii_string(),
             option::none(),
             DummyBypass { x: 1 },
             &clock,
@@ -313,7 +310,6 @@ fun external_executed_create_cooldown_enforced() {
             &cap,
             &mut dao,
             &freeze,
-            b"DummyBypass".to_ascii_string(),
             option::none(),
             DummyBypass { x: 2 },
             &clock,
@@ -330,21 +326,21 @@ fun external_executed_create_cooldown_enforced() {
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = armature::external_execution::ETypeMismatch)]
-/// If the type_key is bound to a different Move type, P must match.
-fun external_executed_create_type_binding_mismatch_aborts() {
+#[test, expected_failure(abort_code = armature::external_execution::ETypeNotEnabled)]
+/// A slot for a *different* type under the same display key does not enable P:
+/// slots are keyed by the Move type, so P must have its own slot.
+fun external_executed_create_other_type_slot_does_not_enable_p() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
     create_test_dao(&mut scenario);
 
-    // Enable DummyBypass key bound to a *different* type (OtherBypass).
+    // Give OtherBypass a slot whose display key is "DummyBypass".
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"DummyBypass".to_ascii_string(), config);
-        dao.test_bind_type<OtherBypass>(b"DummyBypass".to_ascii_string());
+        dao.test_enable_type<OtherBypass>(b"DummyBypass".to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
 
@@ -359,12 +355,11 @@ fun external_executed_create_type_binding_mismatch_aborts() {
             scenario.ctx(),
         );
 
-        // P = DummyBypass, but the key is bound to OtherBypass → mismatch.
+        // P = DummyBypass has no slot of its own → not enabled.
         let ticket = external_execution::ticket_from_cap<DummyBypass>(
             &cap,
             &mut dao,
             &freeze,
-            b"DummyBypass".to_ascii_string(),
             option::none(),
             DummyBypass { x: 0 },
             &clock,
@@ -387,7 +382,7 @@ fun external_executed_create_type_binding_mismatch_aborts() {
 
 #[test]
 /// E2E: EnableBypassType proposal → vote (100%) → execute mints an
-/// ExternalExecutionCap<DummyBypass>, enables the type, binds the Move type.
+/// ExternalExecutionCap<DummyBypass> and adds the type's slot.
 /// Then borrow the cap from the vault without an ExecutionRequest and use it
 /// with external_executed_create — must succeed.
 fun execute_enable_bypass_type_e2e() {
@@ -404,11 +399,11 @@ fun execute_enable_bypass_type_e2e() {
         let config = proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0);
         let payload = external_execution::new_enable_bypass_type(
             b"DummyBypass".to_ascii_string(),
+            type_name::with_defining_ids<DummyBypass>(),
             config,
         );
         board_voting::submit_proposal(
             &dao,
-            b"EnableBypassType".to_ascii_string(),
             option::none(),
             payload,
             &clock,
@@ -450,8 +445,8 @@ fun execute_enable_bypass_type_e2e() {
             scenario.ctx(),
         );
 
-        assert!(dao.enabled_proposal_types().contains(&b"DummyBypass".to_ascii_string()));
-        assert!(dao.has_type_binding(&b"DummyBypass".to_ascii_string()));
+        assert!(dao.is_type_enabled<DummyBypass>());
+        assert!(dao.type_display_key<DummyBypass>() == b"DummyBypass".to_ascii_string());
 
         let ids = vault.ids_for_type<ExternalExecutionCap<DummyBypass>>();
         assert!(ids.length() == 1);
@@ -477,7 +472,6 @@ fun execute_enable_bypass_type_e2e() {
             cap,
             &mut dao,
             &freeze,
-            b"DummyBypass".to_ascii_string(),
             option::none(),
             DummyBypass { x: 7 },
             &clock,
@@ -517,7 +511,7 @@ fun execute_enable_bypass_type_below_floor_aborts() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let weak = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_update_config(b"EnableBypassType".to_ascii_string(), weak);
+        dao.test_update_config<EnableBypassType>(weak);
         test_scenario::return_shared(dao);
     };
 
@@ -528,11 +522,11 @@ fun execute_enable_bypass_type_below_floor_aborts() {
         let config = proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0);
         let payload = external_execution::new_enable_bypass_type(
             b"MyBypass".to_ascii_string(),
+            type_name::with_defining_ids<DummyBypass>(),
             config,
         );
         board_voting::submit_proposal(
             &dao,
-            b"EnableBypassType".to_ascii_string(),
             option::none(),
             payload,
             &clock,
@@ -599,11 +593,11 @@ fun execute_enable_bypass_type_self_bootstrap_denied() {
         let config = proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0);
         let payload = external_execution::new_enable_bypass_type(
             b"SelfBootstrap".to_ascii_string(),
+            type_name::with_defining_ids<EnableBypassType>(),
             config,
         );
         board_voting::submit_proposal(
             &dao,
-            b"EnableBypassType".to_ascii_string(),
             option::none(),
             payload,
             &clock,
@@ -673,6 +667,7 @@ fun execute_enable_bypass_type_zero_weight_aborts() {
         let config = proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0);
         let payload = external_execution::new_enable_bypass_type(
             b"DummyBypass".to_ascii_string(),
+            type_name::with_defining_ids<DummyBypass>(),
             config,
         );
         // Use privileged_create_for_testing to get a zero-weight ExecutionTicket.
@@ -739,7 +734,6 @@ fun external_executed_create_execution_paused_aborts() {
             &cap,
             &mut dao,
             &freeze,
-            b"DummyBypass".to_ascii_string(),
             option::none(),
             DummyBypass { x: 0 },
             &clock,
@@ -791,7 +785,6 @@ fun external_executed_create_controller_paused_aborts() {
             &cap,
             &mut dao,
             &freeze,
-            b"DummyBypass".to_ascii_string(),
             option::none(),
             DummyBypass { x: 0 },
             &clock,
@@ -841,7 +834,6 @@ fun execute_disable_bypass_type_e2e() {
         );
         board_voting::submit_proposal(
             &dao,
-            b"DisableBypassType".to_ascii_string(),
             option::none(),
             payload,
             &clock,
@@ -879,8 +871,9 @@ fun execute_disable_bypass_type_e2e() {
             ticket,
         );
 
-        // Type removed from enabled set.
-        assert!(!dao.enabled_proposal_types().contains(&b"DummyBypass".to_ascii_string()));
+        // Slot removed, display key released.
+        assert!(!dao.is_type_enabled<DummyBypass>());
+        assert!(dao.type_for_display_key(&b"DummyBypass".to_ascii_string()).is_none());
         // Cap no longer in vault.
         let remaining = vault.ids_for_type<ExternalExecutionCap<DummyBypass>>();
         assert!(remaining.is_empty());
@@ -896,8 +889,8 @@ fun execute_disable_bypass_type_e2e() {
 }
 
 #[test, expected_failure(abort_code = armature::external_execution::ETypeMismatch)]
-/// Disable handler invoked with NewType that does not match the type_key's
-/// binding must abort, even if the cap_id is otherwise valid for the DAO.
+/// Disable handler invoked with a NewType whose slot carries a different display
+/// key than the payload names must abort, even if the cap_id is otherwise valid.
 /// Guards against ID-confusion attacks where a malicious proposal would
 /// destroy a different cap than the type_key suggests.
 fun execute_disable_bypass_type_wrong_new_type_aborts() {
@@ -924,7 +917,6 @@ fun execute_disable_bypass_type_wrong_new_type_aborts() {
         );
         board_voting::submit_proposal(
             &dao,
-            b"DisableBypassType".to_ascii_string(),
             option::none(),
             payload,
             &clock,
@@ -939,6 +931,16 @@ fun execute_disable_bypass_type_wrong_new_type_aborts() {
         let mut proposal = scenario.take_shared<Proposal<DisableBypassType>>();
         proposal.vote(true, &clock, scenario.ctx());
         test_scenario::return_shared(proposal);
+    };
+
+    // OtherBypass gets its own slot (display "OtherBypass") so the handler's
+    // display-key check, not the slot-existence check, is what fires.
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+        dao.test_enable_type<OtherBypass>(b"OtherBypass".to_ascii_string(), config);
+        test_scenario::return_shared(dao);
     };
 
     clock.set_for_testing(6000);
@@ -956,7 +958,7 @@ fun execute_disable_bypass_type_wrong_new_type_aborts() {
             &clock,
             scenario.ctx(),
         );
-        // Type binding for DummyBypass is DummyBypass, but we pass OtherBypass.
+        // The payload's display key is "DummyBypass", but NewType = OtherBypass.
         external_execution::execute_disable_bypass_type<OtherBypass>(
             &mut dao,
             &mut vault,
@@ -1002,7 +1004,6 @@ fun execute_disable_bypass_type_wrong_cap_id_aborts() {
         );
         board_voting::submit_proposal(
             &dao,
-            b"DisableBypassType".to_ascii_string(),
             option::none(),
             payload,
             &clock,
@@ -1051,54 +1052,74 @@ fun execute_disable_bypass_type_wrong_cap_id_aborts() {
 }
 
 // =========================================================================
-// ETypeBindingRequired: ticket_from_cap rejects types without a type binding
+// ETypeMismatch: the executor cannot register a different type than voted on
 // =========================================================================
 
-#[test, expected_failure(abort_code = armature::external_execution::ETypeBindingRequired)]
-/// ticket_from_cap aborts when the type_key is enabled but has no type binding.
-/// Previously the binding check was optional; now it is mandatory for all bypass types.
-fun ticket_from_cap_no_type_binding_aborts() {
+#[test, expected_failure(abort_code = armature::external_execution::ETypeMismatch)]
+/// The EnableBypassType payload pins the Move type the board approved. Executing
+/// the handler with a different NewType must abort, so an executor cannot
+/// register an unrelated payload type under the approved display key.
+fun execute_enable_bypass_type_wrong_new_type_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
     create_test_dao(&mut scenario);
 
-    // Enable the type WITHOUT binding — only test_enable_type, no test_bind_type
+    clock.set_for_testing(1000);
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
-        let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"DummyBypass".to_ascii_string(), config);
-        // Deliberately NOT calling: dao.test_bind_type<DummyBypass>(...)
-        test_scenario::return_shared(dao);
-    };
-
-    scenario.next_tx(CREATOR);
-    {
-        let mut dao = scenario.take_shared<DAO>();
-        let freeze = scenario.take_shared<EmergencyFreeze>();
-        clock.set_for_testing(1000);
-
-        let cap = proposal::new_external_execution_cap_for_testing<DummyBypass>(
-            dao.id(),
-            scenario.ctx(),
-        );
-
-        // Must abort: type_key is enabled but has no type binding
-        let ticket = external_execution::ticket_from_cap<DummyBypass>(
-            &cap,
-            &mut dao,
-            &freeze,
+        let dao = scenario.take_shared<DAO>();
+        let config = proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0);
+        // Board approves DummyBypass under the display key "DummyBypass".
+        let payload = external_execution::new_enable_bypass_type(
             b"DummyBypass".to_ascii_string(),
+            type_name::with_defining_ids<DummyBypass>(),
+            config,
+        );
+        board_voting::submit_proposal(
+            &dao,
             option::none(),
-            DummyBypass { x: 0 },
+            payload,
             &clock,
             scenario.ctx(),
         );
+        test_scenario::return_shared(dao);
+    };
 
-        ticket.discharge();
-        proposal::destroy_external_execution_cap_for_testing(cap);
+    clock.set_for_testing(2000);
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
+        proposal.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(proposal);
+    };
+
+    clock.set_for_testing(3000);
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut vault = scenario.take_shared<CapabilityVault>();
+        let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+
+        let ticket = board_voting::ticket_from_vote(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        // Executor tries to register OtherBypass instead — must abort.
+        external_execution::execute_enable_bypass_type<OtherBypass>(
+            &mut dao,
+            &mut vault,
+            ticket,
+            scenario.ctx(),
+        );
+
         test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(vault);
         test_scenario::return_shared(dao);
     };
 
@@ -1135,11 +1156,11 @@ fun enable_bypass_type_composable_cooldown_conflict_aborts() {
         ).with_composable_allowed(true);
         let payload = external_execution::new_enable_bypass_type(
             b"DummyBypass".to_ascii_string(),
+            type_name::with_defining_ids<DummyBypass>(),
             bad_config,
         );
         board_voting::submit_proposal(
             &dao,
-            b"EnableBypassType".to_ascii_string(),
             option::none(),
             payload,
             &clock,

@@ -1,4 +1,4 @@
-module armature_proposals::batch_add_members;
+module armature::batch_add_members;
 
 /// Add multiple members to the board in a single proposal.
 /// Aborts atomically if any address is already on the board or if the

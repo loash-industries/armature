@@ -4,21 +4,21 @@ module armature_proposals::lifecycle_tests;
 use armature::board_voting;
 use armature::capability_vault::{CapabilityVault, SubDAOControl};
 use armature::controller;
+use armature::create_subdao::{Self, CreateSubDAO};
 use armature::dao::{Self, DAO};
 use armature::emergency::{EmergencyFreeze, FreezeAdminCap};
 use armature::governance;
 use armature::proposal::{Self, Proposal};
+use armature::set_board::{Self, SetBoard};
 use armature::treasury_vault::TreasuryVault;
+use armature::unfreeze_proposal_type::{Self, UnfreezeProposalType};
 use armature_proposals::board_ops;
-use armature_proposals::create_subdao::{Self, CreateSubDAO};
 use armature_proposals::security_ops;
 use armature_proposals::send_coin::{Self, SendCoin};
 use armature_proposals::send_coin_to_dao::{Self, SendCoinToDAO};
 use armature_proposals::send_small_payment::{Self, SendSmallPayment};
-use armature_proposals::set_board::{Self, SetBoard};
 use armature_proposals::subdao_ops;
 use armature_proposals::treasury_ops;
-use armature_proposals::unfreeze_proposal_type::{Self, UnfreezeProposalType};
 use std::string;
 use sui::clock;
 use sui::coin;
@@ -64,13 +64,13 @@ fun small_startup_lifecycle() {
     };
 
     // ── 2. Enable SendSmallPayment type (ALICE proposes, BOB votes yes → 2/3) ──
-    //    Use test_enable_type for setup brevity — real governance path is
-    //    tested in admin_ops_tests.
+    // Use test_enable_type for setup brevity — real governance path is
+    // tested in admin_ops_tests.
     scenario.next_tx(ALICE);
     {
         let mut dao = scenario.take_shared_by_id<DAO>(dao_id);
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"SendSmallPayment".to_ascii_string(), config);
+        dao.test_enable_type<SendSmallPayment<SUI>>(b"SendSmallPayment".to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
 
@@ -92,7 +92,6 @@ fun small_startup_lifecycle() {
         let payload = send_small_payment::new<SUI>(CAROL, 5_000);
         board_voting::submit_proposal(
             &dao,
-            b"SendSmallPayment".to_ascii_string(),
             option::some(string::utf8(b"Pay Carol for design work")),
             payload,
             &clock,
@@ -159,7 +158,6 @@ fun small_startup_lifecycle() {
         let payload = set_board::new(vector[ALICE, BOB, DAN, EVE]);
         board_voting::submit_proposal(
             &dao,
-            b"SetBoard".to_ascii_string(),
             option::some(string::utf8(b"Carol leaving, welcome Dan and Eve")),
             payload,
             &clock,
@@ -223,7 +221,6 @@ fun small_startup_lifecycle() {
         let payload = send_small_payment::new<SUI>(DAN, 1_000);
         board_voting::submit_proposal(
             &dao,
-            b"SendSmallPayment".to_ascii_string(),
             option::some(string::utf8(b"DAN expense reimbursement")),
             payload,
             &clock,
@@ -338,9 +335,9 @@ fun medium_enterprise_lifecycle() {
     {
         let mut dao = scenario.take_shared_by_id<DAO>(top_dao_id);
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"CreateSubDAO".to_ascii_string(), config);
-        dao.test_enable_type(b"SendCoin".to_ascii_string(), config);
-        dao.test_enable_type(b"SendCoinToDAO".to_ascii_string(), config);
+        dao.test_enable_type<CreateSubDAO>(b"CreateSubDAO".to_ascii_string(), config);
+        dao.test_enable_type<SendCoin<USDC>>(b"SendCoin".to_ascii_string(), config);
+        dao.test_enable_type<SendCoinToDAO<USDC>>(b"SendCoinToDAO".to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
 
@@ -355,7 +352,7 @@ fun medium_enterprise_lifecycle() {
     };
 
     // ── 4. Create Engineering SubDAO ─────────────────────────────────
-    //    M1 proposes, M1+M2+M3 vote (3/5 = 60% quorum)
+    // M1 proposes, M1+M2+M3 vote (3/5 = 60% quorum)
     scenario.next_tx(M1);
     {
         let dao = scenario.take_shared_by_id<DAO>(top_dao_id);
@@ -367,7 +364,6 @@ fun medium_enterprise_lifecycle() {
         );
         board_voting::submit_proposal(
             &dao,
-            b"CreateSubDAO".to_ascii_string(),
             option::some(string::utf8(b"Create Engineering SubDAO")),
             payload,
             &clock,
@@ -451,7 +447,6 @@ fun medium_enterprise_lifecycle() {
         );
         board_voting::submit_proposal(
             &dao,
-            b"CreateSubDAO".to_ascii_string(),
             option::some(string::utf8(b"Create Finance SubDAO")),
             payload,
             &clock,
@@ -536,7 +531,6 @@ fun medium_enterprise_lifecycle() {
         let payload = set_board::new(vector[M1, M2, M3, M4, M5]); // same board
         board_voting::submit_proposal(
             &dao,
-            b"SetBoard".to_ascii_string(),
             option::some(string::utf8(b"Vehicle: freeze eng type + change eng board")),
             payload,
             &clock,
@@ -657,7 +651,7 @@ fun medium_enterprise_lifecycle() {
     };
 
     // ── 8. Unfreeze SendCoin on Engineering via governance ────────────
-    //    Engineering's own board submits UnfreezeProposalType.
+    // Engineering's own board submits UnfreezeProposalType.
     scenario.next_tx(ENG1);
     {
         let eng_dao = scenario.take_shared_by_id<DAO>(eng_dao_id);
@@ -665,7 +659,6 @@ fun medium_enterprise_lifecycle() {
         let payload = unfreeze_proposal_type::new(b"SendCoin".to_ascii_string());
         board_voting::submit_proposal(
             &eng_dao,
-            b"UnfreezeProposalType".to_ascii_string(),
             option::some(string::utf8(b"Unfreeze SendCoin after rogue removed")),
             payload,
             &clock,
@@ -713,7 +706,7 @@ fun medium_enterprise_lifecycle() {
     };
 
     // ── 9. Top-level DAO sends salary budget to Finance SubDAO ───────
-    //    M1 proposes SendCoinToDAO<USDC> to Finance treasury, M1+M2+M3 vote.
+    // M1 proposes SendCoinToDAO<USDC> to Finance treasury, M1+M2+M3 vote.
     scenario.next_tx(M1);
     {
         let dao = scenario.take_shared_by_id<DAO>(top_dao_id);
@@ -721,7 +714,6 @@ fun medium_enterprise_lifecycle() {
         let payload = send_coin_to_dao::new<USDC>(fin_vault_id, 500_000);
         board_voting::submit_proposal(
             &dao,
-            b"SendCoinToDAO".to_ascii_string(),
             option::some(string::utf8(b"Q1 salary budget to Finance")),
             payload,
             &clock,
@@ -790,12 +782,12 @@ fun medium_enterprise_lifecycle() {
     };
 
     // ── 10. Finance SubDAO pays salary to EMPLOYEE ───────────────────
-    //    Finance board enables SendCoin, then FIN1 proposes, FIN2 votes.
+    // Finance board enables SendCoin, then FIN1 proposes, FIN2 votes.
     scenario.next_tx(FIN1);
     {
         let mut fin_dao = scenario.take_shared_by_id<DAO>(fin_dao_id);
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        fin_dao.test_enable_type(b"SendCoin".to_ascii_string(), config);
+        fin_dao.test_enable_type<SendCoin<USDC>>(b"SendCoin".to_ascii_string(), config);
         test_scenario::return_shared(fin_dao);
     };
 
@@ -806,7 +798,6 @@ fun medium_enterprise_lifecycle() {
         let payload = send_coin::new<USDC>(EMPLOYEE, 100_000);
         board_voting::submit_proposal(
             &fin_dao,
-            b"SendCoin".to_ascii_string(),
             option::some(string::utf8(b"March salary for EMPLOYEE")),
             payload,
             &clock,

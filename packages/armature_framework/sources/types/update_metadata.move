@@ -1,4 +1,4 @@
-module armature_proposals::update_metadata;
+module armature::update_metadata;
 
 use std::string::String;
 

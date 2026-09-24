@@ -1,13 +1,27 @@
 #[test_only]
 module armature::dao_tests;
 
+use armature::add_member::AddMember;
+use armature::batch_add_members::BatchAddMembers;
+use armature::batch_remove_members::BatchRemoveMembers;
 use armature::capability_vault::{Self, CapabilityVault};
 use armature::charter::Charter;
+use armature::composite_payload::CompositePayload;
 use armature::dao::{Self, DAO};
+use armature::disable_bypass_type::DisableBypassType;
+use armature::disable_proposal_type::DisableProposalType;
 use armature::emergency::{EmergencyFreeze, FreezeAdminCap};
+use armature::enable_bypass_type::EnableBypassType;
+use armature::enable_proposal_type::EnableProposalType;
 use armature::governance;
 use armature::proposal;
+use armature::remove_member::RemoveMember;
+use armature::set_board::SetBoard;
+use armature::transfer_freeze_admin::TransferFreezeAdmin;
 use armature::treasury_vault::TreasuryVault;
+use armature::unfreeze_proposal_type::UnfreezeProposalType;
+use armature::update_metadata::UpdateMetadata;
+use armature::update_proposal_config::UpdateProposalConfig;
 use std::string;
 use sui::test_scenario;
 
@@ -117,8 +131,18 @@ fun test_dao_created_event() {
     scenario.end();
 }
 
+/// Custom payload types for registry tests.
+public struct CustomA has drop, store {}
+
+public struct CustomB has drop, store {}
+
+/// Generic marker: each instantiation is a distinct proposal type, which lets the
+/// size regression test enable many types without declaring one struct each.
+public struct Marker<phantom T> has drop, store {}
+
 #[test]
-/// Verifies default proposal types match the spec.
+/// Verifies default proposal types match the spec: every default type has a slot
+/// keyed by its payload type, carrying the documented display key and config.
 fun test_default_proposal_types() {
     let mut scenario = test_scenario::begin(CREATOR);
 
@@ -127,38 +151,223 @@ fun test_default_proposal_types() {
     scenario.next_tx(CREATOR);
     {
         let dao = scenario.take_shared<DAO>();
-        let enabled = dao.enabled_proposal_types();
-        let configs = dao.proposal_configs();
 
-        // Verify all 14 default types are enabled
-        assert!(enabled.contains(&b"SetBoard".to_ascii_string()));
-        assert!(enabled.contains(&b"AddMember".to_ascii_string()));
-        assert!(enabled.contains(&b"RemoveMember".to_ascii_string()));
-        assert!(enabled.contains(&b"BatchAddMembers".to_ascii_string()));
-        assert!(enabled.contains(&b"BatchRemoveMembers".to_ascii_string()));
-        assert!(enabled.contains(&b"CharterUpdate".to_ascii_string()));
-        assert!(enabled.contains(&b"EnableProposalType".to_ascii_string()));
-        assert!(enabled.contains(&b"EnableBypassType".to_ascii_string()));
-        assert!(enabled.contains(&b"DisableBypassType".to_ascii_string()));
-        assert!(enabled.contains(&b"DisableProposalType".to_ascii_string()));
-        assert!(enabled.contains(&b"UpdateProposalConfig".to_ascii_string()));
-        assert!(enabled.contains(&b"TransferFreezeAdmin".to_ascii_string()));
-        assert!(enabled.contains(&b"UnfreezeProposalType".to_ascii_string()));
-        assert!(enabled.contains(&b"Composite".to_ascii_string()));
-        assert!(enabled.length() == 14);
+        // All 14 default types are enabled under their display keys.
+        assert!(dao.type_display_key<SetBoard>() == b"SetBoard".to_ascii_string());
+        assert!(dao.type_display_key<AddMember>() == b"AddMember".to_ascii_string());
+        assert!(dao.type_display_key<RemoveMember>() == b"RemoveMember".to_ascii_string());
+        assert!(dao.type_display_key<BatchAddMembers>() == b"BatchAddMembers".to_ascii_string());
+        assert!(
+            dao.type_display_key<BatchRemoveMembers>() == b"BatchRemoveMembers".to_ascii_string(),
+        );
+        assert!(dao.type_display_key<UpdateMetadata>() == b"CharterUpdate".to_ascii_string());
+        assert!(
+            dao.type_display_key<EnableProposalType>() == b"EnableProposalType".to_ascii_string(),
+        );
+        assert!(dao.type_display_key<EnableBypassType>() == b"EnableBypassType".to_ascii_string());
+        assert!(
+            dao.type_display_key<DisableBypassType>() == b"DisableBypassType".to_ascii_string(),
+        );
+        assert!(
+            dao.type_display_key<DisableProposalType>() == b"DisableProposalType".to_ascii_string(),
+        );
+        assert!(
+            dao.type_display_key<UpdateProposalConfig>() == b"UpdateProposalConfig".to_ascii_string(),
+        );
+        assert!(
+            dao.type_display_key<TransferFreezeAdmin>() == b"TransferFreezeAdmin".to_ascii_string(),
+        );
+        assert!(
+            dao.type_display_key<UnfreezeProposalType>() == b"UnfreezeProposalType".to_ascii_string(),
+        );
+        assert!(dao.type_display_key<CompositePayload>() == b"Composite".to_ascii_string());
 
-        // Verify each has a config entry
-        assert!(configs.length() == 14);
+        // Display keys resolve back to their types.
+        let resolved = dao.type_for_display_key(&b"Composite".to_ascii_string());
+        assert!(resolved.is_some());
+        assert!(resolved.destroy_some() == dao::type_name_of<CompositePayload>());
+        assert!(dao.type_for_display_key(&b"NotAType".to_ascii_string()).is_none());
 
-        // Verify default config values
-        let (_, config) = configs.get_entry_by_idx(0);
+        // Unregistered types have no slot.
+        assert!(!dao.is_type_enabled<CustomA>());
+
+        // Default config values.
+        let config = dao.type_config<SetBoard>();
         assert!(config.quorum() == 5_000);
         assert!(config.approval_threshold() == 5_000);
         assert!(config.propose_threshold() == 0);
         assert!(config.expiry_ms() == 604_800_000);
         assert!(config.execution_delay_ms() == 0);
         assert!(config.cooldown_ms() == 0);
+        assert!(config.composable_allowed());
 
+        // Floor-gated types start at their floor; batch types are not composable.
+        assert!(dao.type_config<EnableProposalType>().approval_threshold() == 6_600);
+        assert!(dao.type_config<UpdateProposalConfig>().approval_threshold() == 8_000);
+        assert!(dao.type_config<EnableBypassType>().approval_threshold() == 8_000);
+        assert!(!dao.type_config<BatchAddMembers>().composable_allowed());
+
+        // Nothing has executed yet.
+        assert!(dao.last_executed_ms<SetBoard>().is_none());
+
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.end();
+}
+
+#[test]
+/// SubDAOs omit the bypass meta-types from their default slots.
+fun test_subdao_default_types_omit_bypass_meta() {
+    let mut scenario = test_scenario::begin(CREATOR);
+
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR]);
+        let (subdao, freeze_cap) = dao::create_subdao(
+            &init,
+            string::utf8(b"SubDAO"),
+            string::utf8(b"https://example.com/sub.png"),
+            scenario.ctx(),
+        );
+        assert!(subdao.is_type_enabled<SetBoard>());
+        assert!(subdao.is_type_enabled<CompositePayload>());
+        assert!(!subdao.is_type_enabled<EnableBypassType>());
+        assert!(!subdao.is_type_enabled<DisableBypassType>());
+        assert!(subdao.type_for_display_key(&b"EnableBypassType".to_ascii_string()).is_none());
+
+        sui::test_utils::destroy(freeze_cap);
+        transfer::public_share_object(subdao);
+    };
+
+    scenario.end();
+}
+
+#[test]
+/// Enabling then disabling a type leaves nothing behind: the slot, the display
+/// key index and the cooldown state are all gone, and the display key can be reused.
+fun test_enable_then_disable_leaves_nothing_behind() {
+    let mut scenario = test_scenario::begin(CREATOR);
+
+    create_test_dao(&mut scenario);
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let config = proposal::new_config(5_000, 5_000, 0, 3_600_000, 0, 0);
+        dao.test_enable_type<CustomA>(b"Custom".to_ascii_string(), config);
+        assert!(dao.is_type_enabled<CustomA>());
+        assert!(dao.type_for_display_key(&b"Custom".to_ascii_string()).is_some());
+
+        dao.test_disable_type<CustomA>();
+        assert!(!dao.is_type_enabled<CustomA>());
+        assert!(dao.type_for_display_key(&b"Custom".to_ascii_string()).is_none());
+
+        // The display key is free again, for a different type.
+        dao.test_enable_type<CustomB>(b"Custom".to_ascii_string(), config);
+        assert!(dao.is_type_enabled<CustomB>());
+        assert!(!dao.is_type_enabled<CustomA>());
+
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.end();
+}
+
+#[test]
+/// The root object does not grow with the number of enabled types: every slot is a
+/// dynamic field, so the serialized root stays small and constant. Guards the gas
+/// property the registry exists for (the non-refundable storage fee and per-byte
+/// computation are charged on the whole root on every write).
+fun test_root_size_independent_of_enabled_types() {
+    let mut scenario = test_scenario::begin(CREATOR);
+
+    create_test_dao(&mut scenario);
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let size_with_defaults = std::bcs::to_bytes(&dao).length();
+        assert!(size_with_defaults < 1_024);
+
+        let config = proposal::new_config(5_000, 5_000, 0, 3_600_000, 0, 0);
+        dao.test_enable_type<Marker<u8>>(b"T01".to_ascii_string(), config);
+        dao.test_enable_type<Marker<u16>>(b"T02".to_ascii_string(), config);
+        dao.test_enable_type<Marker<u32>>(b"T03".to_ascii_string(), config);
+        dao.test_enable_type<Marker<u64>>(b"T04".to_ascii_string(), config);
+        dao.test_enable_type<Marker<u128>>(b"T05".to_ascii_string(), config);
+        dao.test_enable_type<Marker<u256>>(b"T06".to_ascii_string(), config);
+        dao.test_enable_type<Marker<bool>>(b"T07".to_ascii_string(), config);
+        dao.test_enable_type<Marker<address>>(b"T08".to_ascii_string(), config);
+        dao.test_enable_type<Marker<CustomA>>(b"T09".to_ascii_string(), config);
+        dao.test_enable_type<Marker<CustomB>>(b"T10".to_ascii_string(), config);
+        dao.test_enable_type<Marker<Marker<u8>>>(b"T11".to_ascii_string(), config);
+        dao.test_enable_type<Marker<Marker<u16>>>(b"T12".to_ascii_string(), config);
+        dao.test_enable_type<Marker<Marker<u32>>>(b"T13".to_ascii_string(), config);
+        dao.test_enable_type<Marker<Marker<u64>>>(b"T14".to_ascii_string(), config);
+        dao.test_enable_type<Marker<Marker<u128>>>(b"T15".to_ascii_string(), config);
+        dao.test_enable_type<Marker<Marker<u256>>>(b"T16".to_ascii_string(), config);
+        dao.test_enable_type<Marker<Marker<bool>>>(b"T17".to_ascii_string(), config);
+        dao.test_enable_type<Marker<Marker<address>>>(b"T18".to_ascii_string(), config);
+        dao.test_enable_type<Marker<Marker<CustomA>>>(b"T19".to_ascii_string(), config);
+        dao.test_enable_type<Marker<Marker<CustomB>>>(b"T20".to_ascii_string(), config);
+
+        assert!(std::bcs::to_bytes(&dao).length() == size_with_defaults);
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::dao::EDisplayKeyTaken)]
+/// Two enabled types cannot share a display key.
+fun test_duplicate_display_key_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+
+    create_test_dao(&mut scenario);
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let config = proposal::new_config(5_000, 5_000, 0, 3_600_000, 0, 0);
+        dao.test_enable_type<CustomA>(b"Custom".to_ascii_string(), config);
+        dao.test_enable_type<CustomB>(b"Custom".to_ascii_string(), config);
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::dao::ETypeAlreadyEnabled)]
+/// A type cannot be enabled twice, even under a different display key.
+fun test_enable_twice_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+
+    create_test_dao(&mut scenario);
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let config = proposal::new_config(5_000, 5_000, 0, 3_600_000, 0, 0);
+        dao.test_enable_type<CustomA>(b"CustomA".to_ascii_string(), config);
+        dao.test_enable_type<CustomA>(b"CustomA2".to_ascii_string(), config);
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::dao::ETypeNotEnabled)]
+/// Reading the config of a type without a slot aborts.
+fun test_config_of_unregistered_type_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+
+    create_test_dao(&mut scenario);
+
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        let _ = dao.type_config<CustomA>();
         test_scenario::return_shared(dao);
     };
 

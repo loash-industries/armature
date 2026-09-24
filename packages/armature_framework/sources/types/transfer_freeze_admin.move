@@ -1,4 +1,4 @@
-module armature_proposals::transfer_freeze_admin;
+module armature::transfer_freeze_admin;
 
 /// Transfer the FreezeAdminCap to a new address.
 /// Unfreezes all currently frozen types as a side effect.

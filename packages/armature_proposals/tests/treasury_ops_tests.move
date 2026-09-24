@@ -43,7 +43,15 @@ fun enable_small_payment_type(scenario: &mut test_scenario::Scenario) {
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"SendSmallPayment".to_ascii_string(), config);
+        // One slot per concrete instantiation: generic payload types are distinct Move types.
+        dao.test_enable_type<SendSmallPayment<SUI>>(
+            b"SendSmallPayment<SUI>".to_ascii_string(),
+            config,
+        );
+        dao.test_enable_type<SendSmallPayment<USDC>>(
+            b"SendSmallPayment<USDC>".to_ascii_string(),
+            config,
+        );
         test_scenario::return_shared(dao);
     };
 }
@@ -80,7 +88,6 @@ fun submit_small_payment<T: drop>(
         let payload = send_small_payment::new<T>(recipient, amount);
         board_voting::submit_proposal(
             &dao,
-            b"SendSmallPayment".to_ascii_string(),
             option::some(string::utf8(b"Small payment")),
             payload,
             clock,
@@ -345,7 +352,7 @@ fun enable_send_coin_type(scenario: &mut test_scenario::Scenario) {
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"SendCoin".to_ascii_string(), config);
+        dao.test_enable_type<SendCoin<SUI>>(b"SendCoin".to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
 }
@@ -368,7 +375,6 @@ fun send_coin_e2e() {
         let payload = send_coin::new<SUI>(RECIPIENT, 200_000);
         board_voting::submit_proposal(
             &dao,
-            b"SendCoin".to_ascii_string(),
             option::some(string::utf8(b"Send coins to recipient")),
             payload,
             &clock,
@@ -448,7 +454,6 @@ fun send_coin_insufficient_balance_aborts() {
         let payload = send_coin::new<SUI>(RECIPIENT, 500);
         board_voting::submit_proposal(
             &dao,
-            b"SendCoin".to_ascii_string(),
             option::some(string::utf8(b"Overdraw")),
             payload,
             &clock,
@@ -551,7 +556,7 @@ fun send_coin_to_dao_e2e() {
     {
         let mut dao = scenario.take_shared_by_id<DAO>(source_dao_id);
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"SendCoinToDAO".to_ascii_string(), config);
+        dao.test_enable_type<SendCoinToDAO<SUI>>(b"SendCoinToDAO".to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
 
@@ -574,7 +579,6 @@ fun send_coin_to_dao_e2e() {
         let payload = send_coin_to_dao::new<SUI>(target_treasury_id, 300_000);
         board_voting::submit_proposal(
             &dao,
-            b"SendCoinToDAO".to_ascii_string(),
             option::some(string::utf8(b"Send coins to target DAO")),
             payload,
             &clock,
@@ -677,7 +681,7 @@ fun send_coin_to_dao_target_mismatch_aborts() {
     {
         let mut dao = scenario.take_shared_by_id<DAO>(source_dao_id);
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"SendCoinToDAO".to_ascii_string(), config);
+        dao.test_enable_type<SendCoinToDAO<SUI>>(b"SendCoinToDAO".to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
 
@@ -699,7 +703,6 @@ fun send_coin_to_dao_target_mismatch_aborts() {
         let payload = send_coin_to_dao::new<SUI>(target_treasury_id, 50_000);
         board_voting::submit_proposal(
             &dao,
-            b"SendCoinToDAO".to_ascii_string(),
             option::some(string::utf8(b"Mismatch test")),
             payload,
             &clock,

@@ -1,4 +1,4 @@
-module armature_proposals::add_member;
+module armature::add_member;
 
 /// Add a single member to the board.
 /// Lighter-weight alternative to SetBoard when only one address needs to be added.

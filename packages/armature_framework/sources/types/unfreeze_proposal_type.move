@@ -1,4 +1,4 @@
-module armature_proposals::unfreeze_proposal_type;
+module armature::unfreeze_proposal_type;
 
 /// Governance-initiated unfreeze of a proposal type.
 /// Overrides an admin freeze without requiring the FreezeAdminCap.

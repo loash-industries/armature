@@ -1,33 +1,35 @@
 #[test_only]
 module armature_proposals::composite_tests;
 
+use armature::add_member::{Self, AddMember};
+use armature::batch_add_members::{Self, BatchAddMembers};
 use armature::board_voting;
 use armature::charter::Charter;
-use armature::composite::{Self, CompositeFrame, CompositePayload};
+use armature::composite::{Self, CompositeFrame};
+use armature::composite_payload::CompositePayload;
 use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
+use armature::enable_proposal_type::{Self, EnableProposalType};
 use armature::governance;
 use armature::proposal::{Self, Proposal};
+use armature::remove_member::{Self, RemoveMember};
+use armature::set_board::{Self, SetBoard};
 use armature::treasury_vault::TreasuryVault;
-use armature_proposals::add_member::{Self, AddMember};
+use armature::update_metadata::{Self, UpdateMetadata};
 use armature_proposals::admin_ops;
-use armature_proposals::batch_add_members::{Self, BatchAddMembers};
 use armature_proposals::board_ops;
-use armature_proposals::enable_proposal_type::{Self, EnableProposalType};
 use armature_proposals::member_ops;
-use armature_proposals::remove_member::{Self, RemoveMember};
 use armature_proposals::send_coin::{Self, SendCoin};
 use armature_proposals::send_coin_to_dao::{Self, SendCoinToDAO};
-use armature_proposals::set_board::{Self, SetBoard};
 use armature_proposals::treasury_ops;
-use armature_proposals::update_metadata::{Self, UpdateMetadata};
 use std::string;
+use std::type_name;
 use sui::clock;
 use sui::coin;
 use sui::sui::SUI;
 use sui::test_scenario;
 
-/// Placeholder payload type for type-binding tests (e.g., enable_proposal_type_step).
+/// Placeholder payload type for type-slot tests (e.g., enable_proposal_type_step).
 public struct TestPayload has drop, store { _dummy: u64 }
 
 const CREATOR: address = @0xA;
@@ -51,15 +53,14 @@ fun create_dao_two_members(scenario: &mut test_scenario::Scenario) {
     };
 }
 
-/// Disable composability for a given type_key on the DAO using the test helper.
+/// Disable composability for AddMember on the DAO using the test helper.
 /// Used to test the ENotComposable rejection path for types that are composable by opt-in.
-fun disable_composable(scenario: &mut test_scenario::Scenario, type_key: vector<u8>) {
+fun disable_composable_add_member(scenario: &mut test_scenario::Scenario) {
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();
-        let existing = *dao.proposal_configs().get(&type_key.to_ascii_string());
-        let updated = existing.with_composable_allowed(false);
-        dao.test_update_config(type_key.to_ascii_string(), updated);
+        let updated = dao.type_config<AddMember>().with_composable_allowed(false);
+        dao.test_update_config<AddMember>(updated);
         test_scenario::return_shared(dao);
     };
 }
@@ -84,13 +85,11 @@ fun composite_two_add_member_steps_e2e() {
         composite::add_step<AddMember>(
             &mut frame,
             &dao,
-            b"AddMember".to_ascii_string(),
             add_member::new(MEMBER_C),
         );
         composite::add_step<AddMember>(
             &mut frame,
             &dao,
-            b"AddMember".to_ascii_string(),
             add_member::new(MEMBER_D),
         );
 
@@ -183,13 +182,11 @@ fun composite_add_then_remove_member_e2e() {
         composite::add_step<AddMember>(
             &mut frame,
             &dao,
-            b"AddMember".to_ascii_string(),
             add_member::new(MEMBER_C),
         );
         composite::add_step<RemoveMember>(
             &mut frame,
             &dao,
-            b"RemoveMember".to_ascii_string(),
             remove_member::new(MEMBER_B),
         );
 
@@ -264,7 +261,7 @@ fun add_step_rejects_non_composable_type() {
     let mut scenario = test_scenario::begin(CREATOR);
 
     create_dao_two_members(&mut scenario);
-    disable_composable(&mut scenario, b"AddMember");
+    disable_composable_add_member(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -274,32 +271,6 @@ fun add_step_rejects_non_composable_type() {
         composite::add_step<AddMember>(
             &mut frame,
             &dao,
-            b"AddMember".to_ascii_string(),
-            add_member::new(MEMBER_C),
-        );
-        transfer::public_share_object(frame);
-        test_scenario::return_shared(dao);
-    };
-
-    scenario.end();
-}
-
-#[test, expected_failure(abort_code = composite::ECompositeNesting)]
-/// add_step aborts when the type_key is "Composite" (self-nesting is blocked).
-fun add_step_rejects_composite_nesting() {
-    let mut scenario = test_scenario::begin(CREATOR);
-
-    create_dao_two_members(&mut scenario);
-
-    scenario.next_tx(CREATOR);
-    {
-        let dao = scenario.take_shared<DAO>();
-        let mut frame = composite::new_frame(dao.id(), scenario.ctx());
-        // AddMember payload used here is incidental; the abort is on type_key = "Composite".
-        composite::add_step<AddMember>(
-            &mut frame,
-            &dao,
-            b"Composite".to_ascii_string(),
             add_member::new(MEMBER_C),
         );
         transfer::public_share_object(frame);
@@ -348,13 +319,11 @@ fun finalize_pipeline_incomplete_aborts() {
         composite::add_step<AddMember>(
             &mut frame,
             &dao,
-            b"AddMember".to_ascii_string(),
             add_member::new(MEMBER_C),
         );
         composite::add_step<AddMember>(
             &mut frame,
             &dao,
-            b"AddMember".to_ascii_string(),
             add_member::new(MEMBER_D),
         );
 
@@ -429,7 +398,6 @@ fun advance_step_wrong_type_aborts() {
         composite::add_step<AddMember>(
             &mut frame,
             &dao,
-            b"AddMember".to_ascii_string(),
             add_member::new(MEMBER_C),
         );
 
@@ -515,7 +483,7 @@ fun composite_send_coin_step_e2e() {
             0,
             0,
         ).with_composable_allowed(true);
-        dao.test_enable_type(b"SendCoin".to_ascii_string(), config);
+        dao.test_enable_type<SendCoin<SUI>>(b"SendCoin".to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
 
@@ -536,7 +504,6 @@ fun composite_send_coin_step_e2e() {
         composite::add_step<SendCoin<SUI>>(
             &mut frame,
             &dao,
-            b"SendCoin".to_ascii_string(),
             send_coin::new<SUI>(RECIPIENT, 200_000),
         );
         composite::submit_composite(&dao, frame, option::none(), &clock, scenario.ctx());
@@ -659,7 +626,7 @@ fun composite_send_coin_to_dao_step_e2e() {
             0,
             0,
         ).with_composable_allowed(true);
-        dao.test_enable_type(b"SendCoinToDAO".to_ascii_string(), config);
+        dao.test_enable_type<SendCoinToDAO<SUI>>(b"SendCoinToDAO".to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
 
@@ -680,7 +647,6 @@ fun composite_send_coin_to_dao_step_e2e() {
         composite::add_step<SendCoinToDAO<SUI>>(
             &mut frame,
             &dao,
-            b"SendCoinToDAO".to_ascii_string(),
             send_coin_to_dao::new<SUI>(target_vault_id, 300_000),
         );
         composite::submit_composite(&dao, frame, option::none(), &clock, scenario.ctx());
@@ -762,7 +728,6 @@ fun composite_set_board_step_e2e() {
         composite::add_step<SetBoard>(
             &mut frame,
             &dao,
-            b"SetBoard".to_ascii_string(),
             set_board::new(vector[MEMBER_C]),
         );
         composite::submit_composite(&dao, frame, option::none(), &clock, scenario.ctx());
@@ -844,7 +809,6 @@ fun composite_update_metadata_step_e2e() {
         composite::add_step<UpdateMetadata>(
             &mut frame,
             &dao,
-            b"CharterUpdate".to_ascii_string(),
             update_metadata::new(string::utf8(b"ipfs://QmCompositeTest")),
         );
         composite::submit_composite(&dao, frame, option::none(), &clock, scenario.ctx());
@@ -917,7 +881,6 @@ fun add_step_rejects_governance_sensitive_type_by_default() {
         composite::add_step<BatchAddMembers>(
             &mut frame,
             &dao,
-            b"BatchAddMembers".to_ascii_string(),
             batch_add_members::new(vector[MEMBER_C]),
         );
         transfer::public_share_object(frame);
@@ -940,7 +903,7 @@ fun composite_same_type_cooldown_snapshot_succeeds() {
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();
-        let existing = *dao.proposal_configs().get(&b"AddMember".to_ascii_string());
+        let existing = dao.type_config<AddMember>();
         let with_cooldown = proposal::new_config(
             existing.quorum(),
             existing.approval_threshold(),
@@ -949,7 +912,7 @@ fun composite_same_type_cooldown_snapshot_succeeds() {
             existing.execution_delay_ms(),
             1_000,
         ).with_composable_allowed(true);
-        dao.test_update_config(b"AddMember".to_ascii_string(), with_cooldown);
+        dao.test_update_config<AddMember>(with_cooldown);
         test_scenario::return_shared(dao);
     };
 
@@ -962,13 +925,11 @@ fun composite_same_type_cooldown_snapshot_succeeds() {
         composite::add_step<AddMember>(
             &mut frame,
             &dao,
-            b"AddMember".to_ascii_string(),
             add_member::new(MEMBER_C),
         );
         composite::add_step<AddMember>(
             &mut frame,
             &dao,
-            b"AddMember".to_ascii_string(),
             add_member::new(MEMBER_D),
         );
         composite::submit_composite(&dao, frame, option::none(), &clock, scenario.ctx());
@@ -1063,12 +1024,15 @@ fun composite_enable_proposal_type_step_e2e() {
         let dao = scenario.take_shared<DAO>();
         clock.set_for_testing(1000);
         let type_config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        let step_payload = enable_proposal_type::new(b"MyGrant".to_ascii_string(), type_config);
+        let step_payload = enable_proposal_type::new(
+            b"MyGrant".to_ascii_string(),
+            type_name::with_defining_ids<TestPayload>(),
+            type_config,
+        );
         let mut frame = composite::new_frame(dao.id(), scenario.ctx());
         composite::add_step<EnableProposalType>(
             &mut frame,
             &dao,
-            b"EnableProposalType".to_ascii_string(),
             step_payload,
         );
         composite::submit_composite(&dao, frame, option::none(), &clock, scenario.ctx());
@@ -1111,8 +1075,8 @@ fun composite_enable_proposal_type_step_e2e() {
 
         composite::finalize_pipeline(pipeline);
 
-        assert!(dao.enabled_proposal_types().contains(&b"MyGrant".to_ascii_string()));
-        assert!(dao.has_type_binding(&b"MyGrant".to_ascii_string()));
+        assert!(dao.is_type_enabled<TestPayload>());
+        assert!(dao.type_display_key<TestPayload>() == b"MyGrant".to_ascii_string());
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(frame);
@@ -1145,7 +1109,6 @@ fun composite_delete_exhausted_frame_succeeds() {
         composite::add_step<AddMember>(
             &mut frame,
             &dao,
-            b"AddMember".to_ascii_string(),
             add_member::new(MEMBER_C),
         );
         composite::submit_composite(&dao, frame, option::none(), &clock, scenario.ctx());
@@ -1218,7 +1181,6 @@ fun composite_delete_exhausted_frame_not_exhausted_aborts() {
         composite::add_step<AddMember>(
             &mut frame,
             &dao,
-            b"AddMember".to_ascii_string(),
             add_member::new(MEMBER_C),
         );
         composite::submit_composite(&dao, frame, option::none(), &clock, scenario.ctx());
@@ -1257,7 +1219,6 @@ fun composite_add_step_after_seal_aborts() {
         composite::add_step<AddMember>(
             &mut frame,
             &dao,
-            b"AddMember".to_ascii_string(),
             add_member::new(MEMBER_C),
         );
         composite::submit_composite(&dao, frame, option::none(), &clock, scenario.ctx());
@@ -1272,7 +1233,6 @@ fun composite_add_step_after_seal_aborts() {
         composite::add_step<AddMember>(
             &mut frame,
             &dao,
-            b"AddMember".to_ascii_string(),
             add_member::new(MEMBER_D),
         );
         test_scenario::return_shared(frame);
@@ -1301,7 +1261,6 @@ fun composite_frame_is_sealed_after_submit() {
         composite::add_step<AddMember>(
             &mut frame,
             &dao,
-            b"AddMember".to_ascii_string(),
             add_member::new(MEMBER_C),
         );
         composite::submit_composite(&dao, frame, option::none(), &clock, scenario.ctx());
@@ -1343,7 +1302,6 @@ fun composite_cooldown_type_not_composable_aborts() {
         composite::add_step<AddMember>(
             &mut frame,
             &dao,
-            b"AddMember".to_ascii_string(),
             add_member::new(MEMBER_C),
         );
         composite::submit_composite(&dao, frame, option::none(), &clock, scenario.ctx());
@@ -1366,7 +1324,7 @@ fun composite_cooldown_type_not_composable_aborts() {
         let mut dao = scenario.take_shared<DAO>();
         let bad_config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 1_000);
         // composable_allowed defaults to false, cooldown = 1000ms → the conflict
-        dao.test_update_config(b"AddMember".to_ascii_string(), bad_config);
+        dao.test_update_config<AddMember>(bad_config);
         test_scenario::return_shared(dao);
     };
 

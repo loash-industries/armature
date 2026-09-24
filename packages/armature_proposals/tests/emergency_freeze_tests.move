@@ -6,10 +6,10 @@ use armature::dao::{Self, DAO};
 use armature::emergency::{Self, EmergencyFreeze, FreezeAdminCap};
 use armature::governance;
 use armature::proposal::{Self, Proposal};
+use armature::set_board::{Self, SetBoard};
+use armature::unfreeze_proposal_type::{Self, UnfreezeProposalType};
 use armature_proposals::board_ops;
 use armature_proposals::security_ops;
-use armature_proposals::set_board::{Self, SetBoard};
-use armature_proposals::unfreeze_proposal_type::{Self, UnfreezeProposalType};
 use armature_proposals::update_freeze_config::{Self, UpdateFreezeConfig};
 use armature_proposals::update_freeze_exempt_types::{Self, UpdateFreezeExemptTypes};
 use std::string;
@@ -43,7 +43,6 @@ fun submit_set_board(
         let payload = set_board::new(new_members);
         board_voting::submit_proposal(
             &dao,
-            b"SetBoard".to_ascii_string(),
             option::some(string::utf8(b"Board change")),
             payload,
             clock,
@@ -274,7 +273,6 @@ fun governance_unfreeze_via_proposal() {
         let payload = unfreeze_proposal_type::new(b"SetBoard".to_ascii_string());
         board_voting::submit_proposal(
             &dao,
-            b"UnfreezeProposalType".to_ascii_string(),
             option::some(string::utf8(b"Unfreeze SetBoard")),
             payload,
             &clock,
@@ -386,7 +384,7 @@ fun update_freeze_config_e2e() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"UpdateFreezeConfig".to_ascii_string(), config);
+        dao.test_enable_type<UpdateFreezeConfig>(b"UpdateFreezeConfig".to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
 
@@ -408,7 +406,6 @@ fun update_freeze_config_e2e() {
         let payload = update_freeze_config::new(new_duration);
         board_voting::submit_proposal(
             &dao,
-            b"UpdateFreezeConfig".to_ascii_string(),
             option::some(string::utf8(b"Reduce freeze duration")),
             payload,
             &clock,
@@ -492,7 +489,10 @@ fun add_freeze_exempt_type_e2e() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"UpdateFreezeExemptTypes".to_ascii_string(), config);
+        dao.test_enable_type<UpdateFreezeExemptTypes>(
+            b"UpdateFreezeExemptTypes".to_ascii_string(),
+            config,
+        );
         test_scenario::return_shared(dao);
     };
 
@@ -507,7 +507,6 @@ fun add_freeze_exempt_type_e2e() {
         );
         board_voting::submit_proposal(
             &dao,
-            b"UpdateFreezeExemptTypes".to_ascii_string(),
             option::some(string::utf8(b"Exempt SetBoard from freezing")),
             payload,
             &clock,
@@ -580,7 +579,10 @@ fun remove_freeze_exempt_type_e2e() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"UpdateFreezeExemptTypes".to_ascii_string(), config);
+        dao.test_enable_type<UpdateFreezeExemptTypes>(
+            b"UpdateFreezeExemptTypes".to_ascii_string(),
+            config,
+        );
         test_scenario::return_shared(dao);
     };
 
@@ -595,7 +597,6 @@ fun remove_freeze_exempt_type_e2e() {
         );
         board_voting::submit_proposal(
             &dao,
-            b"UpdateFreezeExemptTypes".to_ascii_string(),
             option::some(string::utf8(b"Add SetBoard exemption")),
             payload,
             &clock,
@@ -643,7 +644,6 @@ fun remove_freeze_exempt_type_e2e() {
         );
         board_voting::submit_proposal(
             &dao,
-            b"UpdateFreezeExemptTypes".to_ascii_string(),
             option::some(string::utf8(b"Remove SetBoard exemption")),
             payload,
             &clock,
@@ -710,7 +710,10 @@ fun remove_mandatory_exempt_type_aborts() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"UpdateFreezeExemptTypes".to_ascii_string(), config);
+        dao.test_enable_type<UpdateFreezeExemptTypes>(
+            b"UpdateFreezeExemptTypes".to_ascii_string(),
+            config,
+        );
         test_scenario::return_shared(dao);
     };
 
@@ -725,7 +728,6 @@ fun remove_mandatory_exempt_type_aborts() {
         );
         board_voting::submit_proposal(
             &dao,
-            b"UpdateFreezeExemptTypes".to_ascii_string(),
             option::some(string::utf8(b"Remove mandatory type")),
             payload,
             &clock,

@@ -1,21 +1,21 @@
 module armature::tribe;
 
 use armature::capability_vault;
-use armature::dao;
+use armature::dao::{Self, ProposalTypeInit};
 use armature::emergency;
 use armature::governance;
-use armature::proposal::{ExecutionRequest, ProposalConfig};
+use armature::proposal::ExecutionRequest;
 use std::string::String;
-use sui::vec_map::VecMap;
 
 // === Public Functions ===
 
 /// Create a SubDAO with the given board, wire its SubDAOControl into `parent_vault`,
 /// share all companion objects, and transfer the FreezeAdminCap to `freeze_admin`.
 ///
-/// `config_overrides` is applied after the default SubDAO proposal configs are built:
-/// existing types have their config replaced; non-blocked types not yet in the enabled
-/// set are inserted and enabled. Passing an empty map produces the standard SubDAO defaults.
+/// `config_overrides` is applied after the default SubDAO proposal-type slots are seeded:
+/// existing types have their config replaced; non-blocked types not yet enabled are
+/// inserted and enabled. Build entries with `dao::new_type_init<T>(display_key, config)`.
+/// Passing an empty vector produces the standard SubDAO defaults.
 ///
 /// Requires an `ExecutionRequest` from the parent DAO's governance, which ensures the
 /// caller is authorized to mutate `parent_vault`. Use `proposal::ticket_request` to
@@ -30,7 +30,7 @@ public fun create_wired_subdao<P>(
     freeze_admin: address,
     parent_vault: &mut capability_vault::CapabilityVault,
     req: &ExecutionRequest<P>,
-    config_overrides: VecMap<std::ascii::String, ProposalConfig>,
+    config_overrides: vector<ProposalTypeInit>,
     ctx: &mut TxContext,
 ): ID {
     let gov = governance::init_board(board);
@@ -131,10 +131,11 @@ public fun create_tribe(
     (tribe_dao_id, officer_dao_id, member_dao_id)
 }
 
-/// Like `create_tribe` but accepts per-DAO `ProposalConfig` overrides applied at
-/// construction time, before any DAO is shared. Each override map is keyed by proposal
-/// type name (e.g. `b"AddMember".to_ascii_string()`). For each entry:
-/// - If the type is already enabled by default, its config is replaced.
+/// Like `create_tribe` but accepts per-DAO proposal-type overrides applied at
+/// construction time, before any DAO is shared. Each override is a `ProposalTypeInit`
+/// built with `dao::new_type_init<T>(display_key, config)`. For each entry:
+/// - If the type is already enabled by default, its config is replaced. The
+///   override's display key must match the default key (EDisplayKeyMismatch).
 /// - If the type is not yet enabled, it is inserted and enabled.
 /// - If the type is blocked (hierarchy-altering or bypass-meta), the call aborts.
 /// The original `create_tribe` is unchanged and continues to use hardcoded defaults.
@@ -152,9 +153,9 @@ public fun create_tribe_configured(
     member_metadata_uri: String,
     officer_freeze_admin: address,
     member_freeze_admin: address,
-    tribe_config_overrides: VecMap<std::ascii::String, ProposalConfig>,
-    officer_config_overrides: VecMap<std::ascii::String, ProposalConfig>,
-    member_config_overrides: VecMap<std::ascii::String, ProposalConfig>,
+    tribe_config_overrides: vector<ProposalTypeInit>,
+    officer_config_overrides: vector<ProposalTypeInit>,
+    member_config_overrides: vector<ProposalTypeInit>,
     ctx: &mut TxContext,
 ): (ID, ID, ID) {
     let tribe_gov = governance::init_board(tribe_board);

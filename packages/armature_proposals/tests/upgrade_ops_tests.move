@@ -36,7 +36,7 @@ fun enable_upgrade_type(scenario: &mut test_scenario::Scenario) {
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"ProposeUpgrade".to_ascii_string(), config);
+        dao.test_enable_type<ProposeUpgrade>(b"ProposeUpgrade".to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
 }
@@ -81,7 +81,6 @@ fun upgrade_e2e() {
         );
         board_voting::submit_proposal(
             &dao,
-            b"ProposeUpgrade".to_ascii_string(),
             option::some(string::utf8(b"Upgrade package")),
             payload,
             &clock,
@@ -178,7 +177,7 @@ fun upgrade_vault_mismatch_aborts() {
     {
         let mut dao = scenario.take_shared_by_id<DAO>(first_dao_id);
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"ProposeUpgrade".to_ascii_string(), config);
+        dao.test_enable_type<ProposeUpgrade>(b"ProposeUpgrade".to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
 
@@ -198,7 +197,6 @@ fun upgrade_vault_mismatch_aborts() {
         );
         board_voting::submit_proposal(
             &dao,
-            b"ProposeUpgrade".to_ascii_string(),
             option::some(string::utf8(b"Upgrade package")),
             payload,
             &clock,

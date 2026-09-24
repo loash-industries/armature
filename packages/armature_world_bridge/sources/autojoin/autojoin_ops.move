@@ -15,7 +15,7 @@
 ///      the character's tribe is in the allowlist, the kill-switch is on,
 ///      then hands off to `external_execution::ticket_from_cap<AutojoinDAO>`
 ///      which mints the ticket after running all the standard cross-cutting
-///      checks (DAO active, type enabled, not frozen/paused, type binding,
+///      checks (DAO active, type slot present, not frozen/paused,
 ///      cooldown, record_execution).
 ///   4. Same PTB, player calls `execute_autojoin_dao(dao, ticket)`
 ///      which re-reads the allowlist (defense-in-depth) and adds the joiner.
@@ -95,8 +95,8 @@ public fun joining_address(self: &AutojoinDAO): address { self.joining_address }
 ///   - Allowlist type-state missing — `ConfigureAutojoin` has never run.
 ///   - Allowlist `enabled == false` — kill-switch.
 ///   - `character.tribe()` not in allowlist.
-///   - Any check inside `ticket_from_cap` (DAO active, type enabled,
-///     not paused/frozen, type binding mismatch, cooldown, etc).
+///   - Any check inside `ticket_from_cap` (DAO active, type slot present,
+///     not paused/frozen, cooldown, etc).
 ///
 /// The returned `ExecutionTicket<AutojoinDAO>` must be consumed in the
 /// same PTB by `execute_autojoin_dao`.
@@ -138,7 +138,6 @@ public fun submit_autojoin(
         cap,
         members_dao,
         freeze,
-        b"AutojoinDAO".to_ascii_string(),
         option::none(),
         AutojoinDAO {
             character_id: object::id(character),

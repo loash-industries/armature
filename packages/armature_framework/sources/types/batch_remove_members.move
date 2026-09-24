@@ -1,4 +1,4 @@
-module armature_proposals::batch_remove_members;
+module armature::batch_remove_members;
 
 /// Remove multiple members from the board in a single proposal.
 /// Aborts atomically if any address is not on the board, if the batch

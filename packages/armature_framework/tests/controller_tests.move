@@ -220,7 +220,7 @@ fun authorize_execution_blocks_when_controller_paused() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 3_600_000, 0, 0);
-        dao.test_enable_type(b"TestPayload".to_ascii_string(), config);
+        dao.test_enable_type<TestPayload>(b"TestPayload".to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
 
@@ -229,7 +229,6 @@ fun authorize_execution_blocks_when_controller_paused() {
         let dao = scenario.take_shared<DAO>();
         board_voting::submit_proposal(
             &dao,
-            b"TestPayload".to_ascii_string(),
             option::some(string::utf8(b"Test proposal")),
             TestPayload { value: 99 },
             &clock,

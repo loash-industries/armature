@@ -2,9 +2,10 @@ module armature::board_voting;
 
 use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
-use armature::proposal::{Self, ExecutionTicket, Proposal};
+use armature::enable_proposal_type::EnableProposalType;
+use armature::proposal::{Self, ExecutionTicket, Proposal, ProposalConfig};
 use std::string::String;
-use std::type_name;
+use std::type_name::{Self, TypeName};
 use sui::clock::Clock;
 
 // === Errors ===
@@ -14,8 +15,6 @@ const ETypeNotEnabled: u64 = 1;
 const EDAOIdMismatch: u64 = 2;
 const EControllerPaused: u64 = 3;
 const EProposeThresholdNotMet: u64 = 4;
-/// Submitted payload type P does not match the Move type bound to this type_key.
-const ETypeMismatch: u64 = 5;
 /// Proposal's approval_threshold is below the hardcoded floor for this type.
 /// Enforced at submission time so the proposal never enters the object graph.
 const EFloorNotMet: u64 = 6;
@@ -35,59 +34,38 @@ const ENABLE_APPROVAL_FLOOR_BPS: u64 = 6_600;
 // === Submit ===
 
 /// Submit a new proposal for board governance.
-/// Validates: DAO is active, type is enabled, proposer is a board member.
-/// Looks up the ProposalConfig for the given type_key from the DAO.
+/// Validates: DAO is active, type `P` is enabled, proposer is a board member.
+/// The proposal type is identified by `P` itself: its slot on the DAO supplies
+/// the ProposalConfig and the display key recorded on the proposal, so a
+/// payload of one type can never be submitted under another type's config.
 #[allow(lint(share_owned, custom_state_change))]
 public fun submit_proposal<P: store>(
     dao: &DAO,
-    type_key: std::ascii::String,
     metadata_ipfs: Option<String>,
     payload: P,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    let is_active = dao.status().is_active();
-    let is_migration_ok =
-        dao.status().is_migrating()
-        && dao::is_migration_allowed_type(&type_key);
-    assert!(is_active || is_migration_ok, EDAONotActive);
-    assert!(dao.enabled_proposal_types().contains(&type_key), ETypeNotEnabled);
-
-    // If the type_key has a bound Move type, verify P matches to prevent spoofing.
-    if (dao.has_type_binding(&type_key)) {
-        let actual = type_name::with_defining_ids<P>().into_string();
-        assert!(dao.type_binding_for(&type_key) == actual, ETypeMismatch);
-    };
+    let name = type_name::with_defining_ids<P>();
+    assert_submittable(dao, &name);
 
     let proposer = ctx.sender();
     dao.governance().assert_board_member(proposer);
 
-    let config = *dao.proposal_configs().get(&type_key);
-
-    // Submission-time floor enforcement for EnableProposalType.
-    // The proposal's approval_threshold must be >= 66% so that the vote guarantee
-    // (yes/total_voted >= threshold >= floor) is locked in at proposal creation time
-    // rather than re-checked at execution (where only the ticket, not the proposal, is live).
-    if (type_key == b"EnableProposalType".to_ascii_string()) {
-        assert!((config.approval_threshold() as u64) >= ENABLE_APPROVAL_FLOOR_BPS, EFloorNotMet);
-    };
-
-    if (config.propose_threshold() > 0) {
-        let weight = dao.governance().proposer_weight(proposer);
-        assert!(weight >= config.propose_threshold(), EProposeThresholdNotMet);
-    };
+    let config = dao.type_config_by_name(&name);
+    assert_enable_floor(&name, &config);
+    assert_propose_threshold(dao, &config, proposer);
 
     // Status validated above: active or migration-allowed
-    let status_ok = true;
     proposal::create<P>(
         dao.id(),
-        type_key,
+        dao.type_display_key_by_name(&name),
         proposer,
         metadata_ipfs,
         payload,
         config,
         dao.governance(),
-        status_ok,
+        true,
         clock,
         ctx,
     );
@@ -115,7 +93,6 @@ public fun submit_proposal<P: store>(
 /// MUST be configured with execution_delay_ms > 0 so this path cannot be used for them.
 public fun submit_vote_execute<P: store>(
     dao: &mut DAO,
-    type_key: std::ascii::String,
     metadata_ipfs: Option<String>,
     payload: P,
     freeze: &EmergencyFreeze,
@@ -124,32 +101,16 @@ public fun submit_vote_execute<P: store>(
 ): ExecutionTicket<P> {
     // --- Validation from submit_proposal ---
 
-    let is_active = dao.status().is_active();
-    let is_migration_ok =
-        dao.status().is_migrating()
-        && dao::is_migration_allowed_type(&type_key);
-    assert!(is_active || is_migration_ok, EDAONotActive);
-    assert!(dao.enabled_proposal_types().contains(&type_key), ETypeNotEnabled);
-
-    if (dao.has_type_binding(&type_key)) {
-        let actual = type_name::with_defining_ids<P>().into_string();
-        assert!(dao.type_binding_for(&type_key) == actual, ETypeMismatch);
-    };
+    let name = type_name::with_defining_ids<P>();
+    assert_submittable(dao, &name);
 
     let proposer = ctx.sender();
     dao.governance().assert_board_member(proposer);
 
-    let config = *dao.proposal_configs().get(&type_key);
-
-    // Submission-time floor for EnableProposalType (mirrors submit_proposal).
-    if (type_key == b"EnableProposalType".to_ascii_string()) {
-        assert!((config.approval_threshold() as u64) >= ENABLE_APPROVAL_FLOOR_BPS, EFloorNotMet);
-    };
-
-    if (config.propose_threshold() > 0) {
-        let weight = dao.governance().proposer_weight(proposer);
-        assert!(weight >= config.propose_threshold(), EProposeThresholdNotMet);
-    };
+    let config = dao.type_config_by_name(&name);
+    let display_key = dao.type_display_key_by_name(&name);
+    assert_enable_floor(&name, &config);
+    assert_propose_threshold(dao, &config, proposer);
 
     // Atomic execution is impossible when a delay is configured. Reject here
     // before any state mutation rather than letting execute() produce EDelayNotElapsed.
@@ -158,20 +119,15 @@ public fun submit_vote_execute<P: store>(
     // --- Validation from ticket_from_vote ---
 
     assert!(!dao.is_controller_paused(), EControllerPaused);
-    freeze.assert_not_frozen(&type_key, clock);
+    freeze.assert_not_frozen(&display_key, clock);
 
-    let last_executed_at = dao.last_executed_at();
-    let last_ms = if (last_executed_at.contains(&type_key)) {
-        option::some(*last_executed_at.get(&type_key))
-    } else {
-        option::none()
-    };
+    let last_ms = dao.last_executed_ms_by_name(&name);
 
     // --- Create owned proposal (never shared while Active) ---
 
     let mut prop = proposal::create_returning<P>(
         dao.id(),
-        type_key,
+        display_key,
         proposer,
         metadata_ipfs,
         payload,
@@ -202,7 +158,7 @@ public fun submit_vote_execute<P: store>(
         ctx,
     );
 
-    dao.record_execution(type_key, clock.timestamp_ms());
+    dao.record_execution(name, clock.timestamp_ms());
 
     // Share the Executed proposal as the permanent audit record.
     // transfer::share_object cannot be called from outside proposal.move for key-only types.
@@ -214,8 +170,8 @@ public fun submit_vote_execute<P: store>(
 // === Execute ===
 
 /// Mint an ExecutionTicket for a passed proposal. Replaces authorize_execution.
-/// Validates: DAO is active, proposal belongs to this DAO, type not frozen.
-/// Records the execution timestamp for cooldown tracking.
+/// Validates: DAO is active, proposal belongs to this DAO, type still enabled,
+/// type not frozen. Records the execution timestamp for cooldown tracking.
 public fun ticket_from_vote<P: store>(
     dao: &mut DAO,
     prop: &mut Proposal<P>,
@@ -223,22 +179,22 @@ public fun ticket_from_vote<P: store>(
     clock: &Clock,
     ctx: &TxContext,
 ): ExecutionTicket<P> {
-    let type_key = prop.type_key();
+    let name = type_name::with_defining_ids<P>();
     let is_active = dao.status().is_active();
     let is_migration_ok =
         dao.status().is_migrating()
-        && dao::is_migration_allowed_type(&type_key);
+        && dao::is_migration_allowed_type(&name);
     assert!(is_active || is_migration_ok, EDAONotActive);
     assert!(prop.dao_id() == dao.id(), EDAOIdMismatch);
+    assert!(dao.is_type_name_enabled(&name), ETypeNotEnabled);
     assert!(!dao.is_controller_paused(), EControllerPaused);
-    freeze.assert_not_frozen(&type_key, clock);
+    // Checks the display key recorded at submission, not the slot's current key.
+    // If the type was disabled and re-enabled under a new key while this proposal
+    // was pending, a freeze on the new key does not block it. The re-enable itself
+    // requires an EnableProposalType vote (66% floor).
+    freeze.assert_not_frozen(&prop.type_key(), clock);
 
-    let last_executed_at = dao.last_executed_at();
-    let last_ms = if (last_executed_at.contains(&type_key)) {
-        option::some(*last_executed_at.get(&type_key))
-    } else {
-        option::none()
-    };
+    let last_ms = dao.last_executed_ms_by_name(&name);
 
     // Read vote weights before execute() mutates proposal state.
     let yes_weight = prop.yes_weight();
@@ -253,7 +209,37 @@ public fun ticket_from_vote<P: store>(
         ctx,
     );
 
-    dao.record_execution(type_key, clock.timestamp_ms());
+    dao.record_execution(name, clock.timestamp_ms());
 
     proposal::new_ticket_standalone(req, payload, yes_weight, total_snapshot_weight)
+}
+
+// === Internal ===
+
+/// DAO must be Active, or Migrating with a migration-allowed type; the type
+/// must have a slot.
+fun assert_submittable(dao: &DAO, name: &TypeName) {
+    let is_active = dao.status().is_active();
+    let is_migration_ok =
+        dao.status().is_migrating()
+        && dao::is_migration_allowed_type(name);
+    assert!(is_active || is_migration_ok, EDAONotActive);
+    assert!(dao.is_type_name_enabled(name), ETypeNotEnabled);
+}
+
+/// Submission-time floor enforcement for EnableProposalType.
+/// The proposal's approval_threshold must be >= 66% so that the vote guarantee
+/// (yes/total_voted >= threshold >= floor) is locked in at proposal creation time
+/// rather than re-checked at execution (where only the ticket, not the proposal, is live).
+fun assert_enable_floor(name: &TypeName, config: &ProposalConfig) {
+    if (*name == type_name::with_defining_ids<EnableProposalType>()) {
+        assert!((config.approval_threshold() as u64) >= ENABLE_APPROVAL_FLOOR_BPS, EFloorNotMet);
+    };
+}
+
+fun assert_propose_threshold(dao: &DAO, config: &ProposalConfig, proposer: address) {
+    if (config.propose_threshold() > 0) {
+        let weight = dao.governance().proposer_weight(proposer);
+        assert!(weight >= config.propose_threshold(), EProposeThresholdNotMet);
+    };
 }

@@ -6,8 +6,8 @@ use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
 use armature::proposal::{Self, Proposal};
+use armature::set_board::{Self, SetBoard};
 use armature_proposals::board_ops;
-use armature_proposals::set_board::{Self, SetBoard};
 use std::string;
 use sui::clock;
 use sui::test_scenario;
@@ -45,7 +45,6 @@ fun test_set_board_e2e() {
         let payload = set_board::new(vector[CREATOR, MEMBER_B, NEW_MEMBER]);
         board_voting::submit_proposal(
             &dao,
-            b"SetBoard".to_ascii_string(),
             option::some(string::utf8(b"Add NEW_MEMBER to board")),
             payload,
             &clock,
@@ -56,7 +55,7 @@ fun test_set_board_e2e() {
     };
 
     // 3. Vote yes (CREATOR) — with default config (quorum=50%, threshold=50%),
-    //    1 out of 2 board members voting yes is enough to pass.
+    // 1 out of 2 board members voting yes is enough to pass.
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<set_board::SetBoard>>();
@@ -128,7 +127,6 @@ fun test_set_board_empty_members_aborts() {
         let payload = set_board::new(vector[]);
         board_voting::submit_proposal(
             &dao,
-            b"SetBoard".to_ascii_string(),
             option::some(string::utf8(b"Empty board")),
             payload,
             &clock,
@@ -217,7 +215,6 @@ fun test_full_board_replacement() {
         let payload = set_board::new(vector[NEW_MEMBER, MEMBER_D, MEMBER_E]);
         board_voting::submit_proposal(
             &dao,
-            b"SetBoard".to_ascii_string(),
             option::some(string::utf8(b"Full board replacement")),
             payload,
             &clock,
@@ -287,7 +284,6 @@ fun test_shrink_board_to_single_member() {
         let payload = set_board::new(vector[CREATOR]);
         board_voting::submit_proposal(
             &dao,
-            b"SetBoard".to_ascii_string(),
             option::some(string::utf8(b"Shrink to solo")),
             payload,
             &clock,
@@ -359,7 +355,6 @@ fun test_grow_board_from_single() {
         let payload = set_board::new(vector[CREATOR, MEMBER_B, NEW_MEMBER, MEMBER_D, MEMBER_E]);
         board_voting::submit_proposal(
             &dao,
-            b"SetBoard".to_ascii_string(),
             option::some(string::utf8(b"Scale up board")),
             payload,
             &clock,
@@ -425,7 +420,6 @@ fun test_sequential_board_changes() {
         clock.set_for_testing(1_000);
         board_voting::submit_proposal(
             &dao,
-            b"SetBoard".to_ascii_string(),
             option::some(string::utf8(b"Swap B for C")),
             set_board::new(vector[CREATOR, NEW_MEMBER]),
             &clock,
@@ -471,7 +465,6 @@ fun test_sequential_board_changes() {
         clock.set_for_testing(10_000);
         board_voting::submit_proposal(
             &dao,
-            b"SetBoard".to_ascii_string(),
             option::some(string::utf8(b"Swap A for D")),
             set_board::new(vector[NEW_MEMBER, MEMBER_D]),
             &clock,

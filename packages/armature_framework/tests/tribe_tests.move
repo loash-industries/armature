@@ -1,17 +1,24 @@
 #[test_only]
 module armature::tribe_tests;
 
+use armature::add_member::AddMember;
 use armature::capability_vault::{Self, CapabilityVault, SubDAOControl};
 use armature::charter::Charter;
+use armature::create_subdao::CreateSubDAO;
 use armature::dao::{Self, DAO};
 use armature::emergency::{EmergencyFreeze, FreezeAdminCap};
+use armature::enable_proposal_type::EnableProposalType;
 use armature::governance;
 use armature::proposal;
+use armature::remove_member::RemoveMember;
+use armature::set_board::SetBoard;
+use armature::spawn_dao::SpawnDAO;
 use armature::treasury_vault::TreasuryVault;
 use armature::tribe;
+use armature::update_metadata::UpdateMetadata;
+use armature::update_proposal_config::UpdateProposalConfig;
 use std::string;
 use sui::test_scenario;
-use sui::vec_map;
 
 // === Test addresses ===
 
@@ -27,6 +34,10 @@ const MEMBER_ADMIN: address = @0x11;
 // === Dummy proposal type for ExecutionRequest construction in tests ===
 
 public struct TestProposal has drop {}
+
+// === Non-default payload type enabled through construction-time overrides ===
+
+public struct CustomType has drop, store {}
 
 // === Helper ===
 
@@ -360,7 +371,7 @@ fun do_create_parent_and_wired_subdao(scenario: &mut test_scenario::Scenario): (
         SUBDAO_ADMIN,
         &mut parent_vault,
         &req,
-        vec_map::empty(),
+        vector[],
         scenario.ctx(),
     );
     proposal::consume(req);
@@ -512,12 +523,12 @@ fun create_wired_subdao_config_override_applied() {
         );
 
         // Override the SetBoard config with a custom quorum.
-        let mut overrides = vec_map::empty<std::ascii::String, proposal::ProposalConfig>();
-        vec_map::insert(
-            &mut overrides,
-            b"SetBoard".to_ascii_string(),
-            proposal::new_config(7_500, 7_500, 0, 604_800_000, 0, 0),
-        );
+        let overrides = vector[
+            dao::new_type_init<SetBoard>(
+                b"SetBoard".to_ascii_string(),
+                proposal::new_config(7_500, 7_500, 0, 604_800_000, 0, 0),
+            ),
+        ];
 
         let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
         subdao_id =
@@ -538,7 +549,7 @@ fun create_wired_subdao_config_override_applied() {
     scenario.next_tx(CREATOR);
     {
         let subdao = scenario.take_shared_by_id<DAO>(subdao_id);
-        let config = subdao.proposal_configs().get(&b"SetBoard".to_ascii_string());
+        let config = subdao.type_config<SetBoard>();
         assert!(config.quorum() == 7_500);
         assert!(config.approval_threshold() == 7_500);
         test_scenario::return_shared(subdao);
@@ -550,7 +561,7 @@ fun create_wired_subdao_config_override_applied() {
 // === Test 15: new type enabled via override ===
 
 #[test]
-/// An override key not in the subdao defaults is inserted and enabled on the subdao.
+/// An override for a type not in the subdao defaults is inserted and enabled on the subdao.
 fun create_wired_subdao_new_type_enabled_via_override() {
     let mut scenario = test_scenario::begin(CREATOR);
 
@@ -565,12 +576,12 @@ fun create_wired_subdao_new_type_enabled_via_override() {
             scenario.ctx(),
         );
 
-        let mut overrides = vec_map::empty<std::ascii::String, proposal::ProposalConfig>();
-        vec_map::insert(
-            &mut overrides,
-            b"SendCoin".to_ascii_string(),
-            default_config(),
-        );
+        let overrides = vector[
+            dao::new_type_init<CustomType>(
+                b"CustomType".to_ascii_string(),
+                default_config(),
+            ),
+        ];
 
         let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
         subdao_id =
@@ -591,7 +602,8 @@ fun create_wired_subdao_new_type_enabled_via_override() {
     scenario.next_tx(CREATOR);
     {
         let subdao = scenario.take_shared_by_id<DAO>(subdao_id);
-        assert!(subdao.enabled_proposal_types().contains(&b"SendCoin".to_ascii_string()));
+        assert!(subdao.is_type_enabled<CustomType>());
+        assert!(subdao.type_display_key<CustomType>() == b"CustomType".to_ascii_string());
         test_scenario::return_shared(subdao);
     };
 
@@ -601,7 +613,7 @@ fun create_wired_subdao_new_type_enabled_via_override() {
 // === Test 16: blocked proposal type in overrides aborts ===
 
 #[test, expected_failure(abort_code = dao::EBlockedProposalType)]
-/// Passing a blocked type key (SpawnDAO) in config_overrides aborts with EBlockedProposalType.
+/// Passing a blocked type (SpawnDAO) in config_overrides aborts with EBlockedProposalType.
 fun create_wired_subdao_aborts_on_blocked_type() {
     let mut scenario = test_scenario::begin(CREATOR);
     scenario.next_tx(CREATOR);
@@ -614,12 +626,12 @@ fun create_wired_subdao_aborts_on_blocked_type() {
             scenario.ctx(),
         );
 
-        let mut overrides = vec_map::empty<std::ascii::String, proposal::ProposalConfig>();
-        vec_map::insert(
-            &mut overrides,
-            b"SpawnDAO".to_ascii_string(),
-            default_config(),
-        );
+        let overrides = vector[
+            dao::new_type_init<SpawnDAO>(
+                b"SpawnDAO".to_ascii_string(),
+                default_config(),
+            ),
+        ];
 
         let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
         tribe::create_wired_subdao(
@@ -654,12 +666,12 @@ fun create_wired_subdao_aborts_on_enable_proposal_type_below_floor() {
             scenario.ctx(),
         );
 
-        let mut overrides = vec_map::empty<std::ascii::String, proposal::ProposalConfig>();
-        vec_map::insert(
-            &mut overrides,
-            b"EnableProposalType".to_ascii_string(),
-            proposal::new_config(5_000, 6_599, 0, 604_800_000, 0, 0),
-        );
+        let overrides = vector[
+            dao::new_type_init<EnableProposalType>(
+                b"EnableProposalType".to_ascii_string(),
+                proposal::new_config(5_000, 6_599, 0, 604_800_000, 0, 0),
+            ),
+        ];
 
         let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
         tribe::create_wired_subdao(
@@ -694,12 +706,12 @@ fun create_wired_subdao_aborts_on_update_proposal_config_below_floor() {
             scenario.ctx(),
         );
 
-        let mut overrides = vec_map::empty<std::ascii::String, proposal::ProposalConfig>();
-        vec_map::insert(
-            &mut overrides,
-            b"UpdateProposalConfig".to_ascii_string(),
-            proposal::new_config(5_000, 7_999, 0, 604_800_000, 0, 0),
-        );
+        let overrides = vector[
+            dao::new_type_init<UpdateProposalConfig>(
+                b"UpdateProposalConfig".to_ascii_string(),
+                proposal::new_config(5_000, 7_999, 0, 604_800_000, 0, 0),
+            ),
+        ];
 
         let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
         tribe::create_wired_subdao(
@@ -735,12 +747,12 @@ fun create_wired_subdao_enable_proposal_type_at_floor_passes() {
             scenario.ctx(),
         );
 
-        let mut overrides = vec_map::empty<std::ascii::String, proposal::ProposalConfig>();
-        vec_map::insert(
-            &mut overrides,
-            b"EnableProposalType".to_ascii_string(),
-            proposal::new_config(5_000, 6_600, 0, 604_800_000, 0, 0),
-        );
+        let overrides = vector[
+            dao::new_type_init<EnableProposalType>(
+                b"EnableProposalType".to_ascii_string(),
+                proposal::new_config(5_000, 6_600, 0, 604_800_000, 0, 0),
+            ),
+        ];
 
         let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
         subdao_id =
@@ -761,7 +773,7 @@ fun create_wired_subdao_enable_proposal_type_at_floor_passes() {
     scenario.next_tx(CREATOR);
     {
         let subdao = scenario.take_shared_by_id<DAO>(subdao_id);
-        let config = subdao.proposal_configs().get(&b"EnableProposalType".to_ascii_string());
+        let config = subdao.type_config<EnableProposalType>();
         assert!(config.approval_threshold() == 6_600);
         test_scenario::return_shared(subdao);
     };
@@ -787,9 +799,9 @@ fun do_create_tribe_configured(scenario: &mut test_scenario::Scenario): (ID, ID,
         string::utf8(b"https://tribe.example/members.png"),
         OFFICER_ADMIN,
         MEMBER_ADMIN,
-        vec_map::empty(),
-        vec_map::empty(),
-        vec_map::empty(),
+        vector[],
+        vector[],
+        vector[],
         scenario.ctx(),
     )
 }
@@ -797,7 +809,7 @@ fun do_create_tribe_configured(scenario: &mut test_scenario::Scenario): (ID, ID,
 // === Test 20: create_tribe_configured with empty overrides matches create_tribe structure ===
 
 #[test]
-/// create_tribe_configured with all-empty override maps produces the same
+/// create_tribe_configured with all-empty override vectors produces the same
 /// three-DAO structure (distinct IDs, correct boards, control hierarchy) as create_tribe.
 fun create_tribe_configured_empty_overrides_matches_create_tribe() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -835,19 +847,19 @@ fun create_tribe_configured_empty_overrides_matches_create_tribe() {
 // === Test 21: override applied to tribe DAO ===
 
 #[test]
-/// A config override for the tribe DAO is reflected in its proposal_configs.
+/// A config override for the tribe DAO is reflected in its type slot.
 fun create_tribe_configured_override_applied_to_tribe_dao() {
     let mut scenario = test_scenario::begin(CREATOR);
 
     let owner_id: ID;
     scenario.next_tx(CREATOR);
     {
-        let mut tribe_overrides = vec_map::empty<std::ascii::String, proposal::ProposalConfig>();
-        vec_map::insert(
-            &mut tribe_overrides,
-            b"AddMember".to_ascii_string(),
-            proposal::new_config(8_000, 8_000, 0, 604_800_000, 0, 0),
-        );
+        let tribe_overrides = vector[
+            dao::new_type_init<AddMember>(
+                b"AddMember".to_ascii_string(),
+                proposal::new_config(8_000, 8_000, 0, 604_800_000, 0, 0),
+            ),
+        ];
 
         (owner_id, _, _) =
             tribe::create_tribe_configured(
@@ -863,8 +875,8 @@ fun create_tribe_configured_override_applied_to_tribe_dao() {
                 OFFICER_ADMIN,
                 MEMBER_ADMIN,
                 tribe_overrides,
-                vec_map::empty(),
-                vec_map::empty(),
+                vector[],
+                vector[],
                 scenario.ctx(),
             );
     };
@@ -872,7 +884,7 @@ fun create_tribe_configured_override_applied_to_tribe_dao() {
     scenario.next_tx(CREATOR);
     {
         let tribe = scenario.take_shared_by_id<DAO>(owner_id);
-        let config = tribe.proposal_configs().get(&b"AddMember".to_ascii_string());
+        let config = tribe.type_config<AddMember>();
         assert!(config.quorum() == 8_000);
         assert!(config.approval_threshold() == 8_000);
         test_scenario::return_shared(tribe);
@@ -884,19 +896,19 @@ fun create_tribe_configured_override_applied_to_tribe_dao() {
 // === Test 22: override applied to officer subdao ===
 
 #[test]
-/// A config override for the officer SubDAO is reflected in its proposal_configs.
+/// A config override for the officer SubDAO is reflected in its type slot.
 fun create_tribe_configured_override_applied_to_officer_subdao() {
     let mut scenario = test_scenario::begin(CREATOR);
 
     let officer_id: ID;
     scenario.next_tx(CREATOR);
     {
-        let mut officer_overrides = vec_map::empty<std::ascii::String, proposal::ProposalConfig>();
-        vec_map::insert(
-            &mut officer_overrides,
-            b"RemoveMember".to_ascii_string(),
-            proposal::new_config(9_000, 9_000, 0, 604_800_000, 0, 0),
-        );
+        let officer_overrides = vector[
+            dao::new_type_init<RemoveMember>(
+                b"RemoveMember".to_ascii_string(),
+                proposal::new_config(9_000, 9_000, 0, 604_800_000, 0, 0),
+            ),
+        ];
 
         (_, officer_id, _) =
             tribe::create_tribe_configured(
@@ -911,9 +923,9 @@ fun create_tribe_configured_override_applied_to_officer_subdao() {
                 string::utf8(b"https://tribe.example/members.png"),
                 OFFICER_ADMIN,
                 MEMBER_ADMIN,
-                vec_map::empty(),
+                vector[],
                 officer_overrides,
-                vec_map::empty(),
+                vector[],
                 scenario.ctx(),
             );
     };
@@ -921,7 +933,7 @@ fun create_tribe_configured_override_applied_to_officer_subdao() {
     scenario.next_tx(CREATOR);
     {
         let officer = scenario.take_shared_by_id<DAO>(officer_id);
-        let config = officer.proposal_configs().get(&b"RemoveMember".to_ascii_string());
+        let config = officer.type_config<RemoveMember>();
         assert!(config.quorum() == 9_000);
         assert!(config.approval_threshold() == 9_000);
         test_scenario::return_shared(officer);
@@ -940,12 +952,12 @@ fun create_tribe_configured_new_type_enabled_via_member_override() {
     let member_id: ID;
     scenario.next_tx(CREATOR);
     {
-        let mut member_overrides = vec_map::empty<std::ascii::String, proposal::ProposalConfig>();
-        vec_map::insert(
-            &mut member_overrides,
-            b"SendCoin".to_ascii_string(),
-            default_config(),
-        );
+        let member_overrides = vector[
+            dao::new_type_init<CustomType>(
+                b"CustomType".to_ascii_string(),
+                default_config(),
+            ),
+        ];
 
         (_, _, member_id) =
             tribe::create_tribe_configured(
@@ -960,8 +972,8 @@ fun create_tribe_configured_new_type_enabled_via_member_override() {
                 string::utf8(b"https://tribe.example/members.png"),
                 OFFICER_ADMIN,
                 MEMBER_ADMIN,
-                vec_map::empty(),
-                vec_map::empty(),
+                vector[],
+                vector[],
                 member_overrides,
                 scenario.ctx(),
             );
@@ -970,7 +982,7 @@ fun create_tribe_configured_new_type_enabled_via_member_override() {
     scenario.next_tx(CREATOR);
     {
         let member = scenario.take_shared_by_id<DAO>(member_id);
-        assert!(member.enabled_proposal_types().contains(&b"SendCoin".to_ascii_string()));
+        assert!(member.is_type_enabled<CustomType>());
         test_scenario::return_shared(member);
     };
 
@@ -985,12 +997,12 @@ fun create_tribe_configured_aborts_on_update_config_below_floor() {
     let mut scenario = test_scenario::begin(CREATOR);
     scenario.next_tx(CREATOR);
     {
-        let mut officer_overrides = vec_map::empty<std::ascii::String, proposal::ProposalConfig>();
-        vec_map::insert(
-            &mut officer_overrides,
-            b"UpdateProposalConfig".to_ascii_string(),
-            proposal::new_config(5_000, 7_999, 0, 604_800_000, 0, 0),
-        );
+        let officer_overrides = vector[
+            dao::new_type_init<UpdateProposalConfig>(
+                b"UpdateProposalConfig".to_ascii_string(),
+                proposal::new_config(5_000, 7_999, 0, 604_800_000, 0, 0),
+            ),
+        ];
 
         tribe::create_tribe_configured(
             vector[CREATOR],
@@ -1004,9 +1016,9 @@ fun create_tribe_configured_aborts_on_update_config_below_floor() {
             string::utf8(b"https://tribe.example/members.png"),
             OFFICER_ADMIN,
             MEMBER_ADMIN,
-            vec_map::empty(),
+            vector[],
             officer_overrides,
-            vec_map::empty(),
+            vector[],
             scenario.ctx(),
         );
     };
@@ -1021,12 +1033,12 @@ fun create_tribe_configured_aborts_on_enable_type_below_floor() {
     let mut scenario = test_scenario::begin(CREATOR);
     scenario.next_tx(CREATOR);
     {
-        let mut member_overrides = vec_map::empty<std::ascii::String, proposal::ProposalConfig>();
-        vec_map::insert(
-            &mut member_overrides,
-            b"EnableProposalType".to_ascii_string(),
-            proposal::new_config(5_000, 6_599, 0, 604_800_000, 0, 0),
-        );
+        let member_overrides = vector[
+            dao::new_type_init<EnableProposalType>(
+                b"EnableProposalType".to_ascii_string(),
+                proposal::new_config(5_000, 6_599, 0, 604_800_000, 0, 0),
+            ),
+        ];
 
         tribe::create_tribe_configured(
             vector[CREATOR],
@@ -1040,8 +1052,8 @@ fun create_tribe_configured_aborts_on_enable_type_below_floor() {
             string::utf8(b"https://tribe.example/members.png"),
             OFFICER_ADMIN,
             MEMBER_ADMIN,
-            vec_map::empty(),
-            vec_map::empty(),
+            vector[],
+            vector[],
             member_overrides,
             scenario.ctx(),
         );
@@ -1059,12 +1071,12 @@ fun create_tribe_configured_update_config_at_floor_passes() {
     let owner_id: ID;
     scenario.next_tx(CREATOR);
     {
-        let mut tribe_overrides = vec_map::empty<std::ascii::String, proposal::ProposalConfig>();
-        vec_map::insert(
-            &mut tribe_overrides,
-            b"UpdateProposalConfig".to_ascii_string(),
-            proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0),
-        );
+        let tribe_overrides = vector[
+            dao::new_type_init<UpdateProposalConfig>(
+                b"UpdateProposalConfig".to_ascii_string(),
+                proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0),
+            ),
+        ];
 
         (owner_id, _, _) =
             tribe::create_tribe_configured(
@@ -1080,8 +1092,8 @@ fun create_tribe_configured_update_config_at_floor_passes() {
                 OFFICER_ADMIN,
                 MEMBER_ADMIN,
                 tribe_overrides,
-                vec_map::empty(),
-                vec_map::empty(),
+                vector[],
+                vector[],
                 scenario.ctx(),
             );
     };
@@ -1089,7 +1101,7 @@ fun create_tribe_configured_update_config_at_floor_passes() {
     scenario.next_tx(CREATOR);
     {
         let tribe = scenario.take_shared_by_id<DAO>(owner_id);
-        let config = tribe.proposal_configs().get(&b"UpdateProposalConfig".to_ascii_string());
+        let config = tribe.type_config<UpdateProposalConfig>();
         assert!(config.approval_threshold() == 8_000);
         test_scenario::return_shared(tribe);
     };
@@ -1117,12 +1129,12 @@ fun create_wired_subdao_preserves_composable_allowed_on_override() {
         );
 
         // Override AddMember with a higher quorum — composable_allowed must be preserved.
-        let mut overrides = vec_map::empty<std::ascii::String, proposal::ProposalConfig>();
-        vec_map::insert(
-            &mut overrides,
-            b"AddMember".to_ascii_string(),
-            proposal::new_config(7_500, 7_500, 0, 604_800_000, 0, 0),
-        );
+        let overrides = vector[
+            dao::new_type_init<AddMember>(
+                b"AddMember".to_ascii_string(),
+                proposal::new_config(7_500, 7_500, 0, 604_800_000, 0, 0),
+            ),
+        ];
 
         let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
         subdao_id =
@@ -1143,7 +1155,7 @@ fun create_wired_subdao_preserves_composable_allowed_on_override() {
     scenario.next_tx(CREATOR);
     {
         let subdao = scenario.take_shared_by_id<DAO>(subdao_id);
-        let config = subdao.proposal_configs().get(&b"AddMember".to_ascii_string());
+        let config = subdao.type_config<AddMember>();
         assert!(config.quorum() == 7_500);
         assert!(config.approval_threshold() == 7_500);
         assert!(config.composable_allowed());
@@ -1164,12 +1176,12 @@ fun create_tribe_configured_parent_can_override_subdao_blocked_type() {
     let owner_id: ID;
     scenario.next_tx(CREATOR);
     {
-        let mut tribe_overrides = vec_map::empty<std::ascii::String, proposal::ProposalConfig>();
-        vec_map::insert(
-            &mut tribe_overrides,
-            b"CreateSubDAO".to_ascii_string(),
-            proposal::new_config(8_000, 8_000, 0, 604_800_000, 0, 0),
-        );
+        let tribe_overrides = vector[
+            dao::new_type_init<CreateSubDAO>(
+                b"CreateSubDAO".to_ascii_string(),
+                proposal::new_config(8_000, 8_000, 0, 604_800_000, 0, 0),
+            ),
+        ];
 
         (owner_id, _, _) =
             tribe::create_tribe_configured(
@@ -1185,8 +1197,8 @@ fun create_tribe_configured_parent_can_override_subdao_blocked_type() {
                 OFFICER_ADMIN,
                 MEMBER_ADMIN,
                 tribe_overrides,
-                vec_map::empty(),
-                vec_map::empty(),
+                vector[],
+                vector[],
                 scenario.ctx(),
             );
     };
@@ -1194,7 +1206,7 @@ fun create_tribe_configured_parent_can_override_subdao_blocked_type() {
     scenario.next_tx(CREATOR);
     {
         let tribe = scenario.take_shared_by_id<DAO>(owner_id);
-        let config = tribe.proposal_configs().get(&b"CreateSubDAO".to_ascii_string());
+        let config = tribe.type_config<CreateSubDAO>();
         assert!(config.quorum() == 8_000);
         assert!(config.approval_threshold() == 8_000);
         test_scenario::return_shared(tribe);
@@ -1212,12 +1224,12 @@ fun create_tribe_configured_subdao_still_rejects_blocked_type() {
     let mut scenario = test_scenario::begin(CREATOR);
     scenario.next_tx(CREATOR);
     {
-        let mut officer_overrides = vec_map::empty<std::ascii::String, proposal::ProposalConfig>();
-        vec_map::insert(
-            &mut officer_overrides,
-            b"CreateSubDAO".to_ascii_string(),
-            proposal::new_config(8_000, 8_000, 0, 604_800_000, 0, 0),
-        );
+        let officer_overrides = vector[
+            dao::new_type_init<CreateSubDAO>(
+                b"CreateSubDAO".to_ascii_string(),
+                proposal::new_config(8_000, 8_000, 0, 604_800_000, 0, 0),
+            ),
+        ];
 
         tribe::create_tribe_configured(
             vector[CREATOR],
@@ -1231,9 +1243,46 @@ fun create_tribe_configured_subdao_still_rejects_blocked_type() {
             string::utf8(b"https://tribe.example/members.png"),
             OFFICER_ADMIN,
             MEMBER_ADMIN,
-            vec_map::empty(),
+            vector[],
             officer_overrides,
-            vec_map::empty(),
+            vector[],
+            scenario.ctx(),
+        );
+    };
+    scenario.end();
+}
+
+// === Test 31: override of a default type must keep its display key ===
+
+#[test, expected_failure(abort_code = dao::EDisplayKeyMismatch)]
+/// UpdateMetadata is seeded as "CharterUpdate". An override naming a different
+/// display key aborts rather than silently keeping the default key.
+fun create_tribe_configured_default_type_display_key_mismatch_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    scenario.next_tx(CREATOR);
+    {
+        let tribe_overrides = vector[
+            dao::new_type_init<UpdateMetadata>(
+                b"UpdateMetadata".to_ascii_string(),
+                proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0),
+            ),
+        ];
+
+        tribe::create_tribe_configured(
+            vector[CREATOR],
+            vector[OFFICER_A],
+            vector[MEMBER_A],
+            string::utf8(b"Tribe DAO"),
+            string::utf8(b"Officers"),
+            string::utf8(b"Members"),
+            string::utf8(b"https://tribe.example/logo.png"),
+            string::utf8(b"https://tribe.example/officers.png"),
+            string::utf8(b"https://tribe.example/members.png"),
+            OFFICER_ADMIN,
+            MEMBER_ADMIN,
+            tribe_overrides,
+            vector[],
+            vector[],
             scenario.ctx(),
         );
     };

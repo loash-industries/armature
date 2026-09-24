@@ -5,15 +5,19 @@ use armature::board_voting;
 use armature::capability_vault::CapabilityVault;
 use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
+use armature::enable_proposal_type::{Self, EnableProposalType};
 use armature::governance;
 use armature::proposal::{Self, Proposal};
 use armature_proposals::admin_ops;
-use armature_proposals::enable_proposal_type::{Self, EnableProposalType};
 use std::string;
+use std::type_name;
 use sui::clock;
 use sui::test_scenario;
 
 const OWNER: address = @0xA1;
+
+/// Payload type enabled by the vehicle proposal.
+public struct SomeType has drop, store {}
 
 public struct ForeignCap has key, store {
     id: UID,
@@ -49,9 +53,12 @@ fun receive_cap_cross_dao() {
         let config = proposal::new_config(5_000, 6_600, 0, 604_800_000, 0, 0);
         board_voting::submit_proposal(
             &dao,
-            b"EnableProposalType".to_ascii_string(),
             option::some(string::utf8(b"Vehicle for receive_cap")),
-            enable_proposal_type::new(b"SomeType".to_ascii_string(), config),
+            enable_proposal_type::new(
+                b"SomeType".to_ascii_string(),
+                type_name::with_defining_ids<SomeType>(),
+                config,
+            ),
             &clock,
             scenario.ctx(),
         );
@@ -96,7 +103,7 @@ fun receive_cap_cross_dao() {
         assert!(vault.contains(foreign_id));
 
         // Consume the request via the handler
-        admin_ops::execute_enable_proposal_type<EnableProposalType>(&mut dao, ticket);
+        admin_ops::execute_enable_proposal_type<SomeType>(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
