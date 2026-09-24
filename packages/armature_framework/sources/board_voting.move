@@ -188,6 +188,10 @@ public fun ticket_from_vote<P: store>(
     assert!(prop.dao_id() == dao.id(), EDAOIdMismatch);
     assert!(dao.is_type_name_enabled(&name), ETypeNotEnabled);
     assert!(!dao.is_controller_paused(), EControllerPaused);
+    // Checks the display key recorded at submission, not the slot's current key.
+    // If the type was disabled and re-enabled under a new key while this proposal
+    // was pending, a freeze on the new key does not block it. The re-enable itself
+    // requires an EnableProposalType vote (66% floor).
     freeze.assert_not_frozen(&prop.type_key(), clock);
 
     let last_ms = dao.last_executed_ms_by_name(&name);

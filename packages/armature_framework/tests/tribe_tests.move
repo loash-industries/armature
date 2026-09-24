@@ -15,6 +15,7 @@ use armature::set_board::SetBoard;
 use armature::spawn_dao::SpawnDAO;
 use armature::treasury_vault::TreasuryVault;
 use armature::tribe;
+use armature::update_metadata::UpdateMetadata;
 use armature::update_proposal_config::UpdateProposalConfig;
 use std::string;
 use sui::test_scenario;
@@ -1244,6 +1245,43 @@ fun create_tribe_configured_subdao_still_rejects_blocked_type() {
             MEMBER_ADMIN,
             vector[],
             officer_overrides,
+            vector[],
+            scenario.ctx(),
+        );
+    };
+    scenario.end();
+}
+
+// === Test 31: override of a default type must keep its display key ===
+
+#[test, expected_failure(abort_code = dao::EDisplayKeyMismatch)]
+/// UpdateMetadata is seeded as "CharterUpdate". An override naming a different
+/// display key aborts rather than silently keeping the default key.
+fun create_tribe_configured_default_type_display_key_mismatch_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    scenario.next_tx(CREATOR);
+    {
+        let tribe_overrides = vector[
+            dao::new_type_init<UpdateMetadata>(
+                b"UpdateMetadata".to_ascii_string(),
+                proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0),
+            ),
+        ];
+
+        tribe::create_tribe_configured(
+            vector[CREATOR],
+            vector[OFFICER_A],
+            vector[MEMBER_A],
+            string::utf8(b"Tribe DAO"),
+            string::utf8(b"Officers"),
+            string::utf8(b"Members"),
+            string::utf8(b"https://tribe.example/logo.png"),
+            string::utf8(b"https://tribe.example/officers.png"),
+            string::utf8(b"https://tribe.example/members.png"),
+            OFFICER_ADMIN,
+            MEMBER_ADMIN,
+            tribe_overrides,
+            vector[],
             vector[],
             scenario.ctx(),
         );

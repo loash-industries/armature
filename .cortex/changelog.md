@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-09-24 — enforce display key on default-type overrides
+
+- Construction-time overrides (`apply_type_overrides`, reached via `create_tribe_configured` and the `create_*_configured` paths) now abort with `dao::EDisplayKeyMismatch` (17) when overriding a default-enabled type with a display key other than its seeded one. Previously the config was replaced but the override's key was silently dropped, so e.g. `new_type_init<UpdateMetadata>(b"UpdateMetadata", …)` left the key as "CharterUpdate" and later submissions naming "UpdateMetadata" aborted with `ETypeNotEnabled`. Documented two accepted behaviours: `disable_proposal_type` clears cooldown state, so a re-enabled type's first execution is not rate-limited; `ticket_from_vote` checks freezes against the submission-time display key rather than the slot's current key. Both require an EnableProposalType (66%) or EnableBypassType (80%) vote to exploit. Tests: framework 266 → 267.
+
 ## 2026-09-24 — type-keyed proposal registry (ARMATURE-9)
 
 - Replaced the four string-keyed maps on `dao::DAO` (`proposal_configs`, `enabled_proposal_types`, `type_bindings`, `last_executed_at`) with one dynamic-field slot per enabled proposal type, keyed by the payload's canonical `TypeName` and holding its display key, `ProposalConfig` and last-executed timestamp; a second per-type field indexes display key → type for cold admin paths (config updates, disables, freezes by name) and enforces display-key uniqueness. The root object is now a few hundred bytes and does not grow with enabled types. Motivation: gas analysis of the testnet officers OU showed every transaction rewriting an 18.5 KB root, which was 88% of the non-refundable storage burn and roughly a third of computation; 23 of its 49 enabled types were stale entries from superseded trading packages that the old design could never prune.

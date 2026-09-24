@@ -52,6 +52,8 @@ const ETypeAlreadyEnabled: u64 = 14;
 const EDisplayKeyTaken: u64 = 15;
 /// Display keys must be non-empty.
 const EEmptyDisplayKey: u64 = 16;
+/// Override for an already-enabled type names a display key other than the slot's.
+const EDisplayKeyMismatch: u64 = 17;
 
 // === Constants ===
 
@@ -702,6 +704,10 @@ public fun enable_proposal_type<NewType, P>(
 
 /// Remove the slot (config, display key, cooldown state) of the type named `name`.
 /// Aborts with ETypeNotEnabled if absent. Nothing is left behind.
+///
+/// Cooldown state is not preserved: if the type is re-enabled later, its first
+/// execution is not subject to the cooldown. Re-enabling requires an
+/// EnableProposalType (66% floor) or EnableBypassType (80% floor) vote.
 /// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
 public fun disable_proposal_type<P>(self: &mut DAO, name: TypeName, req: &ExecutionRequest<P>) {
     assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
@@ -1010,6 +1016,8 @@ fun config_for_type(name: &TypeName): ProposalConfig {
 
 /// Apply `overrides` to an already-seeded registry.
 /// - Type already enabled: replace its ProposalConfig, preserving composable_allowed.
+///   The override's display key must equal the slot's (EDisplayKeyMismatch otherwise);
+///   default display keys cannot be renamed at construction time.
 /// - Type not yet enabled: add its slot (enables the type at construction time).
 /// - Type is a SubDAO-blocked type AND `check_subdao_blocked` is true: abort with
 ///   EBlockedProposalType. Pass false for parent DAOs, which legitimately have these
@@ -1032,6 +1040,7 @@ fun apply_type_overrides(
         assert!(init.config.approval_threshold() >= floor, EThresholdBelowMinimum);
         if (df::exists(id, TypeSlot { name: init.type_name })) {
             let entry: &mut ProposalType = df::borrow_mut(id, TypeSlot { name: init.type_name });
+            assert!(entry.display_key == init.display_key, EDisplayKeyMismatch);
             let composable = entry.config.composable_allowed();
             entry.config = init.config.with_composable_allowed(composable);
             event::emit(TypeSlotConfigUpdated {
