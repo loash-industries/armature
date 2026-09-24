@@ -1211,3 +1211,74 @@ fun enable_bypass_type_composable_cooldown_conflict_aborts() {
     clock.destroy_for_testing();
     scenario.end();
 }
+
+// === ticket_from_cap_readonly ===
+
+/// Mint a cap for DummyBypass and call ticket_from_cap_readonly with an immutable DAO.
+fun cap_readonly_and_discharge(scenario: &mut test_scenario::Scenario, clock: &clock::Clock) {
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        let cap = proposal::new_external_execution_cap_for_testing<DummyBypass>(
+            dao.id(),
+            scenario.ctx(),
+        );
+
+        let ticket = external_execution::ticket_from_cap_readonly<DummyBypass>(
+            &cap,
+            &dao,
+            &freeze,
+            option::none(),
+            DummyBypass { x: 42 },
+            clock,
+            scenario.ctx(),
+        );
+
+        assert!(ticket.ticket_dao_id() == dao.id());
+        assert!(dao.last_executed_ms<DummyBypass>().is_none());
+
+        ticket.discharge();
+        proposal::destroy_external_execution_cap_for_testing(cap);
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(dao);
+    };
+}
+
+#[test]
+/// Read-only bypass mints the ticket without recording anything on the DAO,
+/// and can run back-to-back for a cooldown-free type.
+fun ticket_from_cap_readonly_happy_path() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1000);
+
+    create_test_dao(&mut scenario);
+    enable_dummy_type(&mut scenario);
+    cap_readonly_and_discharge(&mut scenario, &clock);
+    cap_readonly_and_discharge(&mut scenario, &clock);
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::external_execution::ECooldownRequiresMutableDAO)]
+/// A type with a cooldown must use ticket_from_cap so the timestamp is recorded.
+fun ticket_from_cap_readonly_cooldown_type_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1000);
+
+    create_test_dao(&mut scenario);
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 60_000);
+        dao.test_enable_type<DummyBypass>(b"DummyBypass".to_ascii_string(), config);
+        test_scenario::return_shared(dao);
+    };
+    cap_readonly_and_discharge(&mut scenario, &clock);
+
+    clock.destroy_for_testing();
+    scenario.end();
+}

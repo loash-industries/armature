@@ -265,6 +265,9 @@ public fun status<P: store>(self: &Proposal<P>): &ProposalStatus { &self.status 
 /// Return the proposal's type key.
 public fun type_key<P: store>(self: &Proposal<P>): std::ascii::String { self.type_key }
 
+/// The ProposalConfig snapshotted when the proposal was created.
+public fun config<P: store>(self: &Proposal<P>): &ProposalConfig { &self.config }
+
 /// Return the proposal's yes weight.
 public fun yes_weight<P: store>(self: &Proposal<P>): u64 { self.yes_weight }
 
