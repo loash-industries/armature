@@ -1,4 +1,4 @@
-module armature_proposals::create_subdao;
+module armature::create_subdao;
 
 use std::string::String;
 

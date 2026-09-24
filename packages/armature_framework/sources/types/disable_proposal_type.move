@@ -1,4 +1,4 @@
-module armature_proposals::disable_proposal_type;
+module armature::disable_proposal_type;
 
 /// Disable a proposal type on the DAO.
 /// Handler asserts the target type is not undisableable.

@@ -1,4 +1,4 @@
-module armature_proposals::update_proposal_config;
+module armature::update_proposal_config;
 
 /// Update one or more ProposalConfig fields for a given proposal type.
 /// Fields set to none are left unchanged.

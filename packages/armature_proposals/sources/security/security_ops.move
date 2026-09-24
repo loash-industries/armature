@@ -2,8 +2,8 @@ module armature_proposals::security_ops;
 
 use armature::emergency::{Self, EmergencyFreeze, FreezeAdminCap};
 use armature::proposal::ExecutionTicket;
-use armature_proposals::transfer_freeze_admin::TransferFreezeAdmin;
-use armature_proposals::unfreeze_proposal_type::UnfreezeProposalType;
+use armature::transfer_freeze_admin::TransferFreezeAdmin;
+use armature::unfreeze_proposal_type::UnfreezeProposalType;
 use armature_proposals::update_freeze_config::UpdateFreezeConfig;
 use armature_proposals::update_freeze_exempt_types::UpdateFreezeExemptTypes;
 use sui::event;

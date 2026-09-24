@@ -43,11 +43,11 @@ fun create_named_dao(scenario: &mut test_scenario::Scenario, name: vector<u8>): 
     )
 }
 
-fun enable_type(scenario: &mut test_scenario::Scenario, dao_id: ID, type_name: vector<u8>) {
+fun enable_type<T>(scenario: &mut test_scenario::Scenario, dao_id: ID, display_key: vector<u8>) {
     scenario.next_tx(CREATOR);
     let mut dao = scenario.take_shared_by_id<DAO>(dao_id);
     let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-    dao.test_enable_type(type_name.to_ascii_string(), config);
+    dao.test_enable_type<T>(display_key.to_ascii_string(), config);
     test_scenario::return_shared(dao);
 }
 
@@ -90,7 +90,7 @@ fun send_batch_to_address_e2e() {
     let mut clock = clock::create_for_testing(scenario.ctx());
 
     let dao_id = create_named_dao(&mut scenario, b"Test DAO");
-    enable_type(&mut scenario, dao_id, b"SendBatchMulticoinToAddress");
+    enable_type<SendBatchMulticoinToAddress>(&mut scenario, dao_id, b"SendBatchMulticoinToAddress");
 
     let vault_id;
     scenario.next_tx(CREATOR);
@@ -115,7 +115,6 @@ fun send_batch_to_address_e2e() {
         clock.set_for_testing(1000);
         board_voting::submit_proposal(
             &dao,
-            b"SendBatchMulticoinToAddress".to_ascii_string(),
             option::some(string::utf8(b"Send batch to address")),
             payload,
             &clock,
@@ -176,7 +175,7 @@ fun send_batch_to_address_partial_withdraw() {
     let mut clock = clock::create_for_testing(scenario.ctx());
 
     let dao_id = create_named_dao(&mut scenario, b"Test DAO");
-    enable_type(&mut scenario, dao_id, b"SendBatchMulticoinToAddress");
+    enable_type<SendBatchMulticoinToAddress>(&mut scenario, dao_id, b"SendBatchMulticoinToAddress");
 
     let vault_id;
     scenario.next_tx(CREATOR);
@@ -200,7 +199,6 @@ fun send_batch_to_address_partial_withdraw() {
         clock.set_for_testing(1000);
         board_voting::submit_proposal(
             &dao,
-            b"SendBatchMulticoinToAddress".to_ascii_string(),
             option::none(),
             payload,
             &clock,
@@ -258,7 +256,7 @@ fun send_batch_to_address_insufficient_balance_aborts() {
     let mut clock = clock::create_for_testing(scenario.ctx());
 
     let dao_id = create_named_dao(&mut scenario, b"Test DAO");
-    enable_type(&mut scenario, dao_id, b"SendBatchMulticoinToAddress");
+    enable_type<SendBatchMulticoinToAddress>(&mut scenario, dao_id, b"SendBatchMulticoinToAddress");
 
     let vault_id;
     scenario.next_tx(CREATOR);
@@ -280,7 +278,6 @@ fun send_batch_to_address_insufficient_balance_aborts() {
         clock.set_for_testing(1000);
         board_voting::submit_proposal(
             &dao,
-            b"SendBatchMulticoinToAddress".to_ascii_string(),
             option::none(),
             payload,
             &clock,
@@ -352,7 +349,7 @@ fun send_batch_to_dao_e2e() {
     let source_dao_id = create_named_dao(&mut scenario, b"Source DAO");
     let target_dao_id = create_named_dao(&mut scenario, b"Target DAO");
 
-    enable_type(&mut scenario, source_dao_id, b"SendBatchMulticoinToDAO");
+    enable_type<SendBatchMulticoinToDAO>(&mut scenario, source_dao_id, b"SendBatchMulticoinToDAO");
 
     let source_vault_id;
     let target_vault_id;
@@ -377,7 +374,6 @@ fun send_batch_to_dao_e2e() {
         clock.set_for_testing(1000);
         board_voting::submit_proposal(
             &dao,
-            b"SendBatchMulticoinToDAO".to_ascii_string(),
             option::some(string::utf8(b"Send batch to target DAO")),
             payload,
             &clock,
@@ -444,7 +440,7 @@ fun send_batch_to_dao_accumulates_in_target() {
     let source_dao_id = create_named_dao(&mut scenario, b"Source DAO");
     let target_dao_id = create_named_dao(&mut scenario, b"Target DAO");
 
-    enable_type(&mut scenario, source_dao_id, b"SendBatchMulticoinToDAO");
+    enable_type<SendBatchMulticoinToDAO>(&mut scenario, source_dao_id, b"SendBatchMulticoinToDAO");
 
     let source_vault_id;
     let target_vault_id;
@@ -469,7 +465,6 @@ fun send_batch_to_dao_accumulates_in_target() {
         clock.set_for_testing(1000);
         board_voting::submit_proposal(
             &dao,
-            b"SendBatchMulticoinToDAO".to_ascii_string(),
             option::none(),
             payload,
             &clock,
@@ -532,7 +527,7 @@ fun send_batch_to_dao_target_mismatch_aborts() {
     let source_dao_id = create_named_dao(&mut scenario, b"Source DAO");
     let target_dao_id = create_named_dao(&mut scenario, b"Target DAO");
 
-    enable_type(&mut scenario, source_dao_id, b"SendBatchMulticoinToDAO");
+    enable_type<SendBatchMulticoinToDAO>(&mut scenario, source_dao_id, b"SendBatchMulticoinToDAO");
 
     let source_vault_id;
     let target_vault_id;
@@ -558,7 +553,6 @@ fun send_batch_to_dao_target_mismatch_aborts() {
         clock.set_for_testing(1000);
         board_voting::submit_proposal(
             &dao,
-            b"SendBatchMulticoinToDAO".to_ascii_string(),
             option::none(),
             payload,
             &clock,

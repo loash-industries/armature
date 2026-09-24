@@ -1,7 +1,7 @@
 /// End-to-end tests for the AutojoinDAO bridge against a real
 /// `world::character::Character`. Setup uses world's public `init_for_testing`
 /// hooks (cross-package #[test_only] are accessible) plus armature's
-/// test seams (`test_enable_type`, `test_bind_type`) and the
+/// test seams (`test_enable_type<T>`) and the
 /// `ExternalExecutionCap` test helper from #143 to avoid the 80%
 /// governance setup. Focuses coverage on bridge logic.
 #[test_only]
@@ -104,12 +104,10 @@ fun setup_dao_with_autojoin(scenario: &mut ts::Scenario): (ID, ID, ID) {
         let mut dao = ts::take_shared<DAO>(scenario);
         let mut vault = ts::take_shared<CapabilityVault>(scenario);
 
-        // Enable + bind both proposal types via test seams.
+        // Enable both proposal types via test seams (slots are keyed by the Move type).
         let cfg = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"AutojoinDAO".to_ascii_string(), cfg);
-        dao.test_bind_type<AutojoinDAO>(b"AutojoinDAO".to_ascii_string());
-        dao.test_enable_type(b"ConfigureAutojoin".to_ascii_string(), cfg);
-        dao.test_bind_type<ConfigureAutojoin>(b"ConfigureAutojoin".to_ascii_string());
+        dao.test_enable_type<AutojoinDAO>(b"AutojoinDAO".to_ascii_string(), cfg);
+        dao.test_enable_type<ConfigureAutojoin>(b"ConfigureAutojoin".to_ascii_string(), cfg);
 
         // Mint a synthetic cap for AutojoinDAO and deposit into the vault.
         // capability_vault::store_cap_for_testing bypasses the request gate.
@@ -149,7 +147,6 @@ fun configure_allowlist(
         let payload = configure_autojoin::new(add_ids, vector[], option::some(enabled));
         board_voting::submit_proposal(
             &dao,
-            b"ConfigureAutojoin".to_ascii_string(),
             option::none(),
             payload,
             clock,

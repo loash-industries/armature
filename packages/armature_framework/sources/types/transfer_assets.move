@@ -1,4 +1,4 @@
-module armature_proposals::transfer_assets;
+module armature::transfer_assets;
 
 use std::type_name::TypeName;
 

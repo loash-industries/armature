@@ -4,9 +4,11 @@ module armature::submit_vote_execute_tests;
 use armature::board_voting;
 use armature::dao::{Self, DAO};
 use armature::emergency::{EmergencyFreeze, FreezeAdminCap};
+use armature::enable_proposal_type::{Self, EnableProposalType};
 use armature::governance;
 use armature::proposal;
 use std::string;
+use std::type_name;
 use sui::clock::{Self, Clock};
 use sui::test_scenario;
 
@@ -74,7 +76,7 @@ fun enable_fast_type(
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(quorum, threshold, 0, 3_600_000, delay_ms, cooldown_ms);
-        dao.test_enable_type(b"FastPayload".to_ascii_string(), config);
+        dao.test_enable_type<FastPayload>(b"FastPayload".to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
 }
@@ -87,7 +89,6 @@ fun call_sve_drop_ticket(scenario: &mut test_scenario::Scenario, clock: &Clock) 
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let ticket = board_voting::submit_vote_execute<FastPayload>(
             &mut dao,
-            b"FastPayload".to_ascii_string(),
             option::none(),
             FastPayload { value: 1 },
             &freeze,
@@ -122,7 +123,6 @@ fun test_sve__single_member_returns_ticket() {
 
         let ticket = board_voting::submit_vote_execute<FastPayload>(
             &mut dao,
-            b"FastPayload".to_ascii_string(),
             option::none(),
             FastPayload { value: 42 },
             &freeze,
@@ -163,7 +163,6 @@ fun test_sve__two_member_50_quorum_single_vote_passes() {
 
         let ticket = board_voting::submit_vote_execute<FastPayload>(
             &mut dao,
-            b"FastPayload".to_ascii_string(),
             option::none(),
             FastPayload { value: 7 },
             &freeze,
@@ -185,7 +184,7 @@ fun test_sve__two_member_50_quorum_single_vote_passes() {
 }
 
 #[test]
-/// Cooldown is recorded after execution: last_executed_at is updated for the type.
+/// Cooldown is recorded after execution: last_executed_ms is updated for the type's slot.
 /// A second immediate call (cooldown=0) also succeeds — no cooldown stale block.
 fun test_sve__cooldown_zero_allows_back_to_back() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -219,7 +218,6 @@ fun test_sve__metadata_some_accepted() {
 
         let ticket = board_voting::submit_vote_execute<FastPayload>(
             &mut dao,
-            b"FastPayload".to_ascii_string(),
             option::some(string::utf8(b"ipfs://Qm...")),
             FastPayload { value: 0 },
             &freeze,
@@ -257,7 +255,6 @@ fun test_sve__quorum_not_met_aborts() {
 
         let ticket = board_voting::submit_vote_execute<FastPayload>(
             &mut dao,
-            b"FastPayload".to_ascii_string(),
             option::none(),
             FastPayload { value: 1 },
             &freeze,
@@ -292,7 +289,6 @@ fun test_sve__quorum_boundary_just_below_aborts() {
 
         let ticket = board_voting::submit_vote_execute<FastPayload>(
             &mut dao,
-            b"FastPayload".to_ascii_string(),
             option::none(),
             FastPayload { value: 1 },
             &freeze,
@@ -330,7 +326,6 @@ fun test_sve__nonzero_delay_aborts() {
 
         let ticket = board_voting::submit_vote_execute<FastPayload>(
             &mut dao,
-            b"FastPayload".to_ascii_string(),
             option::none(),
             FastPayload { value: 1 },
             &freeze,
@@ -368,7 +363,6 @@ fun test_sve__non_member_aborts() {
 
         let ticket = board_voting::submit_vote_execute<FastPayload>(
             &mut dao,
-            b"FastPayload".to_ascii_string(),
             option::none(),
             FastPayload { value: 1 },
             &freeze,
@@ -390,7 +384,7 @@ fun test_sve__non_member_aborts() {
 // =========================================================================
 
 #[test, expected_failure(abort_code = armature::board_voting::ETypeNotEnabled)]
-/// Type not in enabled_proposal_types — rejected before any mutation.
+/// Type has no slot on the DAO — rejected before any mutation.
 fun test_sve__disabled_type_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let clock = clock::create_for_testing(scenario.ctx());
@@ -405,7 +399,6 @@ fun test_sve__disabled_type_aborts() {
 
         let ticket = board_voting::submit_vote_execute<FastPayload>(
             &mut dao,
-            b"FastPayload".to_ascii_string(),
             option::none(),
             FastPayload { value: 1 },
             &freeze,
@@ -451,7 +444,6 @@ fun test_sve__cooldown_active_aborts_second_call() {
 
         let ticket = board_voting::submit_vote_execute<FastPayload>(
             &mut dao,
-            b"FastPayload".to_ascii_string(),
             option::none(),
             FastPayload { value: 2 },
             &freeze,
@@ -521,7 +513,6 @@ fun test_sve__frozen_type_aborts() {
 
         let ticket = board_voting::submit_vote_execute<FastPayload>(
             &mut dao,
-            b"FastPayload".to_ascii_string(),
             option::none(),
             FastPayload { value: 1 },
             &freeze,
@@ -572,7 +563,6 @@ fun test_sve__execution_paused_aborts() {
 
         let ticket = board_voting::submit_vote_execute<FastPayload>(
             &mut dao,
-            b"FastPayload".to_ascii_string(),
             option::none(),
             FastPayload { value: 1 },
             &freeze,
@@ -622,7 +612,6 @@ fun test_sve__controller_paused_aborts() {
 
         let ticket = board_voting::submit_vote_execute<FastPayload>(
             &mut dao,
-            b"FastPayload".to_ascii_string(),
             option::none(),
             FastPayload { value: 1 },
             &freeze,
@@ -658,22 +647,25 @@ fun test_sve__enable_proposal_type_below_floor_aborts() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 3_600_000, 0, 0);
-        dao.test_update_config(b"EnableProposalType".to_ascii_string(), config);
+        dao.test_update_config<EnableProposalType>(config);
         test_scenario::return_shared(dao);
     };
 
-    // "EnableProposalType" has no type binding by default so FastPayload is accepted
-    // for the type-mismatch check; the floor assert fires first anyway.
+    // The floor is keyed on the EnableProposalType payload type itself; it fires
+    // before the delay / quorum checks.
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
-        let ticket = board_voting::submit_vote_execute<FastPayload>(
+        let ticket = board_voting::submit_vote_execute<EnableProposalType>(
             &mut dao,
-            b"EnableProposalType".to_ascii_string(),
             option::none(),
-            FastPayload { value: 0 },
+            enable_proposal_type::new(
+                b"FastPayload".to_ascii_string(),
+                type_name::with_defining_ids<FastPayload>(),
+                proposal::new_config(5_000, 5_000, 0, 3_600_000, 0, 0),
+            ),
             &freeze,
             &clock,
             scenario.ctx(),

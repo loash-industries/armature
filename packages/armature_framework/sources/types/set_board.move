@@ -1,4 +1,4 @@
-module armature_proposals::set_board;
+module armature::set_board;
 
 /// Replace the entire board member set.
 /// Used by the board itself or by a controller DAO via SubDAOControl bypass.

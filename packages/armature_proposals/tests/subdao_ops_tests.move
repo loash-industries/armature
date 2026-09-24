@@ -3,13 +3,13 @@ module armature_proposals::subdao_ops_tests;
 
 use armature::board_voting;
 use armature::capability_vault::{Self, CapabilityVault, SubDAOControl};
+use armature::create_subdao::{Self, CreateSubDAO};
 use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
 use armature::proposal::{Self, Proposal};
 use armature_proposals::controller_batch_add_members::{Self, ControllerBatchAddMembers};
 use armature_proposals::controller_batch_remove_members::{Self, ControllerBatchRemoveMembers};
-use armature_proposals::create_subdao::{Self, CreateSubDAO};
 use armature_proposals::pause_execution;
 use armature_proposals::reclaim_cap_from_subdao::{Self, ReclaimCapFromSubDAO};
 use armature_proposals::subdao_ops;
@@ -55,7 +55,7 @@ fun create_subdao_e2e() {
             0, // execution_delay
             0, // cooldown
         );
-        dao.test_enable_type(b"CreateSubDAO".to_ascii_string(), config);
+        dao.test_enable_type<CreateSubDAO>(b"CreateSubDAO".to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
 
@@ -73,7 +73,6 @@ fun create_subdao_e2e() {
 
         board_voting::submit_proposal(
             &dao,
-            b"CreateSubDAO".to_ascii_string(),
             option::some(string::utf8(b"Create a managed sub-DAO")),
             payload,
             &clock,
@@ -166,7 +165,7 @@ fun create_subdao_vault_mismatch_aborts() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"CreateSubDAO".to_ascii_string(), config);
+        dao.test_enable_type<CreateSubDAO>(b"CreateSubDAO".to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
 
@@ -184,7 +183,6 @@ fun create_subdao_vault_mismatch_aborts() {
 
         board_voting::submit_proposal(
             &dao,
-            b"CreateSubDAO".to_ascii_string(),
             option::some(string::utf8(b"Mismatch test")),
             payload,
             &clock,
@@ -276,9 +274,12 @@ fun setup_parent_and_subdao(
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"CreateSubDAO".to_ascii_string(), config);
-        dao.test_enable_type(b"TransferCapToSubDAO".to_ascii_string(), config);
-        dao.test_enable_type(b"ReclaimCapFromSubDAO".to_ascii_string(), config);
+        dao.test_enable_type<CreateSubDAO>(b"CreateSubDAO".to_ascii_string(), config);
+        dao.test_enable_type<TransferCapToSubDAO>(b"TransferCapToSubDAO".to_ascii_string(), config);
+        dao.test_enable_type<ReclaimCapFromSubDAO>(
+            b"ReclaimCapFromSubDAO".to_ascii_string(),
+            config,
+        );
         test_scenario::return_shared(dao);
     };
 
@@ -294,7 +295,6 @@ fun setup_parent_and_subdao(
         );
         board_voting::submit_proposal(
             &dao,
-            b"CreateSubDAO".to_ascii_string(),
             option::some(string::utf8(b"Create child")),
             payload,
             clock,
@@ -389,7 +389,6 @@ fun transfer_cap_to_subdao_e2e() {
         let payload = transfer_cap_to_subdao::new(test_cap_id, subdao_id);
         board_voting::submit_proposal(
             &dao,
-            b"TransferCapToSubDAO".to_ascii_string(),
             option::some(string::utf8(b"Transfer cap to child")),
             payload,
             &clock,
@@ -501,7 +500,6 @@ fun reclaim_cap_from_subdao_e2e() {
         let payload = reclaim_cap_from_subdao::new(subdao_id, test_cap_id, control_cap_id);
         board_voting::submit_proposal(
             &dao,
-            b"ReclaimCapFromSubDAO".to_ascii_string(),
             option::some(string::utf8(b"Reclaim cap from child")),
             payload,
             &clock,
@@ -600,7 +598,6 @@ fun reclaim_cap_wrong_vault_aborts() {
         let payload = reclaim_cap_from_subdao::new(subdao_id, test_cap_id, control_cap_id);
         board_voting::submit_proposal(
             &dao,
-            b"ReclaimCapFromSubDAO".to_ascii_string(),
             option::some(string::utf8(b"Bad reclaim")),
             payload,
             &clock,
@@ -676,11 +673,11 @@ fun pause_and_unpause_subdao_e2e() {
     {
         let mut dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(
+        dao.test_enable_type<pause_execution::PauseSubDAOExecution>(
             b"PauseSubDAOExecution".to_ascii_string(),
             config,
         );
-        dao.test_enable_type(
+        dao.test_enable_type<pause_execution::UnpauseSubDAOExecution>(
             b"UnpauseSubDAOExecution".to_ascii_string(),
             config,
         );
@@ -707,7 +704,6 @@ fun pause_and_unpause_subdao_e2e() {
         let payload = pause_execution::new_pause(control_cap_id);
         board_voting::submit_proposal(
             &dao,
-            b"PauseSubDAOExecution".to_ascii_string(),
             option::some(string::utf8(b"Pause SubDAO")),
             payload,
             &clock,
@@ -769,7 +765,6 @@ fun pause_and_unpause_subdao_e2e() {
         let payload = pause_execution::new_unpause(control_cap_id);
         board_voting::submit_proposal(
             &dao,
-            b"UnpauseSubDAOExecution".to_ascii_string(),
             option::some(string::utf8(b"Unpause SubDAO")),
             payload,
             &clock,
@@ -847,7 +842,7 @@ fun paused_subdao_blocks_execution() {
     {
         let mut dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(
+        dao.test_enable_type<pause_execution::PauseSubDAOExecution>(
             b"PauseSubDAOExecution".to_ascii_string(),
             config,
         );
@@ -872,7 +867,6 @@ fun paused_subdao_blocks_execution() {
         clock.set_for_testing(10_000);
         board_voting::submit_proposal(
             &dao,
-            b"PauseSubDAOExecution".to_ascii_string(),
             option::some(string::utf8(b"Pause SubDAO")),
             pause_execution::new_pause(control_cap_id),
             &clock,
@@ -931,9 +925,8 @@ fun paused_subdao_blocks_execution() {
         clock.set_for_testing(20_000);
         board_voting::submit_proposal(
             &subdao,
-            b"SetBoard".to_ascii_string(),
             option::some(string::utf8(b"Try to change board while paused")),
-            armature_proposals::set_board::new(vector[SUBDAO_MEMBER, CREATOR]),
+            armature::set_board::new(vector[SUBDAO_MEMBER, CREATOR]),
             &clock,
             scenario.ctx(),
         );
@@ -942,9 +935,7 @@ fun paused_subdao_blocks_execution() {
 
     scenario.next_tx(SUBDAO_MEMBER);
     {
-        let mut proposal = scenario.take_shared<
-            Proposal<armature_proposals::set_board::SetBoard>,
-        >();
+        let mut proposal = scenario.take_shared<Proposal<armature::set_board::SetBoard>>();
         clock.set_for_testing(21_000);
         proposal.vote(true, &clock, scenario.ctx());
         test_scenario::return_shared(proposal);
@@ -954,9 +945,7 @@ fun paused_subdao_blocks_execution() {
     scenario.next_tx(SUBDAO_MEMBER);
     {
         let mut subdao = scenario.take_shared_by_id<DAO>(subdao_id);
-        let mut proposal = scenario.take_shared<
-            Proposal<armature_proposals::set_board::SetBoard>,
-        >();
+        let mut proposal = scenario.take_shared<Proposal<armature::set_board::SetBoard>>();
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(subdao.emergency_freeze_id());
         clock.set_for_testing(22_000);
 
@@ -1011,7 +1000,7 @@ fun create_multi_member_subdao() {
     {
         let mut dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"CreateSubDAO".to_ascii_string(), config);
+        dao.test_enable_type<CreateSubDAO>(b"CreateSubDAO".to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
 
@@ -1022,7 +1011,6 @@ fun create_multi_member_subdao() {
         clock.set_for_testing(1_000);
         board_voting::submit_proposal(
             &dao,
-            b"CreateSubDAO".to_ascii_string(),
             option::some(string::utf8(b"Create 3-member SubDAO")),
             create_subdao::new(
                 string::utf8(b"Engineering"),
@@ -1114,7 +1102,10 @@ fun controller_batch_add_members_e2e() {
     {
         let mut dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"ControllerBatchAddMembers".to_ascii_string(), config);
+        dao.test_enable_type<ControllerBatchAddMembers>(
+            b"ControllerBatchAddMembers".to_ascii_string(),
+            config,
+        );
         test_scenario::return_shared(dao);
     };
 
@@ -1125,7 +1116,6 @@ fun controller_batch_add_members_e2e() {
         clock.set_for_testing(10_000);
         board_voting::submit_proposal(
             &dao,
-            b"ControllerBatchAddMembers".to_ascii_string(),
             option::some(string::utf8(b"Add two members to SubDAO")),
             controller_batch_add_members::new(control_cap_id, vector[CREATOR, NEW_SUBDAO_MEMBER]),
             &clock,
@@ -1209,7 +1199,10 @@ fun controller_batch_add_members_existing_skipped() {
     {
         let mut dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"ControllerBatchAddMembers".to_ascii_string(), config);
+        dao.test_enable_type<ControllerBatchAddMembers>(
+            b"ControllerBatchAddMembers".to_ascii_string(),
+            config,
+        );
         test_scenario::return_shared(dao);
     };
 
@@ -1220,7 +1213,6 @@ fun controller_batch_add_members_existing_skipped() {
         clock.set_for_testing(10_000);
         board_voting::submit_proposal(
             &dao,
-            b"ControllerBatchAddMembers".to_ascii_string(),
             option::some(string::utf8(b"Add with one existing")),
             controller_batch_add_members::new(
                 control_cap_id,
@@ -1312,8 +1304,14 @@ fun controller_batch_remove_members_e2e() {
     {
         let mut dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"ControllerBatchAddMembers".to_ascii_string(), config);
-        dao.test_enable_type(b"ControllerBatchRemoveMembers".to_ascii_string(), config);
+        dao.test_enable_type<ControllerBatchAddMembers>(
+            b"ControllerBatchAddMembers".to_ascii_string(),
+            config,
+        );
+        dao.test_enable_type<ControllerBatchRemoveMembers>(
+            b"ControllerBatchRemoveMembers".to_ascii_string(),
+            config,
+        );
         test_scenario::return_shared(dao);
     };
 
@@ -1324,7 +1322,6 @@ fun controller_batch_remove_members_e2e() {
         clock.set_for_testing(10_000);
         board_voting::submit_proposal(
             &dao,
-            b"ControllerBatchAddMembers".to_ascii_string(),
             option::none(),
             controller_batch_add_members::new(
                 control_cap_id,
@@ -1385,7 +1382,6 @@ fun controller_batch_remove_members_e2e() {
         clock.set_for_testing(20_000);
         board_voting::submit_proposal(
             &dao,
-            b"ControllerBatchRemoveMembers".to_ascii_string(),
             option::none(),
             controller_batch_remove_members::new(
                 control_cap_id,
@@ -1473,7 +1469,10 @@ fun controller_batch_remove_members_nonmember_aborts() {
     {
         let mut dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(b"ControllerBatchRemoveMembers".to_ascii_string(), config);
+        dao.test_enable_type<ControllerBatchRemoveMembers>(
+            b"ControllerBatchRemoveMembers".to_ascii_string(),
+            config,
+        );
         test_scenario::return_shared(dao);
     };
 
@@ -1484,7 +1483,6 @@ fun controller_batch_remove_members_nonmember_aborts() {
         clock.set_for_testing(10_000);
         board_voting::submit_proposal(
             &dao,
-            b"ControllerBatchRemoveMembers".to_ascii_string(),
             option::none(),
             controller_batch_remove_members::new(control_cap_id, vector[CREATOR]),
             &clock,

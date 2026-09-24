@@ -1,4 +1,4 @@
-module armature_proposals::spin_out_subdao;
+module armature::spin_out_subdao;
 
 use armature::proposal::ProposalConfig;
 

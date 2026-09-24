@@ -1,25 +1,29 @@
 #[test_only]
 module armature_proposals::admin_ops_tests;
 
+use armature::add_member::AddMember;
 use armature::board_voting;
 use armature::dao::{Self, DAO};
+use armature::disable_proposal_type::{Self, DisableProposalType};
 use armature::emergency::EmergencyFreeze;
+use armature::enable_proposal_type::{Self, EnableProposalType};
 use armature::governance;
 use armature::proposal::{Self, Proposal};
+use armature::set_board::SetBoard;
+use armature::spawn_dao::SpawnDAO;
+use armature::update_proposal_config::{Self, UpdateProposalConfig};
 use armature_proposals::admin_ops;
-use armature_proposals::disable_proposal_type::{Self, DisableProposalType};
-use armature_proposals::enable_proposal_type::{Self, EnableProposalType};
-use armature_proposals::update_proposal_config::{Self, UpdateProposalConfig};
 use std::string;
+use std::type_name;
 use sui::clock;
 use sui::test_scenario;
 
 // === Test payload types ===
 
-/// Stand-in third-party payload for type binding tests.
+/// Stand-in third-party payload for type-slot tests.
 public struct TestPayload has drop, store { value: u64 }
 
-/// Alternative payload used to verify binding rejects wrong types.
+/// Alternative payload used to verify the executor cannot swap the approved type.
 public struct AltPayload has drop, store { label: u64 }
 
 const CREATOR: address = @0xA;
@@ -58,8 +62,8 @@ fun create_and_share_subdao(scenario: &mut test_scenario::Scenario) {
     };
 }
 
-/// Submit an EnableProposalType proposal for the given type key.
-fun submit_enable_type_proposal(
+/// Submit an EnableProposalType proposal enabling `NewType` under the given display key.
+fun submit_enable_type_proposal<NewType>(
     scenario: &mut test_scenario::Scenario,
     clock: &clock::Clock,
     type_key: vector<u8>,
@@ -68,10 +72,13 @@ fun submit_enable_type_proposal(
     {
         let dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        let payload = enable_proposal_type::new(type_key.to_ascii_string(), config);
+        let payload = enable_proposal_type::new(
+            type_key.to_ascii_string(),
+            type_name::with_defining_ids<NewType>(),
+            config,
+        );
         board_voting::submit_proposal(
             &dao,
-            b"EnableProposalType".to_ascii_string(),
             option::some(string::utf8(b"Enable proposal type")),
             payload,
             clock,
@@ -101,7 +108,7 @@ fun enable_blocked_type_aborts_for_subdao_with_controller() {
 
     create_and_share_subdao(&mut scenario);
     clock.set_for_testing(1000);
-    submit_enable_type_proposal(&mut scenario, &clock, b"SpawnDAO");
+    submit_enable_type_proposal<SpawnDAO>(&mut scenario, &clock, b"SpawnDAO");
     clock.set_for_testing(2000);
     vote_yes(&mut scenario, &clock);
 
@@ -120,7 +127,7 @@ fun enable_blocked_type_aborts_for_subdao_with_controller() {
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_enable_proposal_type<EnableProposalType>(
+        admin_ops::execute_enable_proposal_type<SpawnDAO>(
             &mut subdao,
             ticket,
         );
@@ -142,9 +149,8 @@ fun enable_non_blocked_type_succeeds_for_subdao_with_controller() {
 
     create_and_share_subdao(&mut scenario);
     clock.set_for_testing(1000);
-    // "TreasuryWithdraw" is not in SUBDAO_BLOCKED_TYPES but IS in the SubDAO defaults —
-    // use a custom key that isn't pre-enabled to avoid a duplicate-insert abort.
-    submit_enable_type_proposal(&mut scenario, &clock, b"CustomAction");
+    // A third-party payload type that is not pre-enabled and not SubDAO-blocked.
+    submit_enable_type_proposal<TestPayload>(&mut scenario, &clock, b"CustomAction");
     clock.set_for_testing(2000);
     vote_yes(&mut scenario, &clock);
 
@@ -162,13 +168,14 @@ fun enable_non_blocked_type_succeeds_for_subdao_with_controller() {
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_enable_proposal_type<EnableProposalType>(
+        admin_ops::execute_enable_proposal_type<TestPayload>(
             &mut subdao,
             ticket,
         );
 
-        // Verify the type was added
-        assert!(subdao.enabled_proposal_types().contains(&b"CustomAction".to_ascii_string()));
+        // Verify the type was added under its display key
+        assert!(subdao.is_type_enabled<TestPayload>());
+        assert!(subdao.type_display_key<TestPayload>() == b"CustomAction".to_ascii_string());
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
@@ -187,7 +194,7 @@ fun enable_blocked_type_succeeds_for_independent_dao() {
 
     create_dao(&mut scenario);
     clock.set_for_testing(1000);
-    submit_enable_type_proposal(&mut scenario, &clock, b"SpawnDAO");
+    submit_enable_type_proposal<SpawnDAO>(&mut scenario, &clock, b"SpawnDAO");
     clock.set_for_testing(2000);
     vote_yes(&mut scenario, &clock);
 
@@ -205,10 +212,10 @@ fun enable_blocked_type_succeeds_for_independent_dao() {
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_enable_proposal_type<EnableProposalType>(&mut dao, ticket);
+        admin_ops::execute_enable_proposal_type<SpawnDAO>(&mut dao, ticket);
 
         // Verify SpawnDAO is now enabled
-        assert!(dao.enabled_proposal_types().contains(&b"SpawnDAO".to_ascii_string()));
+        assert!(dao.is_type_enabled<SpawnDAO>());
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
@@ -241,7 +248,6 @@ fun disable_core_type_enable_proposal_type_aborts() {
         let payload = disable_proposal_type::new(b"EnableProposalType".to_ascii_string());
         board_voting::submit_proposal(
             &dao,
-            b"DisableProposalType".to_ascii_string(),
             option::some(string::utf8(b"Try to disable core type")),
             payload,
             &clock,
@@ -300,7 +306,6 @@ fun disable_core_type_unfreeze_proposal_type_aborts() {
         let payload = disable_proposal_type::new(b"UnfreezeProposalType".to_ascii_string());
         board_voting::submit_proposal(
             &dao,
-            b"DisableProposalType".to_ascii_string(),
             option::some(string::utf8(b"Try to disable core type")),
             payload,
             &clock,
@@ -365,7 +370,7 @@ fun enable_proposal_type_submission_floor_rejects_below_66_percent() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 6_500, 0, 604_800_000, 0, 0);
-        dao.test_update_config(b"EnableProposalType".to_ascii_string(), config);
+        dao.test_update_config<EnableProposalType>(config);
         test_scenario::return_shared(dao);
     };
 
@@ -375,10 +380,13 @@ fun enable_proposal_type_submission_floor_rejects_below_66_percent() {
         let dao = scenario.take_shared<DAO>();
         clock.set_for_testing(1000);
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        let payload = enable_proposal_type::new(b"CustomAction".to_ascii_string(), config);
+        let payload = enable_proposal_type::new(
+            b"CustomAction".to_ascii_string(),
+            type_name::with_defining_ids<TestPayload>(),
+            config,
+        );
         board_voting::submit_proposal(
             &dao,
-            b"EnableProposalType".to_ascii_string(),
             option::none(),
             payload,
             &clock,
@@ -405,7 +413,7 @@ fun enable_proposal_type_submission_floor_allows_66_percent() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 6_600, 0, 604_800_000, 0, 0);
-        dao.test_update_config(b"EnableProposalType".to_ascii_string(), config);
+        dao.test_update_config<EnableProposalType>(config);
         test_scenario::return_shared(dao);
     };
 
@@ -415,10 +423,13 @@ fun enable_proposal_type_submission_floor_allows_66_percent() {
         let dao = scenario.take_shared<DAO>();
         clock.set_for_testing(1000);
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        let payload = enable_proposal_type::new(b"CustomAction".to_ascii_string(), config);
+        let payload = enable_proposal_type::new(
+            b"CustomAction".to_ascii_string(),
+            type_name::with_defining_ids<TestPayload>(),
+            config,
+        );
         board_voting::submit_proposal(
             &dao,
-            b"EnableProposalType".to_ascii_string(),
             option::none(),
             payload,
             &clock,
@@ -448,7 +459,7 @@ fun update_proposal_config_self_submission_floor_rejects_below_80_percent() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_100, 0, 604_800_000, 0, 0);
-        dao.test_update_config(b"UpdateProposalConfig".to_ascii_string(), config);
+        dao.test_update_config<UpdateProposalConfig>(config);
         test_scenario::return_shared(dao);
     };
 
@@ -550,7 +561,7 @@ fun update_proposal_config_non_self_target_succeeds() {
             0,
             0,
         );
-        dao.test_update_config(b"UpdateProposalConfig".to_ascii_string(), config);
+        dao.test_update_config<UpdateProposalConfig>(config);
         test_scenario::return_shared(dao);
     };
 
@@ -571,7 +582,6 @@ fun update_proposal_config_non_self_target_succeeds() {
         );
         board_voting::submit_proposal(
             &dao,
-            b"UpdateProposalConfig".to_ascii_string(),
             option::some(string::utf8(b"Lower SetBoard quorum")),
             payload,
             &clock,
@@ -623,7 +633,7 @@ fun update_proposal_config_non_self_target_succeeds() {
         admin_ops::execute_update_proposal_config(&mut dao, ticket);
 
         // Verify SetBoard quorum was updated
-        let new_config = dao.proposal_configs().get(&b"SetBoard".to_ascii_string());
+        let new_config = dao.type_config<SetBoard>();
         assert!(new_config.quorum() == 3_000);
 
         test_scenario::return_shared(freeze);
@@ -665,7 +675,6 @@ fun update_config_below_floor_aborts() {
         );
         board_voting::submit_proposal(
             &dao,
-            b"UpdateProposalConfig".to_ascii_string(),
             option::some(string::utf8(b"Lower EnableProposalType threshold")),
             payload,
             &clock,
@@ -723,7 +732,7 @@ fun enable_type_with_sub_floor_config_aborts() {
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();
-        dao.test_disable_type(b"UpdateProposalConfig".to_ascii_string());
+        dao.test_disable_type<UpdateProposalConfig>();
         test_scenario::return_shared(dao);
     };
 
@@ -736,11 +745,11 @@ fun enable_type_with_sub_floor_config_aborts() {
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
         let payload = enable_proposal_type::new(
             b"UpdateProposalConfig".to_ascii_string(),
+            type_name::with_defining_ids<UpdateProposalConfig>(),
             config,
         );
         board_voting::submit_proposal(
             &dao,
-            b"EnableProposalType".to_ascii_string(),
             option::some(string::utf8(b"Re-enable UpdateProposalConfig with weak threshold")),
             payload,
             &clock,
@@ -773,7 +782,7 @@ fun enable_type_with_sub_floor_config_aborts() {
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_enable_proposal_type<EnableProposalType>(&mut dao, ticket);
+        admin_ops::execute_enable_proposal_type<UpdateProposalConfig>(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
@@ -785,7 +794,7 @@ fun enable_type_with_sub_floor_config_aborts() {
 }
 
 // =========================================================================
-// Type binding tests for execute_enable_proposal_type
+// Type-slot tests for execute_enable_proposal_type
 // =========================================================================
 
 /// Full lifecycle helper: submit + vote + authorize + execute enable for type_key.
@@ -802,10 +811,13 @@ fun run_enable_type<NewType: store>(
     {
         let dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        let payload = enable_proposal_type::new(type_key.to_ascii_string(), config);
+        let payload = enable_proposal_type::new(
+            type_key.to_ascii_string(),
+            type_name::with_defining_ids<NewType>(),
+            config,
+        );
         board_voting::submit_proposal(
             &dao,
-            b"EnableProposalType".to_ascii_string(),
             option::none(),
             payload,
             clock,
@@ -843,8 +855,9 @@ fun run_enable_type<NewType: store>(
 }
 
 #[test]
-/// execute_enable_proposal_type<NewType> stores a type binding for the key.
-fun execute_enable_proposal_type_binds_type_key() {
+/// execute_enable_proposal_type<NewType> adds a slot keyed by NewType carrying the
+/// display key the board voted on.
+fun execute_enable_proposal_type_adds_slot() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
@@ -854,7 +867,9 @@ fun execute_enable_proposal_type_binds_type_key() {
     scenario.next_tx(CREATOR);
     {
         let dao = scenario.take_shared<DAO>();
-        assert!(dao.has_type_binding(&b"MyGrant".to_ascii_string()));
+        assert!(dao.is_type_enabled<TestPayload>());
+        assert!(dao.type_display_key<TestPayload>() == b"MyGrant".to_ascii_string());
+        assert!(!dao.is_type_enabled<AltPayload>());
         test_scenario::return_shared(dao);
     };
 
@@ -863,32 +878,31 @@ fun execute_enable_proposal_type_binds_type_key() {
 }
 
 #[test]
-/// Re-enabling a previously disabled key with the SAME NewType is idempotent — succeeds.
-fun execute_enable_proposal_type_idempotent_for_same_type() {
+/// Re-enabling a previously disabled type under the same display key succeeds.
+fun execute_enable_proposal_type_reenable_same_type_succeeds() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
     create_dao(&mut scenario);
 
-    // First enable — binds TestPayload to "MyGrant"
     run_enable_type<TestPayload>(&mut scenario, &mut clock, b"MyGrant", 1000, 2000, 3000);
 
-    // Disable "MyGrant" via test helper (binding is kept)
+    // Disable via test helper — slot and display key are released.
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();
-        dao.test_disable_type(b"MyGrant".to_ascii_string());
+        dao.test_disable_type<TestPayload>();
+        assert!(!dao.is_type_enabled<TestPayload>());
         test_scenario::return_shared(dao);
     };
 
-    // Re-enable with the SAME TestPayload — should succeed (idempotent binding)
     run_enable_type<TestPayload>(&mut scenario, &mut clock, b"MyGrant", 4000, 5000, 6000);
 
     scenario.next_tx(CREATOR);
     {
         let dao = scenario.take_shared<DAO>();
-        assert!(dao.has_type_binding(&b"MyGrant".to_ascii_string()));
-        assert!(dao.enabled_proposal_types().contains(&b"MyGrant".to_ascii_string()));
+        assert!(dao.is_type_enabled<TestPayload>());
+        assert!(dao.type_display_key<TestPayload>() == b"MyGrant".to_ascii_string());
         test_scenario::return_shared(dao);
     };
 
@@ -896,27 +910,92 @@ fun execute_enable_proposal_type_idempotent_for_same_type() {
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = 10, location = armature::dao)]
-/// Re-enabling a disabled key with a DIFFERENT NewType aborts with ETypeBindingMismatch.
-fun execute_enable_proposal_type_binding_mismatch_aborts() {
+#[test]
+/// After a disable, the display key is free for a different type: nothing about
+/// the old slot lingers.
+fun execute_enable_proposal_type_display_key_reusable_after_disable() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
     create_dao(&mut scenario);
 
-    // First enable — binds TestPayload to "MyGrant"
     run_enable_type<TestPayload>(&mut scenario, &mut clock, b"MyGrant", 1000, 2000, 3000);
 
-    // Disable
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();
-        dao.test_disable_type(b"MyGrant".to_ascii_string());
+        dao.test_disable_type<TestPayload>();
         test_scenario::return_shared(dao);
     };
 
-    // Re-enable with AltPayload — should abort with ETypeBindingMismatch
     run_enable_type<AltPayload>(&mut scenario, &mut clock, b"MyGrant", 4000, 5000, 6000);
+
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        assert!(dao.is_type_enabled<AltPayload>());
+        assert!(!dao.is_type_enabled<TestPayload>());
+        assert!(dao.type_display_key<AltPayload>() == b"MyGrant".to_ascii_string());
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = 15, location = armature::dao)]
+/// Enabling a second type under a display key that is still in use aborts with
+/// dao::EDisplayKeyTaken.
+fun execute_enable_proposal_type_duplicate_display_key_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_dao(&mut scenario);
+
+    run_enable_type<TestPayload>(&mut scenario, &mut clock, b"MyGrant", 1000, 2000, 3000);
+    // TestPayload still holds "MyGrant" — AltPayload cannot take it.
+    run_enable_type<AltPayload>(&mut scenario, &mut clock, b"MyGrant", 4000, 5000, 6000);
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = admin_ops::ETypeMismatch)]
+/// The payload pins the Move type the board approved; executing the handler with a
+/// different NewType aborts, so an executor cannot register a type the board never saw.
+fun execute_enable_proposal_type_wrong_new_type_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_dao(&mut scenario);
+
+    // Board approves TestPayload under "MyGrant"...
+    clock.set_for_testing(1000);
+    submit_enable_type_proposal<TestPayload>(&mut scenario, &clock, b"MyGrant");
+    clock.set_for_testing(2000);
+    vote_yes(&mut scenario, &clock);
+
+    // ...but the executor tries to register AltPayload.
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        clock.set_for_testing(3000);
+
+        let ticket = board_voting::ticket_from_vote(
+            &mut dao,
+            &mut proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        admin_ops::execute_enable_proposal_type<AltPayload>(&mut dao, ticket);
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(proposal);
+        test_scenario::return_shared(dao);
+    };
 
     clock.destroy_for_testing();
     scenario.end();
@@ -941,7 +1020,7 @@ fun update_proposal_config_composable_allowed_updates_config() {
     scenario.next_tx(CREATOR);
     {
         let dao = scenario.take_shared<DAO>();
-        assert!(dao.proposal_configs().get(&b"AddMember".to_ascii_string()).composable_allowed());
+        assert!(dao.type_config<AddMember>().composable_allowed());
         test_scenario::return_shared(dao);
     };
 
@@ -962,7 +1041,6 @@ fun update_proposal_config_composable_allowed_updates_config() {
         );
         board_voting::submit_proposal(
             &dao,
-            b"UpdateProposalConfig".to_ascii_string(),
             option::none(),
             payload,
             &clock,
@@ -996,7 +1074,7 @@ fun update_proposal_config_composable_allowed_updates_config() {
         admin_ops::execute_update_proposal_config(&mut dao, ticket);
 
         // Composability is now false.
-        assert!(!dao.proposal_configs().get(&b"AddMember".to_ascii_string()).composable_allowed());
+        assert!(!dao.type_config<AddMember>().composable_allowed());
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(proposal);
@@ -1020,7 +1098,6 @@ fun update_proposal_config_composable_allowed_updates_config() {
         );
         board_voting::submit_proposal(
             &dao,
-            b"UpdateProposalConfig".to_ascii_string(),
             option::none(),
             payload,
             &clock,
@@ -1054,10 +1131,10 @@ fun update_proposal_config_composable_allowed_updates_config() {
         admin_ops::execute_update_proposal_config(&mut dao, ticket);
 
         // Composability is restored.
-        assert!(dao.proposal_configs().get(&b"AddMember".to_ascii_string()).composable_allowed());
+        assert!(dao.type_config<AddMember>().composable_allowed());
 
         // Other fields are preserved — quorum unchanged from default.
-        let cfg = dao.proposal_configs().get(&b"AddMember".to_ascii_string());
+        let cfg = dao.type_config<AddMember>();
         assert!(cfg.quorum() == 5_000);
         assert!(cfg.approval_threshold() == 5_000);
 
@@ -1097,11 +1174,11 @@ fun enable_proposal_type_composable_cooldown_conflict_aborts() {
         ).with_composable_allowed(true);
         let payload = enable_proposal_type::new(
             b"BadType".to_ascii_string(),
+            type_name::with_defining_ids<TestPayload>(),
             bad_config,
         );
         board_voting::submit_proposal(
             &dao,
-            b"EnableProposalType".to_ascii_string(),
             option::none(),
             payload,
             &clock,
@@ -1173,7 +1250,6 @@ fun update_proposal_config_composable_cooldown_conflict_aborts() {
         );
         board_voting::submit_proposal(
             &dao,
-            b"UpdateProposalConfig".to_ascii_string(),
             option::none(),
             payload,
             &clock,

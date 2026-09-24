@@ -7,8 +7,8 @@ use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
 use armature::proposal::{Self, Proposal};
+use armature::update_metadata::{Self, UpdateMetadata};
 use armature_proposals::admin_ops;
-use armature_proposals::update_metadata::{Self, UpdateMetadata};
 use std::string;
 use sui::clock;
 use sui::test_scenario;
@@ -59,7 +59,6 @@ fun charter_update_lifecycle() {
         );
         board_voting::submit_proposal(
             &dao,
-            b"CharterUpdate".to_ascii_string(),
             option::some(string::utf8(b"Update logo to v1")),
             payload,
             &clock,
@@ -112,7 +111,6 @@ fun charter_update_lifecycle() {
         clock.set_for_testing(10_000);
         board_voting::submit_proposal(
             &dao,
-            b"CharterUpdate".to_ascii_string(),
             option::some(string::utf8(b"Update logo to v2")),
             update_metadata::new(string::utf8(b"ipfs://QmNewHashV2")),
             &clock,
@@ -207,7 +205,6 @@ fun charter_update_wrong_dao_aborts() {
         clock.set_for_testing(1_000);
         board_voting::submit_proposal(
             &dao,
-            b"CharterUpdate".to_ascii_string(),
             option::some(string::utf8(b"Mismatch test")),
             update_metadata::new(string::utf8(b"ipfs://malicious")),
             &clock,

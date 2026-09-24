@@ -1,4 +1,4 @@
-module armature_proposals::remove_member;
+module armature::remove_member;
 
 /// Remove a single member from the board.
 /// Lighter-weight alternative to SetBoard when only one address needs to be removed.

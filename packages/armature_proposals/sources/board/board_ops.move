@@ -2,7 +2,7 @@ module armature_proposals::board_ops;
 
 use armature::dao::DAO;
 use armature::proposal::{ExecutionRequest, ExecutionTicket};
-use armature_proposals::set_board::SetBoard;
+use armature::set_board::SetBoard;
 use sui::event;
 
 // === Errors ===

@@ -1,4 +1,4 @@
-module armature_proposals::spawn_dao;
+module armature::spawn_dao;
 
 use armature::governance::GovernanceTypeInit;
 use std::string::String;

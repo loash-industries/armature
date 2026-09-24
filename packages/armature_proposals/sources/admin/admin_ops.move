@@ -3,12 +3,13 @@ module armature_proposals::admin_ops;
 use armature::board_voting;
 use armature::charter::Charter;
 use armature::dao::{Self, DAO};
+use armature::disable_proposal_type::DisableProposalType;
+use armature::enable_proposal_type::EnableProposalType;
 use armature::proposal::{Self, ExecutionRequest, ExecutionTicket};
-use armature_proposals::disable_proposal_type::DisableProposalType;
-use armature_proposals::enable_proposal_type::EnableProposalType;
-use armature_proposals::update_metadata::UpdateMetadata;
-use armature_proposals::update_proposal_config::UpdateProposalConfig;
+use armature::update_metadata::UpdateMetadata;
+use armature::update_proposal_config::UpdateProposalConfig;
 use std::string::String;
+use std::type_name::{Self, TypeName};
 use sui::clock::Clock;
 use sui::event;
 
@@ -24,20 +25,10 @@ const EThresholdBelowFloor: u64 = 5;
 const EFloorNotMet: u64 = 6;
 /// Config sets cooldown_ms > 0 and composable_allowed = true simultaneously.
 const EComposableCooldownConflict: u64 = 7;
-
-// === Constants ===
-
-/// 66% approval floor for EnableProposalType (basis points).
-const ENABLE_APPROVAL_FLOOR_BPS: u64 = 6_600;
-
-/// 80% approval floor for self-referencing UpdateProposalConfig (basis points).
-const SELF_UPDATE_APPROVAL_FLOOR_BPS: u64 = 8_000;
-
-/// 80% approval floor for EnableBypassType (basis points). The handler that
-/// enforces this floor at execute time lives in `armature::external_execution`;
-/// the value is duplicated here so `UpdateProposalConfig` can keep
-/// `EnableBypassType`'s on-DAO config above the floor.
-const ENABLE_BYPASS_APPROVAL_FLOOR_BPS: u64 = 8_000;
+/// The executor's `NewType` does not match the type pinned in the EnableProposalType payload.
+const ETypeMismatch: u64 = 8;
+/// The payload names a display key that no enabled type carries.
+const ETypeNotEnabled: u64 = 9;
 
 // === Events ===
 
@@ -63,24 +54,26 @@ public struct MetadataUpdated has copy, drop {
 
 // === Handlers ===
 
-/// Execute a DisableProposalType proposal: remove a type from the enabled set.
-/// Aborts if the type is undisableable (EnableProposalType, DisableProposalType,
-/// TransferFreezeAdmin, UnfreezeProposalType).
+/// Execute a DisableProposalType proposal: remove the slot of the type whose
+/// display key the payload names. Aborts if the type is undisableable
+/// (EnableProposalType, EnableBypassType, DisableBypassType, DisableProposalType,
+/// TransferFreezeAdmin, UnfreezeProposalType) or not enabled.
 public fun execute_disable_proposal_type(
     dao: &mut DAO,
     ticket: ExecutionTicket<DisableProposalType>,
 ) {
     assert!(dao.id() == ticket.ticket_dao_id(), EDaoMismatch);
     let type_key = ticket.ticket_payload().type_key();
-    assert_disableable(&type_key);
-    dao.disable_proposal_type(type_key, ticket.ticket_request());
+    let name = resolve_display_key(dao, &type_key);
+    assert_disableable(&name);
+    dao.disable_proposal_type<DisableProposalType>(name, ticket.ticket_request());
     event::emit(ProposalTypeDisabled { dao_id: dao.id(), type_key });
     ticket.discharge();
 }
 
-/// Execute an EnableProposalType proposal: add a type to the enabled set and bind
-/// the canonical Move type `NewType` to the type_key so future proposals cannot
-/// substitute a different payload type under the same key.
+/// Execute an EnableProposalType proposal: add a slot for `NewType` under the
+/// payload's display key. `NewType` must equal the type pinned in the payload,
+/// so the executor cannot register a different payload type than the board voted on.
 public fun execute_enable_proposal_type<NewType: store>(
     dao: &mut DAO,
     ticket: ExecutionTicket<EnableProposalType>,
@@ -90,7 +83,7 @@ public fun execute_enable_proposal_type<NewType: store>(
 }
 
 /// Execute an UpdateProposalConfig proposal: merge optional field overrides
-/// into the existing config for the target type.
+/// into the existing config of the type whose display key the payload names.
 public fun execute_update_proposal_config(
     dao: &mut DAO,
     ticket: ExecutionTicket<UpdateProposalConfig>,
@@ -99,8 +92,9 @@ public fun execute_update_proposal_config(
 
     let payload = ticket.ticket_payload();
     let target_key = payload.target_type_key();
+    let name = resolve_display_key(dao, &target_key);
 
-    let existing = dao.proposal_configs().get(&target_key);
+    let existing = dao.type_config_by_name(&name);
     let new_config = proposal::new_config(
         payload.quorum().destroy_with_default(existing.quorum()),
         payload.approval_threshold().destroy_with_default(existing.approval_threshold()),
@@ -112,10 +106,10 @@ public fun execute_update_proposal_config(
         .composable_allowed()
         .destroy_with_default(existing.composable_allowed()));
 
-    assert_threshold_meets_floor(&target_key, &new_config);
+    assert_threshold_meets_floor(&name, &new_config);
     assert_config_composability(&new_config);
 
-    dao.update_proposal_config(target_key, new_config, ticket.ticket_request());
+    dao.update_proposal_config<UpdateProposalConfig>(name, new_config, ticket.ticket_request());
 
     event::emit(ProposalConfigUpdated {
         dao_id: dao.id(),
@@ -140,18 +134,20 @@ fun enable_proposal_type_impl<NewType: store>(
 ) {
     assert!(dao.id() == request.req_dao_id(), EDaoMismatch);
 
+    let name = type_name::with_defining_ids<NewType>();
+    assert!(name == payload.type_name(), ETypeMismatch);
+
     let type_key = payload.type_key();
     let config = *payload.config();
 
     if (dao.controller_cap_id().is_some()) {
-        assert!(!dao::is_subdao_blocked_type(&type_key), ESubDAOBlockedType);
+        assert!(!dao::is_subdao_blocked_type(&name), ESubDAOBlockedType);
     };
 
-    assert_threshold_meets_floor(&type_key, &config);
+    assert_threshold_meets_floor(&name, &config);
     assert_config_composability(&config);
 
-    dao.enable_proposal_type(type_key, config, request);
-    dao.bind_type_key<NewType, EnableProposalType>(type_key, request);
+    dao.enable_proposal_type<NewType, EnableProposalType>(type_key, config, request);
 
     event::emit(ProposalTypeEnabled {
         dao_id: dao.id(),
@@ -181,6 +177,8 @@ fun update_metadata_impl(
 /// execution-time check: a malicious downgrade proposal never enters the object
 /// graph, cannot be voted on, and consumes no proposal slot.
 ///
+/// The target display key must resolve to an enabled type (ETypeNotEnabled).
+///
 /// Callers that need non-self-targeting UpdateProposalConfig submissions can use
 /// board_voting::submit_proposal<UpdateProposalConfig> directly — no floor applies.
 #[allow(lint(share_owned, custom_state_change))]
@@ -191,39 +189,41 @@ public fun propose_update_proposal_config(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    let type_key = b"UpdateProposalConfig".to_ascii_string();
-    let config = *dao.proposal_configs().get(&type_key);
+    let self_type = type_name::with_defining_ids<UpdateProposalConfig>();
+    let target = resolve_display_key(dao, &payload.target_type_key());
 
-    if (payload.target_type_key() == b"UpdateProposalConfig".to_ascii_string()) {
-        assert!(
-            (config.approval_threshold() as u64) >= SELF_UPDATE_APPROVAL_FLOOR_BPS,
-            EFloorNotMet,
-        );
+    if (target == self_type) {
+        let config = dao.type_config_by_name(&self_type);
+        let floor = dao::min_approval_threshold_for_type(&self_type);
+        assert!(config.approval_threshold() >= floor, EFloorNotMet);
     };
 
-    board_voting::submit_proposal<UpdateProposalConfig>(
-        dao,
-        type_key,
-        metadata_ipfs,
-        payload,
-        clock,
-        ctx,
-    );
+    board_voting::submit_proposal<UpdateProposalConfig>(dao, metadata_ipfs, payload, clock, ctx);
 }
 
 // === Internal ===
 
-/// Abort if the type key is one of the core undisableable types.
-fun assert_disableable(type_key: &std::ascii::String) {
-    assert!(!dao::is_undisableable_type(type_key), EUndisableableType);
+/// Resolve a display key to the enabled type carrying it, aborting with
+/// ETypeNotEnabled if no enabled type has that display key.
+fun resolve_display_key(dao: &DAO, type_key: &std::ascii::String): TypeName {
+    let name = dao.type_for_display_key(type_key);
+    assert!(name.is_some(), ETypeNotEnabled);
+    name.destroy_some()
+}
+
+/// Abort if the type is one of the core undisableable types.
+fun assert_disableable(name: &TypeName) {
+    assert!(!dao::is_undisableable_type(name), EUndisableableType);
 }
 
 /// Assert that a config's approval_threshold is not below the execution floor
-/// for the given type. Types without a floor are unconstrained.
-fun assert_threshold_meets_floor(type_key: &std::ascii::String, config: &proposal::ProposalConfig) {
-    let floor = execution_floor_for_type(type_key);
+/// for the given type. Types without a floor are unconstrained. The floors are
+/// the framework's single source of truth (`dao::min_approval_threshold_for_type`):
+/// 66% for EnableProposalType, 80% for UpdateProposalConfig and EnableBypassType.
+fun assert_threshold_meets_floor(name: &TypeName, config: &proposal::ProposalConfig) {
+    let floor = dao::min_approval_threshold_for_type(name);
     if (floor > 0) {
-        assert!((config.approval_threshold() as u64) >= floor, EThresholdBelowFloor);
+        assert!(config.approval_threshold() >= floor, EThresholdBelowFloor);
     };
 }
 
@@ -233,18 +233,4 @@ fun assert_threshold_meets_floor(type_key: &std::ascii::String, config: &proposa
 /// enforce inter-step cooldown, so the combination is prohibited at config-write time.
 fun assert_config_composability(config: &proposal::ProposalConfig) {
     assert!(config.cooldown_ms() == 0 || !config.composable_allowed(), EComposableCooldownConflict);
-}
-
-/// Return the execution floor (in basis points) for a given type key.
-/// Returns 0 for types with no floor.
-fun execution_floor_for_type(type_key: &std::ascii::String): u64 {
-    if (*type_key == b"EnableProposalType".to_ascii_string()) {
-        ENABLE_APPROVAL_FLOOR_BPS
-    } else if (*type_key == b"UpdateProposalConfig".to_ascii_string()) {
-        SELF_UPDATE_APPROVAL_FLOOR_BPS
-    } else if (*type_key == b"EnableBypassType".to_ascii_string()) {
-        ENABLE_BYPASS_APPROVAL_FLOOR_BPS
-    } else {
-        0
-    }
 }

@@ -1,22 +1,22 @@
 module armature_proposals::subdao_ops;
 
+use armature::batch_add_members::{Self, BatchAddMembers};
+use armature::batch_remove_members::{Self, BatchRemoveMembers};
 use armature::capability_vault::{CapabilityVault, SubDAOControl};
 use armature::controller;
+use armature::create_subdao::CreateSubDAO;
 use armature::dao::{Self, DAO};
 use armature::emergency;
 use armature::governance;
 use armature::proposal::ExecutionTicket;
+use armature::spawn_dao::SpawnDAO;
+use armature::spin_out_subdao::{Self, SpinOutSubDAO};
+use armature::transfer_assets::TransferAssets;
 use armature::treasury_vault::TreasuryVault;
-use armature_proposals::batch_add_members::{Self, BatchAddMembers};
-use armature_proposals::batch_remove_members::{Self, BatchRemoveMembers};
 use armature_proposals::controller_batch_add_members::ControllerBatchAddMembers;
 use armature_proposals::controller_batch_remove_members::ControllerBatchRemoveMembers;
-use armature_proposals::create_subdao::CreateSubDAO;
 use armature_proposals::pause_execution::{Self, PauseSubDAOExecution, UnpauseSubDAOExecution};
 use armature_proposals::reclaim_cap_from_subdao::ReclaimCapFromSubDAO;
-use armature_proposals::spawn_dao::SpawnDAO;
-use armature_proposals::spin_out_subdao::{Self, SpinOutSubDAO};
-use armature_proposals::transfer_assets::TransferAssets;
 use armature_proposals::transfer_cap_to_subdao::TransferCapToSubDAO;
 use sui::clock::Clock;
 use sui::event;
@@ -332,17 +332,17 @@ public fun execute_spin_out_subdao(
     );
 
     subdao.clear_controller(&subdao_req);
-    subdao.enable_proposal_type(
+    subdao.enable_proposal_type<SpawnDAO, SpinOutSubDAO>(
         b"SpawnDAO".to_ascii_string(),
         *payload.spawn_dao_config(),
         &subdao_req,
     );
-    subdao.enable_proposal_type(
+    subdao.enable_proposal_type<SpinOutSubDAO, SpinOutSubDAO>(
         b"SpinOutSubDAO".to_ascii_string(),
         *payload.spin_out_subdao_config(),
         &subdao_req,
     );
-    subdao.enable_proposal_type(
+    subdao.enable_proposal_type<CreateSubDAO, SpinOutSubDAO>(
         b"CreateSubDAO".to_ascii_string(),
         *payload.create_subdao_config(),
         &subdao_req,

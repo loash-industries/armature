@@ -1,11 +1,11 @@
 module armature_proposals::member_ops;
 
+use armature::add_member::AddMember;
+use armature::batch_add_members::BatchAddMembers;
+use armature::batch_remove_members::BatchRemoveMembers;
 use armature::dao::DAO;
 use armature::proposal::{ExecutionRequest, ExecutionTicket};
-use armature_proposals::add_member::AddMember;
-use armature_proposals::batch_add_members::BatchAddMembers;
-use armature_proposals::batch_remove_members::BatchRemoveMembers;
-use armature_proposals::remove_member::RemoveMember;
+use armature::remove_member::RemoveMember;
 use sui::event;
 
 // === Errors ===

@@ -39,12 +39,12 @@ fun create_dao(scenario: &mut test_scenario::Scenario) {
     };
 }
 
-fun enable_type(scenario: &mut test_scenario::Scenario, type_key: vector<u8>) {
+fun enable_type<T>(scenario: &mut test_scenario::Scenario, type_key: vector<u8>) {
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type(type_key.to_ascii_string(), config);
+        dao.test_enable_type<T>(type_key.to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
 }
@@ -52,7 +52,7 @@ fun enable_type(scenario: &mut test_scenario::Scenario, type_key: vector<u8>) {
 /// Mint a fresh TreasuryCap<GLYPH> and adopt it through a full proposal cycle.
 /// Returns the cap's object ID for use in later mint/burn proposals.
 fun adopt_glyph(scenario: &mut test_scenario::Scenario, clock: &clock::Clock): ID {
-    enable_type(scenario, b"AdoptCurrency");
+    enable_type<AdoptCurrency<GLYPH>>(scenario, b"AdoptCurrency");
 
     // Submit
     scenario.next_tx(CREATOR);
@@ -61,7 +61,6 @@ fun adopt_glyph(scenario: &mut test_scenario::Scenario, clock: &clock::Clock): I
         let payload = adopt_currency::new<GLYPH>();
         board_voting::submit_proposal(
             &dao,
-            b"AdoptCurrency".to_ascii_string(),
             option::some(string::utf8(b"Adopt GLYPH")),
             payload,
             clock,
@@ -123,7 +122,7 @@ fun mint_into_treasury() {
 
     create_dao(&mut scenario);
     let cap_id = adopt_glyph(&mut scenario, &clock);
-    enable_type(&mut scenario, b"MintCoin");
+    enable_type<MintCoin<GLYPH>>(&mut scenario, b"MintCoin");
 
     // Submit + vote
     scenario.next_tx(CREATOR);
@@ -132,7 +131,6 @@ fun mint_into_treasury() {
         let payload = mint_coin::new<GLYPH>(cap_id, 1_000_000, option::none());
         board_voting::submit_proposal(
             &dao,
-            b"MintCoin".to_ascii_string(),
             option::some(string::utf8(b"Mint into treasury")),
             payload,
             &clock,
@@ -193,7 +191,7 @@ fun mint_to_recipient() {
 
     create_dao(&mut scenario);
     let cap_id = adopt_glyph(&mut scenario, &clock);
-    enable_type(&mut scenario, b"MintCoin");
+    enable_type<MintCoin<GLYPH>>(&mut scenario, b"MintCoin");
 
     scenario.next_tx(CREATOR);
     {
@@ -201,7 +199,6 @@ fun mint_to_recipient() {
         let payload = mint_coin::new<GLYPH>(cap_id, 500, option::some(RECIPIENT));
         board_voting::submit_proposal(
             &dao,
-            b"MintCoin".to_ascii_string(),
             option::some(string::utf8(b"Mint to recipient")),
             payload,
             &clock,
@@ -269,8 +266,8 @@ fun burn_from_treasury() {
 
     create_dao(&mut scenario);
     let cap_id = adopt_glyph(&mut scenario, &clock);
-    enable_type(&mut scenario, b"MintCoin");
-    enable_type(&mut scenario, b"BurnCoin");
+    enable_type<MintCoin<GLYPH>>(&mut scenario, b"MintCoin");
+    enable_type<BurnCoin<GLYPH>>(&mut scenario, b"BurnCoin");
 
     // Mint 1_000_000 into treasury (reuse the mint flow inline)
     scenario.next_tx(CREATOR);
@@ -279,7 +276,6 @@ fun burn_from_treasury() {
         let payload = mint_coin::new<GLYPH>(cap_id, 1_000_000, option::none());
         board_voting::submit_proposal(
             &dao,
-            b"MintCoin".to_ascii_string(),
             option::some(string::utf8(b"Mint")),
             payload,
             &clock,
@@ -327,7 +323,6 @@ fun burn_from_treasury() {
         let payload = burn_coin::new<GLYPH>(cap_id, 400_000);
         board_voting::submit_proposal(
             &dao,
-            b"BurnCoin".to_ascii_string(),
             option::some(string::utf8(b"Burn")),
             payload,
             &clock,
@@ -385,7 +380,7 @@ fun return_cap_relinquishes_custody() {
 
     create_dao(&mut scenario);
     let cap_id = adopt_glyph(&mut scenario, &clock);
-    enable_type(&mut scenario, b"ReturnCurrencyCap");
+    enable_type<ReturnCurrencyCap<GLYPH>>(&mut scenario, b"ReturnCurrencyCap");
 
     scenario.next_tx(CREATOR);
     {
@@ -393,7 +388,6 @@ fun return_cap_relinquishes_custody() {
         let payload = return_currency_cap::new<GLYPH>(cap_id, RECIPIENT);
         board_voting::submit_proposal(
             &dao,
-            b"ReturnCurrencyCap".to_ascii_string(),
             option::some(string::utf8(b"Hand off GLYPH")),
             payload,
             &clock,
@@ -454,7 +448,7 @@ fun mint_with_unknown_cap_aborts() {
 
     create_dao(&mut scenario);
     adopt_glyph(&mut scenario, &clock);
-    enable_type(&mut scenario, b"MintCoin");
+    enable_type<MintCoin<GLYPH>>(&mut scenario, b"MintCoin");
 
     // Bogus cap_id — a freshly minted, never-adopted cap.
     let bogus_cap_id;
@@ -471,7 +465,6 @@ fun mint_with_unknown_cap_aborts() {
         let payload = mint_coin::new<GLYPH>(bogus_cap_id, 1, option::none());
         board_voting::submit_proposal(
             &dao,
-            b"MintCoin".to_ascii_string(),
             option::some(string::utf8(b"Mint with bogus cap")),
             payload,
             &clock,
