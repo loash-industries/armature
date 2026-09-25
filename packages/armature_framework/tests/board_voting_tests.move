@@ -749,6 +749,30 @@ fun ticket_from_vote_readonly__slot_cooldown_aborts() {
 }
 
 #[test, expected_failure(abort_code = armature::board_voting::ECooldownRequiresMutableDAO)]
+/// A cooldown raised on the slot after submission blocks the read-only path even
+/// though the proposal's snapshot has none: later executions check the slot, so
+/// the timestamp must be recorded.
+fun ticket_from_vote_readonly__slot_only_cooldown_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000);
+
+    passed_test_proposal(&mut scenario, &clock, 0);
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        dao.test_update_config<TestPayload>(
+            proposal::new_config(5_000, 5_000, 0, 3_600_000, 0, 60_000),
+        );
+        test_scenario::return_shared(dao);
+    };
+    ticket_readonly_and_discharge(&mut scenario, &clock);
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::board_voting::ECooldownRequiresMutableDAO)]
 /// A proposal submitted while the type had a cooldown keeps that cooldown in its
 /// snapshot; clearing the slot's cooldown afterwards does not open the read-only path.
 fun ticket_from_vote_readonly__snapshot_cooldown_aborts() {

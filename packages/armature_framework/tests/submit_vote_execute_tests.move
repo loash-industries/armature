@@ -827,3 +827,35 @@ fun test_sve_readonly__type_not_enabled_aborts() {
     clock.destroy_for_testing();
     scenario.end();
 }
+
+#[test, expected_failure(abort_code = armature::board_voting::EInsufficientVotingWeight)]
+/// The read-only variant cannot execute when the caller's single vote does not pass
+/// the proposal on its own. Three-member board, quorum=60%: 1/3 = 33% < 60%.
+fun test_sve_readonly__quorum_not_met_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_three_member_dao(&mut scenario);
+    enable_fast_type(&mut scenario, 6_000, 5_000, 0, 0);
+    call_sve_readonly_drop_ticket(&mut scenario, &clock);
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::board_voting::EInsufficientVotingWeight)]
+/// Quorum boundary on the read-only variant: three-member board, quorum=34%.
+/// 1*10000=10000 vs 3400*3=10200 → one vote falls just short → abort.
+fun test_sve_readonly__quorum_boundary_just_below_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_three_member_dao(&mut scenario);
+    enable_fast_type(&mut scenario, 3_400, 5_000, 0, 0);
+    call_sve_readonly_drop_ticket(&mut scenario, &clock);
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
