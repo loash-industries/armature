@@ -132,12 +132,13 @@ public fun submit_vote_execute_readonly<P: store>(
 
 // === Execute ===
 
-/// Mint an ExecutionTicket for a passed proposal. Replaces authorize_execution.
+/// Mint an ExecutionTicket for a passed proposal and delete the proposal; the
+/// storage rebate goes to the transaction's gas payer.
 /// Validates: DAO is active, proposal belongs to this DAO, type still enabled,
 /// type not frozen. Records the execution timestamp for cooldown tracking.
 public fun ticket_from_vote<P: store>(
     dao: &mut DAO,
-    prop: &mut Proposal<P>,
+    prop: Proposal<P>,
     freeze: &EmergencyFreeze,
     clock: &Clock,
     ctx: &TxContext,
@@ -154,7 +155,7 @@ public fun ticket_from_vote<P: store>(
 /// the config snapshotted on the proposal has cooldown_ms > 0.
 public fun ticket_from_vote_readonly<P: store>(
     dao: &DAO,
-    prop: &mut Proposal<P>,
+    prop: Proposal<P>,
     freeze: &EmergencyFreeze,
     clock: &Clock,
     ctx: &TxContext,
@@ -226,7 +227,7 @@ fun submit_vote_execute_core<P: store>(
 /// check and effect except recording the execution timestamp.
 fun ticket_from_vote_core<P: store>(
     dao: &DAO,
-    prop: &mut Proposal<P>,
+    prop: Proposal<P>,
     freeze: &EmergencyFreeze,
     clock: &Clock,
     readonly: bool,
@@ -256,7 +257,7 @@ fun ticket_from_vote_core<P: store>(
 
     let last_ms = dao.last_executed_ms_by_name(&name);
 
-    // Read vote weights before execute() mutates proposal state.
+    // Read vote weights before execute() consumes the proposal.
     let yes_weight = prop.yes_weight();
     let total_snapshot_weight = prop.total_snapshot_weight();
 

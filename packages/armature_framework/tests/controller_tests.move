@@ -281,12 +281,12 @@ fun authorize_execution_blocks_when_controller_paused() {
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();
-        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
         let req = board_voting::ticket_from_vote(
             &mut dao,
-            &mut prop,
+            prop,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -294,7 +294,6 @@ fun authorize_execution_blocks_when_controller_paused() {
 
         req.discharge();
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(prop);
         test_scenario::return_shared(dao);
     };
 

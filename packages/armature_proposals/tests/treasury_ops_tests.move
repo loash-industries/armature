@@ -115,7 +115,7 @@ fun execute_small_payment<T: drop>(scenario: &mut test_scenario::Scenario, clock
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             clock,
             scenario.ctx(),
@@ -128,7 +128,6 @@ fun execute_small_payment<T: drop>(scenario: &mut test_scenario::Scenario, clock
             scenario.ctx(),
         );
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(dao);
     };
@@ -403,7 +402,7 @@ fun send_coin_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -419,7 +418,6 @@ fun send_coin_e2e() {
         assert!(vault.balance<SUI>() == 800_000);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(dao);
     };
@@ -481,7 +479,7 @@ fun send_coin_insufficient_balance_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -494,7 +492,6 @@ fun send_coin_insufficient_balance_aborts() {
         );
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(dao);
     };
@@ -608,7 +605,7 @@ fun send_coin_to_dao_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut source_dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -626,7 +623,6 @@ fun send_coin_to_dao_e2e() {
         assert!(target_vault.balance<SUI>() == 300_000);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(target_vault);
         test_scenario::return_shared(source_vault);
         test_scenario::return_shared(source_dao);
@@ -736,7 +732,7 @@ fun send_coin_to_dao_target_mismatch_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut source_dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -752,7 +748,6 @@ fun send_coin_to_dao_target_mismatch_aborts() {
         );
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(source_vault);
         test_scenario::return_shared(target_vault);
         test_scenario::return_shared(source_dao);

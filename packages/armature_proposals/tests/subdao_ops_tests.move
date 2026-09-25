@@ -102,7 +102,7 @@ fun create_subdao_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -119,7 +119,6 @@ fun create_subdao_e2e() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -212,7 +211,7 @@ fun create_subdao_vault_mismatch_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -233,7 +232,6 @@ fun create_subdao_vault_mismatch_aborts() {
 
         test_scenario::return_shared(vault_b);
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -322,7 +320,7 @@ fun setup_parent_and_subdao(
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             clock,
             scenario.ctx(),
@@ -339,7 +337,6 @@ fun setup_parent_and_subdao(
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -420,7 +417,7 @@ fun transfer_cap_to_subdao_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut parent_dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -437,7 +434,6 @@ fun transfer_cap_to_subdao_e2e() {
         assert!(subdao_vault.contains(test_cap_id));
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(subdao_vault);
         test_scenario::return_shared(parent_vault);
         test_scenario::return_shared(parent_dao);
@@ -531,7 +527,7 @@ fun reclaim_cap_from_subdao_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut parent_dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -548,7 +544,6 @@ fun reclaim_cap_from_subdao_e2e() {
         assert!(!subdao_vault.contains(test_cap_id));
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(subdao_vault);
         test_scenario::return_shared(parent_vault);
         test_scenario::return_shared(parent_dao);
@@ -628,7 +623,7 @@ fun reclaim_cap_wrong_vault_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut parent_dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -642,7 +637,6 @@ fun reclaim_cap_wrong_vault_aborts() {
         );
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(parent_vault);
         test_scenario::return_shared(subdao_vault);
         test_scenario::return_shared(parent_dao);
@@ -733,7 +727,7 @@ fun pause_and_unpause_subdao_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut parent_dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -751,7 +745,6 @@ fun pause_and_unpause_subdao_e2e() {
 
         test_scenario::return_shared(subdao);
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(parent_dao);
     };
@@ -797,7 +790,7 @@ fun pause_and_unpause_subdao_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut parent_dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -815,7 +808,6 @@ fun pause_and_unpause_subdao_e2e() {
 
         test_scenario::return_shared(subdao);
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(parent_dao);
     };
@@ -894,7 +886,7 @@ fun paused_subdao_blocks_execution() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut parent_dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -909,7 +901,6 @@ fun paused_subdao_blocks_execution() {
 
         test_scenario::return_shared(subdao);
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(parent_dao);
     };
@@ -949,7 +940,7 @@ fun paused_subdao_blocks_execution() {
         // This will abort — SubDAO is controller-paused
         let ticket = board_voting::ticket_from_vote(
             &mut subdao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -962,7 +953,6 @@ fun paused_subdao_blocks_execution() {
         );
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(subdao);
     };
 
@@ -1038,7 +1028,7 @@ fun create_multi_member_subdao() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -1051,7 +1041,6 @@ fun create_multi_member_subdao() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -1144,7 +1133,7 @@ fun controller_batch_add_members_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut parent_dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -1163,7 +1152,6 @@ fun controller_batch_add_members_e2e() {
         assert!(gov.is_board_member(NEW_SUBDAO_MEMBER));
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(subdao);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(parent_dao);
@@ -1241,7 +1229,7 @@ fun controller_batch_add_members_existing_skipped() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut parent_dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -1260,7 +1248,6 @@ fun controller_batch_add_members_existing_skipped() {
         assert!(gov.is_board_member(NEW_SUBDAO_MEMBER));
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(subdao);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(parent_dao);
@@ -1349,7 +1336,7 @@ fun controller_batch_remove_members_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut parent_dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -1363,7 +1350,6 @@ fun controller_batch_remove_members_e2e() {
         );
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(subdao);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(parent_dao);
@@ -1408,7 +1394,7 @@ fun controller_batch_remove_members_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut parent_dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -1430,7 +1416,6 @@ fun controller_batch_remove_members_e2e() {
         assert!(subdao.encrypt_epoch() == 1);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(subdao);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(parent_dao);
@@ -1505,7 +1490,7 @@ fun controller_batch_remove_members_nonmember_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut parent_dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -1519,7 +1504,6 @@ fun controller_batch_remove_members_nonmember_aborts() {
         );
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(subdao);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(parent_dao);

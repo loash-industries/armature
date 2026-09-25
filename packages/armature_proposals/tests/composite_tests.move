@@ -118,7 +118,7 @@ fun composite_two_add_member_steps_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -156,7 +156,6 @@ fun composite_two_add_member_steps_e2e() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(frame);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -213,7 +212,7 @@ fun composite_add_then_remove_member_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -247,7 +246,6 @@ fun composite_add_then_remove_member_e2e() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(frame);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -349,7 +347,7 @@ fun finalize_pipeline_incomplete_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -372,7 +370,6 @@ fun finalize_pipeline_incomplete_aborts() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(frame);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -423,7 +420,7 @@ fun advance_step_wrong_type_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -445,7 +442,6 @@ fun advance_step_wrong_type_aborts() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(frame);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -529,7 +525,7 @@ fun composite_send_coin_step_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -551,7 +547,6 @@ fun composite_send_coin_step_e2e() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(frame);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(dao);
     };
@@ -673,7 +668,7 @@ fun composite_send_coin_to_dao_step_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -701,7 +696,6 @@ fun composite_send_coin_to_dao_step_e2e() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(frame);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(target_vault);
         test_scenario::return_shared(source_vault);
         test_scenario::return_shared(dao);
@@ -752,7 +746,7 @@ fun composite_set_board_step_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -776,7 +770,6 @@ fun composite_set_board_step_e2e() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(frame);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -834,7 +827,7 @@ fun composite_update_metadata_step_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -856,7 +849,6 @@ fun composite_update_metadata_step_e2e() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(frame);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(charter);
         test_scenario::return_shared(dao);
     };
@@ -954,7 +946,7 @@ fun composite_same_type_cooldown_snapshot_succeeds() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -988,7 +980,6 @@ fun composite_same_type_cooldown_snapshot_succeeds() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(frame);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -1057,7 +1048,7 @@ fun composite_enable_proposal_type_step_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -1080,7 +1071,6 @@ fun composite_enable_proposal_type_step_e2e() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(frame);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -1135,7 +1125,7 @@ fun composite_delete_exhausted_frame_succeeds() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -1156,7 +1146,6 @@ fun composite_delete_exhausted_frame_succeeds() {
         composite::delete_exhausted_frame(frame);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -1339,7 +1328,7 @@ fun composite_cooldown_type_not_composable_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -1358,7 +1347,6 @@ fun composite_cooldown_type_not_composable_aborts() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(frame);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 

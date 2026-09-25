@@ -87,7 +87,7 @@ fun charter_update_lifecycle() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -100,7 +100,6 @@ fun charter_update_lifecycle() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(charter);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -137,7 +136,7 @@ fun charter_update_lifecycle() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -148,7 +147,6 @@ fun charter_update_lifecycle() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(charter);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -232,7 +230,7 @@ fun charter_update_wrong_dao_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -246,7 +244,6 @@ fun charter_update_wrong_dao_aborts() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(wrong_charter);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 

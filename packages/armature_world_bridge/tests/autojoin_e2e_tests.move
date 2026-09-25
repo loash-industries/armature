@@ -167,18 +167,17 @@ fun configure_allowlist(
     ts::next_tx(scenario, CREATOR);
     {
         let mut dao = ts::take_shared<DAO>(scenario);
-        let mut p = ts::take_shared<Proposal<ConfigureAutojoin>>(scenario);
+        let p = ts::take_shared<Proposal<ConfigureAutojoin>>(scenario);
         let freeze = ts::take_shared<EmergencyFreeze>(scenario);
         let req = board_voting::ticket_from_vote(
             &mut dao,
-            &mut p,
+            p,
             &freeze,
             clock,
             scenario.ctx(),
         );
         configure_autojoin::execute_configure_autojoin(&mut dao, req);
         ts::return_shared(freeze);
-        ts::return_shared(p);
         ts::return_shared(dao);
     };
 }

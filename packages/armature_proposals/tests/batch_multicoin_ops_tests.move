@@ -143,7 +143,7 @@ fun send_batch_to_address_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -159,7 +159,6 @@ fun send_batch_to_address_e2e() {
         assert!(vault.multicoin_collection_count() == 1);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(dao);
     };
@@ -225,7 +224,7 @@ fun send_batch_to_address_partial_withdraw() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -240,7 +239,6 @@ fun send_batch_to_address_partial_withdraw() {
         assert!(vault.multicoin_collection_count() == 2);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(dao);
     };
@@ -304,7 +302,7 @@ fun send_batch_to_address_insufficient_balance_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -312,7 +310,6 @@ fun send_batch_to_address_insufficient_balance_aborts() {
         treasury_ops::execute_send_batch_multicoin_to_player(&mut vault, ticket, scenario.ctx());
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(dao);
     };
@@ -401,7 +398,7 @@ fun send_batch_to_dao_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut source_dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -421,7 +418,6 @@ fun send_batch_to_dao_e2e() {
         assert!(target_vault.multicoin_collection_count() == 1);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(target_vault);
         test_scenario::return_shared(source_vault);
         test_scenario::return_shared(source_dao);
@@ -492,7 +488,7 @@ fun send_batch_to_dao_accumulates_in_target() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut source_dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -508,7 +504,6 @@ fun send_batch_to_dao_accumulates_in_target() {
         assert!(target_vault.multicoin_balance(coll(COLL_A), ASSET_SWORD) == 7);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(target_vault);
         test_scenario::return_shared(source_vault);
         test_scenario::return_shared(source_dao);
@@ -581,7 +576,7 @@ fun send_batch_to_dao_target_mismatch_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut source_dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -594,7 +589,6 @@ fun send_batch_to_dao_target_mismatch_aborts() {
         );
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(target_vault);
         test_scenario::return_shared(source_vault);
         test_scenario::return_shared(source_dao);

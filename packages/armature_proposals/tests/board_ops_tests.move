@@ -76,7 +76,7 @@ fun test_set_board_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -92,7 +92,6 @@ fun test_set_board_e2e() {
         assert!(gov.is_board_member(NEW_MEMBER));
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -155,7 +154,7 @@ fun test_set_board_empty_members_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -163,7 +162,6 @@ fun test_set_board_empty_members_aborts() {
         board_ops::execute_set_board(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -242,7 +240,7 @@ fun test_full_board_replacement() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -258,7 +256,6 @@ fun test_full_board_replacement() {
         assert!(dao.governance().is_board_member(MEMBER_E));
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -317,7 +314,7 @@ fun test_shrink_board_to_single_member() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -329,7 +326,6 @@ fun test_shrink_board_to_single_member() {
         assert!(!dao.governance().is_board_member(NEW_MEMBER));
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -380,7 +376,7 @@ fun test_grow_board_from_single() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -394,7 +390,6 @@ fun test_grow_board_from_single() {
         assert!(dao.governance().is_board_member(MEMBER_E));
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -444,7 +439,7 @@ fun test_sequential_board_changes() {
         clock.set_for_testing(3_000);
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -454,7 +449,6 @@ fun test_sequential_board_changes() {
         assert!(dao.governance().is_board_member(NEW_MEMBER));
         assert!(!dao.governance().is_board_member(MEMBER_B));
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -489,7 +483,7 @@ fun test_sequential_board_changes() {
         clock.set_for_testing(12_000);
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -499,7 +493,6 @@ fun test_sequential_board_changes() {
         assert!(dao.governance().is_board_member(NEW_MEMBER));
         assert!(dao.governance().is_board_member(MEMBER_D));
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 

@@ -67,7 +67,7 @@ fun submit_proposal_with_config(
 ) {
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let dao = scenario.take_shared<DAO>();
         // Temporarily set a custom config by using proposal::create directly
         let config = proposal::new_config(
             quorum,
@@ -671,19 +671,17 @@ fun ticket_readonly_and_discharge(scenario: &mut test_scenario::Scenario, clock:
     {
         let dao = scenario.take_shared<DAO>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
-        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
         let ticket = board_voting::ticket_from_vote_readonly(
             &dao,
-            &mut prop,
+            prop,
             &freeze,
             clock,
             scenario.ctx(),
         );
         assert!(ticket.ticket_payload().value == 7);
         ticket.discharge();
-        assert!(prop.status().is_executed());
         assert!(dao.last_executed_ms<TestPayload>().is_none());
-        test_scenario::return_shared(prop);
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(dao);
     };
@@ -715,17 +713,16 @@ fun ticket_from_vote__records_execution() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
-        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut prop,
+            prop,
             &freeze,
             &clock,
             scenario.ctx(),
         );
         ticket.discharge();
         assert!(dao.last_executed_ms<TestPayload>() == option::some(1_000));
-        test_scenario::return_shared(prop);
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(dao);
     };

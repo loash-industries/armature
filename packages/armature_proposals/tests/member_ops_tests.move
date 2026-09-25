@@ -83,7 +83,7 @@ fun test_add_member_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -100,7 +100,6 @@ fun test_add_member_e2e() {
         assert!(dao.encrypt_epoch() == 0);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -160,7 +159,7 @@ fun test_add_member_duplicate_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -169,7 +168,6 @@ fun test_add_member_duplicate_aborts() {
         member_ops::execute_add_member(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -244,7 +242,7 @@ fun test_remove_member_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -261,7 +259,6 @@ fun test_remove_member_e2e() {
         assert!(dao.encrypt_epoch() == 1);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -321,7 +318,7 @@ fun test_remove_nonmember_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -330,7 +327,6 @@ fun test_remove_nonmember_aborts() {
         member_ops::execute_remove_member(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -391,7 +387,7 @@ fun test_remove_last_member_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -400,7 +396,6 @@ fun test_remove_last_member_aborts() {
         member_ops::execute_remove_member(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -467,7 +462,7 @@ fun test_batch_add_members_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -485,7 +480,6 @@ fun test_batch_add_members_e2e() {
         assert!(dao.encrypt_epoch() == 0);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -547,7 +541,7 @@ fun test_batch_add_members_existing_member_skipped() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -562,7 +556,6 @@ fun test_batch_add_members_existing_member_skipped() {
         assert!(gov.is_board_member(BATCH_MEMBER_1));
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -626,7 +619,7 @@ fun test_batch_add_members_internal_duplicate_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -635,7 +628,6 @@ fun test_batch_add_members_internal_duplicate_aborts() {
         member_ops::execute_batch_add_members(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -694,7 +686,7 @@ fun test_batch_add_members_empty_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -703,7 +695,6 @@ fun test_batch_add_members_empty_aborts() {
         member_ops::execute_batch_add_members(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -777,7 +768,7 @@ fun test_batch_remove_members_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -794,7 +785,6 @@ fun test_batch_remove_members_e2e() {
         assert!(dao.encrypt_epoch() == 1);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -851,7 +841,7 @@ fun test_batch_remove_members_nonmember_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -860,7 +850,6 @@ fun test_batch_remove_members_nonmember_aborts() {
         member_ops::execute_batch_remove_members(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -925,7 +914,7 @@ fun test_batch_remove_members_internal_duplicate_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -934,7 +923,6 @@ fun test_batch_remove_members_internal_duplicate_aborts() {
         member_ops::execute_batch_remove_members(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -1001,7 +989,7 @@ fun test_batch_remove_members_would_empty_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -1010,7 +998,6 @@ fun test_batch_remove_members_would_empty_aborts() {
         member_ops::execute_batch_remove_members(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -1066,7 +1053,7 @@ fun test_batch_remove_members_empty_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -1075,7 +1062,6 @@ fun test_batch_remove_members_empty_aborts() {
         member_ops::execute_batch_remove_members(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -1177,7 +1163,7 @@ fun test_batch_add_members_oversize_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -1186,7 +1172,6 @@ fun test_batch_add_members_oversize_aborts() {
         member_ops::execute_batch_add_members(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 

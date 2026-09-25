@@ -91,7 +91,7 @@ fun adopt_glyph(scenario: &mut test_scenario::Scenario, clock: &clock::Clock): I
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             clock,
             scenario.ctx(),
@@ -102,7 +102,6 @@ fun adopt_glyph(scenario: &mut test_scenario::Scenario, clock: &clock::Clock): I
         assert!(vault.ids_for_type<TreasuryCap<GLYPH>>().contains(&cap_id));
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(dao);
     };
@@ -156,7 +155,7 @@ fun mint_into_treasury() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -171,7 +170,6 @@ fun mint_into_treasury() {
         assert!(treasury.balance<GLYPH>() == 1_000_000);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(treasury);
         test_scenario::return_shared(cap_vault);
         test_scenario::return_shared(dao);
@@ -222,7 +220,7 @@ fun mint_to_recipient() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -238,7 +236,6 @@ fun mint_to_recipient() {
         assert!(treasury.balance<GLYPH>() == 0);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(treasury);
         test_scenario::return_shared(cap_vault);
         test_scenario::return_shared(dao);
@@ -298,7 +295,7 @@ fun burn_from_treasury() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -310,7 +307,6 @@ fun burn_from_treasury() {
             scenario.ctx(),
         );
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(treasury);
         test_scenario::return_shared(cap_vault);
         test_scenario::return_shared(dao);
@@ -345,7 +341,7 @@ fun burn_from_treasury() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -360,7 +356,6 @@ fun burn_from_treasury() {
         assert!(treasury.balance<GLYPH>() == 600_000);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(treasury);
         test_scenario::return_shared(cap_vault);
         test_scenario::return_shared(dao);
@@ -409,7 +404,7 @@ fun return_cap_relinquishes_custody() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -420,7 +415,6 @@ fun return_cap_relinquishes_custody() {
         assert!(!cap_vault.contains(cap_id));
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(cap_vault);
         test_scenario::return_shared(dao);
     };
@@ -487,7 +481,7 @@ fun mint_with_unknown_cap_aborts() {
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -499,7 +493,6 @@ fun mint_with_unknown_cap_aborts() {
             scenario.ctx(),
         );
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(treasury);
         test_scenario::return_shared(cap_vault);
         test_scenario::return_shared(dao);
