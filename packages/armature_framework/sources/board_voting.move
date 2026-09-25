@@ -200,8 +200,7 @@ fun submit_vote_execute_core<P: store>(
 
     // --- Vote: the proposer's YES must pass on its own ---
 
-    // Board governance weighs each member 1 (see governance::board_vote_snapshot).
-    let yes_weight = 1;
+    let yes_weight = dao.governance().board_vote_weight(proposer);
     let total_snapshot_weight = dao.governance().board_vote_total_weight();
     assert!(config.passes(yes_weight, 0, total_snapshot_weight), EInsufficientVotingWeight);
 

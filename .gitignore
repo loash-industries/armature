@@ -59,3 +59,6 @@ Pub.localnet.toml
 
 # TypeScript build info
 *.tsbuildinfo
+
+# Local test harnesses and gas data
+testing/
