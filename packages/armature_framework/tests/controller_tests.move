@@ -89,7 +89,6 @@ fun privileged_submit_records_execution_in_events() {
             b"TestPayload".to_ascii_string(),
             metadata,
             TestPayload { value: 42 },
-            &clock,
             scenario.ctx(),
         );
 
@@ -156,7 +155,6 @@ fun privileged_submit_rejects_wrong_control() {
             b"TestPayload".to_ascii_string(),
             option::some(string::utf8(b"Should fail")),
             TestPayload { value: 1 },
-            &clock,
             scenario.ctx(),
         );
 
@@ -207,7 +205,6 @@ fun privileged_consume_rejects_wrong_control() {
             b"TestPayload".to_ascii_string(),
             option::some(string::utf8(b"Privileged test")),
             TestPayload { value: 1 },
-            &clock,
             scenario.ctx(),
         );
 
@@ -346,7 +343,6 @@ fun privileged_submit_rejects_inactive_subdao() {
             b"TestPayload".to_ascii_string(),
             option::some(string::utf8(b"Should fail")),
             TestPayload { value: 1 },
-            &clock,
             scenario.ctx(),
         );
 

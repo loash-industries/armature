@@ -358,7 +358,6 @@ fun create_subdao_and_spin_out_e2e() {
             &mut subdao_vault,
             &mut subdao,
             ticket,
-            &clock,
             scenario.ctx(),
         );
 
@@ -564,7 +563,6 @@ fun controller_set_board_via_privileged_submit() {
             b"SetBoard".to_ascii_string(),
             option::some(string::utf8(b"Controller sets SubDAO board")),
             set_board::new(vector[SUBDAO_MEMBER, CREATOR]),
-            &clock,
             scenario.ctx(),
         );
 

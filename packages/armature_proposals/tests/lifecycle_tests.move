@@ -617,7 +617,6 @@ fun medium_enterprise_lifecycle() {
             b"SetBoard".to_ascii_string(),
             option::some(string::utf8(b"Remove rogue actor")),
             set_board::new(vector[ENG1, ENG2]),
-            &clock,
             scenario.ctx(),
         );
 

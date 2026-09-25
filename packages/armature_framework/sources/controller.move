@@ -4,7 +4,6 @@ use armature::capability_vault::SubDAOControl;
 use armature::dao::DAO;
 use armature::proposal::{Self, ExecutionRequest};
 use std::string::String;
-use sui::clock::Clock;
 
 // === Errors ===
 
@@ -26,7 +25,6 @@ public fun privileged_submit<P: store + drop>(
     type_key: std::ascii::String,
     metadata_ipfs: Option<String>,
     payload: P,
-    _clock: &Clock,
     ctx: &mut TxContext,
 ): ExecutionRequest<P> {
     assert!(control.subdao_id() == subdao.id(), EControlMismatch);
