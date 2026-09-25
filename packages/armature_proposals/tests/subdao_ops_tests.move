@@ -743,7 +743,6 @@ fun pause_and_unpause_subdao_e2e() {
             &mut vault,
             &mut subdao,
             ticket,
-            &clock,
             scenario.ctx(),
         );
 
@@ -808,7 +807,6 @@ fun pause_and_unpause_subdao_e2e() {
             &mut vault,
             &mut subdao,
             ticket,
-            &clock,
             scenario.ctx(),
         );
 
@@ -906,7 +904,6 @@ fun paused_subdao_blocks_execution() {
             &mut vault,
             &mut subdao,
             ticket,
-            &clock,
             scenario.ctx(),
         );
 
@@ -1157,7 +1154,6 @@ fun controller_batch_add_members_e2e() {
             &mut vault,
             &mut subdao,
             ticket,
-            &clock,
             scenario.ctx(),
         );
 
@@ -1255,7 +1251,6 @@ fun controller_batch_add_members_existing_skipped() {
             &mut vault,
             &mut subdao,
             ticket,
-            &clock,
             scenario.ctx(),
         );
 
@@ -1364,7 +1359,6 @@ fun controller_batch_remove_members_e2e() {
             &mut vault,
             &mut subdao,
             ticket,
-            &clock,
             scenario.ctx(),
         );
 
@@ -1424,7 +1418,6 @@ fun controller_batch_remove_members_e2e() {
             &mut vault,
             &mut subdao,
             ticket,
-            &clock,
             scenario.ctx(),
         );
 
@@ -1522,7 +1515,6 @@ fun controller_batch_remove_members_nonmember_aborts() {
             &mut vault,
             &mut subdao,
             ticket,
-            &clock,
             scenario.ctx(),
         );
 
@@ -1604,7 +1596,6 @@ fun controller_batch_add_members_empty_aborts() {
             &mut vault,
             &mut members_dao,
             ticket,
-            &clock,
             scenario.ctx(),
         );
 
@@ -1676,7 +1667,6 @@ fun controller_batch_remove_members_empty_aborts() {
             &mut vault,
             &mut members_dao,
             ticket,
-            &clock,
             scenario.ctx(),
         );
 
@@ -1757,7 +1747,6 @@ fun controller_batch_add_members_oversize_aborts() {
             &mut vault,
             &mut members_dao,
             ticket,
-            &clock,
             scenario.ctx(),
         );
 
@@ -1838,7 +1827,6 @@ fun controller_batch_remove_members_oversize_aborts() {
             &mut vault,
             &mut members_dao,
             ticket,
-            &clock,
             scenario.ctx(),
         );
 

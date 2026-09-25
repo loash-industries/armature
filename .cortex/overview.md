@@ -37,10 +37,12 @@ This repo contains only the on-chain Move smart contracts. Indexing lives in `ar
 - **Hot-potato pattern** for proposal execution — proposals must be consumed in a single PTB, preventing partial execution
 - **Forward-only status transitions** — proposals move `active → passed → executed` (or `active → expired`) with no reversals
 - **`controller::privileged_submit`** — proposals bypass voting and go directly to `executed`; no `ProposalPassed` event emitted
+- **Event-only audit for single-PTB executions** — `submit_vote_execute`, `ticket_from_cap` and `privileged_submit` create no `Proposal` object; the proposal ID is minted like an object ID and the lifecycle events are the audit record. Only two-PTB `submit_proposal` shares a `Proposal<P>`
 - **Read-only execution for cooldown-free types** — `submit_vote_execute_readonly` / `ticket_from_vote_readonly` / `ticket_from_cap_readonly` take `&DAO` and skip the last-executed write, so single-vote trades leave the DAO unmodified and do not serialise on it; `&mut DAO` variants remain for types with a cooldown
 - **Type-keyed registry** — `submit_proposal<P>` / `submit_vote_execute<P>` / `ticket_from_cap<P>` select the config by `P`'s slot; there is no caller-supplied type key to spoof. Display keys are human labels only, unique per DAO, and resolvable back to the type for admin operations
 
 ## Recent Changes
 
+- **2026-09-24 — event-only audit for single-PTB executions (ARMATURE-11)**: atomic, bypass and controller executions emit events instead of creating a shared `Proposal<P>`; `ProposalCreated` gains `metadata_ipfs`. See `changelog.md`.
 - **2026-09-24 — read-only DAO on the atomic and bypass paths (ARMATURE-10)**: `&DAO` variants of `submit_vote_execute`, `ticket_from_vote` and `ticket_from_cap` for types with cooldown 0; no DAO write or write lock on the trading path. See `changelog.md`.
 - **2026-09-24 — type-keyed proposal registry (ARMATURE-9)**: replaced the string-keyed proposal-type maps on `dao::DAO` with one dynamic-field slot per enabled type, keyed by the payload's canonical `TypeName`. Removes the per-transaction rewrite of a root that grew with every enabled type, and removes the caller-supplied `type_key` from submission and execution calls. See `changelog.md`.

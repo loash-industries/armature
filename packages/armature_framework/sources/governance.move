@@ -8,6 +8,12 @@ use sui::vec_set::{Self, VecSet};
 const EEmptyBoard: u64 = 0;
 const EDuplicateBoardMember: u64 = 1;
 const ENotBoardMember: u64 = 2;
+const ENotBoardGovernance: u64 = 3;
+
+// === Constants ===
+
+/// Vote weight of each board member. Every Board vote path reads it from here.
+const BOARD_MEMBER_VOTE_WEIGHT: u64 = 1;
 
 /// Sealed governance model enum. The governance type is immutable at creation.
 /// Governance state within a variant may be mutated by authorized proposal handlers.
@@ -78,8 +84,8 @@ public(package) fun assert_board_member(self: &GovernanceConfig, addr: address) 
     assert!(self.is_board_member(addr), ENotBoardMember);
 }
 
-/// Build a vote snapshot for Board governance. Each member gets weight 1.
-/// Returns (snapshot, total_weight).
+/// Build a vote snapshot for Board governance. Each member gets
+/// BOARD_MEMBER_VOTE_WEIGHT. Returns (snapshot, total_weight).
 public(package) fun board_vote_snapshot(self: &GovernanceConfig): (VecMap<address, u64>, u64) {
     match (self) {
         GovernanceConfig::Board { members, .. } => {
@@ -88,12 +94,28 @@ public(package) fun board_vote_snapshot(self: &GovernanceConfig): (VecMap<addres
             let mut snapshot = vec_map::empty<address, u64>();
             let mut i = 0;
             while (i < len) {
-                snapshot.insert(keys[i], 1u64);
+                snapshot.insert(keys[i], BOARD_MEMBER_VOTE_WEIGHT);
                 i = i + 1;
             };
-            (snapshot, len)
+            (snapshot, len * BOARD_MEMBER_VOTE_WEIGHT)
         },
         _ => abort 0,
+    }
+}
+
+/// Weight `addr` would hold in `board_vote_snapshot`. Aborts with
+/// ENotBoardMember if `addr` is not a board member.
+public(package) fun board_vote_weight(self: &GovernanceConfig, addr: address): u64 {
+    self.assert_board_member(addr);
+    BOARD_MEMBER_VOTE_WEIGHT
+}
+
+/// Total weight of the snapshot `board_vote_snapshot` would build, without
+/// building it. Aborts with ENotBoardGovernance if not Board governance.
+public(package) fun board_vote_total_weight(self: &GovernanceConfig): u64 {
+    match (self) {
+        GovernanceConfig::Board { members } => members.length() * BOARD_MEMBER_VOTE_WEIGHT,
+        _ => abort ENotBoardGovernance,
     }
 }
 

@@ -92,8 +92,9 @@ public struct BypassDisabled has copy, drop {
 // === Public Functions ===
 
 /// Mint an ExecutionTicket authorized by an `ExternalExecutionCap<P>`,
-/// bypassing the vote. Creates an Executed audit `Proposal<P>` (shared),
-/// and records the execution timestamp for cooldown tracking.
+/// bypassing the vote, and records the execution timestamp for cooldown
+/// tracking. No Proposal object is created; ProposalCreated,
+/// ProposalPayloadCreated and ProposalExecuted are the audit record.
 ///
 /// The proposal type is `P` itself: its slot on the DAO supplies the config
 /// and display key, so no separate type key or binding check is needed.
@@ -308,19 +309,14 @@ fun ticket_from_cap_core<P: store>(
         submitter: ctx.sender(),
     });
 
-    // Serialise payload BEFORE moving it into the ticket so the event captures it.
-    let payload_bcs = std::bcs::to_bytes(&payload);
-
-    let req = proposal::privileged_create<P>(
+    let req = proposal::privileged_execute(
         dao.id(),
         display_key,
         ctx.sender(),
         metadata_ipfs,
-        clock,
+        &payload,
         ctx,
     );
-
-    proposal::emit_payload_created_event(req.req_proposal_id(), dao.id(), payload_bcs);
 
     proposal::new_ticket_external(req, payload)
 }

@@ -135,6 +135,7 @@ public struct ProposalCreated has copy, drop {
     dao_id: ID,
     type_key: std::ascii::String,
     proposer: address,
+    metadata_ipfs: Option<String>,
 }
 
 /// Records the full BCS-serialised payload at proposal creation time.
@@ -218,6 +219,29 @@ public fun composable_allowed(self: &ProposalConfig): bool { self.composable_all
 public fun with_composable_allowed(mut self: ProposalConfig, allowed: bool): ProposalConfig {
     self.composable_allowed = allowed;
     self
+}
+
+/// Whether a proposal with these weights passes: votes cast meet `quorum` of
+/// the snapshot weight, and YES votes meet `approval_threshold` of votes cast.
+public(package) fun passes(
+    self: &ProposalConfig,
+    yes_weight: u64,
+    no_weight: u64,
+    total_snapshot_weight: u64,
+): bool {
+    let total_voted = yes_weight + no_weight;
+    total_voted > 0
+        && utils::gte_bps(total_voted, total_snapshot_weight, (self.quorum as u64))
+        && utils::gte_bps(yes_weight, total_voted, (self.approval_threshold as u64))
+}
+
+/// Abort with ECooldownActive if the type last executed less than
+/// `cooldown_ms` before `now_ms`.
+fun assert_cooldown_elapsed(self: &ProposalConfig, last_executed_at_ms: Option<u64>, now_ms: u64) {
+    if (self.cooldown_ms > 0 && last_executed_at_ms.is_some()) {
+        let last = last_executed_at_ms.destroy_some();
+        assert!(now_ms >= last + self.cooldown_ms, ECooldownActive);
+    };
 }
 
 // === ProposalStatus helpers ===
@@ -328,79 +352,12 @@ public(package) fun create<P: store>(
         dao_id,
         type_key,
         proposer,
+        metadata_ipfs,
     });
 
     event::emit(ProposalPayloadCreated { proposal_id, dao_id, payload_bcs });
 
     transfer::share_object(proposal);
-}
-
-/// Like create(), but returns the owned Proposal instead of sharing it.
-///
-/// INVARIANT: This function may only be called by board_voting::submit_vote_execute.
-/// The caller MUST call transfer::share_object on the returned proposal after
-/// execution completes. Using transfer::transfer instead would strand an Active
-/// proposal in an owned-object state that can never complete its lifecycle, while
-/// the ProposalCreated event would still exist on-chain.
-public(package) fun create_returning<P: store>(
-    dao_id: ID,
-    type_key: std::ascii::String,
-    proposer: address,
-    metadata_ipfs: Option<String>,
-    payload: P,
-    config: ProposalConfig,
-    governance: &GovernanceConfig,
-    is_dao_active: bool,
-    clock: &Clock,
-    ctx: &mut TxContext,
-): Proposal<P> {
-    assert!(is_dao_active, EDAONotActive);
-    let (vote_snapshot, total_snapshot_weight) = governance.board_vote_snapshot();
-
-    let payload_bcs = std::bcs::to_bytes(&payload);
-
-    let proposal = Proposal<P> {
-        id: object::new(ctx),
-        dao_id,
-        type_key,
-        proposer,
-        metadata_ipfs,
-        payload: option::some(payload),
-        vote_snapshot,
-        total_snapshot_weight,
-        votes_cast: vec_map::empty(),
-        yes_weight: 0,
-        no_weight: 0,
-        config,
-        created_at_ms: clock.timestamp_ms(),
-        passed_at_ms: option::none(),
-        status: ProposalStatus::Active,
-    };
-
-    let proposal_id = object::id(&proposal);
-
-    event::emit(ProposalCreated { proposal_id, dao_id, type_key, proposer });
-    event::emit(ProposalPayloadCreated { proposal_id, dao_id, payload_bcs });
-
-    proposal
-}
-
-/// Share a proposal returned by create_returning. Called by board_voting::submit_vote_execute
-/// after executing the proposal, so the Executed object becomes the permanent audit record.
-/// Wraps transfer::share_object, which must be called within this module for key-only types.
-#[allow(lint(share_owned, custom_state_change))]
-public(package) fun share_proposal<P: store>(proposal: Proposal<P>) {
-    transfer::share_object(proposal);
-}
-
-/// Emit the ProposalPayloadCreated event. Used by external_execution::ticket_from_cap,
-/// which must serialise the payload before moving it into the ticket.
-public(package) fun emit_payload_created_event(
-    proposal_id: ID,
-    dao_id: ID,
-    payload_bcs: vector<u8>,
-) {
-    event::emit(ProposalPayloadCreated { proposal_id, dao_id, payload_bcs });
 }
 
 // === Lifecycle: vote ===
@@ -440,25 +397,7 @@ public fun vote<P: store>(self: &mut Proposal<P>, approve: bool, clock: &Clock, 
         weight,
     });
 
-    // Check if proposal passes: quorum and approval threshold met
-    let total_voted = self.yes_weight + self.no_weight;
-    let quorum_met = utils::gte_bps(
-        total_voted,
-        self.total_snapshot_weight,
-        (self.config.quorum as u64),
-    );
-
-    let threshold_met = if (total_voted == 0) {
-        false
-    } else {
-        utils::gte_bps(
-            self.yes_weight,
-            total_voted,
-            (self.config.approval_threshold as u64),
-        )
-    };
-
-    if (quorum_met && threshold_met) {
+    if (self.config.passes(self.yes_weight, self.no_weight, self.total_snapshot_weight)) {
         self.status = ProposalStatus::Passed;
         self.passed_at_ms = option::some(clock.timestamp_ms());
 
@@ -519,13 +458,7 @@ public(package) fun execute<P: store>(
         assert!(now >= passed_at + self.config.execution_delay_ms, EDelayNotElapsed);
     };
 
-    // Check cooldown
-    if (self.config.cooldown_ms > 0) {
-        if (last_executed_at_ms.is_some()) {
-            let last = last_executed_at_ms.destroy_some();
-            assert!(now >= last + self.config.cooldown_ms, ECooldownActive);
-        };
-    };
+    self.config.assert_cooldown_elapsed(last_executed_at_ms, now);
 
     self.status = ProposalStatus::Executed;
 
@@ -545,117 +478,92 @@ public(package) fun execute<P: store>(
     (payload, ExecutionRequest<P> { dao_id, proposal_id })
 }
 
-// === Lifecycle: privileged_create ===
+// === Lifecycle: single-PTB executions ===
+//
+// Executions that finish inside one PTB never materialise a Proposal object:
+// nobody else needs to vote on it, and a shared audit object would lock a
+// storage deposit per execution that nobody reclaims. The events a shared
+// proposal would emit over its lifetime are emitted instead, under a proposal
+// ID that is minted like an object ID, and form the audit record.
 
-/// Create a privileged audit proposal in Executed status with no payload.
-/// Used by the external-execution bypass flow (ticket_from_cap).
-/// The payload lives in the ticket, not in the proposal. Returns an
-/// ExecutionRequest for the caller to embed in the ticket.
-#[allow(lint(share_owned, custom_state_change))]
-public(package) fun privileged_create<P: store>(
-    dao_id: ID,
-    type_key: std::ascii::String,
-    proposer: address,
-    metadata_ipfs: Option<String>,
-    clock: &Clock,
-    ctx: &mut TxContext,
-): ExecutionRequest<P> {
-    let now = clock.timestamp_ms();
-
-    let proposal = Proposal<P> {
-        id: object::new(ctx),
-        dao_id,
-        type_key,
-        proposer,
-        metadata_ipfs,
-        payload: option::none(),
-        vote_snapshot: vec_map::empty(),
-        total_snapshot_weight: 0,
-        votes_cast: vec_map::empty(),
-        yes_weight: 0,
-        no_weight: 0,
-        config: new_config(10_000, 10_000, 0, MIN_EXPIRY_MS, 0, 0),
-        created_at_ms: now,
-        passed_at_ms: option::some(now),
-        status: ProposalStatus::Executed,
-    };
-
-    let proposal_id = object::id(&proposal);
-
-    event::emit(ProposalCreated {
-        proposal_id,
-        dao_id,
-        type_key,
-        proposer,
-    });
-
-    event::emit(ProposalExecuted {
-        proposal_id,
-        dao_id,
-        executor: proposer,
-    });
-
-    transfer::share_object(proposal);
-
-    ExecutionRequest<P> { dao_id, proposal_id }
-}
-
-/// Create a privileged audit proposal in Executed status WITH a payload stored
-/// in the proposal for on-chain audit. Used by the controller bypass flow
-/// (SubDAOControl-authorized). Returns an ExecutionRequest to authorize SubDAO
-/// mutations in the same PTB.
+/// Submit, cast the proposer's YES vote on, and execute a proposal in one PTB
+/// (board_voting::submit_vote_execute). Emits ProposalCreated,
+/// ProposalPayloadCreated, VoteCast, ProposalPassed and ProposalExecuted, in
+/// the order a shared proposal would, and returns a Standalone ticket carrying
+/// the vote weights so execution-time approval-floor checks behave identically.
 ///
-/// Note: because the payload is stored in the proposal, `delete_executed_proposal`
-/// cannot be called on it (it asserts `payload.is_none()`). The proposal
-/// remains as a permanent audit record, which is the intent for controller operations.
-#[allow(lint(share_owned, custom_state_change))]
-public(package) fun privileged_create_with_payload<P: store>(
+/// The caller has checked that the proposer is a board member and that their
+/// single vote passes (`passes`). This function enforces the checks `execute`
+/// would: execution not paused, no execution delay, cooldown elapsed.
+public(package) fun execute_single_vote<P: store>(
     dao_id: ID,
     type_key: std::ascii::String,
     proposer: address,
     metadata_ipfs: Option<String>,
     payload: P,
+    config: &ProposalConfig,
+    yes_weight: u64,
+    total_snapshot_weight: u64,
+    last_executed_at_ms: Option<u64>,
+    execution_paused: bool,
     clock: &Clock,
     ctx: &mut TxContext,
+): ExecutionTicket<P> {
+    assert!(!execution_paused, EExecutionPaused);
+    assert!(config.execution_delay_ms == 0, EDelayNotElapsed);
+    config.assert_cooldown_elapsed(last_executed_at_ms, clock.timestamp_ms());
+
+    let proposal_id = fresh_proposal_id(ctx);
+    let payload_bcs = std::bcs::to_bytes(&payload);
+
+    event::emit(ProposalCreated { proposal_id, dao_id, type_key, proposer, metadata_ipfs });
+    event::emit(ProposalPayloadCreated { proposal_id, dao_id, payload_bcs });
+    event::emit(VoteCast {
+        proposal_id,
+        dao_id,
+        voter: proposer,
+        approve: true,
+        weight: yes_weight,
+    });
+    event::emit(ProposalPassed { proposal_id, dao_id, yes_weight, no_weight: 0 });
+    event::emit(ProposalExecuted { proposal_id, dao_id, executor: proposer });
+
+    new_ticket_standalone(
+        ExecutionRequest { dao_id, proposal_id },
+        payload,
+        yes_weight,
+        total_snapshot_weight,
+    )
+}
+
+/// Record an execution authorised by a capability rather than a vote
+/// (external_execution::ticket_from_cap, controller::privileged_submit) and
+/// return its ExecutionRequest. Emits ProposalCreated, ProposalPayloadCreated
+/// and ProposalExecuted; there is no vote, so no VoteCast or ProposalPassed.
+/// The payload is only serialised into the event; the caller keeps it.
+public(package) fun privileged_execute<P: store>(
+    dao_id: ID,
+    type_key: std::ascii::String,
+    proposer: address,
+    metadata_ipfs: Option<String>,
+    payload: &P,
+    ctx: &mut TxContext,
 ): ExecutionRequest<P> {
-    let now = clock.timestamp_ms();
+    let proposal_id = fresh_proposal_id(ctx);
+    let payload_bcs = std::bcs::to_bytes(payload);
 
-    let proposal = Proposal<P> {
-        id: object::new(ctx),
-        dao_id,
-        type_key,
-        proposer,
-        metadata_ipfs,
-        payload: option::some(payload),
-        vote_snapshot: vec_map::empty(),
-        total_snapshot_weight: 0,
-        votes_cast: vec_map::empty(),
-        yes_weight: 0,
-        no_weight: 0,
-        config: new_config(10_000, 10_000, 0, MIN_EXPIRY_MS, 0, 0),
-        created_at_ms: now,
-        passed_at_ms: option::some(now),
-        status: ProposalStatus::Executed,
-    };
+    event::emit(ProposalCreated { proposal_id, dao_id, type_key, proposer, metadata_ipfs });
+    event::emit(ProposalPayloadCreated { proposal_id, dao_id, payload_bcs });
+    event::emit(ProposalExecuted { proposal_id, dao_id, executor: proposer });
 
-    let proposal_id = object::id(&proposal);
+    ExecutionRequest { dao_id, proposal_id }
+}
 
-    event::emit(ProposalCreated {
-        proposal_id,
-        dao_id,
-        type_key,
-        proposer,
-    });
-
-    event::emit(ProposalExecuted {
-        proposal_id,
-        dao_id,
-        executor: proposer,
-    });
-
-    transfer::share_object(proposal);
-
-    ExecutionRequest<P> { dao_id, proposal_id }
+/// Mint a proposal ID for an execution that has no Proposal object. It comes
+/// from the transaction's object-ID counter, so it is unique and never equals
+/// the ID of a real proposal or any other object.
+fun fresh_proposal_id(ctx: &mut TxContext): ID {
+    object::id_from_address(ctx.fresh_object_address())
 }
 
 // === ExecutionRequest ===
@@ -856,6 +764,30 @@ public fun delete_executed_proposal<P: store + drop>(proposal: Proposal<P>) {
 // === Test Helpers ===
 
 #[test_only]
+public fun created_event_proposal_id(e: &ProposalCreated): ID { e.proposal_id }
+
+#[test_only]
+public fun created_event_proposer(e: &ProposalCreated): address { e.proposer }
+
+#[test_only]
+public fun created_event_metadata_ipfs(e: &ProposalCreated): Option<String> { e.metadata_ipfs }
+
+#[test_only]
+public fun payload_event_proposal_id(e: &ProposalPayloadCreated): ID { e.proposal_id }
+
+#[test_only]
+public fun payload_event_bcs(e: &ProposalPayloadCreated): vector<u8> { e.payload_bcs }
+
+#[test_only]
+public fun vote_event_weight(e: &VoteCast): u64 { e.weight }
+
+#[test_only]
+public fun passed_event_yes_weight(e: &ProposalPassed): u64 { e.yes_weight }
+
+#[test_only]
+public fun executed_event_proposal_id(e: &ProposalExecuted): ID { e.proposal_id }
+
+#[test_only]
 /// Mint an ExternalExecutionCap<P> for testing without going through governance.
 public fun new_external_execution_cap_for_testing<P>(
     dao_id: ID,
@@ -907,43 +839,24 @@ public fun new_standalone_ticket_for_testing<P: store>(
 #[test_only]
 /// privileged_create variant that accepts a payload for testing purposes.
 /// Returns an ExecutionTicket (Standalone closeout) with zero vote weights.
-/// Use for tests that need to construct a zero-weight or crafted Proposal.
+/// Like production privileged_create, it creates no Proposal object: the ID is
+/// minted from the transaction and only the events are emitted.
 public fun privileged_create_for_testing<P: store>(
     dao_id: ID,
     type_key: std::ascii::String,
     proposer: address,
     metadata_ipfs: Option<String>,
     payload: P,
-    clock: &Clock,
     ctx: &mut TxContext,
 ): ExecutionTicket<P> {
-    let now = clock.timestamp_ms();
-
-    let proposal = Proposal<P> {
-        id: object::new(ctx),
-        dao_id,
-        type_key,
-        proposer,
-        metadata_ipfs,
-        payload: option::none(),
-        vote_snapshot: vec_map::empty(),
-        total_snapshot_weight: 0,
-        votes_cast: vec_map::empty(),
-        yes_weight: 0,
-        no_weight: 0,
-        config: new_config(10_000, 10_000, 0, MIN_EXPIRY_MS, 0, 0),
-        created_at_ms: now,
-        passed_at_ms: option::some(now),
-        status: ProposalStatus::Executed,
-    };
-
-    let proposal_id = object::id(&proposal);
+    let proposal_id = fresh_proposal_id(ctx);
 
     event::emit(ProposalCreated {
         proposal_id,
         dao_id,
         type_key,
         proposer,
+        metadata_ipfs,
     });
 
     event::emit(ProposalExecuted {
@@ -951,8 +864,6 @@ public fun privileged_create_for_testing<P: store>(
         dao_id,
         executor: proposer,
     });
-
-    transfer::share_object(proposal);
 
     let request = ExecutionRequest { dao_id, proposal_id };
     ExecutionTicket {

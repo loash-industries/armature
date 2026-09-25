@@ -6,10 +6,18 @@ use armature::dao::{Self, DAO};
 use armature::emergency::{EmergencyFreeze, FreezeAdminCap};
 use armature::enable_proposal_type::{Self, EnableProposalType};
 use armature::governance;
-use armature::proposal;
+use armature::proposal::{
+    Self,
+    ProposalCreated,
+    ProposalExecuted,
+    ProposalPassed,
+    ProposalPayloadCreated,
+    VoteCast
+};
 use std::string;
 use std::type_name;
 use sui::clock::{Self, Clock};
+use sui::event;
 use sui::test_scenario;
 
 // === Addresses ===
@@ -855,6 +863,155 @@ fun test_sve_readonly__quorum_boundary_just_below_aborts() {
     create_three_member_dao(&mut scenario);
     enable_fast_type(&mut scenario, 3_400, 5_000, 0, 0);
     call_sve_readonly_drop_ticket(&mut scenario, &clock);
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// =========================================================================
+// Event-only audit (no Proposal object)
+// =========================================================================
+
+/// Run one atomic execution (either variant) with metadata and check it emits
+/// the proposal lifecycle events under the ticket's proposal ID. Returns that ID.
+fun sve_and_check_events(
+    scenario: &mut test_scenario::Scenario,
+    clock: &Clock,
+    readonly: bool,
+): ID {
+    scenario.next_tx(CREATOR);
+    let mut dao = scenario.take_shared<DAO>();
+    let freeze = scenario.take_shared<EmergencyFreeze>();
+    let metadata = option::some(string::utf8(b"QmTestHash"));
+
+    let ticket = if (readonly) {
+        board_voting::submit_vote_execute_readonly<FastPayload>(
+            &dao,
+            metadata,
+            FastPayload { value: 42 },
+            &freeze,
+            clock,
+            scenario.ctx(),
+        )
+    } else {
+        board_voting::submit_vote_execute<FastPayload>(
+            &mut dao,
+            metadata,
+            FastPayload { value: 42 },
+            &freeze,
+            clock,
+            scenario.ctx(),
+        )
+    };
+    let proposal_id = ticket.ticket_request().req_proposal_id();
+
+    let created = event::events_by_type<ProposalCreated>();
+    assert!(created.length() == 1);
+    assert!(created[0].created_event_proposal_id() == proposal_id);
+    assert!(created[0].created_event_proposer() == CREATOR);
+    assert!(created[0].created_event_metadata_ipfs() == metadata);
+
+    let payloads = event::events_by_type<ProposalPayloadCreated>();
+    assert!(payloads.length() == 1);
+    assert!(payloads[0].payload_event_proposal_id() == proposal_id);
+    assert!(payloads[0].payload_event_bcs() == std::bcs::to_bytes(&FastPayload { value: 42 }));
+
+    let votes = event::events_by_type<VoteCast>();
+    assert!(votes.length() == 1);
+    assert!(votes[0].vote_event_weight() == 1);
+
+    let passed = event::events_by_type<ProposalPassed>();
+    assert!(passed.length() == 1);
+    assert!(passed[0].passed_event_yes_weight() == 1);
+
+    let executed = event::events_by_type<ProposalExecuted>();
+    assert!(executed.length() == 1);
+    assert!(executed[0].executed_event_proposal_id() == proposal_id);
+
+    ticket.discharge();
+    test_scenario::return_shared(dao);
+    test_scenario::return_shared(freeze);
+    proposal_id
+}
+
+#[test]
+/// submit_vote_execute creates no objects: the five lifecycle events are the
+/// audit record, and the minted proposal ID is not an object.
+fun test_sve__creates_no_objects_and_emits_lifecycle_events() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_single_member_dao(&mut scenario);
+    enable_fast_type(&mut scenario, 5_000, 5_000, 0, 0);
+    sve_and_check_events(&mut scenario, &clock, false);
+
+    let effects = scenario.next_tx(CREATOR);
+    assert!(effects.created().is_empty());
+    assert!(effects.num_user_events() == 5);
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+/// The read-only variant is also event-only, and each execution gets a distinct proposal ID.
+fun test_sve_readonly__creates_no_objects_and_ids_are_distinct() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_single_member_dao(&mut scenario);
+    enable_fast_type(&mut scenario, 5_000, 5_000, 0, 0);
+    let first = sve_and_check_events(&mut scenario, &clock, true);
+
+    let effects = scenario.next_tx(CREATOR);
+    assert!(effects.created().is_empty());
+    assert!(effects.num_user_events() == 5);
+
+    let second = sve_and_check_events(&mut scenario, &clock, true);
+    assert!(first != second);
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+/// Two atomic executions in the same transaction get distinct proposal IDs.
+fun test_sve__same_tx_executions_get_distinct_ids() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_single_member_dao(&mut scenario);
+    enable_fast_type(&mut scenario, 5_000, 5_000, 0, 0);
+
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        let a = board_voting::submit_vote_execute_readonly<FastPayload>(
+            &dao,
+            option::none(),
+            FastPayload { value: 1 },
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        let b = board_voting::submit_vote_execute_readonly<FastPayload>(
+            &dao,
+            option::none(),
+            FastPayload { value: 2 },
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        assert!(a.ticket_request().req_proposal_id() != b.ticket_request().req_proposal_id());
+        a.discharge();
+        b.discharge();
+        test_scenario::return_shared(dao);
+        test_scenario::return_shared(freeze);
+    };
 
     clock.destroy_for_testing();
     scenario.end();

@@ -18,7 +18,6 @@ use armature_proposals::controller_batch_remove_members::ControllerBatchRemoveMe
 use armature_proposals::pause_execution::{Self, PauseSubDAOExecution, UnpauseSubDAOExecution};
 use armature_proposals::reclaim_cap_from_subdao::ReclaimCapFromSubDAO;
 use armature_proposals::transfer_cap_to_subdao::TransferCapToSubDAO;
-use sui::clock::Clock;
 use sui::event;
 
 // === Errors ===
@@ -197,7 +196,6 @@ public fun execute_pause_subdao_execution(
     controller_vault: &mut CapabilityVault,
     subdao: &mut DAO,
     ticket: ExecutionTicket<PauseSubDAOExecution>,
-    clock: &Clock,
     ctx: &mut TxContext,
 ) {
     assert!(controller_vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
@@ -216,7 +214,6 @@ public fun execute_pause_subdao_execution(
         b"PauseSubDAOExecution".to_ascii_string(),
         option::some(std::string::utf8(b"Controller-initiated pause")),
         pause_execution::new_pause(payload.pause_control_id()),
-        clock,
         ctx,
     );
 
@@ -234,7 +231,6 @@ public fun execute_unpause_subdao_execution(
     controller_vault: &mut CapabilityVault,
     subdao: &mut DAO,
     ticket: ExecutionTicket<UnpauseSubDAOExecution>,
-    clock: &Clock,
     ctx: &mut TxContext,
 ) {
     assert!(controller_vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
@@ -253,7 +249,6 @@ public fun execute_unpause_subdao_execution(
         b"UnpauseSubDAOExecution".to_ascii_string(),
         option::some(std::string::utf8(b"Controller-initiated unpause")),
         pause_execution::new_unpause(payload.unpause_control_id()),
-        clock,
         ctx,
     );
 
@@ -299,7 +294,6 @@ public fun execute_spin_out_subdao(
     subdao_vault: &mut CapabilityVault,
     subdao: &mut DAO,
     ticket: ExecutionTicket<SpinOutSubDAO>,
-    clock: &Clock,
     ctx: &mut TxContext,
 ) {
     assert!(vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
@@ -327,7 +321,6 @@ public fun execute_spin_out_subdao(
             *payload.spin_out_subdao_config(),
             *payload.create_subdao_config(),
         ),
-        clock,
         ctx,
     );
 
@@ -372,7 +365,6 @@ public fun execute_controller_batch_add_members(
     controller_vault: &mut CapabilityVault,
     members_dao: &mut DAO,
     ticket: ExecutionTicket<ControllerBatchAddMembers>,
-    clock: &Clock,
     ctx: &mut TxContext,
 ) {
     assert!(controller_vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
@@ -395,7 +387,6 @@ public fun execute_controller_batch_add_members(
         b"BatchAddMembers".to_ascii_string(),
         option::none(),
         batch_add_members::new(*payload.members()),
-        clock,
         ctx,
     );
 
@@ -421,7 +412,6 @@ public fun execute_controller_batch_remove_members(
     controller_vault: &mut CapabilityVault,
     members_dao: &mut DAO,
     ticket: ExecutionTicket<ControllerBatchRemoveMembers>,
-    clock: &Clock,
     ctx: &mut TxContext,
 ) {
     assert!(controller_vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
@@ -444,7 +434,6 @@ public fun execute_controller_batch_remove_members(
         b"BatchRemoveMembers".to_ascii_string(),
         option::none(),
         batch_remove_members::new(*payload.members()),
-        clock,
         ctx,
     );
 
