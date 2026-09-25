@@ -687,7 +687,6 @@ fun execute_enable_bypass_type_zero_weight_aborts() {
             CREATOR,
             option::none(),
             payload,
-            &clock,
             scenario.ctx(),
         );
 

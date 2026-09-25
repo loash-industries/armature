@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-09-25 — PR #164 review nits (ARMATURE-11)
+
+- `proposal::privileged_create_for_testing` (test-only) no longer creates or shares a `Proposal<P>`: it mints the ID via `fresh_proposal_id` and drops its `clock` parameter, matching the production single-PTB paths. `CLAUDE.md` now describes single-PTB executions as event-only (no `Proposal` object) instead of an `active → executed` transition.
+
 ## 2026-09-24 — event-only audit for single-PTB executions (ARMATURE-11)
 
 - `board_voting::submit_vote_execute` / `submit_vote_execute_readonly`, `external_execution::ticket_from_cap` / `ticket_from_cap_readonly` and `controller::privileged_submit` no longer create a shared `Proposal<P>` audit object. They mint the proposal ID from `ctx.fresh_object_address()` and emit the events a shared proposal would: `ProposalCreated`, `ProposalPayloadCreated`, then `VoteCast` and `ProposalPassed` on the vote path, and `ProposalExecuted`. A single-vote trade now creates zero framework objects; the officers OU had accumulated 743 undeleted audit objects (~5.35 SUI of locked deposits). The atomic path still returns a Standalone ticket with yes=1 and total=board size, so approval-floor checks and all abort codes are unchanged. Two-PTB `submit_proposal` still shares a `Proposal<P>`.

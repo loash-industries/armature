@@ -839,37 +839,17 @@ public fun new_standalone_ticket_for_testing<P: store>(
 #[test_only]
 /// privileged_create variant that accepts a payload for testing purposes.
 /// Returns an ExecutionTicket (Standalone closeout) with zero vote weights.
-/// Use for tests that need to construct a zero-weight or crafted Proposal.
+/// Like production privileged_create, it creates no Proposal object: the ID is
+/// minted from the transaction and only the events are emitted.
 public fun privileged_create_for_testing<P: store>(
     dao_id: ID,
     type_key: std::ascii::String,
     proposer: address,
     metadata_ipfs: Option<String>,
     payload: P,
-    clock: &Clock,
     ctx: &mut TxContext,
 ): ExecutionTicket<P> {
-    let now = clock.timestamp_ms();
-
-    let proposal = Proposal<P> {
-        id: object::new(ctx),
-        dao_id,
-        type_key,
-        proposer,
-        metadata_ipfs,
-        payload: option::none(),
-        vote_snapshot: vec_map::empty(),
-        total_snapshot_weight: 0,
-        votes_cast: vec_map::empty(),
-        yes_weight: 0,
-        no_weight: 0,
-        config: new_config(10_000, 10_000, 0, MIN_EXPIRY_MS, 0, 0),
-        created_at_ms: now,
-        passed_at_ms: option::some(now),
-        status: ProposalStatus::Executed,
-    };
-
-    let proposal_id = object::id(&proposal);
+    let proposal_id = fresh_proposal_id(ctx);
 
     event::emit(ProposalCreated {
         proposal_id,
@@ -884,8 +864,6 @@ public fun privileged_create_for_testing<P: store>(
         dao_id,
         executor: proposer,
     });
-
-    transfer::share_object(proposal);
 
     let request = ExecutionRequest { dao_id, proposal_id };
     ExecutionTicket {
