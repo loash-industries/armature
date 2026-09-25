@@ -179,6 +179,11 @@ public struct ProposalExpired has copy, drop {
 /// Create and validate a new ProposalConfig.
 /// Aborts if quorum not in [1, 10000], approval_threshold not in [5000, 10000],
 /// or expiry_ms < 1 hour.
+///
+/// There is no upper bound on expiry_ms or execution_delay_ms: deadlines
+/// saturate at u64::MAX, so an enormous value means "never expires". A Passed
+/// proposal under such a config can then only leave the chain by being
+/// executed; delete_expired_proposal never opens for it. Accepted by design.
 public fun new_config(
     quorum: u16,
     approval_threshold: u16,
@@ -241,7 +246,7 @@ public(package) fun passes(
 fun assert_cooldown_elapsed(self: &ProposalConfig, last_executed_at_ms: Option<u64>, now_ms: u64) {
     if (self.cooldown_ms > 0 && last_executed_at_ms.is_some()) {
         let last = last_executed_at_ms.destroy_some();
-        assert!(now_ms >= last + self.cooldown_ms, ECooldownActive);
+        assert!(now_ms >= utils::saturating_add(last, self.cooldown_ms), ECooldownActive);
     };
 }
 
@@ -404,13 +409,17 @@ public fun vote<P: store>(self: &mut Proposal<P>, approve: bool, clock: &Clock, 
 ///
 /// An Active proposal expires `expiry_ms` after creation. A Passed proposal
 /// expires when its execution window closes (see `execution_deadline_ms`).
-/// Aborts with ENotExpired before then.
+/// Aborts with ENotExpired before then. Deadlines saturate at u64::MAX, so a
+/// proposal whose config makes the sum overflow never expires (see new_config).
 ///
 /// P must have `drop`: the payload is destroyed, never handed to the caller.
 public fun delete_expired_proposal<P: store + drop>(proposal: Proposal<P>, clock: &Clock) {
     let now = clock.timestamp_ms();
     let deadline = match (&proposal.status) {
-        ProposalStatus::Active => proposal.created_at_ms + proposal.config.expiry_ms,
+        ProposalStatus::Active => utils::saturating_add(
+            proposal.created_at_ms,
+            proposal.config.expiry_ms,
+        ),
         ProposalStatus::Passed => proposal.execution_deadline_ms(),
     };
     assert!(now >= deadline, ENotExpired);
@@ -421,9 +430,14 @@ public fun delete_expired_proposal<P: store + drop>(proposal: Proposal<P>, clock
 }
 
 /// End of a Passed proposal's execution window: it opens when the execution
-/// delay elapses and stays open for `expiry_ms`. Aborts if not Passed.
+/// delay elapses and stays open for `expiry_ms`. Saturates at u64::MAX, so a
+/// config with an enormous delay or expiry never expires rather than aborting.
+/// Aborts if not Passed.
 fun execution_deadline_ms<P: store>(self: &Proposal<P>): u64 {
-    *self.passed_at_ms.borrow() + self.config.execution_delay_ms + self.config.expiry_ms
+    utils::saturating_add(
+        utils::saturating_add(*self.passed_at_ms.borrow(), self.config.execution_delay_ms),
+        self.config.expiry_ms,
+    )
 }
 
 // === Lifecycle: execute ===
@@ -455,7 +469,10 @@ public(package) fun execute<P: store>(
 
     // Check execution delay
     if (self.config.execution_delay_ms > 0) {
-        assert!(now >= passed_at + self.config.execution_delay_ms, EDelayNotElapsed);
+        assert!(
+            now >= utils::saturating_add(passed_at, self.config.execution_delay_ms),
+            EDelayNotElapsed,
+        );
     };
     assert!(now < self.execution_deadline_ms(), EExecutionWindowClosed);
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-09-25 — PR #165 review fix: saturating proposal deadlines (ARMATURE-12)
+
+- Added `utils::saturating_add`, which returns `u64::MAX` instead of aborting on overflow. `proposal.move` uses it for the Active expiry deadline, the Passed execution deadline (`passed_at + execution_delay_ms + expiry_ms`), the execution-delay check and the cooldown check. `new_config` has no upper bound on `expiry_ms` or `execution_delay_ms`, so before this fix an enormous value overflowed and left a Passed proposal neither executable nor deletable. Such a config now means "never expires": the proposal stays executable, but `delete_expired_proposal` never opens for it, so it only leaves the chain by being executed. Accepted by design and documented on `new_config` and `delete_expired_proposal`. Tests: framework 286 → 289.
+
 ## 2026-09-25 — executed proposals are deleted, expired ones can be deleted by anyone (ARMATURE-12)
 
 - `board_voting::ticket_from_vote` and `ticket_from_vote_readonly` take `Proposal<P>` by value. `proposal::execute` emits `ProposalExecuted`, moves the payload into the ticket and deletes the object, so the storage rebate goes to the executing transaction's gas payer (the gas station on sponsored flows). A second execute attempt fails because the object no longer exists. Client PTB builders pass the same shared-object argument; only the Move signature changed.

@@ -350,6 +350,98 @@ fun test_execute_after_window_aborts() {
     scenario.end();
 }
 
+// === Test 12a: Enormous expiry saturates instead of overflowing ===
+
+/// Create a proposal whose expiry_ms is u64::MAX (a "never expires" config)
+/// and pass it at the current clock time.
+fun create_and_pass_max_expiry_proposal(scenario: &mut test_scenario::Scenario, clock: &Clock) {
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        let config = proposal::new_config(
+            5_000,
+            5_000,
+            0,
+            std::u64::max_value!(), // expiry: never
+            0,
+            0,
+        );
+        proposal::create<TestPayload>(
+            dao.id(),
+            b"SetBoard".to_ascii_string(),
+            CREATOR,
+            option::some(string::utf8(b"ipfs://test")),
+            TestPayload { value: 42 },
+            config,
+            dao.governance(),
+            dao.status().is_active(),
+            clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        prop.vote(true, clock, scenario.ctx());
+        test_scenario::return_shared(prop);
+    };
+}
+
+#[test]
+/// passed_at + execution_delay_ms + expiry_ms would overflow; the deadline
+/// saturates at u64::MAX so the proposal still executes.
+fun test_execute_with_max_expiry_does_not_overflow() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_test_dao(&mut scenario);
+    create_and_pass_max_expiry_proposal(&mut scenario, &clock);
+
+    clock.set_for_testing(1_000_000_000_000);
+    scenario.next_tx(CREATOR);
+    {
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        let dao = scenario.take_shared<DAO>();
+        let (_payload, req) = prop.execute(
+            dao.governance(),
+            option::none(),
+            false,
+            &clock,
+            scenario.ctx(),
+        );
+        proposal::consume(req);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = proposal::ENotExpired)]
+/// With a saturated deadline the proposal never expires: delete aborts with
+/// ENotExpired, not an arithmetic overflow.
+fun test_delete_with_max_expiry_not_expired() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_test_dao(&mut scenario);
+    create_and_pass_max_expiry_proposal(&mut scenario, &clock);
+
+    clock.set_for_testing(1_000_000_000_000);
+    scenario.next_tx(NON_MEMBER);
+    {
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        proposal::delete_expired_proposal(prop, &clock);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
 // === Test 13: Vote snapshot immutable after creation ===
 
 #[test]
