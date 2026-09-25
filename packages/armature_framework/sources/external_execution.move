@@ -48,6 +48,9 @@ const ECapNotFound: u64 = 10;
 const ESelfBootstrapDenied: u64 = 11;
 /// Config sets cooldown_ms > 0 and composable_allowed = true simultaneously.
 const EComposableCooldownConflict: u64 = 13;
+/// `ticket_from_cap_readonly` called for a type with cooldown_ms > 0. Cooldown
+/// tracking writes the type's slot, so those types must use `ticket_from_cap`.
+const ECooldownRequiresMutableDAO: u64 = 14;
 
 // === Constants ===
 
@@ -103,6 +106,9 @@ public struct BypassDisabled has copy, drop {
 ///   5. SubDAO is not controller-paused
 ///   6. `P` is not frozen
 ///   7. Cooldown for `P` has elapsed
+///
+/// For types with cooldown_ms = 0 prefer `ticket_from_cap_readonly`, which
+/// leaves the DAO untouched.
 public fun ticket_from_cap<P: store>(
     cap: &ExternalExecutionCap<P>,
     dao: &mut DAO,
@@ -112,49 +118,27 @@ public fun ticket_from_cap<P: store>(
     clock: &Clock,
     ctx: &mut TxContext,
 ): ExecutionTicket<P> {
-    proposal::assert_cap_for_dao(cap, dao.id());
-    assert!(dao.status().is_active(), EDAONotActive);
-    let name = type_name::with_defining_ids<P>();
-    assert!(dao.is_type_name_enabled(&name), ETypeNotEnabled);
-    assert!(!dao.is_execution_paused(), EExecutionPaused);
-    assert!(!dao.is_controller_paused(), EControllerPaused);
+    let ticket = ticket_from_cap_core(cap, dao, freeze, metadata_ipfs, payload, clock, false, ctx);
+    dao.record_execution(type_name::with_defining_ids<P>(), clock.timestamp_ms());
+    ticket
+}
 
-    let display_key = dao.type_display_key_by_name(&name);
-    freeze.assert_not_frozen(&display_key, clock);
-
-    let now = clock.timestamp_ms();
-    let cooldown_ms = dao.type_config_by_name(&name).cooldown_ms();
-    if (cooldown_ms > 0) {
-        let last_executed = dao.last_executed_ms_by_name(&name);
-        if (last_executed.is_some()) {
-            let last = last_executed.destroy_some();
-            assert!(now >= last + cooldown_ms, ECooldownActive);
-        };
-    };
-
-    dao.record_execution(name, now);
-
-    event::emit(ExternalExecutionCreated {
-        dao_id: dao.id(),
-        type_key: display_key,
-        submitter: ctx.sender(),
-    });
-
-    // Serialise payload BEFORE moving it into the ticket so the event captures it.
-    let payload_bcs = std::bcs::to_bytes(&payload);
-
-    let req = proposal::privileged_create<P>(
-        dao.id(),
-        display_key,
-        ctx.sender(),
-        metadata_ipfs,
-        clock,
-        ctx,
-    );
-
-    proposal::emit_payload_created_event(req.req_proposal_id(), dao.id(), payload_bcs);
-
-    proposal::new_ticket_external(req, payload)
+/// `ticket_from_cap` for types with cooldown_ms = 0, taking the DAO by immutable
+/// reference. The last-executed timestamp only feeds cooldown checks, so it is
+/// not recorded and nothing on the DAO is written; the DAO can be an immutable
+/// shared input that takes no write lock.
+///
+/// Aborts with ECooldownRequiresMutableDAO if the type's cooldown_ms > 0.
+public fun ticket_from_cap_readonly<P: store>(
+    cap: &ExternalExecutionCap<P>,
+    dao: &DAO,
+    freeze: &EmergencyFreeze,
+    metadata_ipfs: Option<String>,
+    payload: P,
+    clock: &Clock,
+    ctx: &mut TxContext,
+): ExecutionTicket<P> {
+    ticket_from_cap_core(cap, dao, freeze, metadata_ipfs, payload, clock, true, ctx)
 }
 
 // === EnableBypassType / DisableBypassType ===
@@ -284,6 +268,62 @@ public fun execute_disable_bypass_type<NewType: store>(
 }
 
 // === Internal ===
+
+/// Shared body of `ticket_from_cap` and `ticket_from_cap_readonly`: every check
+/// and effect except recording the execution timestamp.
+fun ticket_from_cap_core<P: store>(
+    cap: &ExternalExecutionCap<P>,
+    dao: &DAO,
+    freeze: &EmergencyFreeze,
+    metadata_ipfs: Option<String>,
+    payload: P,
+    clock: &Clock,
+    readonly: bool,
+    ctx: &mut TxContext,
+): ExecutionTicket<P> {
+    proposal::assert_cap_for_dao(cap, dao.id());
+    assert!(dao.status().is_active(), EDAONotActive);
+    let name = type_name::with_defining_ids<P>();
+    assert!(dao.is_type_name_enabled(&name), ETypeNotEnabled);
+    assert!(!dao.is_execution_paused(), EExecutionPaused);
+    assert!(!dao.is_controller_paused(), EControllerPaused);
+
+    let display_key = dao.type_display_key_by_name(&name);
+    freeze.assert_not_frozen(&display_key, clock);
+
+    let now = clock.timestamp_ms();
+    let cooldown_ms = dao.type_config_by_name(&name).cooldown_ms();
+    assert!(!readonly || cooldown_ms == 0, ECooldownRequiresMutableDAO);
+    if (cooldown_ms > 0) {
+        let last_executed = dao.last_executed_ms_by_name(&name);
+        if (last_executed.is_some()) {
+            let last = last_executed.destroy_some();
+            assert!(now >= last + cooldown_ms, ECooldownActive);
+        };
+    };
+
+    event::emit(ExternalExecutionCreated {
+        dao_id: dao.id(),
+        type_key: display_key,
+        submitter: ctx.sender(),
+    });
+
+    // Serialise payload BEFORE moving it into the ticket so the event captures it.
+    let payload_bcs = std::bcs::to_bytes(&payload);
+
+    let req = proposal::privileged_create<P>(
+        dao.id(),
+        display_key,
+        ctx.sender(),
+        metadata_ipfs,
+        clock,
+        ctx,
+    );
+
+    proposal::emit_payload_created_event(req.req_proposal_id(), dao.id(), payload_bcs);
+
+    proposal::new_ticket_external(req, payload)
+}
 
 /// Refuse to bypass-enable the bypass meta-types themselves.
 fun assert_not_bypass_forbidden<NewType>() {

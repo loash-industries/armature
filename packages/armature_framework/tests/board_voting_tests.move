@@ -642,3 +642,153 @@ fun submit_proposal_default_type_uses_its_payload_slot() {
     clock.destroy_for_testing();
     scenario.end();
 }
+
+// === ticket_from_vote_readonly ===
+
+/// Single-member DAO with TestPayload enabled at the given cooldown; CREATOR submits
+/// and votes YES, so one passed Proposal<TestPayload> is shared.
+fun passed_test_proposal(scenario: &mut test_scenario::Scenario, clock: &Clock, cooldown_ms: u64) {
+    create_dao_with_members(scenario, vector[CREATOR]);
+    enable_test_payload(scenario, proposal::new_config(5_000, 5_000, 0, 3_600_000, 0, cooldown_ms));
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        board_voting::submit_proposal<TestPayload>(
+            &dao,
+            option::none(),
+            TestPayload { value: 7 },
+            clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(dao);
+    };
+    vote_as(scenario, CREATOR, true, clock);
+}
+
+/// ticket_from_vote_readonly on the passed proposal; returns nothing, discharges the ticket.
+fun ticket_readonly_and_discharge(scenario: &mut test_scenario::Scenario, clock: &Clock) {
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let ticket = board_voting::ticket_from_vote_readonly(
+            &dao,
+            &mut prop,
+            &freeze,
+            clock,
+            scenario.ctx(),
+        );
+        assert!(ticket.ticket_payload().value == 7);
+        ticket.discharge();
+        assert!(prop.status().is_executed());
+        assert!(dao.last_executed_ms<TestPayload>().is_none());
+        test_scenario::return_shared(prop);
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(dao);
+    };
+}
+
+#[test]
+/// Two-PTB path: the read-only ticket executes the proposal and records nothing on the DAO.
+fun ticket_from_vote_readonly__executes_without_recording() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000);
+
+    passed_test_proposal(&mut scenario, &clock, 0);
+    ticket_readonly_and_discharge(&mut scenario, &clock);
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+/// The &mut DAO ticket_from_vote still records the execution timestamp.
+fun ticket_from_vote__records_execution() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000);
+
+    passed_test_proposal(&mut scenario, &clock, 0);
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let ticket = board_voting::ticket_from_vote(
+            &mut dao,
+            &mut prop,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        ticket.discharge();
+        assert!(dao.last_executed_ms<TestPayload>() == option::some(1_000));
+        test_scenario::return_shared(prop);
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::board_voting::ECooldownRequiresMutableDAO)]
+/// A type whose slot carries a cooldown cannot take the read-only path.
+fun ticket_from_vote_readonly__slot_cooldown_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000);
+
+    passed_test_proposal(&mut scenario, &clock, 60_000);
+    ticket_readonly_and_discharge(&mut scenario, &clock);
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::board_voting::ECooldownRequiresMutableDAO)]
+/// A cooldown raised on the slot after submission blocks the read-only path even
+/// though the proposal's snapshot has none: later executions check the slot, so
+/// the timestamp must be recorded.
+fun ticket_from_vote_readonly__slot_only_cooldown_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000);
+
+    passed_test_proposal(&mut scenario, &clock, 0);
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        dao.test_update_config<TestPayload>(
+            proposal::new_config(5_000, 5_000, 0, 3_600_000, 0, 60_000),
+        );
+        test_scenario::return_shared(dao);
+    };
+    ticket_readonly_and_discharge(&mut scenario, &clock);
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::board_voting::ECooldownRequiresMutableDAO)]
+/// A proposal submitted while the type had a cooldown keeps that cooldown in its
+/// snapshot; clearing the slot's cooldown afterwards does not open the read-only path.
+fun ticket_from_vote_readonly__snapshot_cooldown_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000);
+
+    passed_test_proposal(&mut scenario, &clock, 60_000);
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        dao.test_update_config<TestPayload>(proposal::new_config(5_000, 5_000, 0, 3_600_000, 0, 0));
+        test_scenario::return_shared(dao);
+    };
+    ticket_readonly_and_discharge(&mut scenario, &clock);
+
+    clock.destroy_for_testing();
+    scenario.end();
+}

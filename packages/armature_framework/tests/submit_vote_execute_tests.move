@@ -679,3 +679,183 @@ fun test_sve__enable_proposal_type_below_floor_aborts() {
     clock.destroy_for_testing();
     scenario.end();
 }
+
+// =========================================================================
+// Read-only variant (submit_vote_execute_readonly)
+// =========================================================================
+
+/// Call submit_vote_execute_readonly with an immutable DAO and drop the ticket.
+fun call_sve_readonly_drop_ticket(scenario: &mut test_scenario::Scenario, clock: &Clock) {
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        let ticket = board_voting::submit_vote_execute_readonly<FastPayload>(
+            &dao,
+            option::none(),
+            FastPayload { value: 1 },
+            &freeze,
+            clock,
+            scenario.ctx(),
+        );
+        ticket.discharge();
+        test_scenario::return_shared(dao);
+        test_scenario::return_shared(freeze);
+    };
+}
+
+#[test]
+/// Read-only variant returns the same Standalone ticket and records nothing on the DAO.
+fun test_sve_readonly__returns_ticket_and_leaves_dao_untouched() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_single_member_dao(&mut scenario);
+    enable_fast_type(&mut scenario, 5_000, 5_000, 0, 0);
+
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+
+        let ticket = board_voting::submit_vote_execute_readonly<FastPayload>(
+            &dao,
+            option::none(),
+            FastPayload { value: 42 },
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+
+        assert!(ticket.ticket_is_standalone());
+        assert!(ticket.ticket_dao_id() == dao.id());
+        assert!(ticket.ticket_yes_weight() == 1);
+        assert!(ticket.ticket_total_snapshot_weight() == 1);
+        assert!(ticket.ticket_payload().value == 42);
+        ticket.discharge();
+
+        assert!(dao.last_executed_ms<FastPayload>().is_none());
+
+        test_scenario::return_shared(dao);
+        test_scenario::return_shared(freeze);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+/// The &mut DAO variant still records the execution timestamp in the type's slot.
+fun test_sve__mutable_variant_records_execution() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_single_member_dao(&mut scenario);
+    enable_fast_type(&mut scenario, 5_000, 5_000, 0, 0);
+    call_sve_drop_ticket(&mut scenario, &clock);
+
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        assert!(dao.last_executed_ms<FastPayload>() == option::some(1_000_000));
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+/// Cooldown-free types can execute back-to-back through the read-only variant.
+fun test_sve_readonly__back_to_back() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_single_member_dao(&mut scenario);
+    enable_fast_type(&mut scenario, 5_000, 5_000, 0, 0);
+    call_sve_readonly_drop_ticket(&mut scenario, &clock);
+    call_sve_readonly_drop_ticket(&mut scenario, &clock);
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::board_voting::ECooldownRequiresMutableDAO)]
+/// A type with a cooldown cannot use the read-only variant: skipping the
+/// timestamp write would let the next execution bypass the cooldown.
+fun test_sve_readonly__cooldown_type_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_single_member_dao(&mut scenario);
+    enable_fast_type(&mut scenario, 5_000, 5_000, 0, 60_000);
+    call_sve_readonly_drop_ticket(&mut scenario, &clock);
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::board_voting::EDelayForbidsAtomicExecution)]
+/// The read-only variant keeps the atomic path's execution-delay rule.
+fun test_sve_readonly__nonzero_delay_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_single_member_dao(&mut scenario);
+    enable_fast_type(&mut scenario, 5_000, 5_000, 1_000, 0);
+    call_sve_readonly_drop_ticket(&mut scenario, &clock);
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::board_voting::ETypeNotEnabled)]
+/// The read-only variant rejects types without a slot.
+fun test_sve_readonly__type_not_enabled_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_single_member_dao(&mut scenario);
+    call_sve_readonly_drop_ticket(&mut scenario, &clock);
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::board_voting::EInsufficientVotingWeight)]
+/// The read-only variant cannot execute when the caller's single vote does not pass
+/// the proposal on its own. Three-member board, quorum=60%: 1/3 = 33% < 60%.
+fun test_sve_readonly__quorum_not_met_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_three_member_dao(&mut scenario);
+    enable_fast_type(&mut scenario, 6_000, 5_000, 0, 0);
+    call_sve_readonly_drop_ticket(&mut scenario, &clock);
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::board_voting::EInsufficientVotingWeight)]
+/// Quorum boundary on the read-only variant: three-member board, quorum=34%.
+/// 1*10000=10000 vs 3400*3=10200 → one vote falls just short → abort.
+fun test_sve_readonly__quorum_boundary_just_below_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_three_member_dao(&mut scenario);
+    enable_fast_type(&mut scenario, 3_400, 5_000, 0, 0);
+    call_sve_readonly_drop_ticket(&mut scenario, &clock);
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
