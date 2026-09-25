@@ -9,10 +9,18 @@ use armature::emergency::EmergencyFreeze;
 use armature::enable_bypass_type::EnableBypassType;
 use armature::external_execution;
 use armature::governance;
-use armature::proposal::{Self, ExternalExecutionCap, Proposal};
+use armature::proposal::{
+    Self,
+    ExternalExecutionCap,
+    Proposal,
+    ProposalCreated,
+    ProposalExecuted,
+    ProposalPayloadCreated
+};
 use std::string;
 use std::type_name;
 use sui::clock;
+use sui::event;
 use sui::test_scenario;
 
 const CREATOR: address = @0xA;
@@ -1281,4 +1289,99 @@ fun ticket_from_cap_readonly_cooldown_type_aborts() {
 
     clock.destroy_for_testing();
     scenario.end();
+}
+
+// === Event-only audit (no Proposal object) ===
+
+/// Bypass execution through either variant creates no objects: ProposalCreated,
+/// ProposalPayloadCreated and ProposalExecuted carry the audit record under the
+/// ticket's proposal ID.
+fun cap_execution_creates_no_objects(readonly: bool) {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1000);
+
+    create_test_dao(&mut scenario);
+    enable_dummy_type(&mut scenario);
+
+    // Mint the cap in its own transaction so the execution's effects only
+    // reflect what ticket_from_cap does.
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        let cap = proposal::new_external_execution_cap_for_testing<DummyBypass>(
+            dao.id(),
+            scenario.ctx(),
+        );
+        transfer::public_transfer(cap, CREATOR);
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        let cap = scenario.take_from_sender<ExternalExecutionCap<DummyBypass>>();
+        let metadata = option::some(string::utf8(b"QmBypass"));
+
+        let ticket = if (readonly) {
+            external_execution::ticket_from_cap_readonly<DummyBypass>(
+                &cap,
+                &dao,
+                &freeze,
+                metadata,
+                DummyBypass { x: 7 },
+                &clock,
+                scenario.ctx(),
+            )
+        } else {
+            external_execution::ticket_from_cap<DummyBypass>(
+                &cap,
+                &mut dao,
+                &freeze,
+                metadata,
+                DummyBypass { x: 7 },
+                &clock,
+                scenario.ctx(),
+            )
+        };
+        let proposal_id = ticket.ticket_request().req_proposal_id();
+
+        let created = event::events_by_type<ProposalCreated>();
+        assert!(created.length() == 1);
+        assert!(created[0].created_event_proposal_id() == proposal_id);
+        assert!(created[0].created_event_metadata_ipfs() == metadata);
+
+        let payloads = event::events_by_type<ProposalPayloadCreated>();
+        assert!(payloads.length() == 1);
+        assert!(payloads[0].payload_event_proposal_id() == proposal_id);
+        assert!(payloads[0].payload_event_bcs() == std::bcs::to_bytes(&DummyBypass { x: 7 }));
+
+        let executed = event::events_by_type<ProposalExecuted>();
+        assert!(executed.length() == 1);
+        assert!(executed[0].executed_event_proposal_id() == proposal_id);
+
+        ticket.discharge();
+        scenario.return_to_sender(cap);
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(dao);
+    };
+
+    let effects = scenario.next_tx(CREATOR);
+    assert!(effects.created().is_empty());
+    // ExternalExecutionCreated + the three proposal events.
+    assert!(effects.num_user_events() == 4);
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+fun ticket_from_cap_creates_no_objects() {
+    cap_execution_creates_no_objects(false);
+}
+
+#[test]
+fun ticket_from_cap_readonly_creates_no_objects() {
+    cap_execution_creates_no_objects(true);
 }

@@ -78,9 +78,9 @@ public fun submit_proposal<P: store>(
 
 /// Submit a proposal, cast the caller's YES vote, and execute — all in one PTB.
 ///
-/// The proposal is kept owned (never shared while Active) so the vote and
-/// execution can happen in the same transaction. After execution the proposal is
-/// shared as a permanent Executed audit record, identical to the standard path.
+/// No Proposal object is created: nobody else votes on it, so the proposal's
+/// events (ProposalCreated, ProposalPayloadCreated, VoteCast, ProposalPassed,
+/// ProposalExecuted) are the audit record, under a freshly minted proposal ID.
 ///
 /// Requires:
 ///   - execution_delay_ms = 0 for this proposal type (EDelayForbidsAtomicExecution)
@@ -198,48 +198,29 @@ fun submit_vote_execute_core<P: store>(
     assert!(!dao.is_controller_paused(), EControllerPaused);
     freeze.assert_not_frozen(&display_key, clock);
 
-    let last_ms = dao.last_executed_ms_by_name(&name);
+    // --- Vote: the proposer's YES must pass on its own ---
 
-    // --- Create owned proposal (never shared while Active) ---
+    // Board governance weighs each member 1 (see governance::board_vote_snapshot).
+    let yes_weight = 1;
+    let total_snapshot_weight = dao.governance().board_vote_total_weight();
+    assert!(config.passes(yes_weight, 0, total_snapshot_weight), EInsufficientVotingWeight);
 
-    let mut prop = proposal::create_returning<P>(
+    // --- Execute ---
+
+    proposal::execute_single_vote(
         dao.id(),
         display_key,
         proposer,
         metadata_ipfs,
         payload,
-        config,
-        dao.governance(),
-        true,
-        clock,
-        ctx,
-    );
-
-    // --- Vote ---
-
-    proposal::vote(&mut prop, true, clock, ctx);
-
-    assert!(prop.status().is_passed(), EInsufficientVotingWeight);
-
-    // --- Execute ---
-
-    let yes_weight = prop.yes_weight();
-    let total_snapshot_weight = prop.total_snapshot_weight();
-
-    let (payload_out, req) = proposal::execute(
-        &mut prop,
-        dao.governance(),
-        last_ms,
+        &config,
+        yes_weight,
+        total_snapshot_weight,
+        dao.last_executed_ms_by_name(&name),
         dao.is_execution_paused(),
         clock,
         ctx,
-    );
-
-    // Share the Executed proposal as the permanent audit record.
-    // transfer::share_object cannot be called from outside proposal.move for key-only types.
-    proposal::share_proposal(prop);
-
-    proposal::new_ticket_standalone(req, payload_out, yes_weight, total_snapshot_weight)
+    )
 }
 
 /// Shared body of `ticket_from_vote` and `ticket_from_vote_readonly`: every

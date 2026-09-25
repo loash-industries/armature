@@ -97,6 +97,15 @@ public(package) fun board_vote_snapshot(self: &GovernanceConfig): (VecMap<addres
     }
 }
 
+/// Total weight of the snapshot `board_vote_snapshot` would build, without
+/// building it: one per member. Aborts if not Board governance.
+public(package) fun board_vote_total_weight(self: &GovernanceConfig): u64 {
+    match (self) {
+        GovernanceConfig::Board { members } => members.length(),
+        _ => abort 0,
+    }
+}
+
 /// Returns the raw member set for Board governance. Used by dao.move to diff
 /// old vs new members when auto-rotating the encryption epoch on SetBoard.
 public(package) fun board_members(self: &GovernanceConfig): &VecSet<address> {

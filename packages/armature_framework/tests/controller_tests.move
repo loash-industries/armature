@@ -2,14 +2,15 @@
 module armature::controller_tests;
 
 use armature::board_voting;
-use armature::capability_vault::{Self, CapabilityVault};
+use armature::capability_vault::{Self, CapabilityVault, SubDAOControl};
 use armature::controller;
 use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
-use armature::proposal::{Self, Proposal};
+use armature::proposal::{Self, Proposal, ProposalCreated, ProposalExecuted, ProposalPayloadCreated};
 use std::string;
 use sui::clock;
+use sui::event;
 use sui::test_scenario;
 
 // === Test addresses ===
@@ -38,12 +39,13 @@ fun create_dao(scenario: &mut test_scenario::Scenario) {
     };
 }
 
-// === Test 1: privileged_submit creates Executed proposal ===
+// === Test 1: privileged_submit records the execution in events only ===
 
 #[test]
-/// privileged_submit creates a Proposal in Executed status and returns
-/// an ExecutionRequest bound to the SubDAO's ID.
-fun privileged_submit_creates_executed_proposal() {
+/// privileged_submit returns an ExecutionRequest bound to the SubDAO's ID and
+/// creates no Proposal object: ProposalCreated, ProposalPayloadCreated and
+/// ProposalExecuted carry the audit record, including the payload.
+fun privileged_submit_records_execution_in_events() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1000);
@@ -53,7 +55,7 @@ fun privileged_submit_creates_executed_proposal() {
 
     // Create SubDAO
     scenario.next_tx(CREATOR);
-    {
+    let subdao_id = {
         let init = governance::init_board(vector[CREATOR]);
         let (subdao, freeze_cap) = dao::create_subdao(
             &init,
@@ -66,37 +68,56 @@ fun privileged_submit_creates_executed_proposal() {
             scenario.ctx(),
         );
 
-        // Submit privileged proposal
+        let subdao_id = object::id(&subdao);
+        transfer::public_transfer(control, CREATOR);
+        sui::test_utils::destroy(freeze_cap);
+        transfer::public_share_object(subdao);
+        subdao_id
+    };
+
+    // Submit the privileged proposal in its own transaction so its effects
+    // only reflect what privileged_submit does.
+    scenario.next_tx(CREATOR);
+    {
+        let subdao = scenario.take_shared_by_id<DAO>(subdao_id);
+        let control = scenario.take_from_sender<SubDAOControl>();
+        let metadata = option::some(string::utf8(b"Privileged test"));
+
         let req = controller::privileged_submit(
             &control,
             &subdao,
             b"TestPayload".to_ascii_string(),
-            option::some(string::utf8(b"Privileged test")),
+            metadata,
             TestPayload { value: 42 },
             &clock,
             scenario.ctx(),
         );
 
         // Verify the request is bound to the SubDAO
-        assert!(req.req_dao_id() == object::id(&subdao));
+        assert!(req.req_dao_id() == subdao_id);
 
-        // Consume the request
+        let created = event::events_by_type<ProposalCreated>();
+        assert!(created.length() == 1);
+        assert!(created[0].created_event_proposal_id() == req.req_proposal_id());
+        assert!(created[0].created_event_metadata_ipfs() == metadata);
+
+        let payloads = event::events_by_type<ProposalPayloadCreated>();
+        assert!(payloads.length() == 1);
+        assert!(payloads[0].payload_event_bcs() == std::bcs::to_bytes(&TestPayload { value: 42 }));
+
+        let executed = event::events_by_type<ProposalExecuted>();
+        assert!(executed.length() == 1);
+        assert!(executed[0].executed_event_proposal_id() == req.req_proposal_id());
+
         controller::privileged_consume(req, &control);
 
-        sui::test_utils::destroy(control);
-        sui::test_utils::destroy(freeze_cap);
-        transfer::public_share_object(subdao);
+        scenario.return_to_sender(control);
+        test_scenario::return_shared(subdao);
     };
 
-    // Verify the privileged proposal was shared
-    scenario.next_tx(CREATOR);
-    {
-        let prop = scenario.take_shared<Proposal<TestPayload>>();
-        assert!(prop.status().is_executed());
-        assert!(prop.yes_weight() == 0);
-        assert!(prop.no_weight() == 0);
-        test_scenario::return_shared(prop);
-    };
+    let effects = scenario.next_tx(CREATOR);
+    assert!(effects.created().is_empty());
+    assert!(effects.num_user_events() == 3);
 
     clock.destroy_for_testing();
     scenario.end();
