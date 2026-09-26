@@ -87,9 +87,9 @@ const DEFAULT_COOLDOWN_MS: u64 = 0;
 /// TYPE_ADMIN and may grant high-impact bits, so it sits at the 80% floor.
 const ENABLE_PROPOSAL_TYPE_MIN_THRESHOLD: u16 = 8_000;
 
-/// Minimum approval_threshold for UpdateProposalConfig — matches the 80% submission-time
-/// floor enforced by admin_ops::propose_update_proposal_config (self-targeting) and the
-/// config-level floor in admin_ops::execute_update_proposal_config.
+/// Minimum approval_threshold for UpdateProposalConfig — enforced on every stored
+/// config by `assert_config_floors`, and at submission by
+/// admin_ops::propose_update_proposal_config (self-targeting).
 const UPDATE_PROPOSAL_CONFIG_MIN_THRESHOLD: u16 = 8_000;
 
 /// Minimum approval_threshold for EnableBypassType — must be >= the 80% execution

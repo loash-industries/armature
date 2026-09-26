@@ -181,7 +181,8 @@ fun update_metadata_impl(
 /// The target display key must resolve to an enabled type (ETypeNotEnabled).
 ///
 /// Callers that need non-self-targeting UpdateProposalConfig submissions can use
-/// board_voting::submit_proposal<UpdateProposalConfig> directly — no floor applies.
+/// board_voting::submit_proposal<UpdateProposalConfig> directly. They are still
+/// held to 80%: dao keeps UpdateProposalConfig's own config at or above its floor.
 #[allow(lint(share_owned, custom_state_change))]
 public fun propose_update_proposal_config(
     dao: &DAO,

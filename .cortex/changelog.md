@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-26 — permission model documented; bypass requests escape handler limits (ARMATURE-35, ARMATURE-31, ROAD-39)
+
+- Docs: `internal_workings.md` §1–§8 rewritten for the permission model (mint paths and the bits each sets, per-function gate table by module, fixed framework bits, grant rules, bypass caveat); `specs/03_core_spec.md` gains §4.5 Permissions and a permissions invariant table, and its 66% floors become 80%; `docs/proposal-types.md` lists each type's bits and floor and adds a Permissions section for integrators. Stale comments in `permissions.move`, `dao.move` and `admin_ops.move` corrected.
+- New test `currency_ops_tests::mint_allowance_bypass_request_mints_past_amount` (ARMATURE-31 evidence): a non-member mints a bypass `MintAllowance` ticket with `amount = 1`, then skips `execute_mint_allowance` and passes `ticket_request()` to `capability_vault::borrow_cap_mut`, minting 10^12. Bits scope what a type may touch, not how much, which cap, or who may use a bypass cap; handler limits do not bind a request used outside its handler. Records current behaviour; unresolved pending the ARMATURE-31 decision. Tests: proposals 124 → 125.
+- Doc inconsistencies left for ARMATURE-17: `specs/03_core_spec.md` §1.5 (FreezeAdminCap custody), §4.2 (Proposal struct fields and statuses), §3 (SetBoard as a diff).
+
 ## 2026-09-26 — negative authorization suite and CI gate check (ARMATURE-32, ROAD-39)
 
 - `armature_framework/tests/gate_tests.move`: one test per gated mutator (30) calls it with a request carrying every bit except the one it needs and expects `proposal::EPermissionDenied` (`dao::ENotPrivileged` for the controller-only pair), so each mutator is shown to check the right bit.

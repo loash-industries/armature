@@ -1,10 +1,11 @@
 /// Permission bits a proposal type may hold in `ProposalConfig.permissions`.
 ///
 /// Each framework mutator that changes DAO-wide state names the bit it
-/// requires and calls `dao::assert_permitted<P>(bit, req)`: the request's type
-/// `P` must hold that bit in its slot on the DAO, or the request must be
-/// privileged (a controller override). Deny-by-default: a type holds no bits
-/// unless they are seeded at DAO creation or granted by a type-admin vote.
+/// requires and checks it with `proposal::assert_permitted(req, bit)` (dao
+/// mutators via `dao::assert_permitted`). A request carries the bits its type
+/// `P` held in its slot when the request was minted; a privileged request (a
+/// controller override) passes every check. Deny-by-default: a type holds no
+/// bits unless they are seeded at DAO creation or granted by a type-admin vote.
 ///
 /// Mutators scoped to the caller's own type-state (keyed by `P`) need no bit.
 module armature::permissions;
