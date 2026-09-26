@@ -655,7 +655,7 @@ fun update_proposal_config_non_self_target_succeeds() {
 // EThresholdBelowFloor tests
 // =========================================================================
 
-#[test, expected_failure(abort_code = admin_ops::EThresholdBelowFloor)]
+#[test, expected_failure(abort_code = armature::dao::EThresholdBelowMinimum)]
 /// UpdateProposalConfig cannot lower EnableProposalType threshold below 66% floor.
 fun update_config_below_floor_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -725,7 +725,7 @@ fun update_config_below_floor_aborts() {
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = admin_ops::EThresholdBelowFloor)]
+#[test, expected_failure(abort_code = armature::dao::EThresholdBelowMinimum)]
 /// EnableProposalType cannot enable a floor-gated type with a sub-floor threshold.
 /// Uses a SubDAO that has had UpdateProposalConfig disabled via test helper,
 /// then tries to re-enable it with a threshold below the 80% floor.

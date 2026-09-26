@@ -1039,11 +1039,7 @@ fun composite_enable_proposal_type_step_e2e() {
             type_config,
         );
         let mut frame = composite::new_frame(dao.id(), scenario.ctx());
-        composite::add_step<EnableProposalType>(
-            &mut frame,
-            &dao,
-            step_payload,
-        );
+        composite::add_enable_proposal_type_step(&mut frame, &dao, step_payload);
         composite::submit_composite(&dao, frame, option::none(), &clock, scenario.ctx());
         test_scenario::return_shared(dao);
     };

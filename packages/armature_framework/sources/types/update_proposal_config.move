@@ -1,7 +1,9 @@
 module armature::update_proposal_config;
 
 /// Update one or more ProposalConfig fields for a given proposal type.
-/// Fields set to none are left unchanged.
+/// Fields set to none are left unchanged. `permissions` is set with
+/// `with_permissions`; changing a type's bits is subject to the grant rules in
+/// `dao::update_proposal_config`.
 /// When targeting UpdateProposalConfig itself, the handler enforces
 /// an 80% super-majority approval floor at execution time.
 public struct UpdateProposalConfig has drop, store {
@@ -13,6 +15,7 @@ public struct UpdateProposalConfig has drop, store {
     execution_delay_ms: Option<u64>,
     cooldown_ms: Option<u64>,
     composable_allowed: Option<bool>,
+    permissions: Option<u64>,
 }
 
 // === Constructor ===
@@ -36,7 +39,14 @@ public fun new(
         execution_delay_ms,
         cooldown_ms,
         composable_allowed,
+        permissions: option::none(),
     }
+}
+
+/// Also replace the target type's permission bits with `bits`.
+public fun with_permissions(mut self: UpdateProposalConfig, bits: u64): UpdateProposalConfig {
+    self.permissions = option::some(bits);
+    self
 }
 
 // === Accessors ===
@@ -56,3 +66,5 @@ public fun execution_delay_ms(self: &UpdateProposalConfig): Option<u64> { self.e
 public fun cooldown_ms(self: &UpdateProposalConfig): Option<u64> { self.cooldown_ms }
 
 public fun composable_allowed(self: &UpdateProposalConfig): Option<bool> { self.composable_allowed }
+
+public fun permissions(self: &UpdateProposalConfig): Option<u64> { self.permissions }

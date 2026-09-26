@@ -19,7 +19,8 @@ const EDaoMismatch: u64 = 0;
 const ECharterDaoMismatch: u64 = 1;
 const EUndisableableType: u64 = 2;
 const ESubDAOBlockedType: u64 = 4;
-const EThresholdBelowFloor: u64 = 5;
+// 5 was EThresholdBelowFloor: config floors are now enforced by
+// dao::enable_proposal_type / update_proposal_config (dao::EThresholdBelowMinimum).
 /// Proposal's approval_threshold is below the hardcoded floor for this type.
 /// Enforced at submission time by propose_update_proposal_config.
 const EFloorNotMet: u64 = 6;
@@ -106,9 +107,8 @@ public fun execute_update_proposal_config(
         .with_composable_allowed(payload
             .composable_allowed()
             .destroy_with_default(existing.composable_allowed()))
-        .with_permissions(existing.permissions());
+        .with_permissions(payload.permissions().destroy_with_default(existing.permissions()));
 
-    assert_threshold_meets_floor(&name, &new_config);
     assert_config_composability(&new_config);
 
     dao.update_proposal_config<UpdateProposalConfig>(name, new_config, ticket.ticket_request());
@@ -146,7 +146,6 @@ fun enable_proposal_type_impl<NewType: store>(
         assert!(!dao::is_subdao_blocked_type(&name), ESubDAOBlockedType);
     };
 
-    assert_threshold_meets_floor(&name, &config);
     assert_config_composability(&config);
 
     dao.enable_proposal_type<NewType, EnableProposalType>(type_key, config, request);
@@ -216,17 +215,6 @@ fun resolve_display_key(dao: &DAO, type_key: &std::ascii::String): TypeName {
 /// Abort if the type is one of the core undisableable types.
 fun assert_disableable(name: &TypeName) {
     assert!(!dao::is_undisableable_type(name), EUndisableableType);
-}
-
-/// Assert that a config's approval_threshold is not below the execution floor
-/// for the given type. Types without a floor are unconstrained. The floors are
-/// the framework's single source of truth (`dao::min_approval_threshold_for_type`):
-/// 66% for EnableProposalType, 80% for UpdateProposalConfig and EnableBypassType.
-fun assert_threshold_meets_floor(name: &TypeName, config: &proposal::ProposalConfig) {
-    let floor = dao::min_approval_threshold_for_type(name);
-    if (floor > 0) {
-        assert!(config.approval_threshold() >= floor, EThresholdBelowFloor);
-    };
 }
 
 /// Enforce the composability–cooldown mutual exclusion:

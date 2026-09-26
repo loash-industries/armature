@@ -49,6 +49,15 @@ const EFrameAlreadySealed: u64 = 13;
 const EFrameContentsMismatch: u64 = 14;
 /// delete_exhausted_frame called before all steps have been extracted.
 const EFrameNotExhausted: u64 = 15;
+/// EnableProposalType and UpdateProposalConfig steps must go through
+/// add_enable_proposal_type_step / add_update_proposal_config_step, which can
+/// read the payload.
+const EUseTypedStep: u64 = 16;
+/// A step would grant or change permission bits. Grants are standalone-only:
+/// composite step tickets carry no vote weights to check a grant floor against.
+const EGrantInComposite: u64 = 17;
+/// An UpdateProposalConfig step names a display key no enabled type carries.
+const ETargetNotEnabled: u64 = 18;
 
 // === Constants ===
 
@@ -138,10 +147,53 @@ public fun new_frame(dao_id: ID, ctx: &mut TxContext): CompositeFrame {
 /// itself; its slot on the DAO supplies the config and display key. Aborts if:
 /// - The step count would exceed MAX_COMPOSITE_STEPS
 /// - P is CompositePayload (self-nesting is unconditionally blocked)
+/// - P is EnableProposalType or UpdateProposalConfig (EUseTypedStep): use
+///   add_enable_proposal_type_step / add_update_proposal_config_step
 /// - The type is not enabled in the DAO
 /// - The type's ProposalConfig has composable_allowed = false
-#[allow(lint(share_owned))]
 public fun add_step<P: store>(frame: &mut CompositeFrame, dao: &DAO, payload: P) {
+    let step_type = type_name::with_defining_ids<P>();
+    assert!(
+        step_type != type_name::with_defining_ids<EnableProposalType>()
+            && step_type != type_name::with_defining_ids<UpdateProposalConfig>(),
+        EUseTypedStep,
+    );
+    add_step_unchecked(frame, dao, payload);
+}
+
+/// add_step for an EnableProposalType step. Aborts with EGrantInComposite if
+/// the new type's config holds any permission bits: grant them with a
+/// standalone vote instead.
+public fun add_enable_proposal_type_step(
+    frame: &mut CompositeFrame,
+    dao: &DAO,
+    payload: EnableProposalType,
+) {
+    assert!(payload.config().permissions() == 0, EGrantInComposite);
+    add_step_unchecked(frame, dao, payload);
+}
+
+/// add_step for an UpdateProposalConfig step. Aborts with EGrantInComposite if
+/// the payload would change the target type's permission bits, and with
+/// ETargetNotEnabled if it sets bits for a display key no type carries. A step
+/// that leaves the bits alone composes as before.
+public fun add_update_proposal_config_step(
+    frame: &mut CompositeFrame,
+    dao: &DAO,
+    payload: UpdateProposalConfig,
+) {
+    let bits = payload.permissions();
+    if (bits.is_some()) {
+        let target = dao.type_for_display_key(&payload.target_type_key());
+        assert!(target.is_some(), ETargetNotEnabled);
+        let current = dao.type_config_by_name(target.borrow()).permissions();
+        assert!(bits.destroy_some() == current, EGrantInComposite);
+    };
+    add_step_unchecked(frame, dao, payload);
+}
+
+#[allow(lint(share_owned))]
+fun add_step_unchecked<P: store>(frame: &mut CompositeFrame, dao: &DAO, payload: P) {
     assert!(!frame.sealed, EFrameAlreadySealed);
     assert!(frame.dao_id == dao.id(), EDAOIdMismatch);
     assert!(frame.step_type_keys.length() < MAX_COMPOSITE_STEPS, EPipelineComplete);

@@ -2,14 +2,20 @@
 module armature::permissions_tests;
 
 use armature::capability_vault;
+use armature::composite;
+use armature::composite_payload::CompositePayload;
 use armature::controller;
 use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
+use armature::enable_bypass_type::EnableBypassType;
+use armature::enable_proposal_type::{Self, EnableProposalType};
 use armature::external_execution;
 use armature::governance;
 use armature::permissions;
-use armature::proposal;
+use armature::proposal::{Self, ExecutionRequest};
+use armature::update_proposal_config::{Self, UpdateProposalConfig};
 use std::string;
+use std::type_name;
 use sui::clock;
 use sui::test_scenario;
 
@@ -296,4 +302,275 @@ fun only_controller_requests_are_privileged() {
 
     clock.destroy_for_testing();
     scenario.end();
+}
+
+// === Floors and grant rules (ARMATURE-24) ===
+
+/// A fresh type to enable in grant tests.
+public struct Target has drop, store {}
+
+fun config_at(threshold: u16, bits: u64): proposal::ProposalConfig {
+    proposal::new_config(5_000, threshold, 0, 604_800_000, 0, 0).with_permissions(bits)
+}
+
+fun req<P>(dao: &DAO): ExecutionRequest<P> {
+    proposal::new_execution_request_for_testing<P>(dao.id(), fake_id())
+}
+
+/// Run `f` against the test DAO in its own transaction.
+macro fun with_dao($f: |&mut DAO|) {
+    let mut scenario = test_scenario::begin(CREATOR);
+    create_dao(&mut scenario);
+    scenario.next_tx(CREATOR);
+    let mut dao = scenario.take_shared<DAO>();
+    $f(&mut dao);
+    test_scenario::return_shared(dao);
+    scenario.end();
+}
+
+fun enable_target<P>(dao: &mut DAO, config: proposal::ProposalConfig) {
+    let r = req<P>(dao);
+    dao.enable_proposal_type<Target, P>(b"Target".to_ascii_string(), config, &r);
+    proposal::consume_execution_request_for_testing(r);
+}
+
+fun update_target<P>(dao: &mut DAO, config: proposal::ProposalConfig) {
+    let r = req<P>(dao);
+    dao.update_proposal_config(type_name::with_defining_ids<Target>(), config, &r);
+    proposal::consume_execution_request_for_testing(r);
+}
+
+#[test]
+/// The floor of a mask is 80% iff it holds a high-impact bit.
+fun permission_floor_values() {
+    assert!(dao::permission_floor(0) == 0);
+    assert!(
+        dao::permission_floor(
+            permissions::board_add() | permissions::board_remove() | permissions::board_set()
+            | permissions::pause() | permissions::metadata() | permissions::vault_store()
+            | permissions::vault_borrow(),
+        ) == 0,
+    );
+    assert!(dao::permission_floor(permissions::type_admin()) == 8_000);
+    assert!(dao::permission_floor(permissions::migrate()) == 8_000);
+    assert!(dao::permission_floor(permissions::treasury_withdraw()) == 8_000);
+    assert!(dao::permission_floor(permissions::vault_extract() | permissions::pause()) == 8_000);
+}
+
+#[test]
+/// EnableProposalType may grant low bits; the slot stores them.
+fun enable_proposal_type_grants_low_bits() {
+    with_dao!(|dao| {
+        enable_target<EnableProposalType>(dao, config_at(5_000, permissions::board_add()));
+        assert!(dao.type_config<Target>().permissions() == permissions::board_add());
+    });
+}
+
+#[test, expected_failure(abort_code = dao::EGrantFloorNotMet)]
+/// EnableProposalType's vote is held to 66%, so it cannot grant an 80% bit,
+/// even when the new type's own threshold is 80%.
+fun enable_proposal_type_cannot_grant_high_bits() {
+    with_dao!(|dao| {
+        enable_target<EnableProposalType>(dao, config_at(8_000, permissions::treasury_withdraw()));
+    });
+}
+
+#[test]
+/// EnableBypassType (80%) may grant an 80% bit to a config at 80%.
+fun enable_bypass_type_grants_high_bits() {
+    with_dao!(|dao| {
+        enable_target<EnableBypassType>(dao, config_at(8_000, permissions::treasury_withdraw()));
+        assert!(dao.type_config<Target>().has_permission(permissions::treasury_withdraw()));
+    });
+}
+
+#[test, expected_failure(abort_code = dao::EThresholdBelowMinimum)]
+/// A config holding an 80% bit must itself require 80% approval.
+fun enable_with_high_bits_under_floor_aborts() {
+    with_dao!(|dao| {
+        enable_target<EnableBypassType>(dao, config_at(7_999, permissions::vault_extract()));
+    });
+}
+
+#[test, expected_failure(abort_code = dao::EPermissionChangeNotAllowed)]
+/// Only the three meta-types may grant bits: an ordinary type cannot enable a
+/// type with bits, whatever bits it holds itself.
+fun enable_by_non_meta_type_with_bits_aborts() {
+    with_dao!(|dao| {
+        enable_target<Granted>(dao, config_at(5_000, permissions::board_add()));
+    });
+}
+
+#[test]
+/// Without bits, the grant rules do not apply to the requester.
+fun enable_by_non_meta_type_without_bits_passes() {
+    with_dao!(|dao| {
+        enable_target<Granted>(dao, config_at(5_000, 0));
+        assert!(dao.is_type_enabled<Target>());
+    });
+}
+
+#[test]
+/// UpdateProposalConfig (80%) grants an 80% bit, and can later take it away.
+fun update_proposal_config_grants_and_revokes_high_bits() {
+    with_dao!(|dao| {
+        enable_target<EnableProposalType>(dao, config_at(5_000, 0));
+        update_target<UpdateProposalConfig>(dao, config_at(8_000, permissions::migrate()));
+        assert!(dao.type_config<Target>().permissions() == permissions::migrate());
+        update_target<UpdateProposalConfig>(dao, config_at(8_000, 0));
+        assert!(dao.type_config<Target>().permissions() == 0);
+    });
+}
+
+#[test, expected_failure(abort_code = dao::EThresholdBelowMinimum)]
+/// Lowering the threshold of a type that holds an 80% bit below 80% aborts.
+fun update_lowering_threshold_under_permission_floor_aborts() {
+    with_dao!(|dao| {
+        enable_target<EnableBypassType>(dao, config_at(8_000, permissions::type_admin()));
+        update_target<UpdateProposalConfig>(dao, config_at(5_000, permissions::type_admin()));
+    });
+}
+
+#[test, expected_failure(abort_code = dao::EPermissionChangeNotAllowed)]
+/// A non-meta type cannot change bits through update_proposal_config.
+fun update_bits_by_non_meta_type_aborts() {
+    with_dao!(|dao| {
+        enable_target<EnableProposalType>(dao, config_at(5_000, 0));
+        update_target<Granted>(dao, config_at(5_000, permissions::board_add()));
+    });
+}
+
+#[test]
+/// A non-meta type can rewrite other fields while leaving the bits alone
+/// (the TYPE_ADMIN gate on this mutator comes with ARMATURE-27).
+fun update_without_bit_change_by_non_meta_type_passes() {
+    with_dao!(|dao| {
+        enable_target<EnableProposalType>(dao, config_at(5_000, permissions::board_add()));
+        update_target<Granted>(dao, config_at(6_000, permissions::board_add()));
+        assert!(dao.type_config<Target>().approval_threshold() == 6_000);
+    });
+}
+
+#[test, expected_failure(abort_code = dao::ESelfPermissionChange)]
+/// UpdateProposalConfig cannot change its own bits.
+fun update_proposal_config_self_grant_aborts() {
+    with_dao!(|dao| {
+        let r = req<UpdateProposalConfig>(dao);
+        let name = type_name::with_defining_ids<UpdateProposalConfig>();
+        let config = dao.type_config<UpdateProposalConfig>().with_permissions(permissions::pause());
+        dao.update_proposal_config(name, config, &r);
+        abort 0
+    });
+}
+
+#[test, expected_failure(abort_code = dao::EThresholdBelowMinimum)]
+/// A type's own floor holds when dao is called directly, not only via admin_ops.
+fun type_floor_holds_on_direct_update() {
+    with_dao!(|dao| {
+        let r = req<UpdateProposalConfig>(dao);
+        let name = type_name::with_defining_ids<EnableProposalType>();
+        dao.update_proposal_config(name, config_at(6_599, 0), &r);
+        abort 0
+    });
+}
+
+#[test]
+/// A privileged (controller) request may change bits without the grant rules.
+fun privileged_request_may_change_bits() {
+    with_dao!(|dao| {
+        enable_target<EnableProposalType>(dao, config_at(8_000, 0));
+        let r = proposal::new_privileged_request_for_testing<Unknown>(dao.id(), fake_id());
+        let name = type_name::with_defining_ids<Target>();
+        dao.update_proposal_config(name, config_at(8_000, permissions::vault_extract()), &r);
+        proposal::consume_execution_request_for_testing(r);
+        assert!(dao.type_config<Target>().has_permission(permissions::vault_extract()));
+    });
+}
+
+#[test, expected_failure(abort_code = dao::ECompositeHoldsPermissions)]
+/// CompositePayload can never hold bits, even via a privileged request.
+fun composite_payload_cannot_hold_bits() {
+    with_dao!(|dao| {
+        let r = proposal::new_privileged_request_for_testing<Unknown>(dao.id(), fake_id());
+        let name = type_name::with_defining_ids<CompositePayload>();
+        let config = dao.type_config<CompositePayload>().with_permissions(permissions::board_add());
+        dao.update_proposal_config(name, config, &r);
+        abort 0
+    });
+}
+
+// === Composite: grants are standalone-only ===
+
+#[test, expected_failure(abort_code = composite::EUseTypedStep)]
+fun add_step_rejects_enable_proposal_type() {
+    with_dao!(|dao| {
+        let mut frame = composite::new_frame(dao.id(), &mut tx_context::dummy());
+        let payload = enable_proposal_type::new(
+            b"Target".to_ascii_string(),
+            type_name::with_defining_ids<Target>(),
+            config_at(5_000, 0),
+        );
+        composite::add_step(&mut frame, dao, payload);
+        abort 0
+    });
+}
+
+#[test, expected_failure(abort_code = composite::EGrantInComposite)]
+fun composite_enable_step_with_bits_aborts() {
+    with_dao!(|dao| {
+        let mut frame = composite::new_frame(dao.id(), &mut tx_context::dummy());
+        let payload = enable_proposal_type::new(
+            b"Target".to_ascii_string(),
+            type_name::with_defining_ids<Target>(),
+            config_at(5_000, permissions::board_add()),
+        );
+        composite::add_enable_proposal_type_step(&mut frame, dao, payload);
+        abort 0
+    });
+}
+
+fun update_payload(): UpdateProposalConfig {
+    update_proposal_config::new(
+        b"Granted".to_ascii_string(),
+        option::none(),
+        option::some(6_000),
+        option::none(),
+        option::none(),
+        option::none(),
+        option::none(),
+        option::none(),
+    )
+}
+
+/// Make UpdateProposalConfig composable so its steps reach the typed check.
+fun make_update_config_composable(dao: &mut DAO) {
+    let config = dao.type_config<UpdateProposalConfig>().with_composable_allowed(true);
+    dao.test_update_config<UpdateProposalConfig>(config);
+}
+
+#[test, expected_failure(abort_code = composite::EGrantInComposite)]
+fun composite_update_step_changing_bits_aborts() {
+    with_dao!(|dao| {
+        make_update_config_composable(dao);
+        let mut frame = composite::new_frame(dao.id(), &mut tx_context::dummy());
+        let payload = update_payload().with_permissions(permissions::board_add());
+        composite::add_update_proposal_config_step(&mut frame, dao, payload);
+        abort 0
+    });
+}
+
+#[test]
+/// An UpdateProposalConfig step that leaves the bits alone, either by not
+/// setting them or by restating the current ones, still composes.
+fun composite_update_step_keeping_bits_composes() {
+    with_dao!(|dao| {
+        make_update_config_composable(dao);
+        let mut frame = composite::new_frame(dao.id(), &mut tx_context::dummy());
+        composite::add_update_proposal_config_step(&mut frame, dao, update_payload());
+        let restated = update_payload().with_permissions(
+            permissions::board_add() | permissions::pause(),
+        );
+        composite::add_update_proposal_config_step(&mut frame, dao, restated);
+        sui::test_utils::destroy(frame);
+    });
 }

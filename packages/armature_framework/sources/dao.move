@@ -13,6 +13,7 @@ use armature::emergency;
 use armature::enable_bypass_type::EnableBypassType;
 use armature::enable_proposal_type::EnableProposalType;
 use armature::governance::{Self, GovernanceConfig, GovernanceTypeInit};
+use armature::permissions;
 use armature::proposal::{Self, ExecutionRequest, ProposalConfig};
 use armature::remove_member::RemoveMember;
 use armature::set_board::SetBoard;
@@ -57,6 +58,17 @@ const EDisplayKeyMismatch: u64 = 17;
 /// The request's proposal type does not hold the permission bit this mutator
 /// requires (see armature::permissions), and the request is not privileged.
 const EPermissionDenied: u64 = 18;
+/// A config change would alter a type's permission bits, but the request is
+/// not EnableProposalType, EnableBypassType or UpdateProposalConfig.
+const EPermissionChangeNotAllowed: u64 = 19;
+/// A meta-type request tried to change its own type's permission bits.
+const ESelfPermissionChange: u64 = 20;
+/// The bits being granted need a higher approval floor than the granting
+/// meta-type's vote is held to.
+const EGrantFloorNotMet: u64 = 21;
+/// CompositePayload must hold no permission bits: its ticket is consumed by
+/// begin_pipeline and never reaches a mutator.
+const ECompositeHoldsPermissions: u64 = 22;
 
 // === Constants ===
 
@@ -82,6 +94,11 @@ const UPDATE_PROPOSAL_CONFIG_MIN_THRESHOLD: u16 = 8_000;
 /// Minimum approval_threshold for EnableBypassType — must be >= the 80% execution
 /// floor enforced by external_execution::execute_enable_bypass_type.
 const ENABLE_BYPASS_TYPE_MIN_THRESHOLD: u16 = 8_000;
+
+/// Minimum approval_threshold for a config holding any high-impact bit
+/// (TYPE_ADMIN, MIGRATE, TREASURY_WITHDRAW, VAULT_EXTRACT). Same as the
+/// EnableBypassType floor.
+const HIGH_PERMISSION_MIN_THRESHOLD: u16 = 8_000;
 
 // === Enums ===
 
@@ -621,6 +638,66 @@ public fun assert_permitted<P>(self: &DAO, bits: u64, req: &ExecutionRequest<P>)
     assert!(config.has_permission(bits), EPermissionDenied);
 }
 
+/// Minimum approval_threshold for a config holding `bits`: 80% if any of
+/// TYPE_ADMIN, MIGRATE, TREASURY_WITHDRAW or VAULT_EXTRACT is set, else 0.
+public fun permission_floor(bits: u64): u16 {
+    let high =
+        permissions::type_admin()
+        | permissions::migrate()
+        | permissions::treasury_withdraw()
+        | permissions::vault_extract();
+    if (bits & high != 0) HIGH_PERMISSION_MIN_THRESHOLD else 0
+}
+
+/// Abort unless a config may be stored for the type named `name`:
+/// - its approval_threshold meets the type's own floor
+///   (`min_approval_threshold_for_type`; EThresholdBelowMinimum),
+/// - and the floor of the bits it holds (`permission_floor`; EThresholdBelowMinimum),
+/// - and CompositePayload holds no bits (ECompositeHoldsPermissions).
+/// Every path that stores a config runs this, so no caller can skip it.
+fun assert_config_floors(name: &TypeName, config: &ProposalConfig) {
+    let threshold = config.approval_threshold();
+    assert!(threshold >= min_approval_threshold_for_type(name), EThresholdBelowMinimum);
+    assert!(threshold >= permission_floor(config.permissions()), EThresholdBelowMinimum);
+    assert!(
+        *name != type_name_of<CompositePayload>() || config.permissions() == 0,
+        ECompositeHoldsPermissions,
+    );
+}
+
+/// Abort unless a request of type `P` may change the permission bits of the
+/// type named `target` from `old` to `new`. No change passes. A privileged
+/// (controller) request passes. Otherwise `P` must be EnableProposalType,
+/// EnableBypassType or UpdateProposalConfig (EPermissionChangeNotAllowed),
+/// must not be `target` itself (ESelfPermissionChange), and the floor of the
+/// bits being added must not exceed `P`'s own approval floor
+/// (EGrantFloorNotMet): the vote that grants a power is held to at least that
+/// power's floor. So EnableProposalType (66%) cannot grant 80% bits; enable
+/// the type without them and grant them with UpdateProposalConfig (80%).
+///
+/// Grants are standalone-only: composite::add_step refuses grant steps.
+fun assert_may_change_permissions<P>(
+    target: &TypeName,
+    old: u64,
+    new: u64,
+    req: &ExecutionRequest<P>,
+) {
+    if (old == new || req.req_is_privileged()) return;
+    let granter = type_name_of<P>();
+    assert!(
+        granter == type_name_of<EnableProposalType>()
+            || granter == type_name_of<EnableBypassType>()
+            || granter == type_name_of<UpdateProposalConfig>(),
+        EPermissionChangeNotAllowed,
+    );
+    assert!(granter != *target, ESelfPermissionChange);
+    let added = new ^ (new & old);
+    assert!(
+        permission_floor(added) <= min_approval_threshold_for_type(&granter),
+        EGrantFloorNotMet,
+    );
+}
+
 // === Proposal-type registry: ProposalTypeInit ===
 
 /// Build a slot initializer for type `T`.
@@ -720,7 +797,9 @@ public fun remove_board_members_governance<P>(
 }
 
 /// Enable proposal type `NewType` with a display key and config.
-/// Aborts if `NewType` already has a slot or the display key is taken.
+/// Aborts if `NewType` already has a slot or the display key is taken, if the
+/// config misses a floor (`assert_config_floors`), or if it holds permission
+/// bits that `P` may not grant (`assert_may_change_permissions`).
 /// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
 public fun enable_proposal_type<NewType, P>(
     self: &mut DAO,
@@ -729,6 +808,9 @@ public fun enable_proposal_type<NewType, P>(
     req: &ExecutionRequest<P>,
 ) {
     assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    let name = type_name_of<NewType>();
+    assert_config_floors(&name, &config);
+    assert_may_change_permissions(&name, 0, config.permissions(), req);
     let dao_id = self.id();
     add_slot(&mut self.id, dao_id, new_type_init<NewType>(display_key, config));
 }
@@ -747,7 +829,9 @@ public fun disable_proposal_type<P>(self: &mut DAO, name: TypeName, req: &Execut
 }
 
 /// Replace the ProposalConfig of the type named `name`.
-/// Aborts with ETypeNotEnabled if absent.
+/// Aborts with ETypeNotEnabled if absent, if the new config misses a floor
+/// (`assert_config_floors`), or if it changes the type's permission bits in a
+/// way `P` may not (`assert_may_change_permissions`).
 /// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
 public fun update_proposal_config<P>(
     self: &mut DAO,
@@ -756,6 +840,9 @@ public fun update_proposal_config<P>(
     req: &ExecutionRequest<P>,
 ) {
     assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    assert_config_floors(&name, &new_config);
+    let old = self.slot(&name).config.permissions();
+    assert_may_change_permissions(&name, old, new_config.permissions(), req);
     let dao_id = self.id();
     let entry = self.slot_mut(&name);
     entry.config = new_config;
@@ -1036,7 +1123,7 @@ fun config_for_type(name: &TypeName): ProposalConfig {
 /// - Type is a SubDAO-blocked type AND `check_subdao_blocked` is true: abort with
 ///   EBlockedProposalType. Pass false for parent DAOs, which legitimately have these
 ///   types (e.g. CreateSubDAO).
-/// - Config sets approval_threshold below the hardcoded minimum: abort with EThresholdBelowMinimum.
+/// - The resulting config misses a floor (`assert_config_floors`): abort.
 fun apply_type_overrides(
     id: &mut UID,
     dao_id: ID,
@@ -1050,15 +1137,17 @@ fun apply_type_overrides(
             !check_subdao_blocked || !is_subdao_blocked_type(&init.type_name),
             EBlockedProposalType,
         );
-        let floor = min_approval_threshold_for_type(&init.type_name);
-        assert!(init.config.approval_threshold() >= floor, EThresholdBelowMinimum);
         if (df::exists(id, TypeSlot { name: init.type_name })) {
             let entry: &mut ProposalType = df::borrow_mut(id, TypeSlot { name: init.type_name });
             assert!(entry.display_key == init.display_key, EDisplayKeyMismatch);
             let composable = entry.config.composable_allowed();
             let permissions = entry.config.permissions();
-            entry.config =
-                init.config.with_composable_allowed(composable).with_permissions(permissions);
+            let config = init
+                .config
+                .with_composable_allowed(composable)
+                .with_permissions(permissions);
+            assert_config_floors(&init.type_name, &config);
+            entry.config = config;
             event::emit(TypeSlotConfigUpdated {
                 dao_id,
                 type_name: init.type_name.into_string(),
@@ -1066,6 +1155,7 @@ fun apply_type_overrides(
                 config: entry.config,
             });
         } else {
+            assert_config_floors(&init.type_name, &init.config);
             add_slot(id, dao_id, init);
         };
         i = i + 1;
