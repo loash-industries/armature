@@ -8,7 +8,7 @@
 
 The normal board-voting flow spans two separate transactions:
 
-1. **PTB 1 — Submit + Vote**: a board member calls `board_voting::submit_proposal`, then any quorum of members call `proposal::vote`. The proposal is shared while `Active`.
+1. **PTB 1 — Submit + Vote**: a board member calls `board_voting::submit_proposal`, then any quorum of members call `board_voting::vote`. The proposal is shared while `Active`.
 2. **PTB 2 — Execute**: once `Passed`, any board member calls `board_voting::ticket_from_vote` to obtain an `ExecutionTicket`, then passes it to the proposal type's handler.
 
 The shared-object window between PTB 1 and PTB 2 is intentional for governance-sensitive types: it creates an observable period during which members can audit the payload, the emergency admin can freeze the type, and the community can react.
@@ -128,7 +128,7 @@ Even though the proposal object is never publicly observable while `Active`, the
 
 - `ProposalCreated` event is emitted by `create_returning`
 - `ProposalPayloadCreated` event records the BCS-serialised payload
-- `VoteCast` event is emitted by `proposal::vote`
+- `VoteCast` event is emitted by `board_voting::vote`
 - `ProposalPassed` event is emitted when the vote satisfies quorum/threshold
 - `ProposalExecuted` event is emitted by `proposal::execute`
 - The `Executed` proposal object is shared at the end of `submit_vote_execute` — identical to a standard two-PTB execution

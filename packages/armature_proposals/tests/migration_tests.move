@@ -89,7 +89,9 @@ fun spawn_dao_and_destroy_origin_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<SpawnDAO>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -222,7 +224,9 @@ fun create_subdao_and_spin_out_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<CreateSubDAO>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -322,7 +326,9 @@ fun create_subdao_and_spin_out_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<SpinOutSubDAO>>();
         clock.set_for_testing(6000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -446,7 +452,9 @@ fun controller_set_board_via_privileged_submit() {
     {
         let mut proposal = scenario.take_shared<Proposal<CreateSubDAO>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -503,7 +511,7 @@ fun controller_set_board_via_privileged_submit() {
     {
         let dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
         clock.set_for_testing(5000);
-        let payload = set_board::new(vector[CREATOR, MEMBER_B]);
+        let payload = set_board::new(vector[@0xD], vector[]);
         board_voting::submit_proposal(
             &dao,
             option::some(string::utf8(b"Vehicle for controller op")),
@@ -518,7 +526,9 @@ fun controller_set_board_via_privileged_submit() {
     {
         let mut proposal = scenario.take_shared<Proposal<SetBoard>>();
         clock.set_for_testing(6000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -558,12 +568,12 @@ fun controller_set_board_via_privileged_submit() {
             &subdao,
             b"SetBoard".to_ascii_string(),
             option::some(string::utf8(b"Controller sets SubDAO board")),
-            set_board::new(vector[SUBDAO_MEMBER, CREATOR]),
+            set_board::new(vector[CREATOR], vector[]),
             scenario.ctx(),
         );
 
         // Apply board change on SubDAO using privileged ExecutionRequest
-        dao::set_board_governance(&mut subdao, vector[SUBDAO_MEMBER, CREATOR], &priv_req);
+        dao::set_board_governance(&mut subdao, vector[CREATOR], vector[], &priv_req);
 
         // Consume privileged request
         controller::privileged_consume(priv_req, &control);
@@ -656,7 +666,9 @@ fun migration_with_transfer_assets_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<SpawnDAO>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -722,7 +734,9 @@ fun migration_with_transfer_assets_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<TransferAssets>>();
         clock.set_for_testing(6000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 

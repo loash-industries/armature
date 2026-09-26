@@ -439,7 +439,7 @@ public fun destroy(
     let DAO {
         id,
         status: _,
-        governance: _,
+        governance,
         treasury_id: _,
         capability_vault_id: _,
         charter_id: _,
@@ -450,6 +450,7 @@ public fun destroy(
         encrypt_epoch: _,
         entries: _,
     } = dao;
+    governance.destroy();
     id.delete();
 
     event::emit(DAODestroyed { dao_id, successor_dao_id });
@@ -497,7 +498,7 @@ public fun encrypt_epoch(self: &DAO): u64 { self.encrypt_epoch }
 public fun entries(self: &DAO): &vector<ID> { &self.entries }
 
 /// Returns true if addr is a current board member (encryption grantee).
-/// Only valid for Board governance; aborts for Direct/Weighted.
+/// Former members are not: their roster entry is kept, but closed.
 public fun is_governance_member(self: &DAO, addr: address): bool {
     self.governance.is_board_member(addr)
 }
@@ -609,18 +610,19 @@ public fun init_config(self: &ProposalTypeInit): &ProposalConfig { &self.config 
 
 // === Public Mutators (ExecutionRequest-gated) ===
 
-/// Replace the DAO's board members and seat count.
+/// Add `to_add` to and remove `to_remove` from the DAO's board as one change.
 /// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
 /// Auto-increments encrypt_epoch if any member was removed, providing forward security.
 public fun set_board_governance<P>(
     self: &mut DAO,
-    new_members: vector<address>,
+    to_add: vector<address>,
+    to_remove: vector<address>,
     req: &ExecutionRequest<P>,
 ) {
     assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
-    let old_members = *self.governance.board_members().keys();
-    self.governance.set_board(new_members);
-    if (any_member_removed(&old_members, &new_members)) {
+    let any_removed = !to_remove.is_empty();
+    self.governance.set_board(to_add, to_remove);
+    if (any_removed) {
         self.increment_encrypt_epoch();
     };
 }
@@ -852,24 +854,6 @@ public fun min_approval_threshold_for_type(name: &TypeName): u16 {
     }
 }
 
-/// Returns true if any address in old_members is absent from new_members.
-/// Used by set_board_governance to detect member removals for epoch auto-rotation.
-fun any_member_removed(old_members: &vector<address>, new_members: &vector<address>): bool {
-    let mut i = 0;
-    while (i < old_members.length()) {
-        let old = old_members[i];
-        let mut found = false;
-        let mut j = 0;
-        while (j < new_members.length()) {
-            if (new_members[j] == old) { found = true };
-            j = j + 1;
-        };
-        if (!found) return true;
-        i = i + 1;
-    };
-    false
-}
-
 // === Internal: construction ===
 
 /// Build a DAO and its companion objects, seed the default proposal-type slots
@@ -895,8 +879,8 @@ fun build(
     let creator = ctx.sender();
 
     // Build governance config from init payload (Board only for now)
-    let governance = governance::new_board(gov_init);
-    let initial_members = governance.board_member_vec();
+    let governance = governance::new_board(gov_init, ctx);
+    let initial_members = gov_init.init_members();
 
     // Create a placeholder DAO ID so companion objects can reference it
     let dao_uid = object::new(ctx);

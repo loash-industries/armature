@@ -1,6 +1,6 @@
 module armature::proposal;
 
-use armature::governance::GovernanceConfig;
+use armature::governance::{Self, GovernanceConfig};
 use armature::utils;
 use std::string::String;
 use sui::clock::Clock;
@@ -120,7 +120,9 @@ public struct Proposal<P: store> has key {
     proposer: address,
     metadata_ipfs: Option<String>,
     payload: P,
-    vote_snapshot: VecMap<address, u64>,
+    /// Roster version at creation. Voters are the members at this version
+    /// (governance::was_member_at); the roster itself is not copied.
+    snapshot_version: u64,
     total_snapshot_weight: u64,
     votes_cast: VecMap<address, bool>,
     yes_weight: u64,
@@ -297,10 +299,15 @@ public fun total_snapshot_weight<P: store>(self: &Proposal<P>): u64 {
     self.total_snapshot_weight
 }
 
+/// Roster version the proposal was created at. Its voters are the members at
+/// this version.
+public fun snapshot_version<P: store>(self: &Proposal<P>): u64 { self.snapshot_version }
+
 // === Lifecycle: create ===
 
-/// Create a new proposal and share it. Snapshots the current governance weights.
-/// The proposer must be in the snapshot (board member for Board governance).
+/// Create a new proposal and share it. Snapshots the roster by recording its
+/// current version and total weight. The caller has checked that the proposer
+/// is a board member.
 /// `is_dao_active` must be true — prevents proposals on Migrating DAOs.
 #[allow(lint(share_owned))]
 public(package) fun create<P: store>(
@@ -316,7 +323,8 @@ public(package) fun create<P: store>(
     ctx: &mut TxContext,
 ) {
     assert!(is_dao_active, EDAONotActive);
-    let (vote_snapshot, total_snapshot_weight) = governance.board_vote_snapshot();
+    let snapshot_version = governance.roster_version();
+    let total_snapshot_weight = governance.board_vote_total_weight();
 
     // Serialise before moving into the Option so the event captures the payload.
     let payload_bcs = std::bcs::to_bytes(&payload);
@@ -328,7 +336,7 @@ public(package) fun create<P: store>(
         proposer,
         metadata_ipfs,
         payload,
-        vote_snapshot,
+        snapshot_version,
         total_snapshot_weight,
         votes_cast: vec_map::empty(),
         yes_weight: 0,
@@ -357,23 +365,31 @@ public(package) fun create<P: store>(
 // === Lifecycle: vote ===
 
 /// Cast a vote on an active proposal. The voting period must not have ended
-/// (see `voting_deadline_ms`), the voter must be in the snapshot and must not
-/// have already voted. If quorum and threshold are met, the proposal
-/// transitions to Passed.
-public fun vote<P: store>(self: &mut Proposal<P>, approve: bool, clock: &Clock, ctx: &TxContext) {
+/// (see `voting_deadline_ms`), the voter must have been a board member at the
+/// proposal's snapshot version and must not have already voted. If quorum and
+/// threshold are met, the proposal transitions to Passed.
+///
+/// `governance` must belong to the proposal's DAO; the public entry point,
+/// board_voting::vote, checks that.
+public(package) fun record_vote<P: store>(
+    self: &mut Proposal<P>,
+    governance: &GovernanceConfig,
+    approve: bool,
+    clock: &Clock,
+    ctx: &TxContext,
+) {
     assert!(self.status.is_active(), ENotActive);
     assert!(clock.timestamp_ms() < self.voting_deadline_ms(), EVotingClosed);
 
     let voter = ctx.sender();
 
-    // Voter must be in snapshot
-    assert!(self.vote_snapshot.contains(&voter), ENotInSnapshot);
+    // Voter must have been a member when the proposal was created
+    assert!(governance.was_member_at(voter, self.snapshot_version), ENotInSnapshot);
 
     // No double voting
     assert!(!self.votes_cast.contains(&voter), EAlreadyVoted);
 
-    // Get voter weight from snapshot
-    let weight = *self.vote_snapshot.get(&voter);
+    let weight = governance::member_vote_weight();
 
     // Record vote
     self.votes_cast.insert(voter, approve);

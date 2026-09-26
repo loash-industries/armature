@@ -61,12 +61,12 @@ fun create_two_daos(scenario: &mut test_scenario::Scenario): (ID, ID) {
 /// Drive a board update through set_board_governance without the full proposal cycle.
 /// Crafts an ExecutionRequest with the correct dao_id so the mismatch assert passes.
 #[test_only]
-fun do_set_board(dao: &mut DAO, new_members: vector<address>) {
+fun do_set_board(dao: &mut DAO, to_add: vector<address>, to_remove: vector<address>) {
     let req = proposal::new_execution_request<SetBoardWitness>(
         dao.id(),
         object::id_from_address(@0xDEAD),
     );
-    dao.set_board_governance(new_members, &req);
+    dao.set_board_governance(to_add, to_remove, &req);
     proposal::consume(req);
 }
 
@@ -915,7 +915,7 @@ fun test_setboard_member_removal_auto_rotates_epoch() {
     {
         let mut dao = scenario.take_shared<DAO>();
         assert!(dao.encrypt_epoch() == 0);
-        do_set_board(&mut dao, vector[ALICE]);
+        do_set_board(&mut dao, vector[], vector[BOB]);
         assert!(dao.encrypt_epoch() == 1);
         test_scenario::return_shared(dao);
     };
@@ -933,7 +933,7 @@ fun test_setboard_member_addition_does_not_rotate_epoch() {
     scenario.next_tx(ALICE);
     {
         let mut dao = scenario.take_shared<DAO>();
-        do_set_board(&mut dao, vector[ALICE, BOB, CAROL]);
+        do_set_board(&mut dao, vector[CAROL], vector[]);
         assert!(dao.encrypt_epoch() == 0);
         test_scenario::return_shared(dao);
     };
@@ -951,7 +951,7 @@ fun test_setboard_full_replacement_rotates_epoch() {
     scenario.next_tx(ALICE);
     {
         let mut dao = scenario.take_shared<DAO>();
-        do_set_board(&mut dao, vector[CAROL]);
+        do_set_board(&mut dao, vector[CAROL], vector[ALICE, BOB]);
         assert!(dao.encrypt_epoch() == 1);
         test_scenario::return_shared(dao);
     };
@@ -959,18 +959,16 @@ fun test_setboard_full_replacement_rotates_epoch() {
     scenario.end();
 }
 
-#[test]
-/// Re-setting the board with the exact same members does not rotate the epoch.
-fun test_setboard_same_members_no_rotation() {
+#[test, expected_failure(abort_code = governance::ENoBoardChange)]
+/// A SetBoard that adds and removes nothing aborts.
+fun test_setboard_empty_change_aborts() {
     let mut scenario = test_scenario::begin(ALICE);
     create_dao(&mut scenario);
 
-    // Re-set with same members.
     scenario.next_tx(ALICE);
     {
         let mut dao = scenario.take_shared<DAO>();
-        do_set_board(&mut dao, vector[ALICE, BOB]);
-        assert!(dao.encrypt_epoch() == 0);
+        do_set_board(&mut dao, vector[], vector[]);
         test_scenario::return_shared(dao);
     };
 
@@ -997,7 +995,7 @@ fun test_setboard_multiple_removals_each_rotate_epoch() {
     scenario.next_tx(ALICE);
     {
         let mut dao = scenario.take_shared<DAO>();
-        do_set_board(&mut dao, vector[ALICE, BOB]);
+        do_set_board(&mut dao, vector[], vector[CAROL]);
         assert!(dao.encrypt_epoch() == 1);
         test_scenario::return_shared(dao);
     };
@@ -1006,7 +1004,7 @@ fun test_setboard_multiple_removals_each_rotate_epoch() {
     scenario.next_tx(ALICE);
     {
         let mut dao = scenario.take_shared<DAO>();
-        do_set_board(&mut dao, vector[ALICE]);
+        do_set_board(&mut dao, vector[], vector[BOB]);
         assert!(dao.encrypt_epoch() == 2);
         test_scenario::return_shared(dao);
     };
@@ -1037,7 +1035,7 @@ fun test_setboard_removal_makes_existing_entries_stale() {
     scenario.next_tx(ALICE);
     {
         let mut dao = scenario.take_shared<DAO>();
-        do_set_board(&mut dao, vector[ALICE]);
+        do_set_board(&mut dao, vector[], vector[BOB]);
         assert!(dao.encrypt_epoch() == 1);
         test_scenario::return_shared(dao);
     };
@@ -1231,7 +1229,7 @@ fun test_seal_approve_removed_member_aborts() {
     scenario.next_tx(ALICE);
     {
         let mut dao = scenario.take_shared<DAO>();
-        do_set_board(&mut dao, vector[ALICE]);
+        do_set_board(&mut dao, vector[], vector[BOB]);
         test_scenario::return_shared(dao);
     };
 

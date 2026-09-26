@@ -103,7 +103,9 @@ fun composite_two_add_member_steps_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<CompositePayload>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -198,7 +200,9 @@ fun composite_add_then_remove_member_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<CompositePayload>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -333,7 +337,9 @@ fun finalize_pipeline_incomplete_aborts() {
     {
         let mut proposal = scenario.take_shared<Proposal<CompositePayload>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -406,7 +412,9 @@ fun advance_step_wrong_type_aborts() {
     {
         let mut proposal = scenario.take_shared<Proposal<CompositePayload>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -510,7 +518,9 @@ fun composite_send_coin_step_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<CompositePayload>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -652,7 +662,9 @@ fun composite_send_coin_to_dao_step_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<CompositePayload>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -722,7 +734,7 @@ fun composite_set_board_step_e2e() {
         composite::add_step<SetBoard>(
             &mut frame,
             &dao,
-            set_board::new(vector[MEMBER_C]),
+            set_board::new(vector[MEMBER_C], vector[CREATOR, MEMBER_B]),
         );
         composite::submit_composite(&dao, frame, option::none(), &clock, scenario.ctx());
         test_scenario::return_shared(dao);
@@ -732,7 +744,9 @@ fun composite_set_board_step_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<CompositePayload>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -812,7 +826,9 @@ fun composite_update_metadata_step_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<CompositePayload>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -932,7 +948,9 @@ fun composite_same_type_cooldown_snapshot_succeeds() {
     {
         let mut proposal = scenario.take_shared<Proposal<CompositePayload>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -1034,7 +1052,9 @@ fun composite_enable_proposal_type_step_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<CompositePayload>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -1110,7 +1130,9 @@ fun composite_delete_exhausted_frame_succeeds() {
     {
         let mut proposal = scenario.take_shared<Proposal<CompositePayload>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -1302,7 +1324,9 @@ fun composite_cooldown_type_not_composable_aborts() {
     {
         let mut proposal = scenario.take_shared<Proposal<CompositePayload>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 

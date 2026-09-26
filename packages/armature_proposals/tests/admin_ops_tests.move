@@ -93,7 +93,9 @@ fun vote_yes(scenario: &mut test_scenario::Scenario, clock: &clock::Clock) {
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
-        proposal.vote(true, clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 }
@@ -258,7 +260,9 @@ fun disable_core_type_enable_proposal_type_aborts() {
     {
         let mut proposal = scenario.take_shared<Proposal<DisableProposalType>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -314,7 +318,9 @@ fun disable_core_type_unfreeze_proposal_type_aborts() {
     {
         let mut proposal = scenario.take_shared<Proposal<DisableProposalType>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -590,7 +596,9 @@ fun update_proposal_config_non_self_target_succeeds() {
     {
         let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -598,7 +606,9 @@ fun update_proposal_config_non_self_target_succeeds() {
     {
         let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
         clock.set_for_testing(3000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -606,7 +616,9 @@ fun update_proposal_config_non_self_target_succeeds() {
     {
         let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
         clock.set_for_testing(4000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -682,7 +694,9 @@ fun update_config_below_floor_aborts() {
     {
         let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -756,7 +770,9 @@ fun enable_type_with_sub_floor_config_aborts() {
     {
         let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -822,7 +838,9 @@ fun run_enable_type<NewType: store>(
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
-        proposal.vote(true, clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -1043,7 +1061,9 @@ fun update_proposal_config_composable_allowed_updates_config() {
     {
         let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -1099,7 +1119,9 @@ fun update_proposal_config_composable_allowed_updates_config() {
     {
         let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
         clock.set_for_testing(5000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -1180,7 +1202,9 @@ fun enable_proposal_type_composable_cooldown_conflict_aborts() {
     {
         let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -1250,7 +1274,9 @@ fun update_proposal_config_composable_cooldown_conflict_aborts() {
     {
         let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 

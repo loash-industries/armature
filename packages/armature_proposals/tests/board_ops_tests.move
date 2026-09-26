@@ -42,7 +42,7 @@ fun test_set_board_e2e() {
         let dao = scenario.take_shared<DAO>();
         clock.set_for_testing(1000);
 
-        let payload = set_board::new(vector[CREATOR, MEMBER_B, NEW_MEMBER]);
+        let payload = set_board::new(vector[NEW_MEMBER], vector[]);
         board_voting::submit_proposal(
             &dao,
             option::some(string::utf8(b"Add NEW_MEMBER to board")),
@@ -61,7 +61,9 @@ fun test_set_board_e2e() {
         let mut proposal = scenario.take_shared<Proposal<set_board::SetBoard>>();
         clock.set_for_testing(2000);
 
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
 
         test_scenario::return_shared(proposal);
     };
@@ -117,13 +119,13 @@ fun test_set_board_empty_members_aborts() {
         );
     };
 
-    // Create proposal with empty members
+    // Create proposal removing every member
     scenario.next_tx(CREATOR);
     {
         let dao = scenario.take_shared<DAO>();
         clock.set_for_testing(1000);
 
-        let payload = set_board::new(vector[]);
+        let payload = set_board::new(vector[], vector[CREATOR, MEMBER_B]);
         board_voting::submit_proposal(
             &dao,
             option::some(string::utf8(b"Empty board")),
@@ -140,7 +142,9 @@ fun test_set_board_empty_members_aborts() {
     {
         let mut proposal = scenario.take_shared<Proposal<set_board::SetBoard>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -210,7 +214,10 @@ fun test_full_board_replacement() {
     {
         let dao = scenario.take_shared_by_id<DAO>(dao_id);
         clock.set_for_testing(1_000);
-        let payload = set_board::new(vector[NEW_MEMBER, MEMBER_D, MEMBER_E]);
+        let payload = set_board::new(
+            vector[NEW_MEMBER, MEMBER_D, MEMBER_E],
+            vector[CREATOR, MEMBER_B],
+        );
         board_voting::submit_proposal(
             &dao,
             option::some(string::utf8(b"Full board replacement")),
@@ -226,7 +233,9 @@ fun test_full_board_replacement() {
     {
         let mut proposal = scenario.take_shared<Proposal<SetBoard>>();
         clock.set_for_testing(2_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -278,7 +287,7 @@ fun test_shrink_board_to_single_member() {
     {
         let dao = scenario.take_shared_by_id<DAO>(dao_id);
         clock.set_for_testing(1_000);
-        let payload = set_board::new(vector[CREATOR]);
+        let payload = set_board::new(vector[], vector[MEMBER_B, NEW_MEMBER]);
         board_voting::submit_proposal(
             &dao,
             option::some(string::utf8(b"Shrink to solo")),
@@ -293,7 +302,9 @@ fun test_shrink_board_to_single_member() {
     {
         let mut proposal = scenario.take_shared<Proposal<SetBoard>>();
         clock.set_for_testing(2_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -301,7 +312,9 @@ fun test_shrink_board_to_single_member() {
     {
         let mut proposal = scenario.take_shared<Proposal<SetBoard>>();
         clock.set_for_testing(2_100);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -348,7 +361,7 @@ fun test_grow_board_from_single() {
     {
         let dao = scenario.take_shared_by_id<DAO>(dao_id);
         clock.set_for_testing(1_000);
-        let payload = set_board::new(vector[CREATOR, MEMBER_B, NEW_MEMBER, MEMBER_D, MEMBER_E]);
+        let payload = set_board::new(vector[MEMBER_B, NEW_MEMBER, MEMBER_D, MEMBER_E], vector[]);
         board_voting::submit_proposal(
             &dao,
             option::some(string::utf8(b"Scale up board")),
@@ -363,7 +376,9 @@ fun test_grow_board_from_single() {
     {
         let mut proposal = scenario.take_shared<Proposal<SetBoard>>();
         clock.set_for_testing(2_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -416,7 +431,7 @@ fun test_sequential_board_changes() {
         board_voting::submit_proposal(
             &dao,
             option::some(string::utf8(b"Swap B for C")),
-            set_board::new(vector[CREATOR, NEW_MEMBER]),
+            set_board::new(vector[NEW_MEMBER], vector[MEMBER_B]),
             &clock,
             scenario.ctx(),
         );
@@ -427,7 +442,9 @@ fun test_sequential_board_changes() {
     {
         let mut proposal = scenario.take_shared<Proposal<SetBoard>>();
         clock.set_for_testing(2_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -460,7 +477,7 @@ fun test_sequential_board_changes() {
         board_voting::submit_proposal(
             &dao,
             option::some(string::utf8(b"Swap A for D")),
-            set_board::new(vector[NEW_MEMBER, MEMBER_D]),
+            set_board::new(vector[MEMBER_D], vector[CREATOR]),
             &clock,
             scenario.ctx(),
         );
@@ -471,7 +488,9 @@ fun test_sequential_board_changes() {
     {
         let mut proposal = scenario.take_shared<Proposal<SetBoard>>();
         clock.set_for_testing(11_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 

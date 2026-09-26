@@ -1,34 +1,61 @@
 module armature::governance;
 
-use sui::vec_map::{Self, VecMap};
-use sui::vec_set::{Self, VecSet};
+use sui::table::{Self, Table};
+use sui::vec_set;
 
 // === Errors ===
 
 const EEmptyBoard: u64 = 0;
 const EDuplicateBoardMember: u64 = 1;
 const ENotBoardMember: u64 = 2;
-const ENotBoardGovernance: u64 = 3;
+/// set_board called with nothing to add and nothing to remove.
+const ENoBoardChange: u64 = 3;
 
 // === Constants ===
 
 /// Vote weight of each board member. Every Board vote path reads it from here.
 const BOARD_MEMBER_VOTE_WEIGHT: u64 = 1;
 
-/// Sealed governance model enum. The governance type is immutable at creation.
-/// Governance state within a variant may be mutated by authorized proposal handlers.
-public enum GovernanceConfig has drop, store {
-    Board { members: VecSet<address> },
-    Direct { voters: VecMap<address, u64>, total_shares: u64 },
-    Weighted { delegates: VecMap<address, u64>, total_delegated: u64 },
+/// Board governance: one member, one vote. The roster may be mutated by
+/// authorized proposal handlers.
+///
+/// The roster lives in a `Table`, not inline, so the DAO root's size does not
+/// grow with the board: Sui charges the non-refundable storage fee and per-byte
+/// computation on the whole object on every write.
+///
+/// The roster is versioned. `roster_version` increments once per membership
+/// change (a single add or remove, or a whole batch), and every member records
+/// the versions at which they joined and left. A proposal stores the version
+/// current at its creation instead of copying the roster, and eligibility to
+/// vote on it is "was a member at that version" (see `was_member_at`).
+/// Members who leave therefore keep their entry: deleting it would make
+/// proposals created while they were a member unverifiable.
+///
+/// Board is the only governance model. A weighted model would need each
+/// member's weight at every past version, which this layout does not keep.
+public struct GovernanceConfig has store {
+    members: Table<address, Member>,
+    member_count: u64,
+    roster_version: u64,
+}
+
+/// Membership history of one address. One tenure per stint on the board, in
+/// order; only the last may be open. Kept after the address leaves.
+public struct Member has drop, store {
+    tenures: vector<Tenure>,
+}
+
+/// One stint on the board: a member from roster version `joined` until
+/// version `left` (exclusive), or still a member if `left` is none.
+public struct Tenure has copy, drop, store {
+    joined: u64,
+    left: Option<u64>,
 }
 
 /// Initialization payload for creating a DAO with a specific governance model.
 /// Consumed once during DAO creation.
 public enum GovernanceTypeInit has copy, drop, store {
     InitBoard { initial_members: vector<address> },
-    InitDirect { initial_voters: vector<address>, initial_weights: vector<u64> },
-    InitWeighted { initial_delegates: vector<address>, initial_weights: vector<u64> },
 }
 
 // === GovernanceTypeInit constructors ===
@@ -38,124 +65,123 @@ public fun init_board(initial_members: vector<address>): GovernanceTypeInit {
     GovernanceTypeInit::InitBoard { initial_members }
 }
 
+/// The initial board members listed in an init payload.
+public fun init_members(self: &GovernanceTypeInit): vector<address> {
+    match (self) {
+        GovernanceTypeInit::InitBoard { initial_members } => *initial_members,
+    }
+}
+
 // === GovernanceConfig constructors ===
 
-/// Create a Board governance config from an InitBoard payload.
-public(package) fun new_board(init: &GovernanceTypeInit): GovernanceConfig {
-    match (init) {
-        GovernanceTypeInit::InitBoard { initial_members } => {
-            let len = initial_members.length();
-            assert!(len > 0, EEmptyBoard);
-            let mut members = vec_set::empty<address>();
-            let mut i = 0;
-            while (i < len) {
-                let addr = initial_members[i];
-                assert!(!members.contains(&addr), EDuplicateBoardMember);
-                members.insert(addr);
-                i = i + 1;
-            };
-            GovernanceConfig::Board { members }
-        },
-        _ => abort 0,
+/// Create a Board governance config from an InitBoard payload. Initial members
+/// join at roster version 0.
+public(package) fun new_board(init: &GovernanceTypeInit, ctx: &mut TxContext): GovernanceConfig {
+    let initial_members = init.init_members();
+    assert!(initial_members.length() > 0, EEmptyBoard);
+    assert_no_duplicates(&initial_members);
+    let mut members = table::new<address, Member>(ctx);
+    initial_members.do!(|addr| join(&mut members, addr, 0));
+    GovernanceConfig {
+        members,
+        member_count: initial_members.length(),
+        roster_version: 0,
     }
+}
+
+/// Destroy the config. The roster's entries are dropped with the table and
+/// their storage deposits are not returned: a Table cannot be enumerated.
+public(package) fun destroy(self: GovernanceConfig) {
+    let GovernanceConfig { members, .. } = self;
+    members.drop();
 }
 
 // === GovernanceConfig accessors ===
 
-/// Returns true if addr is a board member. Aborts if not Board governance.
+/// Returns true if addr is a current board member.
 public fun is_board_member(self: &GovernanceConfig, addr: address): bool {
-    match (self) {
-        GovernanceConfig::Board { members, .. } => members.contains(&addr),
-        _ => abort 0,
-    }
+    if (!self.members.contains(addr)) return false;
+    let tenures = &self.members[addr].tenures;
+    tenures[tenures.length() - 1].left.is_none()
 }
 
-/// Returns the current board members as a plain vector.
-/// Returns an empty vector for non-Board governance (Direct / Weighted).
-public(package) fun board_member_vec(self: &GovernanceConfig): vector<address> {
-    match (self) {
-        GovernanceConfig::Board { members } => *members.keys(),
-        _ => vector[],
-    }
+/// Returns true if addr was a board member at roster version `version`. A
+/// member who joined at `version` counts; one who left at `version` does not.
+public fun was_member_at(self: &GovernanceConfig, addr: address, version: u64): bool {
+    if (!self.members.contains(addr)) return false;
+    self
+        .members[addr]
+        .tenures
+        .any!(|t| t.joined <= version && (t.left.is_none() || *t.left.borrow() > version))
 }
+
+/// Number of current board members.
+public fun member_count(self: &GovernanceConfig): u64 { self.member_count }
+
+/// Current roster version. Increments once per membership change.
+public fun roster_version(self: &GovernanceConfig): u64 { self.roster_version }
+
+/// Vote weight of every board member.
+public fun member_vote_weight(): u64 { BOARD_MEMBER_VOTE_WEIGHT }
 
 /// Assert that addr is a current board member.
 public(package) fun assert_board_member(self: &GovernanceConfig, addr: address) {
     assert!(self.is_board_member(addr), ENotBoardMember);
 }
 
-/// Build a vote snapshot for Board governance. Each member gets
-/// BOARD_MEMBER_VOTE_WEIGHT. Returns (snapshot, total_weight).
-public(package) fun board_vote_snapshot(self: &GovernanceConfig): (VecMap<address, u64>, u64) {
-    match (self) {
-        GovernanceConfig::Board { members, .. } => {
-            let keys = members.keys();
-            let len = keys.length();
-            let mut snapshot = vec_map::empty<address, u64>();
-            let mut i = 0;
-            while (i < len) {
-                snapshot.insert(keys[i], BOARD_MEMBER_VOTE_WEIGHT);
-                i = i + 1;
-            };
-            (snapshot, len * BOARD_MEMBER_VOTE_WEIGHT)
-        },
-        _ => abort 0,
-    }
-}
-
-/// Weight `addr` would hold in `board_vote_snapshot`. Aborts with
-/// ENotBoardMember if `addr` is not a board member.
+/// Weight `addr` votes with. Aborts with ENotBoardMember if `addr` is not a
+/// current board member.
 public(package) fun board_vote_weight(self: &GovernanceConfig, addr: address): u64 {
     self.assert_board_member(addr);
     BOARD_MEMBER_VOTE_WEIGHT
 }
 
-/// Total weight of the snapshot `board_vote_snapshot` would build, without
-/// building it. Aborts with ENotBoardGovernance if not Board governance.
+/// Total vote weight of the current board.
 public(package) fun board_vote_total_weight(self: &GovernanceConfig): u64 {
-    match (self) {
-        GovernanceConfig::Board { members } => members.length() * BOARD_MEMBER_VOTE_WEIGHT,
-        _ => abort ENotBoardGovernance,
-    }
+    self.member_count() * BOARD_MEMBER_VOTE_WEIGHT
 }
 
-/// Returns the raw member set for Board governance. Used by dao.move to diff
-/// old vs new members when auto-rotating the encryption epoch on SetBoard.
-public(package) fun board_members(self: &GovernanceConfig): &VecSet<address> {
-    match (self) {
-        GovernanceConfig::Board { members, .. } => members,
-        _ => abort 0,
-    }
+/// Returns the voting weight of addr in this governance config. Aborts with
+/// ENotBoardMember if addr is not a current board member.
+public(package) fun proposer_weight(self: &GovernanceConfig, addr: address): u64 {
+    self.board_vote_weight(addr)
 }
 
-/// Atomically replace board members and seat count.
-public(package) fun set_board(self: &mut GovernanceConfig, new_members: vector<address>) {
-    assert!(new_members.length() > 0, EEmptyBoard);
-    let mut members = vec_set::empty<address>();
-    let mut i = 0;
-    while (i < new_members.length()) {
-        let addr = new_members[i];
-        assert!(!members.contains(&addr), EDuplicateBoardMember);
-        members.insert(addr);
-        i = i + 1;
-    };
-    match (self) {
-        GovernanceConfig::Board { members: m } => {
-            *m = members;
-        },
-        _ => abort 0,
-    }
+// === GovernanceConfig mutators ===
+
+/// Add `to_add` to and remove `to_remove` from the board as one roster change.
+/// Aborts if both lists are empty, if an address appears twice across the two
+/// lists, if an address to add is already a member, if an address to remove is
+/// not a member, or if the board would be left empty. All checks run before
+/// any mutation.
+public(package) fun set_board(
+    self: &mut GovernanceConfig,
+    to_add: vector<address>,
+    to_remove: vector<address>,
+) {
+    assert!(!to_add.is_empty() || !to_remove.is_empty(), ENoBoardChange);
+    let mut all = to_add;
+    all.append(to_remove);
+    assert_no_duplicates(&all);
+    to_add.do_ref!(|addr| assert!(!self.is_board_member(*addr), EDuplicateBoardMember));
+    to_remove.do_ref!(|addr| self.assert_board_member(*addr));
+    assert!(self.member_count() + to_add.length() > to_remove.length(), EEmptyBoard);
+
+    let GovernanceConfig { members, member_count, roster_version } = self;
+    let version = *roster_version + 1;
+    to_remove.do!(|addr| leave(members, addr, version));
+    to_add.do!(|addr| join(members, addr, version));
+    *member_count = *member_count + to_add.length() - to_remove.length();
+    *roster_version = version;
 }
 
 /// Add a single member to the board. Aborts if already present.
 public(package) fun add_board_member(self: &mut GovernanceConfig, member: address) {
-    match (self) {
-        GovernanceConfig::Board { members } => {
-            assert!(!members.contains(&member), EDuplicateBoardMember);
-            members.insert(member);
-        },
-        _ => abort 0,
-    }
+    assert!(!self.is_board_member(member), EDuplicateBoardMember);
+    let GovernanceConfig { members, member_count, roster_version } = self;
+    *roster_version = *roster_version + 1;
+    join(members, member, *roster_version);
+    *member_count = *member_count + 1;
 }
 
 /// Add multiple members to the board, skipping any address that is already
@@ -167,58 +193,22 @@ public(package) fun add_board_member(self: &mut GovernanceConfig, member: addres
 /// addresses that were already on the board, both in input order. The
 /// caller is expected to surface `skipped` in its event so the on-chain
 /// record reflects what actually happened, not just proposer intent.
+/// The roster version advances once for the batch, and only if anything
+/// was added.
 public(package) fun add_board_members(
     self: &mut GovernanceConfig,
     new_members: vector<address>,
 ): (vector<address>, vector<address>) {
-    match (self) {
-        GovernanceConfig::Board { members } => {
-            // First pass: reject internal duplicates before any mutation.
-            let mut seen = vec_set::empty<address>();
-            let mut i = 0;
-            while (i < new_members.length()) {
-                let addr = new_members[i];
-                assert!(!seen.contains(&addr), EDuplicateBoardMember);
-                seen.insert(addr);
-                i = i + 1;
-            };
-            // Second pass: insert non-existing members, record both outcomes.
-            let mut added = vector::empty<address>();
-            let mut skipped = vector::empty<address>();
-            let mut j = 0;
-            while (j < new_members.length()) {
-                let addr = new_members[j];
-                if (members.contains(&addr)) {
-                    skipped.push_back(addr);
-                } else {
-                    members.insert(addr);
-                    added.push_back(addr);
-                };
-                j = j + 1;
-            };
-            (added, skipped)
-        },
-        _ => abort 0,
-    }
-}
-
-/// Returns the voting weight of addr in this governance config.
-/// Board: 1 (asserts membership). Direct/Weighted: weight from map (asserts presence).
-public(package) fun proposer_weight(self: &GovernanceConfig, addr: address): u64 {
-    match (self) {
-        GovernanceConfig::Board { members } => {
-            assert!(members.contains(&addr), ENotBoardMember);
-            1
-        },
-        GovernanceConfig::Direct { voters, .. } => {
-            assert!(voters.contains(&addr), ENotBoardMember);
-            *voters.get(&addr)
-        },
-        GovernanceConfig::Weighted { delegates, .. } => {
-            assert!(delegates.contains(&addr), ENotBoardMember);
-            *delegates.get(&addr)
-        },
-    }
+    assert_no_duplicates(&new_members);
+    let (skipped, added) = new_members.partition!(|addr| self.is_board_member(*addr));
+    if (!added.is_empty()) {
+        let GovernanceConfig { members, member_count, roster_version } = self;
+        let version = *roster_version + 1;
+        added.do_ref!(|addr| join(members, *addr, version));
+        *member_count = *member_count + added.length();
+        *roster_version = version;
+    };
+    (added, skipped)
 }
 
 /// Remove multiple members from the board atomically. Aborts if the input
@@ -228,42 +218,54 @@ public(package) fun remove_board_members(
     self: &mut GovernanceConfig,
     members_to_remove: vector<address>,
 ): vector<address> {
-    match (self) {
-        GovernanceConfig::Board { members } => {
-            let mut seen = vec_set::empty<address>();
-            let mut i = 0;
-            while (i < members_to_remove.length()) {
-                let addr = members_to_remove[i];
-                assert!(!seen.contains(&addr), EDuplicateBoardMember);
-                seen.insert(addr);
-                i = i + 1;
-            };
-            let mut j = 0;
-            while (j < members_to_remove.length()) {
-                assert!(members.contains(&members_to_remove[j]), ENotBoardMember);
-                j = j + 1;
-            };
-            assert!(members.length() > members_to_remove.length(), EEmptyBoard);
-            let mut k = 0;
-            while (k < members_to_remove.length()) {
-                members.remove(&members_to_remove[k]);
-                k = k + 1;
-            };
-            members_to_remove
-        },
-        _ => abort 0,
-    }
+    assert_no_duplicates(&members_to_remove);
+    members_to_remove.do_ref!(|addr| self.assert_board_member(*addr));
+    assert!(self.member_count() > members_to_remove.length(), EEmptyBoard);
+
+    let GovernanceConfig { members, member_count, roster_version } = self;
+    let version = *roster_version + 1;
+    members_to_remove.do_ref!(|addr| leave(members, *addr, version));
+    *member_count = *member_count - members_to_remove.length();
+    *roster_version = version;
+    members_to_remove
 }
 
 /// Remove a single member from the board. Aborts if not present or if
 /// removal would leave the board empty.
 public(package) fun remove_board_member(self: &mut GovernanceConfig, member: address) {
-    match (self) {
-        GovernanceConfig::Board { members } => {
-            assert!(members.contains(&member), ENotBoardMember);
-            assert!(members.length() > 1, EEmptyBoard);
-            members.remove(&member);
-        },
-        _ => abort 0,
-    }
+    self.assert_board_member(member);
+    assert!(self.member_count() > 1, EEmptyBoard);
+    let GovernanceConfig { members, member_count, roster_version } = self;
+    *roster_version = *roster_version + 1;
+    leave(members, member, *roster_version);
+    *member_count = *member_count - 1;
+}
+
+// === Internal ===
+
+/// Open a tenure for `addr` at `version`. The caller has checked that `addr`
+/// is not a current member.
+fun join(members: &mut Table<address, Member>, addr: address, version: u64) {
+    let tenure = Tenure { joined: version, left: option::none() };
+    if (members.contains(addr)) {
+        members[addr].tenures.push_back(tenure);
+    } else {
+        members.add(addr, Member { tenures: vector[tenure] });
+    };
+}
+
+/// Close `addr`'s open tenure at `version`. The caller has checked that
+/// `addr` is a current member.
+fun leave(members: &mut Table<address, Member>, addr: address, version: u64) {
+    let tenures = &mut members[addr].tenures;
+    let last = tenures.length() - 1;
+    tenures[last].left = option::some(version);
+}
+
+fun assert_no_duplicates(addrs: &vector<address>) {
+    let mut seen = vec_set::empty<address>();
+    addrs.do_ref!(|addr| {
+        assert!(!seen.contains(addr), EDuplicateBoardMember);
+        seen.insert(*addr);
+    });
 }

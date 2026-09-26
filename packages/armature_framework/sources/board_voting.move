@@ -74,6 +74,23 @@ public fun submit_proposal<P: store>(
     );
 }
 
+// === Vote ===
+
+/// Cast the caller's vote on a proposal of `dao`. The caller must have been a
+/// board member at the roster version the proposal was created at: members
+/// added since cannot vote, and members removed since still can. Takes the DAO
+/// by immutable reference to read its roster, so votes do not contend on it.
+public fun vote<P: store>(
+    proposal: &mut Proposal<P>,
+    dao: &DAO,
+    approve: bool,
+    clock: &Clock,
+    ctx: &TxContext,
+) {
+    assert!(proposal.dao_id() == dao.id(), EDAOIdMismatch);
+    proposal.record_vote(dao.governance(), approve, clock, ctx);
+}
+
 // === Submit + Vote + Execute (atomic) ===
 
 /// Submit a proposal, cast the caller's YES vote, and execute — all in one PTB.

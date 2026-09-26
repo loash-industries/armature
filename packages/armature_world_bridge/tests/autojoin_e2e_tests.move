@@ -159,7 +159,9 @@ fun configure_allowlist(
     ts::next_tx(scenario, CREATOR);
     {
         let mut p = ts::take_shared<Proposal<ConfigureAutojoin>>(scenario);
-        p.vote(true, clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(p.dao_id());
+        board_voting::vote(&mut p, &vote_dao, true, clock, scenario.ctx());
+        ts::return_shared(vote_dao);
         ts::return_shared(p);
     };
 
