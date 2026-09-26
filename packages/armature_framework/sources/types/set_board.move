@@ -1,5 +1,7 @@
 module armature::set_board;
 
+use std::internal::{Self, Permit};
+
 /// Change the board in one step: add `to_add` and remove `to_remove`.
 /// Used by the board itself or by a controller DAO via SubDAOControl bypass.
 ///
@@ -21,3 +23,9 @@ public fun new(to_add: vector<address>, to_remove: vector<address>): SetBoard {
 public fun to_add(self: &SetBoard): &vector<address> { &self.to_add }
 
 public fun to_remove(self: &SetBoard): &vector<address> { &self.to_remove }
+
+// === Handler authority ===
+
+/// `Permit<SetBoard>` for this package's handler: the only way to spend or close
+/// an `ExecutionTicket<SetBoard>` (see `proposal::ticket_request`).
+public(package) fun permit(): Permit<SetBoard> { internal::permit() }

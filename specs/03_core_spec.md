@@ -270,9 +270,11 @@ ProposalStatus = Active | Passed | Executed | Expired
    - Asserts executor is a current board member.
    - Deletes the `Proposal`, emits `ProposalExecuted`, updates `last_executed_ms`.
    - Returns a ticket holding the payload and an `ExecutionRequest<P>` whose `permissions` are `P`'s slot bits **now** (at execution, not submission).
-5. **Handle** — the type's handler calls gated mutators with `ticket.ticket_request()`; each aborts `EPermissionDenied` unless the request holds its bit. `ticket.discharge()` ends the PTB.
+5. **Handle** — only `P`'s handler can spend or close the ticket. `ticket_request(permit)` and `discharge(permit)` take `std::internal::Permit<P>`, which only the module defining `P` can mint; a package whose handlers live beside the type exposes it as `public(package) fun permit()`. The handler reads the arguments for each gated mutator from the payload; each mutator aborts `EPermissionDenied` unless the request holds its bit. `discharge` ends the PTB.
 
-The single-PTB paths (`submit_vote_execute`, `ticket_from_cap`, `composite::advance_step`) create no `Proposal` object but mint the request the same way: its bits are read from `P`'s slot at mint time.
+   A ticket holder therefore cannot pass the request to a mutator with arguments of their own choosing (a larger `amount`, another recipient, other board members, another cap). Permission bits bound what a type's handler may touch; the permit binds who may spend the request, and so which arguments it is spent with.
+
+The single-PTB paths (`submit_vote_execute`, `ticket_from_cap`, `composite::advance_step`) create no `Proposal` object but mint the request the same way: its bits are read from `P`'s slot at mint time. `ticket_from_cap` also takes `Permit<P>`: only `P`'s module can mint a bypass ticket, so the extension's authorization check must run there.
 
 **Status transitions:** `Active → Passed` is the only stored transition. Execution and expiry delete the proposal (`ProposalExecuted` / `ProposalExpired` events).
 
@@ -304,7 +306,7 @@ Two hot potatoes alive simultaneously in the same PTB. The controller's own requ
 | `METADATA` | — | `charter::update_metadata` |
 | `TREASURY_WITHDRAW` | 80% | `treasury_vault::withdraw`, `withdraw_multicoin` |
 | `VAULT_STORE` | — | `store_cap`; receiver side of `receive_cap_authorized` |
-| `VAULT_BORROW` | 80% | `borrow_cap`, `borrow_cap_mut`, `loan_cap` |
+| `VAULT_BORROW` | 80% | `borrow_cap`, `borrow_cap_mut`, `loan_cap`, limited to the cap types in the config's `borrow_scope` (`EBorrowScopeDenied`, 22) |
 | `VAULT_EXTRACT` | 80% | `extract_cap`, `create/destroy_subdao_control`, sender side of `receive_cap(_authorized)` |
 | `FREEZE` | — | `governance_unfreeze_type`, `update_freeze_duration`, `unfreeze_all`, `add/remove_freeze_exempt_type` |
 
@@ -313,7 +315,9 @@ Two hot potatoes alive simultaneously in the same PTB. The controller's own requ
 - **Fixed framework bits.** Framework payload types (`dao::is_framework_type`) always hold exactly `dao::framework_permissions`; a config naming other bits aborts `EFixedPermissions` (23). Table: `packages/armature_framework/internal_workings.md` §9.1.
 - **Grants.** Only `EnableProposalType`, `EnableBypassType` or `UpdateProposalConfig` requests (all 80%), or a privileged request, may change a type's bits (`EPermissionChangeNotAllowed`, 19). Grants are standalone-only: composites refuse grant steps (`EUseTypedStep`, `EGrantInComposite`). Other types get bits from their enabling config; `armature_proposals::type_permissions` lists what each built-in type needs.
 - **Mint time.** Requests carry the bits their slot held when minted, so a grant or revocation applies from the next execution.
-- **Bypass caveat.** A bypass type's bits are usable by anyone who can build its payload: `borrow_external_cap` is public and `ticket_from_cap` does not check the sender. A bypass-enabled `MintAllowance<T>` (public constructor) is therefore open minting — ARMATURE-31, not yet fixed. Bypass types should keep their payload constructors private.
+- **Borrow scope.** `ProposalConfig.borrow_scope` lists the capability types a `VAULT_BORROW` request may borrow or loan (deny-by-default, empty borrows nothing). It is copied into the request at mint time, checked by the vault after the bit, fixed for framework types (`dao::framework_borrow_scope`), and changed only under the grant rules above (a scope change counts as a VAULT_BORROW grant; never in a composite).
+- **Bypass-safe bits.** A bypass-enabled type may not hold `TYPE_ADMIN`, `MIGRATE`, `VAULT_EXTRACT` or `FREEZE` (`external_execution::bypass_forbidden_bits`, `EBypassForbiddenBits` 15), checked at `EnableBypassType` and at every `ticket_from_cap`.
+- **Bypass authorization.** `borrow_external_cap` is public and `ticket_from_cap` does not check the sender, but it takes `Permit<P>`: only `P`'s module can mint a bypass ticket, so that module's mint entry is the authorization point. `MintAllowance<T>` is minted only by `currency_ops::mint_allowance_bypass`, gated by the `ConfigureMintAllowance<T>` allowlist (ARMATURE-31). Placement rules: `docs/package-boundaries.md`.
 
 ---
 
@@ -363,11 +367,12 @@ Two hot potatoes alive simultaneously in the same PTB. The controller's own requ
 | 16 | `AmendCharter` | ⬜ opt-in (recommended 80% threshold) |
 | 17 | `RenewCharterStorage` | ⬜ opt-in (lower threshold OK) |
 
-### 5.6 Freeze Config (`admin.move`)
+### 5.6 Freeze Config (`freeze_ops.move`, framework)
 
 | # | Type | Default |
 |---|---|---|
-| 18 | `UpdateFreezeConfig` | ⬜ opt-in |
+| 18 | `UpdateFreezeConfig` | ⬜ opt-in (framework type, fixed `FREEZE`) |
+| 19 | `UpdateFreezeExemptTypes` | ⬜ opt-in (framework type, fixed `FREEZE`) |
 
 ---
 

@@ -179,23 +179,17 @@ fun tribe_config_overrides(): VecMap<String, ProposalConfig> {
         single_vote_config());
 
     // ── Currency (owners are sole mint/burn authority) ─────────────────────
-    // MintAllowance: single-vote is ONLY safe if the framework enforces a
-    // per-grant size ceiling (e.g. MaxMintAllowance in MintAllowanceConfig).
-    // Without that ceiling a single owner can issue MintAllowance(u64::MAX),
-    // granting unlimited delegated mint authority and bypassing the MintCoin
-    // multi-owner consensus requirement entirely.
+    // MintAllowance: delegated minting is a bypass (no vote per mint). It is
+    // gated by ConfigureMintAllowance<T>: the minter allowlist, a per-call cap
+    // enforced by currency_ops::mint_allowance_bypass, and a kill-switch. The
+    // governance question is therefore who may change that allowlist.
+    // ConfigureMintAllowance must NOT be single-vote: one owner could add
+    // themselves as a minter with an unbounded per-call cap. Inherit default
+    // quorum for it, and enable MintAllowance itself only via EnableBypassType
+    // (80% floor) with type_permissions::mint() and currency_scope<T>().
     //
-    // PREREQUISITE: confirm that armature_framework rejects MintAllowance
-    // grants exceeding the configured ceiling before enabling single-vote here.
-    // Until confirmed, use a consensus config (inherit default quorum by
-    // omitting this entry) and add it back once the cap is verified.
-    //
-    // If the ceiling is confirmed:
-    // vec_map::insert(&mut m,
-    //     b"<armature_proposals_pkg>::mint_allowance::MintAllowance".to_ascii_string(),
-    //     single_vote_config());
-    //
-    // MintCoin, BurnCoin, AdoptCurrency, ReturnCurrencyCap inherit default quorum.
+    // MintCoin, BurnCoin, AdoptCurrency, ReturnCurrencyCap, ConfigureMintAllowance
+    // inherit default quorum.
 
     // ── Security ──────────────────────────────────────────────────────────
     // Freeze config changes require owner consensus — inherit default quorum.
@@ -516,7 +510,7 @@ These create persistent on-chain state and should not be single-vote:
 | Type | Owners | Officers |
 |---|---|---|
 | `UpdateMetadata` | Yes | — |
-| `MintAllowance<T>` | Only after per-grant cap verified (see §3a) | No (owners only) |
+| `MintAllowance<T>` | n/a: bypass type, gated by `ConfigureMintAllowance<T>` (consensus) | No (owners only) |
 | `ControllerBatchAddMembers` | Yes | Yes |
 | `ControllerBatchRemoveMembers` | Yes | Yes |
 | `PauseSubDAOExecution` | Yes | Yes |
@@ -562,11 +556,12 @@ TransferAssets
 <armature_proposals_pkg>::send_batch_multicoin_to_dao::SendBatchMulticoinToDAO
 <armature_proposals_pkg>::mint_coin::MintCoin<...>
 <armature_proposals_pkg>::mint_allowance::MintAllowance<...>
+<armature_proposals_pkg>::configure_mint_allowance::ConfigureMintAllowance<...>
 <armature_proposals_pkg>::burn_coin::BurnCoin<...>
 <armature_proposals_pkg>::adopt_currency::AdoptCurrency<...>
 <armature_proposals_pkg>::return_currency_cap::ReturnCurrencyCap<...>
 <armature_proposals_pkg>::propose_upgrade::ProposeUpgrade
-<armature_proposals_pkg>::update_freeze_config::UpdateFreezeConfig
+<armature_framework_pkg>::update_freeze_config::UpdateFreezeConfig
 <trading_pkg>::setup_trading_account::SetupTradingAccount
 <trading_pkg>::deposit_coin_to_book::DepositCoinToBook<...>
 <trading_pkg>::deposit_multicoin_to_book::DepositMulticoinToBook

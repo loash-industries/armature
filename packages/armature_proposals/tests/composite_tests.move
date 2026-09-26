@@ -2,7 +2,9 @@
 module armature_proposals::composite_tests;
 
 use armature::add_member::{Self, AddMember};
+use armature::admin_ops;
 use armature::batch_add_members::{Self, BatchAddMembers};
+use armature::board_ops;
 use armature::board_voting;
 use armature::charter::Charter;
 use armature::composite::{Self, CompositeFrame};
@@ -11,18 +13,17 @@ use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
 use armature::enable_proposal_type::{Self, EnableProposalType};
 use armature::governance;
+use armature::member_ops;
 use armature::proposal::{Self, Proposal};
 use armature::remove_member::{Self, RemoveMember};
 use armature::set_board::{Self, SetBoard};
 use armature::treasury_vault::TreasuryVault;
 use armature::update_metadata::{Self, UpdateMetadata};
-use armature_proposals::admin_ops;
-use armature_proposals::board_ops;
-use armature_proposals::member_ops;
 use armature_proposals::send_coin::{Self, SendCoin};
 use armature_proposals::send_coin_to_dao::{Self, SendCoinToDAO};
 use armature_proposals::treasury_ops;
 use armature_proposals::type_permissions;
+use std::internal;
 use std::string;
 use std::type_name;
 use sui::clock;
@@ -1478,20 +1479,19 @@ fun composite_steps_perform_their_own_mutations() {
     });
 }
 
-#[test, expected_failure(abort_code = proposal::EPermissionDenied)]
-/// The AddMember step cannot use the composite's SendCoin authority.
-fun composite_add_member_step_cannot_withdraw() {
-    with_add_member_and_send_coin_steps!(|_, vault, add_ticket, _send_ticket, _pipeline, ctx| {
-        let coin = vault.withdraw<SUI, AddMember>(100, add_ticket.ticket_request(), ctx);
-        abort 0
-    });
-}
+// A step ticket's request is reachable only with that step type's Permit, so
+// outside code cannot hand the AddMember step's request to treasury::withdraw
+// at all. The test below uses SendCoin's package-scoped permit to stand in for
+// a buggy SendCoin handler, and checks the step's permission bits still stop it.
 
 #[test, expected_failure(abort_code = proposal::EPermissionDenied)]
 /// The SendCoin step cannot use the composite's AddMember authority.
 fun composite_send_coin_step_cannot_add_member() {
     with_add_member_and_send_coin_steps!(|dao, _, _add_ticket, send_ticket, _pipeline, _| {
-        dao.add_board_member_governance(@0xBAD, send_ticket.ticket_request());
+        dao.add_board_member_governance(
+            @0xBAD,
+            send_ticket.ticket_request(armature_proposals::send_coin::permit()),
+        );
         abort 0
     });
 }

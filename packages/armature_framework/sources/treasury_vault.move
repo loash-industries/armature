@@ -90,7 +90,7 @@ public struct CollectionRecord has key, store {
 /// Multi-coin treasury vault.
 /// Coin balances: dynamic fields keyed by type name string.
 /// Multicoin balances: two-level DOF tree — CollectionRecord per collection_id,
-///   MultiCoinBalance per asset_id within each CollectionRecord.
+/// MultiCoinBalance per asset_id within each CollectionRecord.
 /// Created as a shared object during DAO creation.
 public struct TreasuryVault has key, store {
     id: UID,
@@ -217,11 +217,11 @@ public fun claim_coin<T>(
 /// Zero-value balances are destroyed as a no-op.
 ///
 /// Storage layout:
-///   TreasuryVault --dof[CollectionKey]--> CollectionRecord --dof[AssetKey]--> MultiCoinBalance
+/// TreasuryVault --dof[CollectionKey]--> CollectionRecord --dof[AssetKey]--> MultiCoinBalance
 ///
 /// RPC enumeration:
-///   All assets in a collection: sui_getDynamicFields(collection_record_id)
-///   All collections: sui_getDynamicFields(treasury_vault_id) filtered by key type CollectionKey
+/// All assets in a collection: sui_getDynamicFields(collection_record_id)
+/// All collections: sui_getDynamicFields(treasury_vault_id) filtered by key type CollectionKey
 public fun deposit_multicoin(
     self: &mut TreasuryVault,
     balance: MultiCoinBalance,

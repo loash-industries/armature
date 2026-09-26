@@ -1,6 +1,7 @@
 module armature::enable_bypass_type;
 
 use armature::proposal::ProposalConfig;
+use std::internal::{Self, Permit};
 use std::type_name::TypeName;
 
 /// Enable a new proposal type on the DAO with bypass-execution authorization.
@@ -40,3 +41,9 @@ public fun type_key(self: &EnableBypassType): std::ascii::String { self.type_key
 public fun type_name(self: &EnableBypassType): TypeName { self.type_name }
 
 public fun config(self: &EnableBypassType): &ProposalConfig { &self.config }
+
+// === Handler authority ===
+
+/// `Permit<EnableBypassType>` for this package's handler: the only way to spend or close
+/// an `ExecutionTicket<EnableBypassType>` (see `proposal::ticket_request`).
+public(package) fun permit(): Permit<EnableBypassType> { internal::permit() }

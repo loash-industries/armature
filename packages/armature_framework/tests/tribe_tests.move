@@ -138,7 +138,7 @@ fun create_tribe_control_hierarchy_is_tribe_officers_members() {
         let req = proposal::new_execution_request_for_testing<TestProposal>(
             tribe_vault.dao_id(),
             object::id_from_address(@0xBEEF),
-        );
+        ).with_borrow_scope_for_testing(vector[std::type_name::with_defining_ids<SubDAOControl>()]);
         let (tribe_ctrl, tribe_loan) = tribe_vault.loan_cap<SubDAOControl, TestProposal>(
             tribe_ctrl_ids[0],
             &req,
@@ -156,7 +156,7 @@ fun create_tribe_control_hierarchy_is_tribe_officers_members() {
         let req = proposal::new_execution_request_for_testing<TestProposal>(
             officer_vault.dao_id(),
             object::id_from_address(@0xBEEF),
-        );
+        ).with_borrow_scope_for_testing(vector[std::type_name::with_defining_ids<SubDAOControl>()]);
         let (officer_ctrl, officer_loan) = officer_vault.loan_cap<SubDAOControl, TestProposal>(
             officer_ctrl_ids[0],
             &req,
@@ -420,7 +420,7 @@ fun create_wired_subdao_wires_control_into_parent_vault() {
         let req = proposal::new_execution_request_for_testing<TestProposal>(
             vault.dao_id(),
             object::id_from_address(@0xBEEF),
-        );
+        ).with_borrow_scope_for_testing(vector[std::type_name::with_defining_ids<SubDAOControl>()]);
         let (ctrl, loan) = vault.loan_cap<SubDAOControl, TestProposal>(ctrl_ids[0], &req);
         assert!(ctrl.subdao_id() == subdao_id);
         vault.return_cap(ctrl, loan);

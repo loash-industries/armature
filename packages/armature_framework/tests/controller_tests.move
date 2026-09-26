@@ -8,6 +8,7 @@ use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
 use armature::proposal::{Self, Proposal, ProposalCreated, ProposalExecuted, ProposalPayloadCreated};
+use std::internal;
 use std::string;
 use sui::clock;
 use sui::event;
@@ -294,7 +295,7 @@ fun authorize_execution_blocks_when_controller_paused() {
             scenario.ctx(),
         );
 
-        req.discharge();
+        req.discharge(internal::permit());
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(dao);
     };

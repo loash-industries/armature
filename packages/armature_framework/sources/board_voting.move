@@ -100,8 +100,8 @@ public fun vote<P: store>(
 /// ProposalExecuted) are the audit record, under a freshly minted proposal ID.
 ///
 /// Requires:
-///   - execution_delay_ms = 0 for this proposal type (EDelayForbidsAtomicExecution)
-///   - The caller's single vote satisfies quorum and approval_threshold (EInsufficientVotingWeight)
+/// - execution_delay_ms = 0 for this proposal type (EDelayForbidsAtomicExecution)
+/// - The caller's single vote satisfies quorum and approval_threshold (EInsufficientVotingWeight)
 ///
 /// All other validation mirrors submit_proposal + ticket_from_vote in order.
 /// Returns a Standalone ExecutionTicket<P>; execution-time floor checks in
@@ -280,6 +280,7 @@ fun ticket_from_vote_core<P: store>(
         last_ms,
         dao.is_execution_paused(),
         dao.type_config_by_name(&name).permissions(),
+        dao.type_config_by_name(&name).borrow_scope(),
         clock,
         ctx,
     );

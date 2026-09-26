@@ -128,10 +128,10 @@ public struct CompositeSubmitted has copy, drop {
 
 /// Create a new CompositeFrame owned by the caller. Steps are added via add_step<P>.
 /// Required creation sequence:
-///   1. new_frame(dao_id, ctx)
-///   2. add_step<P>(...) for each step
-///   3. composite::seal_frame(&mut frame)   ← frame is now immutable to callers
-///   4. submit_composite(dao, frame, ...)   ← seals internally if not already sealed
+/// 1. new_frame(dao_id, ctx)
+/// 2. add_step<P>(...) for each step
+/// 3. composite::seal_frame(&mut frame)   ← frame is now immutable to callers
+/// 4. submit_composite(dao, frame, ...)   ← seals internally if not already sealed
 public fun new_frame(dao_id: ID, ctx: &mut TxContext): CompositeFrame {
     CompositeFrame {
         id: object::new(ctx),
@@ -148,7 +148,7 @@ public fun new_frame(dao_id: ID, ctx: &mut TxContext): CompositeFrame {
 /// - The step count would exceed MAX_COMPOSITE_STEPS
 /// - P is CompositePayload (self-nesting is unconditionally blocked)
 /// - P is EnableProposalType or UpdateProposalConfig (EUseTypedStep): use
-///   add_enable_proposal_type_step / add_update_proposal_config_step
+/// add_enable_proposal_type_step / add_update_proposal_config_step
 /// - The type is not enabled in the DAO
 /// - The type's ProposalConfig has composable_allowed = false
 public fun add_step<P: store>(frame: &mut CompositeFrame, dao: &DAO, payload: P) {
@@ -162,32 +162,39 @@ public fun add_step<P: store>(frame: &mut CompositeFrame, dao: &DAO, payload: P)
 }
 
 /// add_step for an EnableProposalType step. Aborts with EGrantInComposite if
-/// the new type's config holds any permission bits: grant them with a
-/// standalone vote instead.
+/// the new type's config holds any permission bits or a borrow scope: grant
+/// them with a standalone vote instead.
 public fun add_enable_proposal_type_step(
     frame: &mut CompositeFrame,
     dao: &DAO,
     payload: EnableProposalType,
 ) {
     assert!(payload.config().permissions() == 0, EGrantInComposite);
+    assert!(payload.config().borrow_scope().is_empty(), EGrantInComposite);
     add_step_unchecked(frame, dao, payload);
 }
 
 /// add_step for an UpdateProposalConfig step. Aborts with EGrantInComposite if
-/// the payload would change the target type's permission bits, and with
-/// ETargetNotEnabled if it sets bits for a display key no type carries. A step
-/// that leaves the bits alone composes as before.
+/// the payload would change the target type's permission bits or borrow
+/// scope, and with ETargetNotEnabled if it sets either for a display key no
+/// type carries. A step that leaves both alone composes as before.
 public fun add_update_proposal_config_step(
     frame: &mut CompositeFrame,
     dao: &DAO,
     payload: UpdateProposalConfig,
 ) {
     let bits = payload.permissions();
-    if (bits.is_some()) {
+    let scope = payload.borrow_scope();
+    if (bits.is_some() || scope.is_some()) {
         let target = dao.type_for_display_key(&payload.target_type_key());
         assert!(target.is_some(), ETargetNotEnabled);
-        let current = dao.type_config_by_name(target.borrow()).permissions();
-        assert!(bits.destroy_some() == current, EGrantInComposite);
+        let current = dao.type_config_by_name(target.borrow());
+        if (bits.is_some()) {
+            assert!(bits.destroy_some() == current.permissions(), EGrantInComposite);
+        };
+        if (scope.is_some()) {
+            assert!(scope.destroy_some() == current.borrow_scope(), EGrantInComposite);
+        };
     };
     add_step_unchecked(frame, dao, payload);
 }
@@ -304,10 +311,10 @@ public fun begin_pipeline(
     let total_steps = payload.step_count();
     let last_executed_snapshot = snapshot_last_executed(dao, payload.step_types());
     let dao_id = ticket.ticket_dao_id();
-    let composite_proposal_id = ticket.ticket_request().req_proposal_id();
+    let composite_proposal_id = ticket.ticket_proposal_id();
 
     // Consume the composite-level ticket; the Pipeline hot potato takes over.
-    ticket.discharge();
+    ticket.discharge(composite_payload::permit());
 
     Pipeline {
         frame_id: object::id(frame),
@@ -323,7 +330,7 @@ public fun begin_pipeline(
 /// against the recorded TypeName, enforces per-step freeze check, asserts
 /// the type has no cooldown (cooldown-bearing types are prohibited from
 /// composites), extracts the payload, and returns
-///   (ExecutionTicket<P>, next_pipeline: Pipeline)
+/// (ExecutionTicket<P>, next_pipeline: Pipeline)
 ///
 /// Pass the ticket to the unified execute_* handler for P.
 /// The returned Pipeline must be used in the next advance_step or
@@ -365,6 +372,7 @@ public fun advance_step<P: store>(
         pipeline.composite_proposal_id,
         payload,
         step_config.permissions(),
+        step_config.borrow_scope(),
     );
 
     let Pipeline {

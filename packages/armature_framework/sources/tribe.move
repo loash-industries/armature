@@ -63,8 +63,8 @@ public fun create_wired_subdao<P>(
 /// Officer and member FreezeAdminCaps are transferred to the provided addresses.
 ///
 /// Control hierarchy:
-///   Tribe DAO CapabilityVault       → SubDAOControl for Officers SubDAO
-///   Officers SubDAO CapabilityVault → SubDAOControl for Members SubDAO
+/// Tribe DAO CapabilityVault       → SubDAOControl for Officers SubDAO
+/// Officers SubDAO CapabilityVault → SubDAOControl for Members SubDAO
 ///
 /// Returns (tribe_dao_id, officer_dao_id, member_dao_id).
 public fun create_tribe(
@@ -138,7 +138,7 @@ public fun create_tribe(
 /// construction time, before any DAO is shared. Each override is a `ProposalTypeInit`
 /// built with `dao::new_type_init<T>(display_key, config)`. For each entry:
 /// - If the type is already enabled by default, its config is replaced. The
-///   override's display key must match the default key (EDisplayKeyMismatch).
+/// override's display key must match the default key (EDisplayKeyMismatch).
 /// - If the type is not yet enabled, it is inserted and enabled.
 /// - If the type is blocked (hierarchy-altering or bypass-meta), the call aborts.
 /// The original `create_tribe` is unchanged and continues to use hardcoded defaults.

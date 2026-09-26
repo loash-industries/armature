@@ -8,9 +8,9 @@ use armature::board_voting;
 use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
+use armature::member_ops;
 use armature::proposal::Proposal;
 use armature::remove_member::{Self, RemoveMember};
-use armature_proposals::member_ops;
 use std::string;
 use sui::clock;
 use sui::test_scenario;
@@ -653,7 +653,7 @@ fun test_batch_add_members_internal_duplicate_aborts() {
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = armature_proposals::member_ops::EEmptyBatch)]
+#[test, expected_failure(abort_code = armature::member_ops::EEmptyBatch)]
 /// Empty batch should abort with EEmptyBatch.
 fun test_batch_add_members_empty_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -1039,7 +1039,7 @@ fun test_batch_remove_members_would_empty_aborts() {
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = armature_proposals::member_ops::EEmptyBatch)]
+#[test, expected_failure(abort_code = armature::member_ops::EEmptyBatch)]
 /// Empty BatchRemoveMembers aborts with EEmptyBatch.
 fun test_batch_remove_members_empty_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -1105,7 +1105,7 @@ fun test_batch_remove_members_empty_aborts() {
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = armature_proposals::member_ops::EBatchTooLarge)]
+#[test, expected_failure(abort_code = armature::member_ops::EBatchTooLarge)]
 /// Batch exceeding MAX_BATCH_SIZE (100) should abort with EBatchTooLarge.
 fun test_batch_add_members_oversize_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);

@@ -7,6 +7,7 @@ use armature::create_subdao::{Self, CreateSubDAO};
 use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
+use armature::lifecycle_ops;
 use armature::proposal::{Self, Proposal};
 use armature_proposals::controller_batch_add_members::{Self, ControllerBatchAddMembers};
 use armature_proposals::controller_batch_remove_members::{Self, ControllerBatchRemoveMembers};
@@ -111,7 +112,7 @@ fun create_subdao_e2e() {
             scenario.ctx(),
         );
 
-        subdao_ops::execute_create_subdao(
+        lifecycle_ops::execute_create_subdao(
             &mut vault,
             ticket,
             scenario.ctx(),
@@ -133,7 +134,7 @@ fun create_subdao_e2e() {
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = armature_proposals::subdao_ops::EVaultDAOMismatch)]
+#[test, expected_failure(abort_code = armature::lifecycle_ops::EVaultDAOMismatch)]
 /// Verify execute_create_subdao rejects a vault that doesn't match the DAO.
 fun create_subdao_vault_mismatch_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -229,7 +230,7 @@ fun create_subdao_vault_mismatch_aborts() {
         test_scenario::return_shared(vault_a);
         let mut vault_b = scenario.take_shared<CapabilityVault>();
 
-        subdao_ops::execute_create_subdao(
+        lifecycle_ops::execute_create_subdao(
             &mut vault_b,
             ticket,
             scenario.ctx(),
@@ -284,7 +285,9 @@ fun setup_parent_and_subdao(
         );
         dao.test_enable_type<ReclaimCapFromSubDAO>(
             b"ReclaimCapFromSubDAO".to_ascii_string(),
-            config.with_permissions(type_permissions::reclaim_cap_from_subdao()),
+            config
+                .with_permissions(type_permissions::reclaim_cap_from_subdao())
+                .with_borrow_scope(type_permissions::subdao_control_scope()),
         );
         test_scenario::return_shared(dao);
     };
@@ -336,7 +339,7 @@ fun setup_parent_and_subdao(
             scenario.ctx(),
         );
 
-        subdao_ops::execute_create_subdao(
+        lifecycle_ops::execute_create_subdao(
             &mut vault,
             ticket,
             scenario.ctx(),
@@ -685,11 +688,15 @@ fun pause_and_unpause_subdao_e2e() {
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
         dao.test_enable_type<pause_execution::PauseSubDAOExecution>(
             b"PauseSubDAOExecution".to_ascii_string(),
-            config.with_permissions(type_permissions::subdao_control()),
+            config
+                .with_permissions(type_permissions::subdao_control())
+                .with_borrow_scope(type_permissions::subdao_control_scope()),
         );
         dao.test_enable_type<pause_execution::UnpauseSubDAOExecution>(
             b"UnpauseSubDAOExecution".to_ascii_string(),
-            config.with_permissions(type_permissions::subdao_control()),
+            config
+                .with_permissions(type_permissions::subdao_control())
+                .with_borrow_scope(type_permissions::subdao_control_scope()),
         );
         test_scenario::return_shared(dao);
     };
@@ -854,7 +861,9 @@ fun paused_subdao_blocks_execution() {
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
         dao.test_enable_type<pause_execution::PauseSubDAOExecution>(
             b"PauseSubDAOExecution".to_ascii_string(),
-            config.with_permissions(type_permissions::subdao_control()),
+            config
+                .with_permissions(type_permissions::subdao_control())
+                .with_borrow_scope(type_permissions::subdao_control_scope()),
         );
         test_scenario::return_shared(dao);
     };
@@ -971,7 +980,7 @@ fun paused_subdao_blocks_execution() {
         );
 
         // Unreachable: consume the request so compiler is happy
-        armature_proposals::board_ops::execute_set_board(
+        armature::board_ops::execute_set_board(
             &mut subdao,
             ticket,
         );
@@ -1059,7 +1068,7 @@ fun create_multi_member_subdao() {
             &clock,
             scenario.ctx(),
         );
-        subdao_ops::execute_create_subdao(
+        lifecycle_ops::execute_create_subdao(
             &mut vault,
             ticket,
             scenario.ctx(),
@@ -1116,7 +1125,9 @@ fun controller_batch_add_members_e2e() {
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
         dao.test_enable_type<ControllerBatchAddMembers>(
             b"ControllerBatchAddMembers".to_ascii_string(),
-            config.with_permissions(type_permissions::subdao_control()),
+            config
+                .with_permissions(type_permissions::subdao_control())
+                .with_borrow_scope(type_permissions::subdao_control_scope()),
         );
         test_scenario::return_shared(dao);
     };
@@ -1213,7 +1224,9 @@ fun controller_batch_add_members_existing_skipped() {
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
         dao.test_enable_type<ControllerBatchAddMembers>(
             b"ControllerBatchAddMembers".to_ascii_string(),
-            config.with_permissions(type_permissions::subdao_control()),
+            config
+                .with_permissions(type_permissions::subdao_control())
+                .with_borrow_scope(type_permissions::subdao_control_scope()),
         );
         test_scenario::return_shared(dao);
     };
@@ -1318,11 +1331,15 @@ fun controller_batch_remove_members_e2e() {
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
         dao.test_enable_type<ControllerBatchAddMembers>(
             b"ControllerBatchAddMembers".to_ascii_string(),
-            config.with_permissions(type_permissions::subdao_control()),
+            config
+                .with_permissions(type_permissions::subdao_control())
+                .with_borrow_scope(type_permissions::subdao_control_scope()),
         );
         dao.test_enable_type<ControllerBatchRemoveMembers>(
             b"ControllerBatchRemoveMembers".to_ascii_string(),
-            config.with_permissions(type_permissions::subdao_control()),
+            config
+                .with_permissions(type_permissions::subdao_control())
+                .with_borrow_scope(type_permissions::subdao_control_scope()),
         );
         test_scenario::return_shared(dao);
     };
@@ -1483,7 +1500,9 @@ fun controller_batch_remove_members_nonmember_aborts() {
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
         dao.test_enable_type<ControllerBatchRemoveMembers>(
             b"ControllerBatchRemoveMembers".to_ascii_string(),
-            config.with_permissions(type_permissions::subdao_control()),
+            config
+                .with_permissions(type_permissions::subdao_control())
+                .with_borrow_scope(type_permissions::subdao_control_scope()),
         );
         test_scenario::return_shared(dao);
     };

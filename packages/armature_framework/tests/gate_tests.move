@@ -330,6 +330,34 @@ fun loan_cap_needs_vault_borrow() {
     });
 }
 
+#[test, expected_failure(abort_code = proposal::EBorrowScopeDenied)]
+/// Every bit, empty scope: VAULT_BORROW alone reaches no cap.
+fun borrow_cap_scope_denied_with_all_bits() {
+    run!(|dao, _, vault, _, _, _| {
+        let r = all_but(dao, 0);
+        let _cap: &TestCap = vault.borrow_cap(object::id_from_address(@0x4), &r);
+        abort 0
+    });
+}
+
+#[test, expected_failure(abort_code = proposal::EBorrowScopeDenied)]
+fun borrow_cap_mut_scope_denied_with_all_bits() {
+    run!(|dao, _, vault, _, _, _| {
+        let r = all_but(dao, 0);
+        let _cap: &mut TestCap = vault.borrow_cap_mut(object::id_from_address(@0x4), &r);
+        abort 0
+    });
+}
+
+#[test, expected_failure(abort_code = proposal::EBorrowScopeDenied)]
+fun loan_cap_scope_denied_with_all_bits() {
+    run!(|dao, _, vault, _, _, _| {
+        let r = all_but(dao, 0);
+        let (_cap, _loan) = vault.loan_cap<TestCap, Probe>(object::id_from_address(@0x4), &r);
+        abort 0
+    });
+}
+
 #[test, expected_failure(abort_code = proposal::EPermissionDenied)]
 fun extract_cap_needs_vault_extract() {
     run!(|dao, _, vault, _, _, _| {

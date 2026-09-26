@@ -3,7 +3,9 @@ module armature::proposal;
 use armature::governance::{Self, GovernanceConfig};
 use armature::permissions;
 use armature::utils;
+use std::internal::Permit;
 use std::string::String;
+use std::type_name::TypeName;
 use sui::clock::Clock;
 use sui::event;
 use sui::vec_map::{Self, VecMap};
@@ -36,6 +38,9 @@ const EVotingClosed: u64 = 20;
 /// The request's type does not hold the permission bits a mutator requires
 /// (see armature::permissions), and the request is not privileged.
 const EPermissionDenied: u64 = 21;
+/// The request's type may borrow from the vault (VAULT_BORROW) but the cap
+/// type is not in its `borrow_scope`, and the request is not privileged.
+const EBorrowScopeDenied: u64 = 22;
 
 // === Constants ===
 
@@ -61,6 +66,13 @@ public struct ProposalConfig has copy, drop, store {
     /// request of this type may perform. Deny-by-default: 0 unless set via
     /// `with_permissions`.
     permissions: u64,
+    /// The capability types (`std::type_name::with_defining_ids`) a request of
+    /// this type may borrow or loan from the CapabilityVault. VAULT_BORROW
+    /// says the type may borrow; this says which caps. Deny-by-default: empty
+    /// unless set via `with_borrow_scope`, and an empty scope borrows nothing.
+    /// Scopes a bit to a resource so, for example, a type minting one coin
+    /// cannot reach the UpgradeCap or a SubDAOControl in the same vault.
+    borrow_scope: vector<TypeName>,
 }
 
 /// Status of a live proposal. Active -> Passed is the only transition.
@@ -87,6 +99,8 @@ public struct ExecutionRequest<phantom P> {
     dao_id: ID,
     proposal_id: ID,
     permissions: u64,
+    /// P's slot `borrow_scope` when the request was minted (see ProposalConfig).
+    borrow_scope: vector<TypeName>,
     privileged: bool,
 }
 
@@ -226,6 +240,7 @@ public fun new_config(
         cooldown_ms,
         composable_allowed: false,
         permissions: 0,
+        borrow_scope: vector[],
     }
 }
 
@@ -264,6 +279,22 @@ public fun has_permission(self: &ProposalConfig, bits: u64): bool {
 public fun with_permissions(mut self: ProposalConfig, bits: u64): ProposalConfig {
     permissions::assert_valid(bits);
     self.permissions = bits;
+    self
+}
+
+/// The capability types a request of this type may borrow or loan.
+public fun borrow_scope(self: &ProposalConfig): vector<TypeName> { self.borrow_scope }
+
+/// Whether `cap` is in this config's borrow scope.
+public fun may_borrow(self: &ProposalConfig, cap: &TypeName): bool {
+    self.borrow_scope.contains(cap)
+}
+
+/// Return a copy of this config with its borrow scope replaced by `scope`.
+/// Like `with_permissions`, building a config grants nothing: the DAO checks
+/// who may write one when it is stored, under the same rules as bits.
+public fun with_borrow_scope(mut self: ProposalConfig, scope: vector<TypeName>): ProposalConfig {
+    self.borrow_scope = scope;
     self
 }
 
@@ -514,6 +545,7 @@ public(package) fun execute<P: store>(
     last_executed_at_ms: Option<u64>,
     execution_paused: bool,
     permissions: u64,
+    borrow_scope: vector<TypeName>,
     clock: &Clock,
     ctx: &TxContext,
 ): (P, ExecutionRequest<P>) {
@@ -550,7 +582,10 @@ public(package) fun execute<P: store>(
         executor,
     });
 
-    (payload, ExecutionRequest<P> { dao_id, proposal_id, permissions, privileged: false })
+    (
+        payload,
+        ExecutionRequest<P> { dao_id, proposal_id, permissions, borrow_scope, privileged: false },
+    )
 }
 
 // === Lifecycle: single-PTB executions ===
@@ -608,6 +643,7 @@ public(package) fun execute_single_vote<P: store>(
             dao_id,
             proposal_id,
             permissions: config.permissions,
+            borrow_scope: config.borrow_scope,
             privileged: false,
         },
         payload,
@@ -622,10 +658,11 @@ public(package) fun execute_single_vote<P: store>(
 /// and ProposalExecuted; there is no vote, so no VoteCast or ProposalPassed.
 /// The payload is only serialised into the event; the caller keeps it.
 ///
-/// `permissions` are the type's slot bits (0 for a controller override, whose
-/// type may have no slot). `privileged` marks a controller override: only
-/// controller::privileged_submit passes true. The bypass path passes false,
-/// so a bypass request is held to the bits its type holds like any other.
+/// `permissions` and `borrow_scope` are the type's slot bits and scope (0 and
+/// empty for a controller override, whose type may have no slot). `privileged`
+/// marks a controller override: only controller::privileged_submit passes
+/// true. The bypass path passes false, so a bypass request is held to the
+/// bits and scope its type holds like any other.
 public(package) fun privileged_execute<P: store>(
     dao_id: ID,
     type_key: std::ascii::String,
@@ -633,6 +670,7 @@ public(package) fun privileged_execute<P: store>(
     metadata_ipfs: Option<String>,
     payload: &P,
     permissions: u64,
+    borrow_scope: vector<TypeName>,
     privileged: bool,
     ctx: &mut TxContext,
 ): ExecutionRequest<P> {
@@ -643,7 +681,7 @@ public(package) fun privileged_execute<P: store>(
     event::emit(ProposalPayloadCreated { proposal_id, dao_id, payload_bcs });
     event::emit(ProposalExecuted { proposal_id, dao_id, executor: proposer });
 
-    ExecutionRequest { dao_id, proposal_id, permissions, privileged }
+    ExecutionRequest { dao_id, proposal_id, permissions, borrow_scope, privileged }
 }
 
 /// Mint a proposal ID for an execution that has no Proposal object. It comes
@@ -658,7 +696,13 @@ fun fresh_proposal_id(ctx: &mut TxContext): ID {
 /// Create an unprivileged ExecutionRequest holding no bits. Only callable
 /// within the framework package.
 public(package) fun new_execution_request<P>(dao_id: ID, proposal_id: ID): ExecutionRequest<P> {
-    ExecutionRequest { dao_id, proposal_id, permissions: 0, privileged: false }
+    ExecutionRequest {
+        dao_id,
+        proposal_id,
+        permissions: 0,
+        borrow_scope: vector[],
+        privileged: false,
+    }
 }
 
 public fun req_dao_id<P>(self: &ExecutionRequest<P>): ID { self.dao_id }
@@ -684,9 +728,33 @@ public fun assert_permitted<P>(self: &ExecutionRequest<P>, bits: u64) {
     assert!(self.req_has_permission(bits), EPermissionDenied);
 }
 
+/// The capability types this request may borrow or loan (see ExecutionRequest).
+public fun req_borrow_scope<P>(self: &ExecutionRequest<P>): vector<TypeName> {
+    self.borrow_scope
+}
+
+/// Whether this request may borrow a capability of type `cap`: it is
+/// privileged, or `cap` is in its borrow scope. Checked in addition to
+/// VAULT_BORROW, never instead of it.
+public fun req_may_borrow<P>(self: &ExecutionRequest<P>, cap: &TypeName): bool {
+    self.privileged || self.borrow_scope.contains(cap)
+}
+
+/// Abort with EBorrowScopeDenied unless `req_may_borrow(cap)`. The vault's
+/// borrow and loan functions call this after `assert_permitted(VAULT_BORROW)`.
+public fun assert_may_borrow<P>(self: &ExecutionRequest<P>, cap: &TypeName) {
+    assert!(self.req_may_borrow(cap), EBorrowScopeDenied);
+}
+
 /// Consume the execution request. Framework-internal only.
 public(package) fun consume<P>(req: ExecutionRequest<P>) {
-    let ExecutionRequest { dao_id: _, proposal_id: _, permissions: _, privileged: _ } = req;
+    let ExecutionRequest {
+        dao_id: _,
+        proposal_id: _,
+        permissions: _,
+        borrow_scope: _,
+        privileged: _,
+    } = req;
 }
 
 // === ExternalExecutionCap ===
@@ -733,13 +801,30 @@ public fun ticket_payload<P>(ticket: &ExecutionTicket<P>): &P {
 }
 
 /// Borrow the embedded ExecutionRequest for vault/DAO auth calls.
-public fun ticket_request<P>(ticket: &ExecutionTicket<P>): &ExecutionRequest<P> {
+///
+/// Requires `Permit<P>`, which only the module defining `P` can mint
+/// (`std::internal::permit`). The request is the only authority a ticket
+/// carries, so only `P`'s own module (or its package, through a
+/// `public(package)` permit helper) can spend it, and it spends it with the
+/// arguments it reads from the approved payload. A ticket holder cannot hand
+/// the request to a framework mutator with arguments of their own choosing.
+public fun ticket_request<P>(ticket: &ExecutionTicket<P>, _: Permit<P>): &ExecutionRequest<P> {
     &ticket.request
 }
 
 /// Shortcut: DAO ID from the embedded request.
 public fun ticket_dao_id<P>(ticket: &ExecutionTicket<P>): ID {
     ticket.request.dao_id
+}
+
+/// Shortcut: proposal ID from the embedded request.
+public fun ticket_proposal_id<P>(ticket: &ExecutionTicket<P>): ID {
+    ticket.request.proposal_id
+}
+
+/// Shortcut: permission bits the embedded request carries.
+public fun ticket_permissions<P>(ticket: &ExecutionTicket<P>): u64 {
+    ticket.request.permissions
 }
 
 /// Returns true iff the ticket was minted via the vote path (Closeout::Standalone).
@@ -772,34 +857,57 @@ public fun ticket_total_snapshot_weight<P>(ticket: &ExecutionTicket<P>): u64 {
 
 /// Consume the ticket, enforce the path-appropriate closeout, drop the payload.
 /// P must have `drop` — all existing payload types satisfy this.
-public fun discharge<P: store + drop>(ticket: ExecutionTicket<P>) {
+/// Requires `Permit<P>` (see `ticket_request`): only `P`'s handler can close a
+/// ticket, so a ticket can only leave a PTB through that handler.
+public fun discharge<P: store + drop>(ticket: ExecutionTicket<P>, _: Permit<P>) {
     let ExecutionTicket { request, payload: _, closeout } = ticket;
     match (closeout) {
         Closeout::Standalone { proposal_id, .. } => {
             assert!(request.proposal_id == proposal_id, ERequestMismatch);
-            let ExecutionRequest { dao_id: _, proposal_id: _, permissions: _, privileged: _ } =
-                request;
+            let ExecutionRequest {
+                dao_id: _,
+                proposal_id: _,
+                permissions: _,
+                borrow_scope: _,
+                privileged: _,
+            } = request;
         },
         Closeout::Composite | Closeout::External => {
-            let ExecutionRequest { dao_id: _, proposal_id: _, permissions: _, privileged: _ } =
-                request;
+            let ExecutionRequest {
+                dao_id: _,
+                proposal_id: _,
+                permissions: _,
+                borrow_scope: _,
+                privileged: _,
+            } = request;
         },
     }
 }
 
 /// Like `discharge` but returns the payload instead of dropping it.
 /// Use for payload types that lack `drop` (e.g., wrappers around `TreasuryCap`).
-public fun discharge_returning_payload<P: store>(ticket: ExecutionTicket<P>): P {
+/// Requires `Permit<P>` (see `discharge`).
+public fun discharge_returning_payload<P: store>(ticket: ExecutionTicket<P>, _: Permit<P>): P {
     let ExecutionTicket { request, payload, closeout } = ticket;
     match (closeout) {
         Closeout::Standalone { proposal_id, .. } => {
             assert!(request.proposal_id == proposal_id, ERequestMismatch);
-            let ExecutionRequest { dao_id: _, proposal_id: _, permissions: _, privileged: _ } =
-                request;
+            let ExecutionRequest {
+                dao_id: _,
+                proposal_id: _,
+                permissions: _,
+                borrow_scope: _,
+                privileged: _,
+            } = request;
         },
         Closeout::Composite | Closeout::External => {
-            let ExecutionRequest { dao_id: _, proposal_id: _, permissions: _, privileged: _ } =
-                request;
+            let ExecutionRequest {
+                dao_id: _,
+                proposal_id: _,
+                permissions: _,
+                borrow_scope: _,
+                privileged: _,
+            } = request;
         },
     };
     payload
@@ -822,18 +930,20 @@ public(package) fun new_ticket_standalone<P: store>(
     }
 }
 
-/// Called by composite::advance_step with the step type's slot bits.
+/// Called by composite::advance_step with the step type's slot bits and scope.
 public(package) fun new_ticket_composite<P>(
     dao_id: ID,
     composite_proposal_id: ID,
     payload: P,
     permissions: u64,
+    borrow_scope: vector<TypeName>,
 ): ExecutionTicket<P> {
     ExecutionTicket {
         request: ExecutionRequest {
             dao_id,
             proposal_id: composite_proposal_id,
             permissions,
+            borrow_scope,
             privileged: false,
         },
         payload,
@@ -891,7 +1001,23 @@ public fun new_external_execution_cap_for_testing<P>(
 /// The request carries every permission bit; use
 /// `new_permitted_request_for_testing` to choose them.
 public fun new_execution_request_for_testing<P>(dao_id: ID, proposal_id: ID): ExecutionRequest<P> {
-    ExecutionRequest { dao_id, proposal_id, permissions: permissions::all(), privileged: false }
+    ExecutionRequest {
+        dao_id,
+        proposal_id,
+        permissions: permissions::all(),
+        borrow_scope: vector[],
+        privileged: false,
+    }
+}
+
+#[test_only]
+/// Return `req` with its borrow scope replaced by `scope`.
+public fun with_borrow_scope_for_testing<P>(
+    req: ExecutionRequest<P>,
+    scope: vector<TypeName>,
+): ExecutionRequest<P> {
+    let ExecutionRequest { dao_id, proposal_id, permissions, borrow_scope: _, privileged } = req;
+    ExecutionRequest { dao_id, proposal_id, permissions, borrow_scope: scope, privileged }
 }
 
 #[test_only]
@@ -901,13 +1027,25 @@ public fun new_permitted_request_for_testing<P>(
     proposal_id: ID,
     bits: u64,
 ): ExecutionRequest<P> {
-    ExecutionRequest { dao_id, proposal_id, permissions: bits, privileged: false }
+    ExecutionRequest {
+        dao_id,
+        proposal_id,
+        permissions: bits,
+        borrow_scope: vector[],
+        privileged: false,
+    }
 }
 
 #[test_only]
 /// Synthesize a privileged (controller-override) ExecutionRequest<P> for testing.
 public fun new_privileged_request_for_testing<P>(dao_id: ID, proposal_id: ID): ExecutionRequest<P> {
-    ExecutionRequest { dao_id, proposal_id, permissions: 0, privileged: true }
+    ExecutionRequest {
+        dao_id,
+        proposal_id,
+        permissions: 0,
+        borrow_scope: vector[],
+        privileged: true,
+    }
 }
 
 #[test_only]
@@ -921,7 +1059,13 @@ public fun destroy_external_execution_cap_for_testing<P>(cap: ExternalExecutionC
 /// Consume a raw ExecutionRequest in tests (e.g. to drain the hot potato after
 /// privileged_create or after manually constructing one via new_execution_request_for_testing).
 public fun consume_execution_request_for_testing<P>(req: ExecutionRequest<P>) {
-    let ExecutionRequest { dao_id: _, proposal_id: _, permissions: _, privileged: _ } = req;
+    let ExecutionRequest {
+        dao_id: _,
+        proposal_id: _,
+        permissions: _,
+        borrow_scope: _,
+        privileged: _,
+    } = req;
 }
 
 #[test_only]
@@ -938,6 +1082,7 @@ public fun new_standalone_ticket_for_testing<P: store>(
         dao_id,
         proposal_id,
         permissions: permissions::all(),
+        borrow_scope: vector[],
         privileged: false,
     };
     ExecutionTicket {
@@ -980,6 +1125,7 @@ public fun privileged_create_for_testing<P: store>(
         dao_id,
         proposal_id,
         permissions: permissions::all(),
+        borrow_scope: vector[],
         privileged: false,
     };
     ExecutionTicket {
@@ -1001,6 +1147,7 @@ public fun new_composite_ticket_for_testing<P: store>(
         dao_id,
         proposal_id,
         permissions: permissions::all(),
+        borrow_scope: vector[],
         privileged: false,
     };
     ExecutionTicket { request, payload, closeout: Closeout::Composite }
@@ -1018,6 +1165,7 @@ public fun new_external_ticket_for_testing<P: store>(
         dao_id,
         proposal_id,
         permissions: permissions::all(),
+        borrow_scope: vector[],
         privileged: false,
     };
     ExecutionTicket { request, payload, closeout: Closeout::External }

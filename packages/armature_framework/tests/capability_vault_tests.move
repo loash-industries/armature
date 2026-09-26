@@ -39,11 +39,12 @@ fun make_another_cap(ctx: &mut TxContext): AnotherCap {
     AnotherCap { id: object::new(ctx) }
 }
 
+/// A request carrying every bit, scoped to borrow `TestCap`.
 fun make_req(dao_id: ID): proposal::ExecutionRequest<TestProposal> {
     proposal::new_execution_request_for_testing<TestProposal>(
         dao_id,
         object::id_from_address(@0xBEEF),
-    )
+    ).with_borrow_scope_for_testing(vector[std::type_name::with_defining_ids<TestCap>()])
 }
 
 fun make_recv_req(dao_id: ID): proposal::ExecutionRequest<RecvProposal> {

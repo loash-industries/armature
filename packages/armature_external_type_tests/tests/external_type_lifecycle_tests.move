@@ -5,6 +5,7 @@
 #[test_only]
 module armature_external_type_tests::external_type_lifecycle_tests;
 
+use armature::admin_ops;
 use armature::board_voting;
 use armature::capability_vault::CapabilityVault;
 use armature::dao::{Self, DAO};
@@ -12,13 +13,12 @@ use armature::emergency::{Self, EmergencyFreeze, FreezeAdminCap};
 use armature::enable_bypass_type::EnableBypassType;
 use armature::enable_proposal_type::{Self, EnableProposalType};
 use armature::external_execution;
+use armature::freeze_ops;
 use armature::governance;
 use armature::proposal::{Self, ExecutionRequest, ExternalExecutionCap, Proposal};
 use armature::treasury_vault::TreasuryVault;
 use armature::unfreeze_proposal_type::{Self, UnfreezeProposalType};
 use armature_external_type_tests::rebalance::{Self, Rebalance};
-use armature_proposals::admin_ops;
-use armature_proposals::security_ops;
 use std::string;
 use std::type_name;
 use sui::clock::{Self, Clock};
@@ -134,7 +134,7 @@ fun enable_bypass_via_vote<T>(scenario: &mut Scenario, clock: &mut Clock, key: v
 }
 
 /// Unfreeze `Rebalance<T>` via an UnfreezeProposalType vote and
-/// `security_ops::execute_unfreeze_proposal_type`.
+/// `freeze_ops::execute_unfreeze_proposal_type`.
 fun unfreeze_via_vote<T>(scenario: &mut Scenario, clock: &mut Clock) {
     submit_and_pass(scenario, clock, unfreeze_proposal_type::new<Rebalance<T>>());
 
@@ -145,7 +145,7 @@ fun unfreeze_via_vote<T>(scenario: &mut Scenario, clock: &mut Clock) {
         let prop = scenario.take_shared<Proposal<UnfreezeProposalType>>();
         let mut freeze = scenario.take_shared<EmergencyFreeze>();
         let ticket = board_voting::ticket_from_vote(&mut dao, prop, &freeze, clock, scenario.ctx());
-        security_ops::execute_unfreeze_proposal_type(&mut freeze, ticket);
+        freeze_ops::execute_unfreeze_proposal_type(&mut freeze, ticket);
         ts::return_shared(freeze);
         ts::return_shared(dao);
     };
@@ -209,15 +209,7 @@ fun execute_bypass<T>(scenario: &mut Scenario, clock: &mut Clock, cap_id: ID) {
     let vault = scenario.take_shared<CapabilityVault>();
     let freeze = scenario.take_shared<EmergencyFreeze>();
     let cap: &ExternalExecutionCap<Rebalance<T>> = vault.borrow_external_cap(dao.id(), cap_id);
-    let ticket = external_execution::ticket_from_cap_readonly(
-        cap,
-        &dao,
-        &freeze,
-        option::none(),
-        rebalance::new<T>(30),
-        clock,
-        scenario.ctx(),
-    );
+    let ticket = rebalance::submit_bypass<T>(cap, &dao, &freeze, 30, clock, scenario.ctx());
     rebalance::execute_rebalance(&dao, ticket);
     ts::return_shared(freeze);
     ts::return_shared(vault);
@@ -327,6 +319,11 @@ fun governance_unfreeze_restores_execution() {
 // A ticket for Rebalance<CredB>, a type granted no bits, must not reach any
 // DAO-wide mutator. Before ROAD-39 its request could lift an admin freeze on
 // Rebalance<CredA>, drain the treasury or add a board member mid-PTB.
+//
+// A ticket holder can no longer reach the request at all: ticket_request needs
+// Permit<Rebalance<CredB>>, which only the rebalance module can mint. These
+// tests take the request through rebalance::request_for_testing, standing in
+// for a buggy handler in that module, and check the permission bits still stop it.
 
 /// Mint a Rebalance<CredB> ticket (bypass path when `bypass`, else a
 /// single-vote atomic execution) and hand its request to `$f`, which must abort.
@@ -360,15 +357,7 @@ macro fun with_rebalance_request(
             dao.id(),
             cap_id,
         );
-        external_execution::ticket_from_cap_readonly(
-            cap,
-            &dao,
-            &freeze,
-            option::none(),
-            rebalance::new<CredB>(1),
-            &clock,
-            scenario.ctx(),
-        )
+        rebalance::submit_bypass<CredB>(cap, &dao, &freeze, 1, &clock, scenario.ctx())
     } else {
         board_voting::submit_vote_execute_readonly(
             &dao,
@@ -379,7 +368,13 @@ macro fun with_rebalance_request(
             scenario.ctx(),
         )
     };
-    $f(&mut dao, &mut freeze, &mut treasury, ticket.ticket_request(), scenario.ctx());
+    $f(
+        &mut dao,
+        &mut freeze,
+        &mut treasury,
+        rebalance::request_for_testing(&ticket),
+        scenario.ctx(),
+    );
     abort 0
 }
 

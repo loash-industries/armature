@@ -23,8 +23,10 @@ use armature::dao::{Self, DAO};
 use armature::disable_bypass_type::{Self, DisableBypassType};
 use armature::emergency::EmergencyFreeze;
 use armature::enable_bypass_type::{Self, EnableBypassType};
+use armature::permissions;
 use armature::proposal::{Self, ExecutionTicket, ExternalExecutionCap, ProposalConfig};
 use armature::utils;
+use std::internal::Permit;
 use std::string::String;
 use std::type_name::{Self, TypeName};
 use sui::clock::Clock;
@@ -51,6 +53,11 @@ const EComposableCooldownConflict: u64 = 13;
 /// `ticket_from_cap_readonly` called for a type with cooldown_ms > 0. Cooldown
 /// tracking writes the type's slot, so those types must use `ticket_from_cap`.
 const ECooldownRequiresMutableDAO: u64 = 14;
+/// The type's slot holds a bit in `bypass_forbidden_bits`: a no-vote path may
+/// not change the authority graph (type registry, lifecycle, cap custody,
+/// freeze). Checked when the bypass is enabled and again at every mint, so a
+/// later UpdateProposalConfig grant cannot open it either.
+const EBypassForbiddenBits: u64 = 15;
 
 // === Constants ===
 
@@ -63,6 +70,20 @@ const ECooldownRequiresMutableDAO: u64 = 14;
 const ENABLE_BYPASS_APPROVAL_FLOOR_BPS: u64 = 8_000;
 
 // Self-bootstrap forbidden types — see `assert_not_bypass_forbidden` below.
+
+// === Public Functions ===
+
+/// Permission bits a bypass-enabled type may never hold: TYPE_ADMIN, MIGRATE,
+/// VAULT_EXTRACT and FREEZE. Each changes who may do what (the type registry,
+/// the DAO's lifecycle, capability custody, the emergency freeze), and a path
+/// that executes without a vote must not be able to change that. Mirrors
+/// `assert_not_bypass_forbidden`, which refuses the bypass meta-types themselves.
+public fun bypass_forbidden_bits(): u64 {
+    permissions::type_admin()
+        | permissions::migrate()
+        | permissions::vault_extract()
+        | permissions::emergency_freeze()
+}
 
 // === Events ===
 
@@ -89,8 +110,6 @@ public struct BypassDisabled has copy, drop {
     cap_id: ID,
 }
 
-// === Public Functions ===
-
 /// Mint an ExecutionTicket authorized by an `ExternalExecutionCap<P>`,
 /// bypassing the vote, and records the execution timestamp for cooldown
 /// tracking. No Proposal object is created; ProposalCreated,
@@ -100,13 +119,20 @@ public struct BypassDisabled has copy, drop {
 /// and display key, so no separate type key or binding check is needed.
 ///
 /// Asserts (in order):
-///   1. Cap is scoped to this DAO
-///   2. DAO is Active (not Migrating)
-///   3. `P` has a slot (is enabled)
-///   4. DAO execution is not paused
-///   5. SubDAO is not controller-paused
-///   6. `P` is not frozen
-///   7. Cooldown for `P` has elapsed
+/// 1. Cap is scoped to this DAO
+/// 2. DAO is Active (not Migrating)
+/// 3. `P` has a slot (is enabled)
+/// 4. DAO execution is not paused
+/// 5. SubDAO is not controller-paused
+/// 6. `P` is not frozen
+/// 7. Cooldown for `P` has elapsed
+///
+/// Requires `Permit<P>`, so only `P`'s own module can mint a bypass ticket.
+/// The cap sits in the shared vault and anyone can borrow it; the external
+/// authorization check (Character ownership, token balance, ...) must live
+/// next to `P` and run before the mint. A type whose payload constructor is
+/// public cannot be minted from outside its module with a payload of the
+/// caller's choosing.
 ///
 /// For types with cooldown_ms = 0 prefer `ticket_from_cap_readonly`, which
 /// leaves the DAO untouched.
@@ -116,6 +142,7 @@ public fun ticket_from_cap<P: store>(
     freeze: &EmergencyFreeze,
     metadata_ipfs: Option<String>,
     payload: P,
+    _: Permit<P>,
     clock: &Clock,
     ctx: &mut TxContext,
 ): ExecutionTicket<P> {
@@ -129,6 +156,7 @@ public fun ticket_from_cap<P: store>(
 /// not recorded and nothing on the DAO is written; the DAO can be an immutable
 /// shared input that takes no write lock.
 ///
+/// Requires `Permit<P>` (see `ticket_from_cap`).
 /// Aborts with ECooldownRequiresMutableDAO if the type's cooldown_ms > 0.
 public fun ticket_from_cap_readonly<P: store>(
     cap: &ExternalExecutionCap<P>,
@@ -136,6 +164,7 @@ public fun ticket_from_cap_readonly<P: store>(
     freeze: &EmergencyFreeze,
     metadata_ipfs: Option<String>,
     payload: P,
+    _: Permit<P>,
     clock: &Clock,
     ctx: &mut TxContext,
 ): ExecutionTicket<P> {
@@ -214,12 +243,13 @@ public fun execute_enable_bypass_type<NewType: store>(
     // Enforce the composability–cooldown mutual exclusion before the config is
     // committed. A bypass type with cooldown_ms > 0 must not be composable.
     assert!(config.cooldown_ms() == 0 || !config.composable_allowed(), EComposableCooldownConflict);
+    assert_bypass_safe_bits(config.permissions());
 
     if (dao.controller_cap_id().is_some()) {
         assert!(!dao::is_subdao_blocked_type(&new_type), ESubDAOBlockedType);
     };
 
-    let req = ticket.ticket_request();
+    let req = ticket.ticket_request(enable_bypass_type::permit());
     dao.enable_proposal_type<NewType, EnableBypassType>(display_key, config, req);
 
     let cap = proposal::new_external_execution_cap<EnableBypassType, NewType>(req, ctx);
@@ -228,7 +258,7 @@ public fun execute_enable_bypass_type<NewType: store>(
 
     event::emit(BypassEnabled { dao_id: dao.id(), type_key: display_key, cap_id });
 
-    ticket.discharge();
+    ticket.discharge(enable_bypass_type::permit());
 }
 
 /// Execute a `DisableBypassType` proposal: extract the specified
@@ -256,7 +286,7 @@ public fun execute_disable_bypass_type<NewType: store>(
     let cap_ids = vault.ids_for_type<ExternalExecutionCap<NewType>>();
     assert!(cap_ids.contains(&cap_id), ECapNotFound);
 
-    let req = ticket.ticket_request();
+    let req = ticket.ticket_request(disable_bypass_type::permit());
     let cap: ExternalExecutionCap<NewType> = vault.extract_cap(cap_id, req);
     proposal::destroy_external_execution_cap(cap, req);
 
@@ -264,7 +294,7 @@ public fun execute_disable_bypass_type<NewType: store>(
 
     event::emit(BypassDisabled { dao_id: dao.id(), type_key: display_key, cap_id });
 
-    ticket.discharge();
+    ticket.discharge(disable_bypass_type::permit());
 }
 
 // === Internal ===
@@ -289,6 +319,7 @@ fun ticket_from_cap_core<P: store>(
     assert!(!dao.is_controller_paused(), EControllerPaused);
 
     let display_key = dao.type_display_key_by_name(&name);
+    assert_bypass_safe_bits(dao.type_config_by_name(&name).permissions());
     freeze.assert_not_frozen<P>(clock);
 
     let now = clock.timestamp_ms();
@@ -315,11 +346,17 @@ fun ticket_from_cap_core<P: store>(
         metadata_ipfs,
         &payload,
         dao.type_config_by_name(&name).permissions(),
+        dao.type_config_by_name(&name).borrow_scope(),
         false,
         ctx,
     );
 
     proposal::new_ticket_external(req, payload)
+}
+
+/// Abort with EBypassForbiddenBits if `bits` holds any of `bypass_forbidden_bits`.
+fun assert_bypass_safe_bits(bits: u64) {
+    assert!(bits & bypass_forbidden_bits() == 0, EBypassForbiddenBits);
 }
 
 /// Refuse to bypass-enable the bypass meta-types themselves.

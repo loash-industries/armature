@@ -29,6 +29,10 @@ ALLOWED = {
     ("proposal", "req_permissions"): "accessor",
     ("proposal", "req_has_permission"): "the check itself",
     ("proposal", "assert_permitted"): "the check itself",
+    ("proposal", "req_borrow_scope"): "accessor",
+    ("proposal", "req_may_borrow"): "the check itself",
+    ("proposal", "assert_may_borrow"): "the check itself",
+    ("proposal", "with_borrow_scope_for_testing"): "test only",
     ("proposal", "consume_execution_request_for_testing"): "test only",
     ("dao", "is_permitted"): "the check itself",
     ("dao", "assert_permitted"): "the check itself",
@@ -37,6 +41,17 @@ ALLOWED = {
     ("dao", "borrow_type_state_mut"): "type-state keyed by the request's own type P",
     ("dao", "remove_type_state"): "type-state keyed by the request's own type P",
     ("controller", "privileged_consume"): "consumes the request",
+}
+
+# (module, function) that must take `Permit<P>`: the only ways to mint, spend
+# or close a ticket. Without the permit, a ticket holder can hand the request
+# to a mutator with arguments of their own choosing (ROAD-39 follow-up).
+PERMIT_REQUIRED = {
+    ("proposal", "ticket_request"),
+    ("proposal", "discharge"),
+    ("proposal", "discharge_returning_payload"),
+    ("external_execution", "ticket_from_cap"),
+    ("external_execution", "ticket_from_cap_readonly"),
 }
 
 FUN_RE = re.compile(r"^public fun (\w+)(?:<[^>]*>)?\(([^)]*)\)[^{]*\{", re.M | re.S)
@@ -50,11 +65,16 @@ def main() -> int:
     tests = GATE_TESTS.read_text()
     errors = []
     gated = 0
+    permit_seen = set()
     for path in sorted(SOURCES.rglob("*.move")):
         src = strip_comments(path.read_text())
         module = re.search(r"^module armature::(\w+);", src, re.M).group(1)
         for m in FUN_RE.finditer(src):
             name, params = m.group(1), m.group(2)
+            if (module, name) in PERMIT_REQUIRED:
+                permit_seen.add((module, name))
+                if "Permit<P>" not in params:
+                    errors.append(f"{module}::{name} must take Permit<P>")
             if "ExecutionRequest" not in params:
                 continue
             body_end = src.find("\n}\n", m.end())
@@ -67,11 +87,16 @@ def main() -> int:
             gated += 1
             if not re.search(rf"^fun {name}_\w*\(", tests, re.M):
                 errors.append(f"{module}::{name} has no denial test in gate_tests.move")
+    for module, name in sorted(PERMIT_REQUIRED - permit_seen):
+        errors.append(f"{module}::{name} not found; update PERMIT_REQUIRED")
     for e in errors:
         print(f"error: {e}")
     if errors:
         return 1
-    print(f"ok: {gated} gated functions, {len(ALLOWED)} allowed without a gate")
+    print(
+        f"ok: {gated} gated functions, {len(ALLOWED)} allowed without a gate, "
+        f"{len(PERMIT_REQUIRED)} Permit-gated ticket entry points"
+    )
     return 0
 
 

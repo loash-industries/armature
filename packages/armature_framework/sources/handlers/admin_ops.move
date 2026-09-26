@@ -1,13 +1,13 @@
-module armature_proposals::admin_ops;
+module armature::admin_ops;
 
 use armature::board_voting;
 use armature::charter::Charter;
 use armature::dao::{Self, DAO};
-use armature::disable_proposal_type::DisableProposalType;
-use armature::enable_proposal_type::EnableProposalType;
+use armature::disable_proposal_type::{Self, DisableProposalType};
+use armature::enable_proposal_type::{Self, EnableProposalType};
 use armature::proposal::{Self, ExecutionRequest, ExecutionTicket};
-use armature::update_metadata::UpdateMetadata;
-use armature::update_proposal_config::UpdateProposalConfig;
+use armature::update_metadata::{Self, UpdateMetadata};
+use armature::update_proposal_config::{Self, UpdateProposalConfig};
 use std::string::String;
 use std::type_name::{Self, TypeName};
 use sui::clock::Clock;
@@ -67,9 +67,12 @@ public fun execute_disable_proposal_type(
     let type_key = ticket.ticket_payload().type_key();
     let name = resolve_display_key(dao, &type_key);
     assert_disableable(&name);
-    dao.disable_proposal_type<DisableProposalType>(name, ticket.ticket_request());
+    dao.disable_proposal_type<DisableProposalType>(
+        name,
+        ticket.ticket_request(disable_proposal_type::permit()),
+    );
     event::emit(ProposalTypeDisabled { dao_id: dao.id(), type_key });
-    ticket.discharge();
+    ticket.discharge(disable_proposal_type::permit());
 }
 
 /// Execute an EnableProposalType proposal: add a slot for `NewType` under the
@@ -79,8 +82,12 @@ public fun execute_enable_proposal_type<NewType: store>(
     dao: &mut DAO,
     ticket: ExecutionTicket<EnableProposalType>,
 ) {
-    enable_proposal_type_impl<NewType>(dao, ticket.ticket_payload(), ticket.ticket_request());
-    ticket.discharge();
+    enable_proposal_type_impl<NewType>(
+        dao,
+        ticket.ticket_payload(),
+        ticket.ticket_request(enable_proposal_type::permit()),
+    );
+    ticket.discharge(enable_proposal_type::permit());
 }
 
 /// Execute an UpdateProposalConfig proposal: merge optional field overrides
@@ -107,24 +114,33 @@ public fun execute_update_proposal_config(
         .with_composable_allowed(payload
             .composable_allowed()
             .destroy_with_default(existing.composable_allowed()))
-        .with_permissions(payload.permissions().destroy_with_default(existing.permissions()));
+        .with_permissions(payload.permissions().destroy_with_default(existing.permissions()))
+        .with_borrow_scope(payload.borrow_scope().destroy_with_default(existing.borrow_scope()));
 
     assert_config_composability(&new_config);
 
-    dao.update_proposal_config<UpdateProposalConfig>(name, new_config, ticket.ticket_request());
+    dao.update_proposal_config<UpdateProposalConfig>(
+        name,
+        new_config,
+        ticket.ticket_request(update_proposal_config::permit()),
+    );
 
     event::emit(ProposalConfigUpdated {
         dao_id: dao.id(),
         target_type_key: target_key,
     });
 
-    ticket.discharge();
+    ticket.discharge(update_proposal_config::permit());
 }
 
 /// Execute an UpdateMetadata proposal: update the DAO charter's IPFS CID.
 public fun execute_update_metadata(charter: &mut Charter, ticket: ExecutionTicket<UpdateMetadata>) {
-    update_metadata_impl(charter, ticket.ticket_payload(), ticket.ticket_request());
-    ticket.discharge();
+    update_metadata_impl(
+        charter,
+        ticket.ticket_payload(),
+        ticket.ticket_request(update_metadata::permit()),
+    );
+    ticket.discharge(update_metadata::permit());
 }
 
 // === Internal ===

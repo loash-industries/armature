@@ -337,9 +337,16 @@ fun test_root_size_independent_of_enabled_types() {
     scenario.end();
 }
 
+/// Members added in one batch by `test_root_size_independent_of_board_size`.
+/// Every member costs two Table writes (join, leave) through the test
+/// scenario, so the batch is kept small enough to fit CI's instruction limit
+/// (`-i 100000000` in pr.yml); 100 members timed out. The property holds at
+/// any size: the root stores only the Table handle and two counters.
+const ROOT_SIZE_BATCH: u64 = 20;
+
 #[test]
 /// The root object does not grow with the board: the roster is a Table, so
-/// adding 100 members in one batch, or removing them, leaves the serialized
+/// adding members in one batch, or removing them, leaves the serialized
 /// root the same size.
 fun test_root_size_independent_of_board_size() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -352,10 +359,10 @@ fun test_root_size_independent_of_board_size() {
         let size_before = std::bcs::to_bytes(&dao).length();
 
         let mut batch = vector[];
-        100u64.do!(|i| batch.push_back(sui::address::from_u256((i as u256) + 0x1000)));
+        ROOT_SIZE_BATCH.do!(|i| batch.push_back(sui::address::from_u256((i as u256) + 0x1000)));
         let (added, skipped) = dao.governance_mut().add_board_members(batch);
-        assert!(added.length() == 100 && skipped.is_empty());
-        assert!(dao.governance().member_count() == 102);
+        assert!(added.length() == ROOT_SIZE_BATCH && skipped.is_empty());
+        assert!(dao.governance().member_count() == ROOT_SIZE_BATCH + 2);
         assert!(std::bcs::to_bytes(&dao).length() == size_before);
 
         dao.governance_mut().remove_board_members(added);

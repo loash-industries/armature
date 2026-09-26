@@ -2,6 +2,7 @@
 module armature_proposals::admin_ops_tests;
 
 use armature::add_member::AddMember;
+use armature::admin_ops;
 use armature::board_voting;
 use armature::dao::{Self, DAO};
 use armature::disable_proposal_type::{Self, DisableProposalType};
@@ -12,7 +13,6 @@ use armature::proposal::{Self, Proposal};
 use armature::set_board::SetBoard;
 use armature::spawn_dao::SpawnDAO;
 use armature::update_proposal_config::{Self, UpdateProposalConfig};
-use armature_proposals::admin_ops;
 use std::string;
 use std::type_name;
 use sui::clock;
@@ -1164,7 +1164,7 @@ fun update_proposal_config_composable_allowed_updates_config() {
 // EComposableCooldownConflict: enable_proposal_type rejects cooldown+composable
 // =========================================================================
 
-#[test, expected_failure(abort_code = armature_proposals::admin_ops::EComposableCooldownConflict)]
+#[test, expected_failure(abort_code = armature::admin_ops::EComposableCooldownConflict)]
 /// execute_enable_proposal_type aborts when config has cooldown > 0 AND composable_allowed = true.
 fun enable_proposal_type_composable_cooldown_conflict_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -1237,7 +1237,7 @@ fun enable_proposal_type_composable_cooldown_conflict_aborts() {
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = armature_proposals::admin_ops::EComposableCooldownConflict)]
+#[test, expected_failure(abort_code = armature::admin_ops::EComposableCooldownConflict)]
 /// execute_update_proposal_config aborts when updated config has cooldown > 0 AND
 /// composable_allowed = true.
 fun update_proposal_config_composable_cooldown_conflict_aborts() {

@@ -1,25 +1,27 @@
 #[test_only]
 module armature_proposals::lifecycle_tests;
 
+use armature::board_ops;
 use armature::board_voting;
 use armature::capability_vault::{CapabilityVault, SubDAOControl};
 use armature::controller;
 use armature::create_subdao::{Self, CreateSubDAO};
 use armature::dao::{Self, DAO};
 use armature::emergency::{EmergencyFreeze, FreezeAdminCap};
+use armature::freeze_ops;
 use armature::governance;
+use armature::lifecycle_ops;
 use armature::proposal::{Self, Proposal};
 use armature::set_board::{Self, SetBoard};
 use armature::treasury_vault::TreasuryVault;
 use armature::unfreeze_proposal_type::{Self, UnfreezeProposalType};
-use armature_proposals::board_ops;
-use armature_proposals::security_ops;
 use armature_proposals::send_coin::{Self, SendCoin};
 use armature_proposals::send_coin_to_dao::{Self, SendCoinToDAO};
 use armature_proposals::send_small_payment::{Self, SendSmallPayment};
 use armature_proposals::subdao_ops;
 use armature_proposals::treasury_ops;
 use armature_proposals::type_permissions;
+use std::internal;
 use std::string;
 use sui::clock;
 use sui::coin;
@@ -442,7 +444,7 @@ fun medium_enterprise_lifecycle() {
             scenario.ctx(),
         );
 
-        subdao_ops::execute_create_subdao(&mut vault, ticket, scenario.ctx());
+        lifecycle_ops::execute_create_subdao(&mut vault, ticket, scenario.ctx());
 
         let control_ids = vault.ids_for_type<SubDAOControl>();
         eng_control_id = control_ids[0];
@@ -529,7 +531,7 @@ fun medium_enterprise_lifecycle() {
             scenario.ctx(),
         );
 
-        subdao_ops::execute_create_subdao(&mut vault, ticket, scenario.ctx());
+        lifecycle_ops::execute_create_subdao(&mut vault, ticket, scenario.ctx());
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
@@ -563,9 +565,13 @@ fun medium_enterprise_lifecycle() {
         clock.set_for_testing(20_000);
         dao.test_enable_type<ControllerOp>(
             b"ControllerOp".to_ascii_string(),
-            proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0).with_permissions(
-                type_permissions::subdao_control(),
-            ),
+            proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0)
+                .with_permissions(type_permissions::subdao_control())
+                // This bespoke op loans both the SubDAOControl and the SubDAO's FreezeAdminCap.
+                .with_borrow_scope(vector[
+                    std::type_name::with_defining_ids<SubDAOControl>(),
+                    std::type_name::with_defining_ids<FreezeAdminCap>(),
+                ]),
         );
         board_voting::submit_proposal(
             &dao,
@@ -635,7 +641,7 @@ fun medium_enterprise_lifecycle() {
         let eng_freeze_cap_id = freeze_cap_ids[0];
         let (freeze_cap, freeze_loan) = vault.loan_cap<FreezeAdminCap, ControllerOp>(
             eng_freeze_cap_id,
-            parent_req.ticket_request(),
+            parent_req.ticket_request(internal::permit()),
         );
 
         // Freeze SendCoin on Engineering SubDAO
@@ -647,7 +653,7 @@ fun medium_enterprise_lifecycle() {
         // Loan SubDAOControl to change Engineering board
         let (control, control_loan) = vault.loan_cap<SubDAOControl, ControllerOp>(
             eng_control_id,
-            parent_req.ticket_request(),
+            parent_req.ticket_request(internal::permit()),
         );
 
         // Privileged submit: remove ROGUE from Engineering board
@@ -679,7 +685,7 @@ fun medium_enterprise_lifecycle() {
         assert!(eng_dao.governance().is_board_member(ENG2));
         assert!(!eng_dao.governance().is_board_member(ROGUE));
 
-        parent_req.discharge();
+        parent_req.discharge(internal::permit());
 
         test_scenario::return_shared(eng_freeze);
         test_scenario::return_shared(eng_dao);
@@ -732,7 +738,7 @@ fun medium_enterprise_lifecycle() {
             scenario.ctx(),
         );
 
-        security_ops::execute_unfreeze_proposal_type(
+        freeze_ops::execute_unfreeze_proposal_type(
             &mut eng_freeze,
             ticket,
         );

@@ -2,6 +2,7 @@ module armature::capability_vault;
 
 use armature::permissions;
 use armature::proposal::ExecutionRequest;
+use std::type_name;
 use sui::dynamic_object_field as dof;
 use sui::vec_map::{Self, VecMap};
 use sui::vec_set::{Self, VecSet};
@@ -148,7 +149,8 @@ public fun receive_cap_authorized<T: key + store, Send, Recv>(
 // === Borrow ===
 
 /// Borrow an immutable reference to a stored capability.
-/// Requires VAULT_BORROW (`proposal::assert_permitted`).
+/// Requires VAULT_BORROW (`proposal::assert_permitted`) and `T` in the
+/// request's borrow scope (`proposal::assert_may_borrow`).
 public fun borrow_cap<T: key + store, P>(
     self: &CapabilityVault,
     cap_id: ID,
@@ -156,6 +158,7 @@ public fun borrow_cap<T: key + store, P>(
 ): &T {
     assert!(self.dao_id == req.req_dao_id(), EDAOIdMismatch);
     req.assert_permitted(permissions::vault_borrow());
+    req.assert_may_borrow(&type_name::with_defining_ids<T>());
     dof::borrow(&self.id, cap_id)
 }
 
@@ -180,7 +183,8 @@ public fun borrow_external_cap<P>(
 }
 
 /// Borrow a mutable reference to a stored capability.
-/// Requires VAULT_BORROW (`proposal::assert_permitted`).
+/// Requires VAULT_BORROW (`proposal::assert_permitted`) and `T` in the
+/// request's borrow scope (`proposal::assert_may_borrow`).
 public fun borrow_cap_mut<T: key + store, P>(
     self: &mut CapabilityVault,
     cap_id: ID,
@@ -188,6 +192,7 @@ public fun borrow_cap_mut<T: key + store, P>(
 ): &mut T {
     assert!(self.dao_id == req.req_dao_id(), EDAOIdMismatch);
     req.assert_permitted(permissions::vault_borrow());
+    req.assert_may_borrow(&type_name::with_defining_ids<T>());
     dof::borrow_mut(&mut self.id, cap_id)
 }
 
@@ -195,7 +200,8 @@ public fun borrow_cap_mut<T: key + store, P>(
 
 /// Loan a capability out of the vault. Returns the capability and a hot-potato CapLoan.
 /// Registries are NOT updated — the capability is considered "held" during the loan.
-/// Requires VAULT_BORROW (`proposal::assert_permitted`).
+/// Requires VAULT_BORROW (`proposal::assert_permitted`) and `T` in the
+/// request's borrow scope (`proposal::assert_may_borrow`).
 public fun loan_cap<T: key + store, P>(
     self: &mut CapabilityVault,
     cap_id: ID,
@@ -203,6 +209,7 @@ public fun loan_cap<T: key + store, P>(
 ): (T, CapLoan) {
     assert!(self.dao_id == req.req_dao_id(), EDAOIdMismatch);
     req.assert_permitted(permissions::vault_borrow());
+    req.assert_may_borrow(&type_name::with_defining_ids<T>());
     let cap: T = dof::remove(&mut self.id, cap_id);
     let loan = CapLoan {
         cap_id,

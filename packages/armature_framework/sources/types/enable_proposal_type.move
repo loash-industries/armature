@@ -1,6 +1,7 @@
 module armature::enable_proposal_type;
 
 use armature::proposal::ProposalConfig;
+use std::internal::{Self, Permit};
 use std::type_name::TypeName;
 
 /// Enable a new proposal type on the DAO with mandatory config.
@@ -36,3 +37,9 @@ public fun type_key(self: &EnableProposalType): std::ascii::String { self.type_k
 public fun type_name(self: &EnableProposalType): TypeName { self.type_name }
 
 public fun config(self: &EnableProposalType): &ProposalConfig { &self.config }
+
+// === Handler authority ===
+
+/// `Permit<EnableProposalType>` for this package's handler: the only way to spend or close
+/// an `ExecutionTicket<EnableProposalType>` (see `proposal::ticket_request`).
+public(package) fun permit(): Permit<EnableProposalType> { internal::permit() }

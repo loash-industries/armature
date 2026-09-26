@@ -1,5 +1,6 @@
-module armature_proposals::update_freeze_exempt_types;
+module armature::update_freeze_exempt_types;
 
+use std::internal::{Self, Permit};
 use std::type_name::{Self, TypeName};
 
 /// Add or remove types from the freeze-exempt set on EmergencyFreeze.
@@ -34,3 +35,9 @@ public fun types_to_add(self: &UpdateFreezeExemptTypes): &vector<TypeName> {
 public fun types_to_remove(self: &UpdateFreezeExemptTypes): &vector<TypeName> {
     &self.types_to_remove
 }
+
+// === Handler authority ===
+
+/// `Permit<UpdateFreezeExemptTypes>` for this package's handler: the only way to spend or close
+/// an `ExecutionTicket<UpdateFreezeExemptTypes>` (see `proposal::ticket_request`).
+public(package) fun permit(): Permit<UpdateFreezeExemptTypes> { internal::permit() }

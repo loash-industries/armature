@@ -8,27 +8,27 @@ module armature::spend_guard;
 ///
 /// Example handler skeleton:
 ///
-///   public fun execute_my_payment<T>(
-///       dao: &mut DAO,
-///       vault: &mut TreasuryVault,
-///       proposal: &Proposal<MyPayload>,
-///       req: ExecutionRequest<MyPayload>,
-///       clock: &Clock,
-///       ctx: &mut TxContext,
-///   ) {
-///       let now = clock.timestamp_ms();
-///       if (!dao.has_type_state<MyPayload>()) {
-///           dao.init_type_state(
-///               spend_guard::new(now, MAX_EPOCH_SPEND, EPOCH_MS),
-///               &req,
-///           );
-///       };
-///       let window: &mut SpendWindow = dao.borrow_type_state_mut(&req);
-///       window.charge(proposal.payload().amount(), now);
-///       let coin = vault.withdraw<T, MyPayload>(proposal.payload().amount(), &req, ctx);
-///       transfer::public_transfer(coin, proposal.payload().recipient());
-///       proposal::finalize(req, proposal);
-///   }
+/// public fun execute_my_payment<T>(
+/// dao: &mut DAO,
+/// vault: &mut TreasuryVault,
+/// proposal: &Proposal<MyPayload>,
+/// req: ExecutionRequest<MyPayload>,
+/// clock: &Clock,
+/// ctx: &mut TxContext,
+/// ) {
+/// let now = clock.timestamp_ms();
+/// if (!dao.has_type_state<MyPayload>()) {
+/// dao.init_type_state(
+/// spend_guard::new(now, MAX_EPOCH_SPEND, EPOCH_MS),
+/// &req,
+/// );
+/// };
+/// let window: &mut SpendWindow = dao.borrow_type_state_mut(&req);
+/// window.charge(proposal.payload().amount(), now);
+/// let coin = vault.withdraw<T, MyPayload>(proposal.payload().amount(), &req, ctx);
+/// transfer::public_transfer(coin, proposal.payload().recipient());
+/// proposal::finalize(req, proposal);
+/// }
 public struct SpendWindow has drop, store {
     epoch_start_ms: u64,
     epoch_spend: u64,

@@ -12,8 +12,9 @@ use armature::proposal::{
     ProposalExecuted,
     ProposalPassed,
     ProposalPayloadCreated,
-    VoteCast
+    VoteCast,
 };
+use std::internal;
 use std::string;
 use std::type_name;
 use sui::clock::{Self, Clock};
@@ -103,7 +104,7 @@ fun call_sve_drop_ticket(scenario: &mut test_scenario::Scenario, clock: &Clock) 
             clock,
             scenario.ctx(),
         );
-        ticket.discharge();
+        ticket.discharge(internal::permit());
         test_scenario::return_shared(dao);
         test_scenario::return_shared(freeze);
     };
@@ -142,7 +143,7 @@ fun test_sve__single_member_returns_ticket() {
         assert!(ticket.ticket_is_standalone());
         assert!(ticket.ticket_yes_weight() == 1);
         assert!(ticket.ticket_total_snapshot_weight() == 1);
-        ticket.discharge();
+        ticket.discharge(internal::permit());
 
         test_scenario::return_shared(dao);
         test_scenario::return_shared(freeze);
@@ -181,7 +182,7 @@ fun test_sve__two_member_50_quorum_single_vote_passes() {
         assert!(ticket.ticket_is_standalone());
         assert!(ticket.ticket_yes_weight() == 1);
         assert!(ticket.ticket_total_snapshot_weight() == 2);
-        ticket.discharge();
+        ticket.discharge(internal::permit());
 
         test_scenario::return_shared(dao);
         test_scenario::return_shared(freeze);
@@ -232,7 +233,7 @@ fun test_sve__metadata_some_accepted() {
             &clock,
             scenario.ctx(),
         );
-        ticket.discharge();
+        ticket.discharge(internal::permit());
 
         test_scenario::return_shared(dao);
         test_scenario::return_shared(freeze);
@@ -269,7 +270,7 @@ fun test_sve__quorum_not_met_aborts() {
             &clock,
             scenario.ctx(),
         );
-        ticket.discharge();
+        ticket.discharge(internal::permit());
 
         test_scenario::return_shared(dao);
         test_scenario::return_shared(freeze);
@@ -303,7 +304,7 @@ fun test_sve__quorum_boundary_just_below_aborts() {
             &clock,
             scenario.ctx(),
         );
-        ticket.discharge();
+        ticket.discharge(internal::permit());
 
         test_scenario::return_shared(dao);
         test_scenario::return_shared(freeze);
@@ -340,7 +341,7 @@ fun test_sve__nonzero_delay_aborts() {
             &clock,
             scenario.ctx(),
         );
-        ticket.discharge();
+        ticket.discharge(internal::permit());
 
         test_scenario::return_shared(dao);
         test_scenario::return_shared(freeze);
@@ -377,7 +378,7 @@ fun test_sve__non_member_aborts() {
             &clock,
             scenario.ctx(),
         );
-        ticket.discharge();
+        ticket.discharge(internal::permit());
 
         test_scenario::return_shared(dao);
         test_scenario::return_shared(freeze);
@@ -413,7 +414,7 @@ fun test_sve__disabled_type_aborts() {
             &clock,
             scenario.ctx(),
         );
-        ticket.discharge();
+        ticket.discharge(internal::permit());
 
         test_scenario::return_shared(dao);
         test_scenario::return_shared(freeze);
@@ -458,7 +459,7 @@ fun test_sve__cooldown_active_aborts_second_call() {
             &clock,
             scenario.ctx(),
         );
-        ticket.discharge();
+        ticket.discharge(internal::permit());
 
         test_scenario::return_shared(dao);
         test_scenario::return_shared(freeze);
@@ -527,7 +528,7 @@ fun test_sve__frozen_type_aborts() {
             &clock,
             scenario.ctx(),
         );
-        ticket.discharge();
+        ticket.discharge(internal::permit());
 
         test_scenario::return_shared(dao);
         test_scenario::return_shared(freeze);
@@ -577,7 +578,7 @@ fun test_sve__execution_paused_aborts() {
             &clock,
             scenario.ctx(),
         );
-        ticket.discharge();
+        ticket.discharge(internal::permit());
 
         test_scenario::return_shared(dao);
         test_scenario::return_shared(freeze);
@@ -626,7 +627,7 @@ fun test_sve__controller_paused_aborts() {
             &clock,
             scenario.ctx(),
         );
-        ticket.discharge();
+        ticket.discharge(internal::permit());
 
         test_scenario::return_shared(dao);
         test_scenario::return_shared(freeze);
@@ -678,7 +679,7 @@ fun test_sve__enable_proposal_type_below_floor_aborts() {
             &clock,
             scenario.ctx(),
         );
-        ticket.discharge();
+        ticket.discharge(armature::enable_proposal_type::permit());
 
         test_scenario::return_shared(dao);
         test_scenario::return_shared(freeze);
@@ -706,7 +707,7 @@ fun call_sve_readonly_drop_ticket(scenario: &mut test_scenario::Scenario, clock:
             clock,
             scenario.ctx(),
         );
-        ticket.discharge();
+        ticket.discharge(internal::permit());
         test_scenario::return_shared(dao);
         test_scenario::return_shared(freeze);
     };
@@ -741,7 +742,7 @@ fun test_sve_readonly__returns_ticket_and_leaves_dao_untouched() {
         assert!(ticket.ticket_yes_weight() == 1);
         assert!(ticket.ticket_total_snapshot_weight() == 1);
         assert!(ticket.ticket_payload().value == 42);
-        ticket.discharge();
+        ticket.discharge(internal::permit());
 
         assert!(dao.last_executed_ms<FastPayload>().is_none());
 
@@ -903,7 +904,7 @@ fun sve_and_check_events(
             scenario.ctx(),
         )
     };
-    let proposal_id = ticket.ticket_request().req_proposal_id();
+    let proposal_id = ticket.ticket_request(internal::permit()).req_proposal_id();
 
     let created = event::events_by_type<ProposalCreated>();
     assert!(created.length() == 1);
@@ -928,7 +929,7 @@ fun sve_and_check_events(
     assert!(executed.length() == 1);
     assert!(executed[0].executed_event_proposal_id() == proposal_id);
 
-    ticket.discharge();
+    ticket.discharge(internal::permit());
     test_scenario::return_shared(dao);
     test_scenario::return_shared(freeze);
     proposal_id
@@ -1006,9 +1007,11 @@ fun test_sve__same_tx_executions_get_distinct_ids() {
             &clock,
             scenario.ctx(),
         );
-        assert!(a.ticket_request().req_proposal_id() != b.ticket_request().req_proposal_id());
-        a.discharge();
-        b.discharge();
+        assert!(
+            a.ticket_request(internal::permit()).req_proposal_id() != b.ticket_request(internal::permit()).req_proposal_id(),
+        );
+        a.discharge(internal::permit());
+        b.discharge(internal::permit());
         test_scenario::return_shared(dao);
         test_scenario::return_shared(freeze);
     };

@@ -23,6 +23,8 @@ use armature::transfer_assets::TransferAssets;
 use armature::transfer_freeze_admin::TransferFreezeAdmin;
 use armature::treasury_vault;
 use armature::unfreeze_proposal_type::UnfreezeProposalType;
+use armature::update_freeze_config::UpdateFreezeConfig;
+use armature::update_freeze_exempt_types::UpdateFreezeExemptTypes;
 use armature::update_metadata::UpdateMetadata;
 use armature::update_proposal_config::UpdateProposalConfig;
 use std::string::String;
@@ -667,6 +669,8 @@ public fun is_framework_type(name: &TypeName): bool {
         || n == type_name_of<DisableBypassType>()
         || n == type_name_of<TransferFreezeAdmin>()
         || n == type_name_of<UnfreezeProposalType>()
+        || n == type_name_of<UpdateFreezeConfig>()
+        || n == type_name_of<UpdateFreezeExemptTypes>()
         || n == type_name_of<CompositePayload>()
         || n == type_name_of<SpawnDAO>()
         || n == type_name_of<SpinOutSubDAO>()
@@ -686,12 +690,13 @@ public fun is_framework_type(name: &TypeName): bool {
 /// - EnableProposalType, DisableProposalType, UpdateProposalConfig: TYPE_ADMIN.
 /// - EnableBypassType: TYPE_ADMIN + VAULT_STORE (stores the new ExternalExecutionCap).
 /// - DisableBypassType: TYPE_ADMIN + VAULT_EXTRACT (extracts the cap to destroy it).
-/// - TransferFreezeAdmin (unfreeze_all), UnfreezeProposalType: FREEZE.
+/// - TransferFreezeAdmin (unfreeze_all), UnfreezeProposalType, UpdateFreezeConfig,
+/// UpdateFreezeExemptTypes: FREEZE (governance changes to the EmergencyFreeze).
 /// - SpawnDAO: MIGRATE (set_migrating).
 /// - CreateSubDAO: VAULT_STORE + VAULT_EXTRACT (creates and stores a SubDAOControl,
-///   stores the SubDAO's FreezeAdminCap).
+/// stores the SubDAO's FreezeAdminCap).
 /// - SpinOutSubDAO: VAULT_BORROW + VAULT_EXTRACT (loans the SubDAOControl, then
-///   extracts the FreezeAdminCap and destroys the control).
+/// extracts the FreezeAdminCap and destroys the control).
 /// - TransferAssets: TREASURY_WITHDRAW + VAULT_EXTRACT (moves coins and caps out).
 /// - CompositePayload: none; its ticket is consumed by begin_pipeline.
 public fun framework_permissions(name: &TypeName): u64 {
@@ -715,7 +720,10 @@ public fun framework_permissions(name: &TypeName): u64 {
     } else if (n == type_name_of<DisableBypassType>()) {
         permissions::type_admin() | permissions::vault_extract()
     } else if (
-        n == type_name_of<TransferFreezeAdmin>() || n == type_name_of<UnfreezeProposalType>()
+        n == type_name_of<TransferFreezeAdmin>()
+            || n == type_name_of<UnfreezeProposalType>()
+            || n == type_name_of<UpdateFreezeConfig>()
+            || n == type_name_of<UpdateFreezeExemptTypes>()
     ) {
         permissions::emergency_freeze()
     } else if (n == type_name_of<SpawnDAO>()) {
@@ -731,15 +739,29 @@ public fun framework_permissions(name: &TypeName): u64 {
     }
 }
 
-/// For a framework type, return `config` carrying its fixed bits; aborts with
-/// EFixedPermissions if `config` names any other non-zero set. Other types'
-/// configs are returned unchanged.
+/// The fixed borrow scope of a framework type: the capability types its
+/// handler borrows or loans. SpinOutSubDAO loans the SubDAOControl; no other
+/// framework type borrows. Returns empty for any other type.
+public fun framework_borrow_scope(name: &TypeName): vector<TypeName> {
+    if (*name == type_name_of<SpinOutSubDAO>()) {
+        vector[type_name_of<capability_vault::SubDAOControl>()]
+    } else {
+        vector[]
+    }
+}
+
+/// For a framework type, return `config` carrying its fixed bits and borrow
+/// scope; aborts with EFixedPermissions if `config` names any other non-empty
+/// set of either. Other types' configs are returned unchanged.
 fun with_fixed_permissions(name: &TypeName, config: ProposalConfig): ProposalConfig {
     if (!is_framework_type(name)) return config;
     let fixed = framework_permissions(name);
     let bits = config.permissions();
     assert!(bits == 0 || bits == fixed, EFixedPermissions);
-    config.with_permissions(fixed)
+    let fixed_scope = framework_borrow_scope(name);
+    let scope = config.borrow_scope();
+    assert!(scope.is_empty() || scope == fixed_scope, EFixedPermissions);
+    config.with_permissions(fixed).with_borrow_scope(fixed_scope)
 }
 
 /// Abort with EThresholdBelowMinimum unless a config's approval_threshold
@@ -752,18 +774,27 @@ fun assert_config_floors(name: &TypeName, config: &ProposalConfig) {
     assert!(threshold >= permission_floor(config.permissions()), EThresholdBelowMinimum);
 }
 
-/// Abort unless a request of type `P` may change a type's permission bits
-/// from `old` to `new`. No change passes. A privileged
-/// (controller) request passes. Otherwise `P` must be EnableProposalType,
-/// EnableBypassType or UpdateProposalConfig (EPermissionChangeNotAllowed),
-/// and the floor of the bits being added must not exceed `P`'s own approval floor
+/// Abort unless a request of type `P` may change a type's grant from
+/// (`old`, `old_scope`) to (`new`, `new_scope`): its permission bits and its
+/// borrow scope. No change passes. A privileged (controller) request passes.
+/// Otherwise `P` must be EnableProposalType, EnableBypassType or
+/// UpdateProposalConfig (EPermissionChangeNotAllowed), and the floor of the
+/// bits being added must not exceed `P`'s own approval floor
 /// (EGrantFloorNotMet): the vote that grants a power is held to at least that
-/// power's floor. All three meta-types sit at the 80% floor today, so this
-/// holds by construction; the check keeps it true if a floor is ever lowered.
+/// power's floor. A scope change counts as a VAULT_BORROW grant for the floor.
+/// All three meta-types sit at the 80% floor today, so this holds by
+/// construction; the check keeps it true if a floor is ever lowered.
 ///
 /// Grants are standalone-only: composite::add_step refuses grant steps.
-fun assert_may_change_permissions<P>(old: u64, new: u64, req: &ExecutionRequest<P>) {
-    if (old == new || req.req_is_privileged()) return;
+fun assert_may_change_permissions<P>(
+    old: u64,
+    new: u64,
+    old_scope: &vector<TypeName>,
+    new_scope: &vector<TypeName>,
+    req: &ExecutionRequest<P>,
+) {
+    let scope_changed = old_scope != new_scope;
+    if ((old == new && !scope_changed) || req.req_is_privileged()) return;
     let granter = type_name_of<P>();
     assert!(
         granter == type_name_of<EnableProposalType>()
@@ -771,7 +802,8 @@ fun assert_may_change_permissions<P>(old: u64, new: u64, req: &ExecutionRequest<
             || granter == type_name_of<UpdateProposalConfig>(),
         EPermissionChangeNotAllowed,
     );
-    let added = new ^ (new & old);
+    let mut added = new ^ (new & old);
+    if (scope_changed) added = added | permissions::vault_borrow();
     assert!(
         permission_floor(added) <= min_approval_threshold_for_type(&granter),
         EGrantFloorNotMet,
@@ -900,7 +932,7 @@ public fun enable_proposal_type<NewType, P>(
     let name = type_name_of<NewType>();
     let config = with_fixed_permissions(&name, config);
     assert_config_floors(&name, &config);
-    assert_may_change_permissions(0, config.permissions(), req);
+    assert_may_change_permissions(0, config.permissions(), &vector[], &config.borrow_scope(), req);
     let dao_id = self.id();
     add_slot(&mut self.id, dao_id, new_type_init<NewType>(display_key, config));
 }
@@ -931,12 +963,20 @@ public fun update_proposal_config<P>(
 ) {
     self.assert_permitted(permissions::type_admin(), req);
     assert!(
-        !is_framework_type(&name) || new_config.permissions() == framework_permissions(&name),
+        !is_framework_type(&name)
+            || (new_config.permissions() == framework_permissions(&name)
+                && new_config.borrow_scope() == framework_borrow_scope(&name)),
         EFixedPermissions,
     );
     assert_config_floors(&name, &new_config);
-    let old = self.slot(&name).config.permissions();
-    assert_may_change_permissions(old, new_config.permissions(), req);
+    let old = self.slot(&name).config;
+    assert_may_change_permissions(
+        old.permissions(),
+        new_config.permissions(),
+        &old.borrow_scope(),
+        &new_config.borrow_scope(),
+        req,
+    );
     let dao_id = self.id();
     let entry = self.slot_mut(&name);
     entry.config = new_config;
@@ -1211,17 +1251,18 @@ fun config_for_type(name: &TypeName): ProposalConfig {
     )
         .with_composable_allowed(composable)
         .with_permissions(bits)
+        .with_borrow_scope(framework_borrow_scope(name))
 }
 
 /// Apply `overrides` to an already-seeded registry.
-/// - Type already enabled: replace its ProposalConfig, preserving composable_allowed
-///   and permissions.
-///   The override's display key must equal the slot's (EDisplayKeyMismatch otherwise);
-///   default display keys cannot be renamed at construction time.
+/// - Type already enabled: replace its ProposalConfig, preserving composable_allowed,
+/// permissions and borrow_scope.
+/// The override's display key must equal the slot's (EDisplayKeyMismatch otherwise);
+/// default display keys cannot be renamed at construction time.
 /// - Type not yet enabled: add its slot (enables the type at construction time).
 /// - Type is a SubDAO-blocked type AND `check_subdao_blocked` is true: abort with
-///   EBlockedProposalType. Pass false for parent DAOs, which legitimately have these
-///   types (e.g. CreateSubDAO).
+/// EBlockedProposalType. Pass false for parent DAOs, which legitimately have these
+/// types (e.g. CreateSubDAO).
 /// - The resulting config misses a floor (`assert_config_floors`): abort.
 fun apply_type_overrides(
     id: &mut UID,
@@ -1241,10 +1282,12 @@ fun apply_type_overrides(
             assert!(entry.display_key == init.display_key, EDisplayKeyMismatch);
             let composable = entry.config.composable_allowed();
             let permissions = entry.config.permissions();
+            let borrow_scope = entry.config.borrow_scope();
             let config = init
                 .config
                 .with_composable_allowed(composable)
-                .with_permissions(permissions);
+                .with_permissions(permissions)
+                .with_borrow_scope(borrow_scope);
             assert_config_floors(&init.type_name, &config);
             entry.config = config;
             event::emit(TypeSlotConfigUpdated {

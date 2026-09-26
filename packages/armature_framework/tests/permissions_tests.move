@@ -14,6 +14,7 @@ use armature::governance;
 use armature::permissions;
 use armature::proposal::{Self, ExecutionRequest};
 use armature::update_proposal_config::{Self, UpdateProposalConfig};
+use std::internal;
 use std::string;
 use std::type_name;
 use sui::clock;
@@ -194,10 +195,10 @@ fun vote_path_request_carries_current_slot_bits() {
             scenario.ctx(),
         );
         assert!(
-            t1.ticket_request().req_permissions()
+            t1.ticket_request(internal::permit()).req_permissions()
                 == permissions::board_add() | permissions::pause(),
         );
-        t1.discharge();
+        t1.discharge(internal::permit());
 
         dao.test_update_config<Granted>(base_config());
         let t2 = armature::board_voting::submit_vote_execute(
@@ -208,8 +209,8 @@ fun vote_path_request_carries_current_slot_bits() {
             &clock,
             scenario.ctx(),
         );
-        assert!(t2.ticket_request().req_permissions() == 0);
-        t2.discharge();
+        assert!(t2.ticket_request(internal::permit()).req_permissions() == 0);
+        t2.discharge(internal::permit());
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(dao);
@@ -311,13 +312,21 @@ fun only_controller_requests_are_privileged() {
             &freeze,
             option::none(),
             Granted {},
+            internal::permit(),
             &clock,
             scenario.ctx(),
         );
-        assert!(!ticket.ticket_request().req_is_privileged());
-        assert!(dao.is_permitted(permissions::board_add(), ticket.ticket_request()));
-        assert!(!dao.is_permitted(permissions::treasury_withdraw(), ticket.ticket_request()));
-        ticket.discharge();
+        assert!(!ticket.ticket_request(internal::permit()).req_is_privileged());
+        assert!(
+            dao.is_permitted(permissions::board_add(), ticket.ticket_request(internal::permit())),
+        );
+        assert!(
+            !dao.is_permitted(
+                permissions::treasury_withdraw(),
+                ticket.ticket_request(internal::permit()),
+            ),
+        );
+        ticket.discharge(internal::permit());
         proposal::destroy_external_execution_cap_for_testing(cap);
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(dao);
@@ -578,6 +587,35 @@ fun composite_update_step_changing_bits_aborts() {
         make_update_config_composable(dao);
         let mut frame = composite::new_frame(dao.id(), &mut tx_context::dummy());
         let payload = update_payload().with_permissions(permissions::board_add());
+        composite::add_update_proposal_config_step(&mut frame, dao, payload);
+        abort 0
+    });
+}
+
+#[test, expected_failure(abort_code = composite::EGrantInComposite)]
+/// A borrow scope is a grant too: an EnableProposalType step may not carry one.
+fun composite_enable_step_with_scope_aborts() {
+    with_dao!(|dao| {
+        let mut frame = composite::new_frame(dao.id(), &mut tx_context::dummy());
+        let payload = enable_proposal_type::new(
+            b"Target".to_ascii_string(),
+            type_name::with_defining_ids<Target>(),
+            config_at(5_000, 0).with_borrow_scope(vector[type_name::with_defining_ids<Target>()]),
+        );
+        composite::add_enable_proposal_type_step(&mut frame, dao, payload);
+        abort 0
+    });
+}
+
+#[test, expected_failure(abort_code = composite::EGrantInComposite)]
+/// An UpdateProposalConfig step may not change the target's borrow scope.
+fun composite_update_step_changing_scope_aborts() {
+    with_dao!(|dao| {
+        make_update_config_composable(dao);
+        let mut frame = composite::new_frame(dao.id(), &mut tx_context::dummy());
+        let payload = update_payload().with_borrow_scope(vector[
+            type_name::with_defining_ids<Target>(),
+        ]);
         composite::add_update_proposal_config_step(&mut frame, dao, payload);
         abort 0
     });
