@@ -30,6 +30,7 @@ This repo contains only the on-chain Move smart contracts. Indexing lives in `ar
 - **`charter`** — Governance constitution document
 - **`board_voting`** — Proposal submission, voting (`board_voting::vote`) and execution for board governance
 - **`controller`** — Privileged execution path (bypasses voting)
+- **`permissions`** — Permission bits a proposal type holds in `ProposalConfig.permissions`; `dao::assert_permitted<P>` checks them (controller requests are privileged and pass)
 - **`emergency`** — Protocol freeze and recovery; frozen and exempt types are keyed by the payload's `TypeName`, like the registry slots
 
 ## Notable Design Patterns
@@ -44,6 +45,7 @@ This repo contains only the on-chain Move smart contracts. Indexing lives in `ar
 
 ## Recent Changes
 
+- **2026-09-26 — per-type permission bits (ARMATURE-22, ARMATURE-23, ROAD-39)**: `ProposalConfig.permissions` (deny-by-default), `ExecutionRequest.privileged` (controller only) and `dao::assert_permitted<P>`; mutators are gated in follow-ups. See `changelog.md`.
 - **2026-09-26 — emergency freeze keyed by Move type (ARMATURE-15)**: `freeze_type<P>` / `assert_not_frozen<P>` replace string keys on every execution path; mandatory exemptions are matched by type; freeze events carry `type_name`. See `changelog.md`.
 - **2026-09-26 — table-backed board roster and snapshot-by-version voting (ARMATURE-13, ARMATURE-14)**: the roster moves out of the DAO root into a versioned `Table`; proposals store `snapshot_version` instead of a roster copy; voting moves to `board_voting::vote(proposal, &DAO, …)`; `SetBoard` becomes `{ to_add, to_remove }`. See `changelog.md`.
 - **2026-09-25 — executed proposals are deleted, expired ones can be deleted by anyone (ARMATURE-12)**: `ticket_from_vote` consumes and deletes the `Proposal`; `delete_expired_proposal` replaces `try_expire` and also covers passed proposals whose execution window has closed. See `changelog.md`.

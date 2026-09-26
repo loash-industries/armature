@@ -54,6 +54,9 @@ const EDisplayKeyTaken: u64 = 15;
 const EEmptyDisplayKey: u64 = 16;
 /// Override for an already-enabled type names a display key other than the slot's.
 const EDisplayKeyMismatch: u64 = 17;
+/// The request's proposal type does not hold the permission bit this mutator
+/// requires (see armature::permissions), and the request is not privileged.
+const EPermissionDenied: u64 = 18;
 
 // === Constants ===
 
@@ -592,6 +595,32 @@ public fun type_for_display_key(self: &DAO, key: &std::ascii::String): Option<Ty
     }
 }
 
+// === Permissions ===
+
+/// Whether a request of type `P` may perform mutations requiring `bits` on
+/// this DAO: true for a privileged (controller-override) request, else true
+/// iff `P` has a slot here whose config holds every bit. A type with no slot
+/// holds no bits.
+public fun is_permitted<P>(self: &DAO, bits: u64, req: &ExecutionRequest<P>): bool {
+    if (req.req_is_privileged()) return true;
+    let name = type_name_of<P>();
+    self.is_type_name_enabled(&name) && self.slot(&name).config.has_permission(bits)
+}
+
+/// The authorization check every DAO-wide mutator runs before acting on a
+/// request. Aborts with EDAOIdMismatch if `req` belongs to another DAO. Unless
+/// the request is privileged, aborts with ETypeNotEnabled if `P` has no slot
+/// here and with EPermissionDenied if its config lacks any bit of `bits`.
+///
+/// Holding a ticket for one type must not authorize mutations that type was
+/// never granted: without this check, any request for the DAO would do.
+public fun assert_permitted<P>(self: &DAO, bits: u64, req: &ExecutionRequest<P>) {
+    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    if (req.req_is_privileged()) return;
+    let config = &self.slot(&type_name_of<P>()).config;
+    assert!(config.has_permission(bits), EPermissionDenied);
+}
+
 // === Proposal-type registry: ProposalTypeInit ===
 
 /// Build a slot initializer for type `T`.
@@ -999,7 +1028,8 @@ fun config_for_type(name: &TypeName): ProposalConfig {
 }
 
 /// Apply `overrides` to an already-seeded registry.
-/// - Type already enabled: replace its ProposalConfig, preserving composable_allowed.
+/// - Type already enabled: replace its ProposalConfig, preserving composable_allowed
+///   and permissions.
 ///   The override's display key must equal the slot's (EDisplayKeyMismatch otherwise);
 ///   default display keys cannot be renamed at construction time.
 /// - Type not yet enabled: add its slot (enables the type at construction time).
@@ -1026,7 +1056,9 @@ fun apply_type_overrides(
             let entry: &mut ProposalType = df::borrow_mut(id, TypeSlot { name: init.type_name });
             assert!(entry.display_key == init.display_key, EDisplayKeyMismatch);
             let composable = entry.config.composable_allowed();
-            entry.config = init.config.with_composable_allowed(composable);
+            let permissions = entry.config.permissions();
+            entry.config =
+                init.config.with_composable_allowed(composable).with_permissions(permissions);
             event::emit(TypeSlotConfigUpdated {
                 dao_id,
                 type_name: init.type_name.into_string(),

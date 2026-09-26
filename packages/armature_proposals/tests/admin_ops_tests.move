@@ -1305,3 +1305,73 @@ fun update_proposal_config_composable_cooldown_conflict_aborts() {
     clock.destroy_for_testing();
     scenario.end();
 }
+
+#[test]
+/// UpdateProposalConfig rebuilds the target's config from the payload; it must
+/// keep the target's permission bits, not reset them to none.
+fun update_proposal_config_preserves_permissions() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    let bits = armature::permissions::board_add() | armature::permissions::pause();
+
+    create_dao(&mut scenario);
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        dao.test_enable_type<TestPayload>(
+            b"TestPayload".to_ascii_string(),
+            proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0).with_permissions(bits),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        clock.set_for_testing(1000);
+        let payload = update_proposal_config::new(
+            b"TestPayload".to_ascii_string(),
+            option::none(),
+            option::some(6_000),
+            option::none(),
+            option::none(),
+            option::none(),
+            option::none(),
+            option::none(),
+        );
+        board_voting::submit_proposal(&dao, option::none(), payload, &clock, scenario.ctx());
+        test_scenario::return_shared(dao);
+    };
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
+        test_scenario::return_shared(proposal);
+    };
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        let ticket = board_voting::ticket_from_vote(
+            &mut dao,
+            proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        admin_ops::execute_update_proposal_config(&mut dao, ticket);
+
+        let config = dao.type_config<TestPayload>();
+        assert!(config.approval_threshold() == 6_000);
+        assert!(config.permissions() == bits);
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}

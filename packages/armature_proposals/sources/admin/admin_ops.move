@@ -102,9 +102,11 @@ public fun execute_update_proposal_config(
         payload.expiry_ms().destroy_with_default(existing.expiry_ms()),
         payload.execution_delay_ms().destroy_with_default(existing.execution_delay_ms()),
         payload.cooldown_ms().destroy_with_default(existing.cooldown_ms()),
-    ).with_composable_allowed(payload
-        .composable_allowed()
-        .destroy_with_default(existing.composable_allowed()));
+    )
+        .with_composable_allowed(payload
+            .composable_allowed()
+            .destroy_with_default(existing.composable_allowed()))
+        .with_permissions(existing.permissions());
 
     assert_threshold_meets_floor(&name, &new_config);
     assert_config_composability(&new_config);

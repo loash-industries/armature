@@ -315,6 +315,7 @@ fun ticket_from_cap_core<P: store>(
         ctx.sender(),
         metadata_ipfs,
         &payload,
+        false,
         ctx,
     );
 

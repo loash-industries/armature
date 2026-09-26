@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-26 — per-type permission bits and dao::assert_permitted (ARMATURE-22, ARMATURE-23, ROAD-39)
+
+- New module `armature::permissions` defines the bits a proposal type may hold: `board_add`, `board_remove`, `board_set`, `type_admin`, `pause`, `migrate`, `metadata`, `treasury_withdraw`, `vault_store`, `vault_borrow`, `vault_extract` (bits 0–10), plus `all()`, `contains(mask, bits)` and `assert_valid(mask)` (`EUnknownPermission` for undefined bits).
+- `proposal::ProposalConfig` gains `permissions: u64`, deny-by-default like `composable_allowed`: `new_config` keeps its signature and sets 0; `with_permissions(bits)` replaces the mask (rejecting undefined bits), `permissions()` and `has_permission(bits)` read it. `TypeSlotAdded` / `TypeSlotConfigUpdated` carry the whole config, so the bits reach the indexer with no event change. `admin_ops::execute_update_proposal_config` and creation-time overrides of default types keep the slot's existing bits; no path can change bits yet (ARMATURE-24).
+- `proposal::ExecutionRequest` gains `privileged: bool` (read with `req_is_privileged`). `proposal::privileged_execute` takes it explicitly: `controller::privileged_submit` passes true, `external_execution::ticket_from_cap` passes false, so bypass requests are held to their type's bits. Vote, single-PTB and composite requests are unprivileged.
+- `dao::assert_permitted<P>(bits, req)`: aborts `EDAOIdMismatch` for another DAO's request; passes a privileged request; otherwise aborts `ETypeNotEnabled` if `P` has no slot and `EPermissionDenied` (18) if its config lacks any of `bits`. `dao::is_permitted` is the non-aborting form. No mutator calls it yet (ARMATURE-26–29). Test helper `proposal::new_privileged_request_for_testing`.
+- Tests: framework 310 → 321 (`permissions_tests`), proposals 119 → 120 (UpdateProposalConfig preserves bits).
+
 ## 2026-09-26 — MintAllowance bypass is open minting: confirmed (ARMATURE-21, ROAD-39)
 
 - New test `currency_ops_tests::mint_allowance_bypass_open_to_non_member` proves the hole: after a board passes `EnableBypassType<MintAllowance<T>>`, a non-member borrows the `ExternalExecutionCap` from the shared vault (`capability_vault::borrow_external_cap` is public), builds its own payload (`mint_allowance::new` is public), mints a ticket through `external_execution::ticket_from_cap` (no sender check) and receives the coins via `currency_ops::execute_mint_allowance`. Nothing identifies the "approved actor" the module docs describe. The test pins today's behaviour; the bypass-cap task (ARMATURE-31) will turn it into an expected failure.
