@@ -621,11 +621,7 @@ fun medium_enterprise_lifecycle() {
         );
 
         // Freeze SendCoin on Engineering SubDAO
-        eng_freeze.freeze_type(
-            &freeze_cap,
-            b"SendCoin".to_ascii_string(),
-            &clock,
-        );
+        eng_freeze.freeze_type<SendCoin<USDC>>(&freeze_cap, &clock);
 
         // Return FreezeAdminCap
         vault.return_cap(freeze_cap, freeze_loan);
@@ -681,7 +677,7 @@ fun medium_enterprise_lifecycle() {
     {
         let eng_dao = scenario.take_shared_by_id<DAO>(eng_dao_id);
         clock.set_for_testing(30_000);
-        let payload = unfreeze_proposal_type::new(b"SendCoin".to_ascii_string());
+        let payload = unfreeze_proposal_type::new<SendCoin<USDC>>();
         board_voting::submit_proposal(
             &eng_dao,
             option::some(string::utf8(b"Unfreeze SendCoin after rogue removed")),
@@ -725,7 +721,7 @@ fun medium_enterprise_lifecycle() {
         );
 
         // Verify unfrozen
-        assert!(!eng_freeze.is_frozen(&b"SendCoin".to_ascii_string(), &clock));
+        assert!(!eng_freeze.is_frozen<SendCoin<USDC>>(&clock));
 
         test_scenario::return_shared(eng_freeze);
         test_scenario::return_shared(eng_dao);

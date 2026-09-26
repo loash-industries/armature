@@ -80,13 +80,15 @@ All DAO state mutations require `&ExecutionRequest<P>`:
 
 | Function | Gate | Effect |
 |----------|------|--------|
-| `freeze_type()` | `FreezeAdminCap` | Freeze a proposal type for up to `max_freeze_duration_ms` |
-| `unfreeze_type()` | `FreezeAdminCap` | Admin-unfreeze a frozen type immediately |
+| `freeze_type<T>()` | `FreezeAdminCap` | Freeze proposal type `T` for up to `max_freeze_duration_ms` |
+| `unfreeze_type<T>()` | `FreezeAdminCap` | Admin-unfreeze a frozen type immediately |
 | `governance_unfreeze_type<P>()` | `ExecutionRequest<P>` | Governance-authorized unfreeze |
 | `update_freeze_duration<P>()` | `ExecutionRequest<P>` | Change max freeze duration for future freezes |
 | `unfreeze_all<P>()` | `ExecutionRequest<P>` | Bulk-unfreeze all currently frozen types |
 
-**Protected types** (cannot be frozen): `TransferFreezeAdmin`, `UnfreezeProposalType`
+Frozen and exempt entries are keyed by the payload's canonical `TypeName` (`with_defining_ids`), the same key as the DAO's type slots. Freezing `PlaceLimitOrder<CRED>` blocks that instantiation on the atomic, bypass, composite and two-PTB paths and leaves other instantiations alone.
+
+**Protected types** (cannot be frozen, cannot be removed from the exempt set): `armature::transfer_freeze_admin::TransferFreezeAdmin`, `armature::unfreeze_proposal_type::UnfreezeProposalType`. They are matched by Move type, so a same-named type in another package gets no exemption.
 
 ### 2.6 board_voting.move
 

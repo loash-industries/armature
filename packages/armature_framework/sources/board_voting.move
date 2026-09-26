@@ -214,7 +214,7 @@ fun submit_vote_execute_core<P: store>(
     // --- Validation from ticket_from_vote ---
 
     assert!(!dao.is_controller_paused(), EControllerPaused);
-    freeze.assert_not_frozen(&display_key, clock);
+    freeze.assert_not_frozen<P>(clock);
 
     // --- Vote: the proposer's YES must pass on its own ---
 
@@ -266,11 +266,7 @@ fun ticket_from_vote_core<P: store>(
             && prop.config().cooldown_ms() == 0),
         ECooldownRequiresMutableDAO,
     );
-    // Checks the display key recorded at submission, not the slot's current key.
-    // If the type was disabled and re-enabled under a new key while this proposal
-    // was pending, a freeze on the new key does not block it. The re-enable itself
-    // requires an EnableProposalType vote (66% floor).
-    freeze.assert_not_frozen(&prop.type_key(), clock);
+    freeze.assert_not_frozen<P>(clock);
 
     let last_ms = dao.last_executed_ms_by_name(&name);
 

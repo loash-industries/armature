@@ -493,7 +493,7 @@ fun test_sve__cooldown_elapsed_allows_second_call() {
 // Emergency freeze
 // =========================================================================
 
-#[test, expected_failure]
+#[test, expected_failure(abort_code = armature::emergency::EFrozen)]
 /// Frozen type cannot be executed via the atomic path.
 fun test_sve__frozen_type_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -508,7 +508,7 @@ fun test_sve__frozen_type_aborts() {
     {
         let freeze_cap = scenario.take_from_sender<FreezeAdminCap>();
         let mut freeze = scenario.take_shared<EmergencyFreeze>();
-        freeze.freeze_type(&freeze_cap, b"FastPayload".to_ascii_string(), &clock);
+        freeze.freeze_type<FastPayload>(&freeze_cap, &clock);
         test_scenario::return_to_sender(&scenario, freeze_cap);
         test_scenario::return_shared(freeze);
     };

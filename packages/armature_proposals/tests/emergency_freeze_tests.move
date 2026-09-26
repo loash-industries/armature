@@ -7,12 +7,14 @@ use armature::emergency::{Self, EmergencyFreeze, FreezeAdminCap};
 use armature::governance;
 use armature::proposal::{Self, Proposal};
 use armature::set_board::{Self, SetBoard};
+use armature::transfer_freeze_admin::TransferFreezeAdmin;
 use armature::unfreeze_proposal_type::{Self, UnfreezeProposalType};
 use armature_proposals::board_ops;
 use armature_proposals::security_ops;
 use armature_proposals::update_freeze_config::{Self, UpdateFreezeConfig};
 use armature_proposals::update_freeze_exempt_types::{Self, UpdateFreezeExemptTypes};
 use std::string;
+use std::type_name;
 use sui::clock;
 use sui::test_scenario;
 
@@ -82,14 +84,14 @@ fun frozen_type_blocks_execution() {
     clock.set_for_testing(2000);
     vote_yes_set_board(&mut scenario, &clock);
 
-    // Freeze "SetBoard" type
+    // Freeze the SetBoard type
     scenario.next_tx(CREATOR);
     {
         let mut freeze = scenario.take_shared<EmergencyFreeze>();
         let cap = scenario.take_from_sender<FreezeAdminCap>();
         clock.set_for_testing(3000);
-        freeze.freeze_type(&cap, b"SetBoard".to_ascii_string(), &clock);
-        assert!(freeze.is_frozen(&b"SetBoard".to_ascii_string(), &clock));
+        freeze.freeze_type<SetBoard>(&cap, &clock);
+        assert!(freeze.is_frozen<SetBoard>(&clock));
         scenario.return_to_sender(cap);
         test_scenario::return_shared(freeze);
     };
@@ -133,18 +135,18 @@ fun unfreeze_allows_execution() {
     clock.set_for_testing(2000);
     vote_yes_set_board(&mut scenario, &clock);
 
-    // Freeze "SetBoard" type
+    // Freeze the SetBoard type
     scenario.next_tx(CREATOR);
     {
         let mut freeze = scenario.take_shared<EmergencyFreeze>();
         let cap = scenario.take_from_sender<FreezeAdminCap>();
         clock.set_for_testing(3000);
-        freeze.freeze_type(&cap, b"SetBoard".to_ascii_string(), &clock);
-        assert!(freeze.is_frozen(&b"SetBoard".to_ascii_string(), &clock));
+        freeze.freeze_type<SetBoard>(&cap, &clock);
+        assert!(freeze.is_frozen<SetBoard>(&clock));
 
         // Unfreeze via admin cap
-        freeze.unfreeze_type(&cap, b"SetBoard".to_ascii_string());
-        assert!(!freeze.is_frozen(&b"SetBoard".to_ascii_string(), &clock));
+        freeze.unfreeze_type<SetBoard>(&cap);
+        assert!(!freeze.is_frozen<SetBoard>(&clock));
 
         scenario.return_to_sender(cap);
         test_scenario::return_shared(freeze);
@@ -192,16 +194,16 @@ fun auto_expiry_allows_execution() {
     clock.set_for_testing(1000);
     submit_set_board(&mut scenario, &clock, vector[MEMBER_C]);
 
-    // Freeze "SetBoard" type at t=3000
+    // Freeze the SetBoard type at t=3000
     scenario.next_tx(CREATOR);
     {
         let mut freeze = scenario.take_shared<EmergencyFreeze>();
         let cap = scenario.take_from_sender<FreezeAdminCap>();
         clock.set_for_testing(3000);
-        freeze.freeze_type(&cap, b"SetBoard".to_ascii_string(), &clock);
+        freeze.freeze_type<SetBoard>(&cap, &clock);
 
         // Should be frozen now
-        assert!(freeze.is_frozen(&b"SetBoard".to_ascii_string(), &clock));
+        assert!(freeze.is_frozen<SetBoard>(&clock));
 
         scenario.return_to_sender(cap);
         test_scenario::return_shared(freeze);
@@ -225,7 +227,7 @@ fun auto_expiry_allows_execution() {
         clock.set_for_testing(after_expiry);
 
         // Verify freeze expired
-        assert!(!freeze.is_frozen(&b"SetBoard".to_ascii_string(), &clock));
+        assert!(!freeze.is_frozen<SetBoard>(&clock));
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
@@ -264,7 +266,7 @@ fun pass_then_freeze(scenario: &mut test_scenario::Scenario, clock: &mut clock::
         let mut freeze = scenario.take_shared<EmergencyFreeze>();
         let cap = scenario.take_from_sender<FreezeAdminCap>();
         clock.set_for_testing(3000);
-        freeze.freeze_type(&cap, b"SetBoard".to_ascii_string(), clock);
+        freeze.freeze_type<SetBoard>(&cap, clock);
         scenario.return_to_sender(cap);
         test_scenario::return_shared(freeze);
     };
@@ -333,13 +335,13 @@ fun governance_unfreeze_via_proposal() {
 
     create_dao(&mut scenario);
 
-    // Freeze "SetBoard" type
+    // Freeze the SetBoard type
     scenario.next_tx(CREATOR);
     {
         let mut freeze = scenario.take_shared<EmergencyFreeze>();
         let cap = scenario.take_from_sender<FreezeAdminCap>();
         clock.set_for_testing(1000);
-        freeze.freeze_type(&cap, b"SetBoard".to_ascii_string(), &clock);
+        freeze.freeze_type<SetBoard>(&cap, &clock);
         scenario.return_to_sender(cap);
         test_scenario::return_shared(freeze);
     };
@@ -349,7 +351,7 @@ fun governance_unfreeze_via_proposal() {
     {
         let dao = scenario.take_shared<DAO>();
         clock.set_for_testing(2000);
-        let payload = unfreeze_proposal_type::new(b"SetBoard".to_ascii_string());
+        let payload = unfreeze_proposal_type::new<SetBoard>();
         board_voting::submit_proposal(
             &dao,
             option::some(string::utf8(b"Unfreeze SetBoard")),
@@ -389,7 +391,7 @@ fun governance_unfreeze_via_proposal() {
         security_ops::execute_unfreeze_proposal_type(&mut freeze, ticket);
 
         // Verify SetBoard is no longer frozen
-        assert!(!freeze.is_frozen(&b"SetBoard".to_ascii_string(), &clock));
+        assert!(!freeze.is_frozen<SetBoard>(&clock));
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(dao);
@@ -416,7 +418,7 @@ fun cannot_freeze_transfer_freeze_admin() {
         let mut freeze = scenario.take_shared<EmergencyFreeze>();
         let cap = scenario.take_from_sender<FreezeAdminCap>();
         clock.set_for_testing(1000);
-        freeze.freeze_type(&cap, b"TransferFreezeAdmin".to_ascii_string(), &clock);
+        freeze.freeze_type<TransferFreezeAdmin>(&cap, &clock);
         scenario.return_to_sender(cap);
         test_scenario::return_shared(freeze);
     };
@@ -438,7 +440,7 @@ fun cannot_freeze_unfreeze_proposal_type() {
         let mut freeze = scenario.take_shared<EmergencyFreeze>();
         let cap = scenario.take_from_sender<FreezeAdminCap>();
         clock.set_for_testing(1000);
-        freeze.freeze_type(&cap, b"UnfreezeProposalType".to_ascii_string(), &clock);
+        freeze.freeze_type<UnfreezeProposalType>(&cap, &clock);
         scenario.return_to_sender(cap);
         test_scenario::return_shared(freeze);
     };
@@ -536,14 +538,14 @@ fun update_freeze_config_e2e() {
         let mut freeze = scenario.take_shared<EmergencyFreeze>();
         let cap = scenario.take_from_sender<FreezeAdminCap>();
         clock.set_for_testing(10000);
-        freeze.freeze_type(&cap, b"SetBoard".to_ascii_string(), &clock);
+        freeze.freeze_type<SetBoard>(&cap, &clock);
 
         // Freeze should expire at t=10000 + 259_200_000 = 259_210_000
-        assert!(freeze.is_frozen(&b"SetBoard".to_ascii_string(), &clock));
+        assert!(freeze.is_frozen<SetBoard>(&clock));
 
         // Advance past new expiry
         clock.set_for_testing(259_210_001);
-        assert!(!freeze.is_frozen(&b"SetBoard".to_ascii_string(), &clock));
+        assert!(!freeze.is_frozen<SetBoard>(&clock));
 
         scenario.return_to_sender(cap);
         test_scenario::return_shared(freeze);
@@ -582,10 +584,8 @@ fun add_freeze_exempt_type_e2e() {
     {
         let dao = scenario.take_shared<DAO>();
         clock.set_for_testing(1000);
-        let payload = update_freeze_exempt_types::new(
-            vector[b"SetBoard".to_ascii_string()],
-            vector[],
-        );
+        let mut payload = update_freeze_exempt_types::new();
+        payload.add_type<SetBoard>();
         board_voting::submit_proposal(
             &dao,
             option::some(string::utf8(b"Exempt SetBoard from freezing")),
@@ -626,7 +626,7 @@ fun add_freeze_exempt_type_e2e() {
         security_ops::execute_update_freeze_exempt_types(&mut freeze, ticket);
 
         // Verify "SetBoard" is now in the exempt set
-        assert!(freeze.freeze_exempt_types().contains(&b"SetBoard".to_ascii_string()));
+        assert!(freeze.is_exempt_by_name(&type_name::with_defining_ids<SetBoard>()));
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(dao);
@@ -639,7 +639,7 @@ fun add_freeze_exempt_type_e2e() {
         let cap = scenario.take_from_sender<FreezeAdminCap>();
         clock.set_for_testing(4000);
         // This would abort with EProtectedType — but we just want to verify exempt status
-        assert!(freeze.freeze_exempt_types().contains(&b"SetBoard".to_ascii_string()));
+        assert!(freeze.is_exempt_by_name(&type_name::with_defining_ids<SetBoard>()));
         scenario.return_to_sender(cap);
         test_scenario::return_shared(freeze);
     };
@@ -673,10 +673,8 @@ fun remove_freeze_exempt_type_e2e() {
     {
         let dao = scenario.take_shared<DAO>();
         clock.set_for_testing(1000);
-        let payload = update_freeze_exempt_types::new(
-            vector[b"SetBoard".to_ascii_string()],
-            vector[],
-        );
+        let mut payload = update_freeze_exempt_types::new();
+        payload.add_type<SetBoard>();
         board_voting::submit_proposal(
             &dao,
             option::some(string::utf8(b"Add SetBoard exemption")),
@@ -711,7 +709,7 @@ fun remove_freeze_exempt_type_e2e() {
             scenario.ctx(),
         );
         security_ops::execute_update_freeze_exempt_types(&mut freeze, req);
-        assert!(freeze.freeze_exempt_types().contains(&b"SetBoard".to_ascii_string()));
+        assert!(freeze.is_exempt_by_name(&type_name::with_defining_ids<SetBoard>()));
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(dao);
     };
@@ -721,10 +719,8 @@ fun remove_freeze_exempt_type_e2e() {
     {
         let dao = scenario.take_shared<DAO>();
         clock.set_for_testing(4000);
-        let payload = update_freeze_exempt_types::new(
-            vector[],
-            vector[b"SetBoard".to_ascii_string()],
-        );
+        let mut payload = update_freeze_exempt_types::new();
+        payload.remove_type<SetBoard>();
         board_voting::submit_proposal(
             &dao,
             option::some(string::utf8(b"Remove SetBoard exemption")),
@@ -760,7 +756,7 @@ fun remove_freeze_exempt_type_e2e() {
         );
         security_ops::execute_update_freeze_exempt_types(&mut freeze, req);
         // Verify "SetBoard" is no longer exempt
-        assert!(!freeze.freeze_exempt_types().contains(&b"SetBoard".to_ascii_string()));
+        assert!(!freeze.is_exempt_by_name(&type_name::with_defining_ids<SetBoard>()));
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(dao);
     };
@@ -771,8 +767,8 @@ fun remove_freeze_exempt_type_e2e() {
         let mut freeze = scenario.take_shared<EmergencyFreeze>();
         let cap = scenario.take_from_sender<FreezeAdminCap>();
         clock.set_for_testing(7000);
-        freeze.freeze_type(&cap, b"SetBoard".to_ascii_string(), &clock);
-        assert!(freeze.is_frozen(&b"SetBoard".to_ascii_string(), &clock));
+        freeze.freeze_type<SetBoard>(&cap, &clock);
+        assert!(freeze.is_frozen<SetBoard>(&clock));
         scenario.return_to_sender(cap);
         test_scenario::return_shared(freeze);
     };
@@ -806,10 +802,8 @@ fun remove_mandatory_exempt_type_aborts() {
     {
         let dao = scenario.take_shared<DAO>();
         clock.set_for_testing(1000);
-        let payload = update_freeze_exempt_types::new(
-            vector[],
-            vector[b"TransferFreezeAdmin".to_ascii_string()],
-        );
+        let mut payload = update_freeze_exempt_types::new();
+        payload.remove_type<TransferFreezeAdmin>();
         board_voting::submit_proposal(
             &dao,
             option::some(string::utf8(b"Remove mandatory type")),

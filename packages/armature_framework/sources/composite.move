@@ -287,12 +287,11 @@ public fun advance_step<P: store>(
     assert!(pipeline.current_step < pipeline.total_steps, EPipelineComplete);
 
     let step_idx = pipeline.current_step;
-    let step_type_key = frame.step_type_keys[step_idx];
     let expected_type = frame.step_types[step_idx];
 
     assert!(type_name::with_defining_ids<P>() == expected_type, EStepTypeMismatch);
 
-    freeze.assert_not_frozen(&step_type_key, clock);
+    freeze.assert_not_frozen<P>(clock);
 
     let step_config = dao.type_config_by_name(&expected_type);
 
