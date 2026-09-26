@@ -105,7 +105,9 @@ fun small_startup_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<SendSmallPayment<SUI>>>();
         clock.set_for_testing(1_500);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -113,7 +115,9 @@ fun small_startup_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<SendSmallPayment<SUI>>>();
         clock.set_for_testing(2_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -154,7 +158,7 @@ fun small_startup_lifecycle() {
     {
         let dao = scenario.take_shared_by_id<DAO>(dao_id);
         clock.set_for_testing(10_000);
-        let payload = set_board::new(vector[ALICE, BOB, DAN, EVE]);
+        let payload = set_board::new(vector[DAN, EVE], vector[CAROL]);
         board_voting::submit_proposal(
             &dao,
             option::some(string::utf8(b"Carol leaving, welcome Dan and Eve")),
@@ -170,7 +174,9 @@ fun small_startup_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<SetBoard>>();
         clock.set_for_testing(10_500);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -178,7 +184,9 @@ fun small_startup_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<SetBoard>>();
         clock.set_for_testing(11_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -231,7 +239,9 @@ fun small_startup_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<SendSmallPayment<SUI>>>();
         clock.set_for_testing(20_500);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -239,7 +249,9 @@ fun small_startup_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<SendSmallPayment<SUI>>>();
         clock.set_for_testing(21_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -302,6 +314,7 @@ const M2: address = @0x12;
 const M3: address = @0x13;
 const M4: address = @0x14;
 const M5: address = @0x15;
+const M6: address = @0x16;
 const ENG1: address = @0x21;
 const ENG2: address = @0x22;
 const ROGUE: address = @0x33;
@@ -373,7 +386,9 @@ fun medium_enterprise_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<CreateSubDAO>>();
         clock.set_for_testing(1_500);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -381,7 +396,9 @@ fun medium_enterprise_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<CreateSubDAO>>();
         clock.set_for_testing(2_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -389,7 +406,9 @@ fun medium_enterprise_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<CreateSubDAO>>();
         clock.set_for_testing(2_100);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -455,7 +474,9 @@ fun medium_enterprise_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<CreateSubDAO>>();
         clock.set_for_testing(5_500);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -463,7 +484,9 @@ fun medium_enterprise_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<CreateSubDAO>>();
         clock.set_for_testing(6_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -471,7 +494,9 @@ fun medium_enterprise_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<CreateSubDAO>>();
         clock.set_for_testing(6_100);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -523,7 +548,7 @@ fun medium_enterprise_lifecycle() {
     {
         let dao = scenario.take_shared_by_id<DAO>(top_dao_id);
         clock.set_for_testing(20_000);
-        let payload = set_board::new(vector[M1, M2, M3, M4, M5]); // same board
+        let payload = set_board::new(vector[M6], vector[]);
         board_voting::submit_proposal(
             &dao,
             option::some(string::utf8(b"Vehicle: freeze eng type + change eng board")),
@@ -539,7 +564,9 @@ fun medium_enterprise_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<SetBoard>>();
         clock.set_for_testing(20_500);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -547,7 +574,9 @@ fun medium_enterprise_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<SetBoard>>();
         clock.set_for_testing(21_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -555,7 +584,9 @@ fun medium_enterprise_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<SetBoard>>();
         clock.set_for_testing(21_100);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -611,14 +642,15 @@ fun medium_enterprise_lifecycle() {
             &eng_dao,
             b"SetBoard".to_ascii_string(),
             option::some(string::utf8(b"Remove rogue actor")),
-            set_board::new(vector[ENG1, ENG2]),
+            set_board::new(vector[], vector[ROGUE]),
             scenario.ctx(),
         );
 
         // Apply board change on Engineering SubDAO
         dao::set_board_governance(
             &mut eng_dao,
-            vector[ENG1, ENG2],
+            vector[],
+            vector[ROGUE],
             &priv_req,
         );
 
@@ -633,7 +665,7 @@ fun medium_enterprise_lifecycle() {
         assert!(eng_dao.governance().is_board_member(ENG2));
         assert!(!eng_dao.governance().is_board_member(ROGUE));
 
-        // Finalize parent vehicle proposal (SetBoard on parent — no-op, same board)
+        // Finalize parent vehicle proposal (SetBoard on parent — adds M6)
         board_ops::execute_set_board(&mut top_dao, parent_req);
 
         test_scenario::return_shared(eng_freeze);
@@ -664,7 +696,9 @@ fun medium_enterprise_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<UnfreezeProposalType>>();
         clock.set_for_testing(31_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -718,7 +752,9 @@ fun medium_enterprise_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<SendCoinToDAO<USDC>>>();
         clock.set_for_testing(40_500);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -726,7 +762,9 @@ fun medium_enterprise_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<SendCoinToDAO<USDC>>>();
         clock.set_for_testing(41_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -734,7 +772,9 @@ fun medium_enterprise_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<SendCoinToDAO<USDC>>>();
         clock.set_for_testing(41_100);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -801,7 +841,9 @@ fun medium_enterprise_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<SendCoin<USDC>>>();
         clock.set_for_testing(51_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 

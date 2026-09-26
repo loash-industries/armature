@@ -18,6 +18,7 @@ use sui::test_scenario;
 
 const CREATOR: address = @0xA;
 const MEMBER_B: address = @0xB;
+const MEMBER_C: address = @0xC;
 
 // === Helpers ===
 
@@ -35,12 +36,12 @@ fun create_dao(scenario: &mut test_scenario::Scenario): ID {
 fun submit_set_board(
     scenario: &mut test_scenario::Scenario,
     clock: &clock::Clock,
-    new_members: vector<address>,
+    to_add: vector<address>,
 ) {
     scenario.next_tx(CREATOR);
     {
         let dao = scenario.take_shared<DAO>();
-        let payload = set_board::new(new_members);
+        let payload = set_board::new(to_add, vector[]);
         board_voting::submit_proposal(
             &dao,
             option::some(string::utf8(b"Board change")),
@@ -56,7 +57,9 @@ fun vote_yes_set_board(scenario: &mut test_scenario::Scenario, clock: &clock::Cl
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<SetBoard>>();
-        proposal.vote(true, clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 }
@@ -75,7 +78,7 @@ fun frozen_type_blocks_execution() {
 
     // Submit + pass a SetBoard proposal
     clock.set_for_testing(1000);
-    submit_set_board(&mut scenario, &clock, vector[CREATOR, MEMBER_B]);
+    submit_set_board(&mut scenario, &clock, vector[MEMBER_C]);
     clock.set_for_testing(2000);
     vote_yes_set_board(&mut scenario, &clock);
 
@@ -126,7 +129,7 @@ fun unfreeze_allows_execution() {
 
     // Submit + pass a SetBoard proposal
     clock.set_for_testing(1000);
-    submit_set_board(&mut scenario, &clock, vector[CREATOR, MEMBER_B]);
+    submit_set_board(&mut scenario, &clock, vector[MEMBER_C]);
     clock.set_for_testing(2000);
     vote_yes_set_board(&mut scenario, &clock);
 
@@ -187,7 +190,7 @@ fun auto_expiry_allows_execution() {
 
     // Submit a SetBoard proposal
     clock.set_for_testing(1000);
-    submit_set_board(&mut scenario, &clock, vector[CREATOR, MEMBER_B]);
+    submit_set_board(&mut scenario, &clock, vector[MEMBER_C]);
 
     // Freeze "SetBoard" type at t=3000
     scenario.next_tx(CREATOR);
@@ -252,7 +255,7 @@ fun auto_expiry_allows_execution() {
 fun pass_then_freeze(scenario: &mut test_scenario::Scenario, clock: &mut clock::Clock) {
     create_dao(scenario);
     clock.set_for_testing(1000);
-    submit_set_board(scenario, clock, vector[CREATOR, MEMBER_B]);
+    submit_set_board(scenario, clock, vector[MEMBER_C]);
     clock.set_for_testing(2000);
     vote_yes_set_board(scenario, clock);
 
@@ -361,7 +364,9 @@ fun governance_unfreeze_via_proposal() {
     {
         let mut proposal = scenario.take_shared<Proposal<UnfreezeProposalType>>();
         clock.set_for_testing(3000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -494,7 +499,9 @@ fun update_freeze_config_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<UpdateFreezeConfig>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -594,7 +601,9 @@ fun add_freeze_exempt_type_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<UpdateFreezeExemptTypes>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -682,7 +691,9 @@ fun remove_freeze_exempt_type_e2e() {
     {
         let mut p = scenario.take_shared<Proposal<UpdateFreezeExemptTypes>>();
         clock.set_for_testing(2000);
-        p.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(p.dao_id());
+        board_voting::vote(&mut p, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(p);
     };
 
@@ -728,7 +739,9 @@ fun remove_freeze_exempt_type_e2e() {
     {
         let mut p = scenario.take_shared<Proposal<UpdateFreezeExemptTypes>>();
         clock.set_for_testing(5000);
-        p.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(p.dao_id());
+        board_voting::vote(&mut p, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(p);
     };
 
@@ -811,7 +824,9 @@ fun remove_mandatory_exempt_type_aborts() {
     {
         let mut p = scenario.take_shared<Proposal<UpdateFreezeExemptTypes>>();
         clock.set_for_testing(2000);
-        p.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(p.dao_id());
+        board_voting::vote(&mut p, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(p);
     };
 

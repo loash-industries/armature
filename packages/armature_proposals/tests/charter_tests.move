@@ -72,7 +72,9 @@ fun charter_update_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<UpdateMetadata>>();
         clock.set_for_testing(2_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -122,7 +124,9 @@ fun charter_update_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<UpdateMetadata>>();
         clock.set_for_testing(11_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -215,7 +219,9 @@ fun charter_update_wrong_dao_aborts() {
     {
         let mut proposal = scenario.take_shared<Proposal<UpdateMetadata>>();
         clock.set_for_testing(2_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 

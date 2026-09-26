@@ -319,6 +319,36 @@ fun test_root_size_independent_of_enabled_types() {
     scenario.end();
 }
 
+#[test]
+/// The root object does not grow with the board: the roster is a Table, so
+/// adding 100 members in one batch, or removing them, leaves the serialized
+/// root the same size.
+fun test_root_size_independent_of_board_size() {
+    let mut scenario = test_scenario::begin(CREATOR);
+
+    create_test_dao(&mut scenario);
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let size_before = std::bcs::to_bytes(&dao).length();
+
+        let mut batch = vector[];
+        100u64.do!(|i| batch.push_back(sui::address::from_u256((i as u256) + 0x1000)));
+        let (added, skipped) = dao.governance_mut().add_board_members(batch);
+        assert!(added.length() == 100 && skipped.is_empty());
+        assert!(dao.governance().member_count() == 102);
+        assert!(std::bcs::to_bytes(&dao).length() == size_before);
+
+        dao.governance_mut().remove_board_members(added);
+        assert!(dao.governance().member_count() == 2);
+        assert!(std::bcs::to_bytes(&dao).length() == size_before);
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.end();
+}
+
 #[test, expected_failure(abort_code = armature::dao::EDisplayKeyTaken)]
 /// Two enabled types cannot share a display key.
 fun test_duplicate_display_key_aborts() {
@@ -391,7 +421,7 @@ fun test_governance_type_immutable_after_creation() {
         // Governance is Board after creation
         assert!(gov.is_board_member(CREATOR));
 
-        // set_board changes members but keeps Board variant — variant immutability
+        // Board is the only governance model; set_board changes members only
         // is enforced by the type system (no public function to change variant)
         test_scenario::return_shared(dao);
     };
@@ -413,7 +443,7 @@ fun test_board_governance_persists_across_proposals() {
         // Simulate a SetBoard proposal execution by mutating governance
         let gov = dao.governance_mut();
         let new_member: address = @0xC;
-        gov.set_board(vector[CREATOR, MEMBER_B, new_member]);
+        gov.set_board(vector[new_member], vector[]);
 
         // Verify still Board governance with updated members
         let gov = dao.governance();

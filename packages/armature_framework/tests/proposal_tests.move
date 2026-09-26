@@ -1,6 +1,7 @@
 #[test_only]
 module armature::proposal_tests;
 
+use armature::board_voting;
 use armature::dao::{Self, DAO};
 use armature::governance;
 use armature::proposal::{Self, Proposal};
@@ -96,7 +97,9 @@ fun test_status_active_to_passed() {
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         // quorum: 1*10000 >= 5000*2 → 10000 >= 10000 ✓
         // threshold: 1*10000 >= 5000*1 → 10000 >= 5000 ✓
         assert!(prop.status().is_passed());
@@ -155,7 +158,9 @@ fun test_execute_deletes_proposal() {
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(prop);
     };
 
@@ -180,8 +185,16 @@ fun test_execute_deletes_proposal() {
     };
 
     let effects = scenario.next_tx(CREATOR);
-    assert!(effects.deleted() == vector[prop_id]);
+    // test_scenario also reports the roster entry that execute's membership
+    // check read as deleted. It is not: the executor is still a member below.
+    assert!(effects.deleted().length() == 2);
+    assert!(effects.deleted().contains(&prop_id));
     assert!(!test_scenario::has_most_recent_shared<Proposal<TestPayload>>());
+    {
+        let dao = scenario.take_shared<DAO>();
+        assert!(dao.governance().is_board_member(CREATOR));
+        test_scenario::return_shared(dao);
+    };
 
     clock.destroy_for_testing();
     scenario.end();
@@ -203,7 +216,9 @@ fun test_cannot_vote_on_passed_aborts() {
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         assert!(prop.status().is_passed());
         test_scenario::return_shared(prop);
     };
@@ -212,7 +227,9 @@ fun test_cannot_vote_on_passed_aborts() {
     scenario.next_tx(MEMBER_B);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(prop);
     };
 
@@ -237,7 +254,9 @@ fun test_vote_after_expiry_aborts() {
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(prop);
     };
 
@@ -259,8 +278,10 @@ fun test_vote_just_before_expiry() {
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
         assert!(prop.status().is_passed());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(prop);
     };
 
@@ -309,7 +330,9 @@ fun test_delete_expired_passed_after_window() {
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(prop);
     };
 
@@ -343,7 +366,9 @@ fun test_delete_expired_passed_inside_window_aborts() {
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(prop);
     };
 
@@ -374,7 +399,9 @@ fun test_execute_after_window_aborts() {
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(prop);
     };
 
@@ -432,7 +459,9 @@ fun create_and_pass_max_expiry_proposal(scenario: &mut test_scenario::Scenario, 
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(prop);
     };
 }
@@ -507,7 +536,7 @@ fun test_vote_snapshot_immutable_after_creation() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let new_member: address = @0xC;
-        dao.governance_mut().set_board(vector[CREATOR, new_member]);
+        dao.governance_mut().set_board(vector[new_member], vector[MEMBER_B]);
         test_scenario::return_shared(dao);
     };
 
@@ -515,7 +544,9 @@ fun test_vote_snapshot_immutable_after_creation() {
     scenario.next_tx(MEMBER_B);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(prop);
     };
 
@@ -540,7 +571,7 @@ fun test_new_member_cannot_vote_on_old_proposal() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let new_member: address = @0xC;
-        dao.governance_mut().set_board(vector[CREATOR, MEMBER_B, new_member]);
+        dao.governance_mut().set_board(vector[new_member], vector[]);
         test_scenario::return_shared(dao);
     };
 
@@ -548,7 +579,9 @@ fun test_new_member_cannot_vote_on_old_proposal() {
     scenario.next_tx(@0xC);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(prop);
     };
 
@@ -572,7 +605,9 @@ fun test_non_board_member_cannot_execute_aborts() {
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(prop);
     };
 
@@ -612,7 +647,9 @@ fun test_board_member_can_execute() {
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(prop);
     };
 
@@ -653,7 +690,9 @@ fun test_passed_proposal_retryable_after_failure() {
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         assert!(prop.status().is_passed());
         test_scenario::return_shared(prop);
     };
@@ -694,7 +733,9 @@ fun test_vote_double_vote_aborts() {
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(false, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, false, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(prop);
     };
 
@@ -702,7 +743,9 @@ fun test_vote_double_vote_aborts() {
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(prop);
     };
 
@@ -713,7 +756,7 @@ fun test_vote_double_vote_aborts() {
 // === Test 20: Non-snapshot member cannot vote ===
 
 #[test, expected_failure(abort_code = proposal::ENotInSnapshot)]
-/// Abort — not in vote_snapshot.
+/// Abort — not a member at the proposal's snapshot version.
 fun test_vote_non_snapshot_member_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
@@ -726,7 +769,9 @@ fun test_vote_non_snapshot_member_aborts() {
     scenario.next_tx(NON_MEMBER);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(prop);
     };
 
@@ -750,7 +795,9 @@ fun test_vote_no_vote_counted_correctly() {
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(false, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, false, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         assert!(prop.no_weight() == 1);
         assert!(prop.yes_weight() == 0);
         assert!(prop.status().is_active()); // Not passed
@@ -803,7 +850,9 @@ fun test_execute_delay_not_elapsed_aborts() {
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         assert!(prop.status().is_passed());
         test_scenario::return_shared(prop);
     };
@@ -870,7 +919,9 @@ fun test_execute_delay_elapsed_succeeds() {
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(prop);
     };
 
@@ -940,7 +991,9 @@ fun test_execute_window_starts_after_delay() {
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(prop);
     };
 
@@ -1009,7 +1062,9 @@ fun test_execute_cooldown_active_aborts() {
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(prop);
     };
 
@@ -1076,7 +1131,9 @@ fun test_execute_cooldown_elapsed_succeeds() {
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(prop);
     };
 
@@ -1114,7 +1171,9 @@ fun test_execute_paused_aborts() {
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(prop);
     };
 
@@ -1168,7 +1227,9 @@ fun consume_execution_request_works_after_governance_execution() {
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(prop);
     };
 
@@ -1298,4 +1359,232 @@ fun test_discharge_returning_payload() {
     assert!(payload.value == 42);
     // Manually destructure since NonDropPayload has no drop
     let NonDropPayload { value: _ } = payload;
+}
+
+// === Roster versions ===
+
+#[test]
+/// A member of the board at creation who is removed and re-added can still
+/// vote: their first tenure covers the proposal's snapshot version.
+fun test_readded_member_keeps_vote_on_old_proposal() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_test_dao(&mut scenario);
+    create_test_proposal(&mut scenario, &clock);
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        dao.governance_mut().remove_board_member(MEMBER_B);
+        dao.governance_mut().add_board_member(MEMBER_B);
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(MEMBER_B);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let dao = scenario.take_shared<DAO>();
+        board_voting::vote(&mut prop, &dao, true, &clock, scenario.ctx());
+        assert!(prop.status().is_passed());
+        test_scenario::return_shared(dao);
+        test_scenario::return_shared(prop);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = proposal::ENotInSnapshot)]
+/// A former member re-added after a proposal was created cannot vote on it:
+/// they were not a member at its snapshot version.
+fun test_member_readded_after_creation_cannot_vote() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_test_dao(&mut scenario);
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        dao.governance_mut().remove_board_member(MEMBER_B);
+        test_scenario::return_shared(dao);
+    };
+
+    create_test_proposal(&mut scenario, &clock);
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        dao.governance_mut().add_board_member(MEMBER_B);
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(MEMBER_B);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let dao = scenario.take_shared<DAO>();
+        board_voting::vote(&mut prop, &dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(dao);
+        test_scenario::return_shared(prop);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+/// Quorum is measured against the board at creation, not the current board.
+fun test_quorum_uses_total_weight_at_creation() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_test_dao(&mut scenario);
+    create_test_proposal(&mut scenario, &clock);
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        dao.governance_mut().add_board_members(vector[@0xC1, @0xC2, @0xC3]);
+        assert!(dao.governance().member_count() == 5);
+        test_scenario::return_shared(dao);
+    };
+
+    // One YES of the two members at creation meets the 50% quorum.
+    scenario.next_tx(CREATOR);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let dao = scenario.take_shared<DAO>();
+        assert!(prop.total_snapshot_weight() == 2);
+        board_voting::vote(&mut prop, &dao, true, &clock, scenario.ctx());
+        assert!(prop.status().is_passed());
+        test_scenario::return_shared(dao);
+        test_scenario::return_shared(prop);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = proposal::ENotEligible)]
+/// Execution requires current membership: a member removed after voting a
+/// proposal through cannot execute it.
+fun test_removed_member_cannot_execute() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_test_dao(&mut scenario);
+    create_test_proposal(&mut scenario, &clock);
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let dao = scenario.take_shared<DAO>();
+        board_voting::vote(&mut prop, &dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(dao);
+        test_scenario::return_shared(prop);
+    };
+
+    scenario.next_tx(MEMBER_B);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        dao.governance_mut().remove_board_member(CREATOR);
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        let dao = scenario.take_shared<DAO>();
+        let (_payload, req) = prop.execute(
+            dao.governance(),
+            option::none(),
+            false,
+            &clock,
+            scenario.ctx(),
+        );
+        proposal::consume(req);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = board_voting::EDAOIdMismatch)]
+/// Votes are checked against the proposal's own DAO: passing another DAO,
+/// where the voter is a member, aborts.
+fun test_vote_with_other_dao_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_test_dao(&mut scenario);
+    create_test_proposal(&mut scenario, &clock);
+
+    scenario.next_tx(NON_MEMBER);
+    let other_id = dao::create(
+        &governance::init_board(vector[NON_MEMBER]),
+        string::utf8(b"Other DAO"),
+        string::utf8(b"https://example.com/logo.png"),
+        scenario.ctx(),
+    );
+
+    scenario.next_tx(NON_MEMBER);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let other = scenario.take_shared_by_id<DAO>(other_id);
+        board_voting::vote(&mut prop, &other, true, &clock, scenario.ctx());
+        test_scenario::return_shared(other);
+        test_scenario::return_shared(prop);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+/// The roster version advances once per membership change, a batch counting
+/// as one change, and not at all for a batch that adds nobody. Proposals
+/// record the version current at creation.
+fun test_roster_version_and_snapshot_version() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_test_dao(&mut scenario);
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        assert!(dao.governance().roster_version() == 0);
+        dao.governance_mut().add_board_members(vector[@0xC1, @0xC2]);
+        assert!(dao.governance().roster_version() == 1);
+        dao.governance_mut().add_board_members(vector[@0xC1, @0xC2]);
+        assert!(dao.governance().roster_version() == 1);
+        dao.governance_mut().remove_board_members(vector[@0xC1, @0xC2]);
+        assert!(dao.governance().roster_version() == 2);
+        assert!(dao.governance().member_count() == 2);
+        assert!(dao.governance().was_member_at(@0xC1, 1));
+        assert!(!dao.governance().was_member_at(@0xC1, 0));
+        assert!(!dao.governance().was_member_at(@0xC1, 2));
+        assert!(!dao.governance().is_board_member(@0xC1));
+        test_scenario::return_shared(dao);
+    };
+
+    create_test_proposal(&mut scenario, &clock);
+
+    scenario.next_tx(CREATOR);
+    {
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        assert!(prop.snapshot_version() == 2);
+        test_scenario::return_shared(prop);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
 }

@@ -97,7 +97,9 @@ fun vote_as(scenario: &mut test_scenario::Scenario, voter: address, approve: boo
     scenario.next_tx(voter);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(approve, clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, approve, clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(prop);
     };
 }
@@ -624,7 +626,7 @@ fun submit_proposal_default_type_uses_its_payload_slot() {
         board_voting::submit_proposal(
             &dao,
             option::none(),
-            set_board::new(vector[CREATOR, MEMBER_B]),
+            set_board::new(vector[MEMBER_B], vector[]),
             &clock,
             scenario.ctx(),
         );

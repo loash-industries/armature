@@ -101,7 +101,9 @@ fun vote_yes<T: drop>(scenario: &mut test_scenario::Scenario, clock: &clock::Clo
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<SendSmallPayment<T>>>();
-        proposal.vote(true, clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 }
@@ -387,7 +389,9 @@ fun send_coin_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<SendCoin<SUI>>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -464,7 +468,9 @@ fun send_coin_insufficient_balance_aborts() {
     {
         let mut proposal = scenario.take_shared<Proposal<SendCoin<SUI>>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -589,7 +595,9 @@ fun send_coin_to_dao_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<SendCoinToDAO<SUI>>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -711,7 +719,9 @@ fun send_coin_to_dao_target_mismatch_aborts() {
     {
         let mut proposal = scenario.take_shared<Proposal<SendCoinToDAO<SUI>>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 

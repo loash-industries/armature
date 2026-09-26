@@ -87,7 +87,9 @@ fun create_subdao_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<CreateSubDAO>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -196,7 +198,9 @@ fun create_subdao_vault_mismatch_aborts() {
     {
         let mut proposal = scenario.take_shared<Proposal<CreateSubDAO>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -305,7 +309,9 @@ fun setup_parent_and_subdao(
     {
         let mut proposal = scenario.take_shared<Proposal<CreateSubDAO>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -399,7 +405,9 @@ fun transfer_cap_to_subdao_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<TransferCapToSubDAO>>();
         clock.set_for_testing(6000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -509,7 +517,9 @@ fun reclaim_cap_from_subdao_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<ReclaimCapFromSubDAO>>();
         clock.set_for_testing(6000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -605,7 +615,9 @@ fun reclaim_cap_wrong_vault_aborts() {
     {
         let mut proposal = scenario.take_shared<Proposal<ReclaimCapFromSubDAO>>();
         clock.set_for_testing(6000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -710,7 +722,9 @@ fun pause_and_unpause_subdao_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<pause_execution::PauseSubDAOExecution>>();
         clock.set_for_testing(11_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -771,7 +785,9 @@ fun pause_and_unpause_subdao_e2e() {
             Proposal<pause_execution::UnpauseSubDAOExecution>,
         >();
         clock.set_for_testing(21_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -869,7 +885,9 @@ fun paused_subdao_blocks_execution() {
     {
         let mut proposal = scenario.take_shared<Proposal<pause_execution::PauseSubDAOExecution>>();
         clock.set_for_testing(11_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -914,7 +932,7 @@ fun paused_subdao_blocks_execution() {
         board_voting::submit_proposal(
             &subdao,
             option::some(string::utf8(b"Try to change board while paused")),
-            armature::set_board::new(vector[SUBDAO_MEMBER, CREATOR]),
+            armature::set_board::new(vector[CREATOR], vector[]),
             &clock,
             scenario.ctx(),
         );
@@ -925,7 +943,9 @@ fun paused_subdao_blocks_execution() {
     {
         let mut proposal = scenario.take_shared<Proposal<armature::set_board::SetBoard>>();
         clock.set_for_testing(21_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -1014,7 +1034,9 @@ fun create_multi_member_subdao() {
     {
         let mut proposal = scenario.take_shared<Proposal<CreateSubDAO>>();
         clock.set_for_testing(2_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -1115,7 +1137,9 @@ fun controller_batch_add_members_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<ControllerBatchAddMembers>>();
         clock.set_for_testing(11_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -1212,7 +1236,9 @@ fun controller_batch_add_members_existing_skipped() {
     {
         let mut proposal = scenario.take_shared<Proposal<ControllerBatchAddMembers>>();
         clock.set_for_testing(11_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -1319,7 +1345,9 @@ fun controller_batch_remove_members_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<ControllerBatchAddMembers>>();
         clock.set_for_testing(11_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -1377,7 +1405,9 @@ fun controller_batch_remove_members_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<ControllerBatchRemoveMembers>>();
         clock.set_for_testing(21_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -1473,7 +1503,9 @@ fun controller_batch_remove_members_nonmember_aborts() {
     {
         let mut proposal = scenario.take_shared<Proposal<ControllerBatchRemoveMembers>>();
         clock.set_for_testing(11_000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 

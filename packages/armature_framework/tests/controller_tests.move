@@ -259,7 +259,9 @@ fun authorize_execution_blocks_when_controller_paused() {
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(prop);
     };
 

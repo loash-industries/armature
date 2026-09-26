@@ -73,7 +73,9 @@ fun adopt_glyph(scenario: &mut test_scenario::Scenario, clock: &clock::Clock): I
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<AdoptCurrency<GLYPH>>>();
-        proposal.vote(true, clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -140,7 +142,9 @@ fun mint_into_treasury() {
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<MintCoin<GLYPH>>>();
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -207,7 +211,9 @@ fun mint_to_recipient() {
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<MintCoin<GLYPH>>>();
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
     scenario.next_tx(CREATOR);
@@ -283,7 +289,9 @@ fun burn_from_treasury() {
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<MintCoin<GLYPH>>>();
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
     scenario.next_tx(CREATOR);
@@ -329,7 +337,9 @@ fun burn_from_treasury() {
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<BurnCoin<GLYPH>>>();
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
     scenario.next_tx(CREATOR);
@@ -393,7 +403,9 @@ fun return_cap_relinquishes_custody() {
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<ReturnCurrencyCap<GLYPH>>>();
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
     scenario.next_tx(CREATOR);
@@ -469,7 +481,9 @@ fun mint_with_unknown_cap_aborts() {
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<MintCoin<GLYPH>>>();
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
     scenario.next_tx(CREATOR);

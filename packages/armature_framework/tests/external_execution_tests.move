@@ -90,7 +90,9 @@ fun run_enable_bypass<NewType: store>(
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
-        proposal.vote(true, clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -424,7 +426,9 @@ fun execute_enable_bypass_type_e2e() {
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -545,7 +549,9 @@ fun execute_enable_bypass_type_below_floor_aborts() {
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -615,7 +621,9 @@ fun execute_enable_bypass_type_self_bootstrap_denied() {
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -849,7 +857,9 @@ fun execute_disable_bypass_type_e2e() {
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<DisableBypassType>>();
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -931,7 +941,9 @@ fun execute_disable_bypass_type_wrong_new_type_aborts() {
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<DisableBypassType>>();
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -1017,7 +1029,9 @@ fun execute_disable_bypass_type_wrong_cap_id_aborts() {
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<DisableBypassType>>();
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -1090,7 +1104,9 @@ fun execute_enable_bypass_type_wrong_new_type_aborts() {
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
@@ -1173,7 +1189,9 @@ fun enable_bypass_type_composable_cooldown_conflict_aborts() {
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
         test_scenario::return_shared(proposal);
     };
 
