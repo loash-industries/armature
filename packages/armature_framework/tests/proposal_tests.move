@@ -1364,6 +1364,40 @@ fun test_discharge_returning_payload() {
 // === Roster versions ===
 
 #[test]
+/// A member of the board at creation who is removed afterwards can still vote:
+/// eligibility is membership at the snapshot version, not current membership.
+fun test_removed_member_keeps_vote_on_old_proposal() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_test_dao(&mut scenario);
+    create_test_proposal(&mut scenario, &clock);
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        dao.governance_mut().remove_board_member(MEMBER_B);
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(MEMBER_B);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let dao = scenario.take_shared<DAO>();
+        assert!(!dao.governance().is_board_member(MEMBER_B));
+        board_voting::vote(&mut prop, &dao, true, &clock, scenario.ctx());
+        assert!(prop.yes_weight() == 1);
+        assert!(prop.status().is_passed());
+        test_scenario::return_shared(dao);
+        test_scenario::return_shared(prop);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
 /// A member of the board at creation who is removed and re-added can still
 /// vote: their first tenure covers the proposal's snapshot version.
 fun test_readded_member_keeps_vote_on_old_proposal() {
