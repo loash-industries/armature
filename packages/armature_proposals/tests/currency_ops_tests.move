@@ -5,21 +5,26 @@ use armature::board_voting;
 use armature::capability_vault::CapabilityVault;
 use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
+use armature::enable_bypass_type::EnableBypassType;
+use armature::external_execution;
 use armature::governance;
-use armature::proposal::{Self, Proposal};
+use armature::proposal::{Self, ExternalExecutionCap, Proposal};
 use armature::treasury_vault::TreasuryVault;
 use armature_proposals::adopt_currency::{Self, AdoptCurrency};
 use armature_proposals::burn_coin::{Self, BurnCoin};
 use armature_proposals::currency_ops;
+use armature_proposals::mint_allowance::{Self, MintAllowance};
 use armature_proposals::mint_coin::{Self, MintCoin};
 use armature_proposals::return_currency_cap::{Self, ReturnCurrencyCap};
 use std::string;
+use std::type_name;
 use sui::clock;
 use sui::coin::{Self, Coin, TreasuryCap};
 use sui::test_scenario;
 
 const CREATOR: address = @0xA;
 const RECIPIENT: address = @0xB;
+const OUTSIDER: address = @0xBAD;
 
 /// One-time-witness-style test coin. The DAO's sovereign currency.
 public struct GLYPH has drop {}
@@ -510,6 +515,118 @@ fun mint_with_unknown_cap_aborts() {
         test_scenario::return_shared(treasury);
         test_scenario::return_shared(cap_vault);
         test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+/// ARMATURE-21: MintAllowance bypass is open minting. Once a DAO passes
+/// EnableBypassType<MintAllowance<T>>, the ExternalExecutionCap sits in the
+/// shared CapabilityVault and nothing checks who borrows it: a non-member
+/// builds its own payload, mints a ticket and receives coins, with no vote.
+/// This test records the current (vulnerable) behaviour; the bypass-cap task
+/// (ARMATURE-31) flips it into an expected failure.
+fun mint_allowance_bypass_open_to_non_member() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1000);
+
+    create_dao(&mut scenario);
+    let treasury_cap_id = adopt_glyph(&mut scenario, &clock);
+
+    // The board bypass-enables MintAllowance<GLYPH> at the 80% floor.
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        let payload = external_execution::new_enable_bypass_type(
+            b"MintAllowance".to_ascii_string(),
+            type_name::with_defining_ids<MintAllowance<GLYPH>>(),
+            proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0),
+        );
+        board_voting::submit_proposal(&dao, option::none(), payload, &clock, scenario.ctx());
+        test_scenario::return_shared(dao);
+    };
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
+        test_scenario::return_shared(proposal);
+    };
+    let bypass_cap_id;
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut vault = scenario.take_shared<CapabilityVault>();
+        let proposal = scenario.take_shared<Proposal<EnableBypassType>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        let ticket = board_voting::ticket_from_vote(
+            &mut dao,
+            proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        external_execution::execute_enable_bypass_type<MintAllowance<GLYPH>>(
+            &mut dao,
+            &mut vault,
+            ticket,
+            scenario.ctx(),
+        );
+        bypass_cap_id = vault.ids_for_type<ExternalExecutionCap<MintAllowance<GLYPH>>>()[0];
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(vault);
+        test_scenario::return_shared(dao);
+    };
+
+    // A non-member, with no vote and no approval, mints to itself.
+    scenario.next_tx(OUTSIDER);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let mut cap_vault = scenario.take_shared<CapabilityVault>();
+        let mut treasury = scenario.take_shared<TreasuryVault>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        assert!(!dao.governance().is_board_member(OUTSIDER));
+
+        let payload = mint_allowance::new<GLYPH>(
+            treasury_cap_id,
+            1_000_000,
+            option::some(OUTSIDER),
+        );
+        let cap: &ExternalExecutionCap<MintAllowance<GLYPH>> = cap_vault.borrow_external_cap(
+            dao.id(),
+            bypass_cap_id,
+        );
+        let ticket = external_execution::ticket_from_cap(
+            cap,
+            &mut dao,
+            &freeze,
+            option::none(),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+        currency_ops::execute_mint_allowance<GLYPH>(
+            &mut cap_vault,
+            &mut treasury,
+            ticket,
+            scenario.ctx(),
+        );
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(treasury);
+        test_scenario::return_shared(cap_vault);
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(OUTSIDER);
+    {
+        let coin = scenario.take_from_sender<Coin<GLYPH>>();
+        assert!(coin.value() == 1_000_000);
+        test_scenario::return_to_sender(&scenario, coin);
     };
 
     clock.destroy_for_testing();

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-26 — MintAllowance bypass is open minting: confirmed (ARMATURE-21, ROAD-39)
+
+- New test `currency_ops_tests::mint_allowance_bypass_open_to_non_member` proves the hole: after a board passes `EnableBypassType<MintAllowance<T>>`, a non-member borrows the `ExternalExecutionCap` from the shared vault (`capability_vault::borrow_external_cap` is public), builds its own payload (`mint_allowance::new` is public), mints a ticket through `external_execution::ticket_from_cap` (no sender check) and receives the coins via `currency_ops::execute_mint_allowance`. Nothing identifies the "approved actor" the module docs describe. The test pins today's behaviour; the bypass-cap task (ARMATURE-31) will turn it into an expected failure.
+- Testnet check: neither deployed framework package (`0xb363…4880`, `0xee0b…c048`) has emitted `BypassEnabled` or `ExternalExecutionCreated`, so no live DAO holds a MintAllowance bypass cap and nothing needs disabling. Tests: proposals 118 → 119.
+
 ## 2026-09-26 — emergency freeze keyed by Move type (ARMATURE-15)
 
 - `emergency::EmergencyFreeze.frozen_types` and `freeze_exempt_types` are now keyed by the payload's canonical `TypeName` (`with_defining_ids`), the same key as the DAO's type slots, so freezing `PlaceLimitOrder<CRED>` blocks only that instantiation. The API is generic: `freeze_type<P>(cap, clock)`, `unfreeze_type<P>(cap)`, `is_frozen<P>(clock)` and `assert_not_frozen<P>(clock)`, plus `is_frozen_by_name`, `is_exempt_by_name` and `is_mandatory_exempt`. `governance_unfreeze_type`, `add_freeze_exempt_type` and `remove_freeze_exempt_type` take a `TypeName`. The mandatory exempt types are resolved from the framework's `TransferFreezeAdmin` and `UnfreezeProposalType` structs rather than name strings, so a same-named type in another package gets no exemption.
