@@ -11,6 +11,7 @@ use armature_proposals::multicoin_item;
 use armature_proposals::send_batch_multicoin_to_dao::{Self, SendBatchMulticoinToDAO};
 use armature_proposals::send_batch_multicoin_to_player::{Self, SendBatchMulticoinToAddress};
 use armature_proposals::treasury_ops;
+use armature_proposals::type_permissions;
 use multicoin::multicoin;
 use std::string;
 use sui::clock;
@@ -46,7 +47,9 @@ fun create_named_dao(scenario: &mut test_scenario::Scenario, name: vector<u8>): 
 fun enable_type<T>(scenario: &mut test_scenario::Scenario, dao_id: ID, display_key: vector<u8>) {
     scenario.next_tx(CREATOR);
     let mut dao = scenario.take_shared_by_id<DAO>(dao_id);
-    let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+    let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0).with_permissions(
+        type_permissions::treasury_spend(),
+    );
     dao.test_enable_type<T>(display_key.to_ascii_string(), config);
     test_scenario::return_shared(dao);
 }

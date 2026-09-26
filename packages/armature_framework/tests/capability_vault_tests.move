@@ -40,11 +40,17 @@ fun make_another_cap(ctx: &mut TxContext): AnotherCap {
 }
 
 fun make_req(dao_id: ID): proposal::ExecutionRequest<TestProposal> {
-    proposal::new_execution_request<TestProposal>(dao_id, object::id_from_address(@0xBEEF))
+    proposal::new_execution_request_for_testing<TestProposal>(
+        dao_id,
+        object::id_from_address(@0xBEEF),
+    )
 }
 
 fun make_recv_req(dao_id: ID): proposal::ExecutionRequest<RecvProposal> {
-    proposal::new_execution_request<RecvProposal>(dao_id, object::id_from_address(@0xCAFE))
+    proposal::new_execution_request_for_testing<RecvProposal>(
+        dao_id,
+        object::id_from_address(@0xCAFE),
+    )
 }
 
 fun setup_two_vaults(ctx: &mut TxContext): (CapabilityVault, CapabilityVault, ID, ID) {

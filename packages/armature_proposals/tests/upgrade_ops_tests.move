@@ -8,6 +8,7 @@ use armature::emergency::EmergencyFreeze;
 use armature::governance;
 use armature::proposal::{Self, Proposal};
 use armature_proposals::propose_upgrade::{Self, ProposeUpgrade};
+use armature_proposals::type_permissions;
 use armature_proposals::upgrade_ops;
 use std::string;
 use sui::clock;
@@ -36,7 +37,10 @@ fun enable_upgrade_type(scenario: &mut test_scenario::Scenario) {
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type<ProposeUpgrade>(b"ProposeUpgrade".to_ascii_string(), config);
+        dao.test_enable_type<ProposeUpgrade>(
+            b"ProposeUpgrade".to_ascii_string(),
+            config.with_permissions(type_permissions::propose_upgrade()),
+        );
         test_scenario::return_shared(dao);
     };
 }
@@ -178,7 +182,10 @@ fun upgrade_vault_mismatch_aborts() {
     {
         let mut dao = scenario.take_shared_by_id<DAO>(first_dao_id);
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type<ProposeUpgrade>(b"ProposeUpgrade".to_ascii_string(), config);
+        dao.test_enable_type<ProposeUpgrade>(
+            b"ProposeUpgrade".to_ascii_string(),
+            config.with_permissions(type_permissions::propose_upgrade()),
+        );
         test_scenario::return_shared(dao);
     };
 

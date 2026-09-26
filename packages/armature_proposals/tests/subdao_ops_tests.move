@@ -14,6 +14,7 @@ use armature_proposals::pause_execution;
 use armature_proposals::reclaim_cap_from_subdao::{Self, ReclaimCapFromSubDAO};
 use armature_proposals::subdao_ops;
 use armature_proposals::transfer_cap_to_subdao::{Self, TransferCapToSubDAO};
+use armature_proposals::type_permissions;
 use std::string;
 use sui::clock;
 use sui::test_scenario;
@@ -277,10 +278,13 @@ fun setup_parent_and_subdao(
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
         dao.test_enable_type<CreateSubDAO>(b"CreateSubDAO".to_ascii_string(), config);
-        dao.test_enable_type<TransferCapToSubDAO>(b"TransferCapToSubDAO".to_ascii_string(), config);
+        dao.test_enable_type<TransferCapToSubDAO>(
+            b"TransferCapToSubDAO".to_ascii_string(),
+            config.with_permissions(type_permissions::transfer_cap_to_subdao()),
+        );
         dao.test_enable_type<ReclaimCapFromSubDAO>(
             b"ReclaimCapFromSubDAO".to_ascii_string(),
-            config,
+            config.with_permissions(type_permissions::reclaim_cap_from_subdao()),
         );
         test_scenario::return_shared(dao);
     };
@@ -681,11 +685,11 @@ fun pause_and_unpause_subdao_e2e() {
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
         dao.test_enable_type<pause_execution::PauseSubDAOExecution>(
             b"PauseSubDAOExecution".to_ascii_string(),
-            config,
+            config.with_permissions(type_permissions::subdao_control()),
         );
         dao.test_enable_type<pause_execution::UnpauseSubDAOExecution>(
             b"UnpauseSubDAOExecution".to_ascii_string(),
-            config,
+            config.with_permissions(type_permissions::subdao_control()),
         );
         test_scenario::return_shared(dao);
     };
@@ -850,7 +854,7 @@ fun paused_subdao_blocks_execution() {
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
         dao.test_enable_type<pause_execution::PauseSubDAOExecution>(
             b"PauseSubDAOExecution".to_ascii_string(),
-            config,
+            config.with_permissions(type_permissions::subdao_control()),
         );
         test_scenario::return_shared(dao);
     };
@@ -1112,7 +1116,7 @@ fun controller_batch_add_members_e2e() {
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
         dao.test_enable_type<ControllerBatchAddMembers>(
             b"ControllerBatchAddMembers".to_ascii_string(),
-            config,
+            config.with_permissions(type_permissions::subdao_control()),
         );
         test_scenario::return_shared(dao);
     };
@@ -1209,7 +1213,7 @@ fun controller_batch_add_members_existing_skipped() {
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
         dao.test_enable_type<ControllerBatchAddMembers>(
             b"ControllerBatchAddMembers".to_ascii_string(),
-            config,
+            config.with_permissions(type_permissions::subdao_control()),
         );
         test_scenario::return_shared(dao);
     };
@@ -1314,11 +1318,11 @@ fun controller_batch_remove_members_e2e() {
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
         dao.test_enable_type<ControllerBatchAddMembers>(
             b"ControllerBatchAddMembers".to_ascii_string(),
-            config,
+            config.with_permissions(type_permissions::subdao_control()),
         );
         dao.test_enable_type<ControllerBatchRemoveMembers>(
             b"ControllerBatchRemoveMembers".to_ascii_string(),
-            config,
+            config.with_permissions(type_permissions::subdao_control()),
         );
         test_scenario::return_shared(dao);
     };
@@ -1479,7 +1483,7 @@ fun controller_batch_remove_members_nonmember_aborts() {
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
         dao.test_enable_type<ControllerBatchRemoveMembers>(
             b"ControllerBatchRemoveMembers".to_ascii_string(),
-            config,
+            config.with_permissions(type_permissions::subdao_control()),
         );
         test_scenario::return_shared(dao);
     };

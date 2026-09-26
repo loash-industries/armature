@@ -722,7 +722,7 @@ fun external_executed_create_execution_paused_aborts() {
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();
-        let req = proposal::new_execution_request<DummyBypass>(
+        let req = proposal::new_execution_request_for_testing<DummyBypass>(
             dao.id(),
             object::id_from_address(@0xBEEF),
         );
@@ -773,7 +773,7 @@ fun external_executed_create_controller_paused_aborts() {
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();
-        let req = proposal::new_execution_request<DummyBypass>(
+        let req = proposal::new_privileged_request_for_testing<DummyBypass>(
             dao.id(),
             object::id_from_address(@0xBEEF),
         );

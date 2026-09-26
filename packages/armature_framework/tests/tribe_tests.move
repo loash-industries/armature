@@ -135,7 +135,7 @@ fun create_tribe_control_hierarchy_is_tribe_officers_members() {
         let tribe_ctrl_ids = tribe_vault.ids_for_type<SubDAOControl>();
         assert!(tribe_ctrl_ids.length() == 1);
 
-        let req = proposal::new_execution_request<TestProposal>(
+        let req = proposal::new_execution_request_for_testing<TestProposal>(
             tribe_vault.dao_id(),
             object::id_from_address(@0xBEEF),
         );
@@ -153,7 +153,7 @@ fun create_tribe_control_hierarchy_is_tribe_officers_members() {
         let officer_ctrl_ids = officer_vault.ids_for_type<SubDAOControl>();
         assert!(officer_ctrl_ids.length() == 1);
 
-        let req = proposal::new_execution_request<TestProposal>(
+        let req = proposal::new_execution_request_for_testing<TestProposal>(
             officer_vault.dao_id(),
             object::id_from_address(@0xBEEF),
         );
@@ -363,7 +363,7 @@ fun do_create_parent_and_wired_subdao(scenario: &mut test_scenario::Scenario): (
         string::utf8(b"https://example.com/parent.png"),
         scenario.ctx(),
     );
-    let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
+    let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
     let subdao_id = tribe::create_wired_subdao(
         vector[OFFICER_A],
         string::utf8(b"SubDAO"),
@@ -417,7 +417,7 @@ fun create_wired_subdao_wires_control_into_parent_vault() {
         let ctrl_ids = vault.ids_for_type<SubDAOControl>();
         assert!(ctrl_ids.length() == 1);
 
-        let req = proposal::new_execution_request<TestProposal>(
+        let req = proposal::new_execution_request_for_testing<TestProposal>(
             vault.dao_id(),
             object::id_from_address(@0xBEEF),
         );
@@ -530,7 +530,7 @@ fun create_wired_subdao_config_override_applied() {
             ),
         ];
 
-        let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
+        let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
         subdao_id =
             tribe::create_wired_subdao(
                 vector[OFFICER_A],
@@ -583,7 +583,7 @@ fun create_wired_subdao_new_type_enabled_via_override() {
             ),
         ];
 
-        let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
+        let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
         subdao_id =
             tribe::create_wired_subdao(
                 vector[OFFICER_A],
@@ -633,7 +633,7 @@ fun create_wired_subdao_aborts_on_blocked_type() {
             ),
         ];
 
-        let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
+        let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
         tribe::create_wired_subdao(
             vector[OFFICER_A],
             string::utf8(b"SubDAO"),
@@ -673,7 +673,7 @@ fun create_wired_subdao_aborts_on_enable_proposal_type_below_floor() {
             ),
         ];
 
-        let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
+        let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
         tribe::create_wired_subdao(
             vector[OFFICER_A],
             string::utf8(b"SubDAO"),
@@ -713,7 +713,7 @@ fun create_wired_subdao_aborts_on_update_proposal_config_below_floor() {
             ),
         ];
 
-        let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
+        let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
         tribe::create_wired_subdao(
             vector[OFFICER_A],
             string::utf8(b"SubDAO"),
@@ -754,7 +754,7 @@ fun create_wired_subdao_enable_proposal_type_at_floor_passes() {
             ),
         ];
 
-        let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
+        let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
         subdao_id =
             tribe::create_wired_subdao(
                 vector[OFFICER_A],
@@ -1136,7 +1136,7 @@ fun create_wired_subdao_preserves_composable_allowed_on_override() {
             ),
         ];
 
-        let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
+        let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
         subdao_id =
             tribe::create_wired_subdao(
                 vector[OFFICER_A],

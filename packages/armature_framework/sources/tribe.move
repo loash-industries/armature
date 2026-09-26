@@ -4,6 +4,7 @@ use armature::capability_vault;
 use armature::dao::{Self, ProposalTypeInit};
 use armature::emergency;
 use armature::governance;
+use armature::permissions;
 use armature::proposal::ExecutionRequest;
 use std::string::String;
 
@@ -17,9 +18,10 @@ use std::string::String;
 /// inserted and enabled. Build entries with `dao::new_type_init<T>(display_key, config)`.
 /// Passing an empty vector produces the standard SubDAO defaults.
 ///
-/// Requires an `ExecutionRequest` from the parent DAO's governance, which ensures the
-/// caller is authorized to mutate `parent_vault`. Use `proposal::ticket_request` to
-/// obtain the request from a `board_voting::submit_vote_execute` or standard two-PTB
+/// Requires an `ExecutionRequest` from the parent DAO's governance carrying
+/// VAULT_STORE and VAULT_EXTRACT, the bits CreateSubDAO holds: it mints a
+/// SubDAOControl into `parent_vault`. Use `proposal::ticket_request` to obtain
+/// the request from a `board_voting::submit_vote_execute` or standard two-PTB
 /// execution ticket.
 ///
 /// Returns the new SubDAO's ID.
@@ -33,6 +35,7 @@ public fun create_wired_subdao<P>(
     config_overrides: vector<ProposalTypeInit>,
     ctx: &mut TxContext,
 ): ID {
+    req.assert_permitted(permissions::vault_store() | permissions::vault_extract());
     let gov = governance::init_board(board);
     let (subdao, freeze_cap) = dao::create_subdao_configured(
         &gov,

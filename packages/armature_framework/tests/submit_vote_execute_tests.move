@@ -604,7 +604,7 @@ fun test_sve__controller_paused_aborts() {
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();
-        let req = proposal::new_execution_request_for_testing<FastPayload>(
+        let req = proposal::new_privileged_request_for_testing<FastPayload>(
             dao.id(),
             @0x1.to_id(),
         );

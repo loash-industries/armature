@@ -74,7 +74,7 @@ fun create_test_proposal(scenario: &mut test_scenario::Scenario, clock: &Clock) 
 /// ExecutionRequest has no drop/copy/store — it's a hot potato.
 /// This test just verifies it can be created and consumed.
 fun test_execution_request_no_drop() {
-    let req = proposal::new_execution_request<TestPayload>(
+    let req = proposal::new_execution_request_for_testing<TestPayload>(
         object::id_from_address(@0x1),
         object::id_from_address(@0x2),
     );
@@ -175,6 +175,7 @@ fun test_execute_deletes_proposal() {
             dao.governance(),
             option::none(),
             false,
+            0,
             &clock,
             scenario.ctx(),
         );
@@ -414,6 +415,7 @@ fun test_execute_after_window_aborts() {
             dao.governance(),
             option::none(),
             false,
+            0,
             &clock,
             scenario.ctx(),
         );
@@ -486,6 +488,7 @@ fun test_execute_with_max_expiry_does_not_overflow() {
             dao.governance(),
             option::none(),
             false,
+            0,
             &clock,
             scenario.ctx(),
         );
@@ -620,6 +623,7 @@ fun test_non_board_member_cannot_execute_aborts() {
             dao.governance(),
             option::none(),
             false,
+            0,
             &clock,
             scenario.ctx(),
         );
@@ -662,6 +666,7 @@ fun test_board_member_can_execute() {
             dao.governance(),
             option::none(),
             false,
+            0,
             &clock,
             scenario.ctx(),
         );
@@ -706,6 +711,7 @@ fun test_passed_proposal_retryable_after_failure() {
             dao.governance(),
             option::none(),
             false,
+            0,
             &clock,
             scenario.ctx(),
         );
@@ -866,6 +872,7 @@ fun test_execute_delay_not_elapsed_aborts() {
             dao.governance(),
             option::none(),
             false,
+            0,
             &clock,
             scenario.ctx(),
         );
@@ -937,6 +944,7 @@ fun test_execute_delay_elapsed_succeeds() {
             dao.governance(),
             option::none(),
             false,
+            0,
             &clock,
             scenario.ctx(),
         );
@@ -1009,6 +1017,7 @@ fun test_execute_window_starts_after_delay() {
             dao.governance(),
             option::none(),
             false,
+            0,
             &clock,
             scenario.ctx(),
         );
@@ -1078,6 +1087,7 @@ fun test_execute_cooldown_active_aborts() {
             dao.governance(),
             option::some(999_500),
             false,
+            0,
             &clock,
             scenario.ctx(),
         );
@@ -1147,6 +1157,7 @@ fun test_execute_cooldown_elapsed_succeeds() {
             dao.governance(),
             option::some(10_000_000 - 7_200_000),
             false,
+            0,
             &clock,
             scenario.ctx(),
         );
@@ -1186,6 +1197,7 @@ fun test_execute_paused_aborts() {
             dao.governance(),
             option::none(),
             true,
+            0,
             &clock,
             scenario.ctx(),
         );
@@ -1206,7 +1218,7 @@ fun test_execute_paused_aborts() {
 fun consume_execution_request_destroys_hot_potato() {
     let dao_id = object::id_from_address(@0xDA0);
     let proposal_id = object::id_from_address(@0xBEEF);
-    let req = proposal::new_execution_request<TestPayload>(dao_id, proposal_id);
+    let req = proposal::new_execution_request_for_testing<TestPayload>(dao_id, proposal_id);
 
     assert!(req.req_dao_id() == dao_id);
     assert!(req.req_proposal_id() == proposal_id);
@@ -1241,6 +1253,7 @@ fun consume_execution_request_works_after_governance_execution() {
             dao.governance(),
             option::none(),
             false,
+            0,
             &clock,
             scenario.ctx(),
         );
@@ -1538,6 +1551,7 @@ fun test_removed_member_cannot_execute() {
             dao.governance(),
             option::none(),
             false,
+            0,
             &clock,
             scenario.ctx(),
         );

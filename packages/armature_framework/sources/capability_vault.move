@@ -1,5 +1,6 @@
 module armature::capability_vault;
 
+use armature::permissions;
 use armature::proposal::ExecutionRequest;
 use sui::dynamic_object_field as dof;
 use sui::vec_map::{Self, VecMap};
@@ -93,12 +94,14 @@ public(package) fun store_cap_init<T: key + store>(self: &mut CapabilityVault, c
 }
 
 /// Store a capability into the vault. Requires an active ExecutionRequest.
+/// Requires VAULT_STORE (`proposal::assert_permitted`).
 public fun store_cap<T: key + store, P>(
     self: &mut CapabilityVault,
     cap: T,
     req: &ExecutionRequest<P>,
 ) {
     assert!(self.dao_id == req.req_dao_id(), EDAOIdMismatch);
+    req.assert_permitted(permissions::vault_store());
     let cap_id = object::id(&cap);
     register_cap<T>(self, cap_id);
     dof::add(&mut self.id, cap_id, cap);
@@ -110,11 +113,13 @@ public fun store_cap<T: key + store, P>(
 /// This is correct for intra-framework parent→child transfers where the source DAO's
 /// governance vote is the sole authorization. Third-party cross-DAO handlers should
 /// use `receive_cap_authorized` instead to also require the receiving DAO's approval.
+/// Requires VAULT_EXTRACT on the sending DAO's request (`proposal::assert_permitted`).
 public fun receive_cap<T: key + store, P>(
     self: &mut CapabilityVault,
     cap: T,
-    _req: &ExecutionRequest<P>,
+    req: &ExecutionRequest<P>,
 ) {
+    req.assert_permitted(permissions::vault_extract());
     let cap_id = object::id(&cap);
     register_cap<T>(self, cap_id);
     dof::add(&mut self.id, cap_id, cap);
@@ -125,13 +130,16 @@ public fun receive_cap<T: key + store, P>(
 /// Unlike `receive_cap`, this asserts the receiving vault belongs to the DAO that
 /// issued `recv_req`. Third-party cross-DAO handlers should prefer this over
 /// `receive_cap` so the destination DAO has an explicit vote to accept the capability.
+/// Requires VAULT_EXTRACT on the sending request and VAULT_STORE on the receiving one.
 public fun receive_cap_authorized<T: key + store, Send, Recv>(
     self: &mut CapabilityVault,
     cap: T,
-    _send_req: &ExecutionRequest<Send>,
-    recv_req: &ExecutionRequest<Recv>,
+    sendreq: &ExecutionRequest<Send>,
+    recvreq: &ExecutionRequest<Recv>,
 ) {
-    assert!(self.dao_id == recv_req.req_dao_id(), EDAOIdMismatch);
+    assert!(self.dao_id == recvreq.req_dao_id(), EDAOIdMismatch);
+    sendreq.assert_permitted(permissions::vault_extract());
+    recvreq.assert_permitted(permissions::vault_store());
     let cap_id = object::id(&cap);
     register_cap<T>(self, cap_id);
     dof::add(&mut self.id, cap_id, cap);
@@ -140,12 +148,14 @@ public fun receive_cap_authorized<T: key + store, Send, Recv>(
 // === Borrow ===
 
 /// Borrow an immutable reference to a stored capability.
+/// Requires VAULT_BORROW (`proposal::assert_permitted`).
 public fun borrow_cap<T: key + store, P>(
     self: &CapabilityVault,
     cap_id: ID,
     req: &ExecutionRequest<P>,
 ): &T {
     assert!(self.dao_id == req.req_dao_id(), EDAOIdMismatch);
+    req.assert_permitted(permissions::vault_borrow());
     dof::borrow(&self.id, cap_id)
 }
 
@@ -170,12 +180,14 @@ public fun borrow_external_cap<P>(
 }
 
 /// Borrow a mutable reference to a stored capability.
+/// Requires VAULT_BORROW (`proposal::assert_permitted`).
 public fun borrow_cap_mut<T: key + store, P>(
     self: &mut CapabilityVault,
     cap_id: ID,
     req: &ExecutionRequest<P>,
 ): &mut T {
     assert!(self.dao_id == req.req_dao_id(), EDAOIdMismatch);
+    req.assert_permitted(permissions::vault_borrow());
     dof::borrow_mut(&mut self.id, cap_id)
 }
 
@@ -183,12 +195,14 @@ public fun borrow_cap_mut<T: key + store, P>(
 
 /// Loan a capability out of the vault. Returns the capability and a hot-potato CapLoan.
 /// Registries are NOT updated — the capability is considered "held" during the loan.
+/// Requires VAULT_BORROW (`proposal::assert_permitted`).
 public fun loan_cap<T: key + store, P>(
     self: &mut CapabilityVault,
     cap_id: ID,
     req: &ExecutionRequest<P>,
 ): (T, CapLoan) {
     assert!(self.dao_id == req.req_dao_id(), EDAOIdMismatch);
+    req.assert_permitted(permissions::vault_borrow());
     let cap: T = dof::remove(&mut self.id, cap_id);
     let loan = CapLoan {
         cap_id,
@@ -209,12 +223,14 @@ public fun return_cap<T: key + store>(self: &mut CapabilityVault, cap: T, loan: 
 
 /// Extract a capability from the vault permanently. Requires an active ExecutionRequest.
 /// Updates registries to reflect removal.
+/// Requires VAULT_EXTRACT (`proposal::assert_permitted`).
 public fun extract_cap<T: key + store, P>(
     self: &mut CapabilityVault,
     cap_id: ID,
     req: &ExecutionRequest<P>,
 ): T {
     assert!(self.dao_id == req.req_dao_id(), EDAOIdMismatch);
+    req.assert_permitted(permissions::vault_extract());
     deregister_cap<T>(self, cap_id);
     dof::remove(&mut self.id, cap_id)
 }
@@ -234,6 +250,7 @@ public fun privileged_extract<T: key + store>(
 /// Create a SubDAOControl for `subdao_id` and store it in this vault.
 /// Returns the ID of the newly created control token.
 /// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+/// Requires VAULT_EXTRACT (`proposal::assert_permitted`).
 public fun create_subdao_control<P>(
     self: &mut CapabilityVault,
     subdao_id: ID,
@@ -241,6 +258,7 @@ public fun create_subdao_control<P>(
     ctx: &mut TxContext,
 ): ID {
     assert!(self.dao_id == req.req_dao_id(), EDAOIdMismatch);
+    req.assert_permitted(permissions::vault_extract());
     let control = SubDAOControl {
         id: object::new(ctx),
         subdao_id,
@@ -254,12 +272,14 @@ public fun create_subdao_control<P>(
 /// Extract and permanently destroy a SubDAOControl from this vault.
 /// Used by SpinOutSubDAO to relinquish parent authority over a sub-DAO.
 /// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+/// Requires VAULT_EXTRACT (`proposal::assert_permitted`).
 public fun destroy_subdao_control<P>(
     self: &mut CapabilityVault,
     cap_id: ID,
     req: &ExecutionRequest<P>,
 ) {
     assert!(self.dao_id == req.req_dao_id(), EDAOIdMismatch);
+    req.assert_permitted(permissions::vault_extract());
     deregister_cap<SubDAOControl>(self, cap_id);
     let control: SubDAOControl = dof::remove(&mut self.id, cap_id);
     let SubDAOControl { id, subdao_id: _ } = control;

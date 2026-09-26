@@ -1,6 +1,7 @@
 #[allow(deprecated_usage)]
 module armature::treasury_vault;
 
+use armature::permissions;
 use armature::proposal::ExecutionRequest;
 use multicoin::multicoin::{Self, Balance as MultiCoinBalance};
 use sui::balance::Balance;
@@ -148,6 +149,7 @@ public fun deposit<T>(self: &mut TreasuryVault, coin: Coin<T>, ctx: &mut TxConte
 
 /// Withdraw a coin from the vault. Requires an `ExecutionRequest`.
 /// If the withdrawal drains the balance to zero, the dynamic field and registry entry are removed.
+/// Requires TREASURY_WITHDRAW (`proposal::assert_permitted`).
 public fun withdraw<T, P>(
     self: &mut TreasuryVault,
     amount: u64,
@@ -155,6 +157,7 @@ public fun withdraw<T, P>(
     ctx: &mut TxContext,
 ): Coin<T> {
     assert!(self.dao_id == req.req_dao_id(), EDAOIdMismatch);
+    req.assert_permitted(permissions::treasury_withdraw());
     let type_key = std::type_name::with_original_ids<T>().into_string();
 
     assert!(
@@ -268,6 +271,7 @@ public fun deposit_multicoin(
 /// Withdraw a multicoin balance from the vault. Requires an `ExecutionRequest`.
 /// Cleans up the AssetKey DOF when balance reaches zero, and the CollectionRecord
 /// when its last asset is removed.
+/// Requires TREASURY_WITHDRAW (`proposal::assert_permitted`).
 public fun withdraw_multicoin<P>(
     self: &mut TreasuryVault,
     collection_id: ID,
@@ -277,6 +281,7 @@ public fun withdraw_multicoin<P>(
     ctx: &mut TxContext,
 ): MultiCoinBalance {
     assert!(self.dao_id == req.req_dao_id(), EDAOIdMismatch);
+    req.assert_permitted(permissions::treasury_withdraw());
 
     let coll_key = CollectionKey { collection_id };
     let asset_key = AssetKey { asset_id };

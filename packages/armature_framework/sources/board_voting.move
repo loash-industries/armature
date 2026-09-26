@@ -279,6 +279,7 @@ fun ticket_from_vote_core<P: store>(
         dao.governance(),
         last_ms,
         dao.is_execution_paused(),
+        dao.type_config_by_name(&name).permissions(),
         clock,
         ctx,
     );

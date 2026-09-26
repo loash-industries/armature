@@ -22,6 +22,7 @@ use armature_proposals::member_ops;
 use armature_proposals::send_coin::{Self, SendCoin};
 use armature_proposals::send_coin_to_dao::{Self, SendCoinToDAO};
 use armature_proposals::treasury_ops;
+use armature_proposals::type_permissions;
 use std::string;
 use std::type_name;
 use sui::clock;
@@ -487,7 +488,10 @@ fun composite_send_coin_step_e2e() {
             0,
             0,
         ).with_composable_allowed(true);
-        dao.test_enable_type<SendCoin<SUI>>(b"SendCoin".to_ascii_string(), config);
+        dao.test_enable_type<SendCoin<SUI>>(
+            b"SendCoin".to_ascii_string(),
+            config.with_permissions(type_permissions::treasury_spend()),
+        );
         test_scenario::return_shared(dao);
     };
 
@@ -631,7 +635,10 @@ fun composite_send_coin_to_dao_step_e2e() {
             0,
             0,
         ).with_composable_allowed(true);
-        dao.test_enable_type<SendCoinToDAO<SUI>>(b"SendCoinToDAO".to_ascii_string(), config);
+        dao.test_enable_type<SendCoinToDAO<SUI>>(
+            b"SendCoinToDAO".to_ascii_string(),
+            config.with_permissions(type_permissions::treasury_spend()),
+        );
         test_scenario::return_shared(dao);
     };
 

@@ -44,7 +44,7 @@ fun setup_dao(scenario: &mut test_scenario::Scenario) {
 }
 
 fun make_req(vault: &TreasuryVault): proposal::ExecutionRequest<TestProposal> {
-    proposal::new_execution_request<TestProposal>(
+    proposal::new_execution_request_for_testing<TestProposal>(
         vault.dao_id(),
         object::id_from_address(@0xFFF),
     )

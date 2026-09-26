@@ -11,6 +11,7 @@ use armature::transfer_freeze_admin::TransferFreezeAdmin;
 use armature::unfreeze_proposal_type::{Self, UnfreezeProposalType};
 use armature_proposals::board_ops;
 use armature_proposals::security_ops;
+use armature_proposals::type_permissions;
 use armature_proposals::update_freeze_config::{Self, UpdateFreezeConfig};
 use armature_proposals::update_freeze_exempt_types::{Self, UpdateFreezeExemptTypes};
 use std::string;
@@ -466,7 +467,10 @@ fun update_freeze_config_e2e() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type<UpdateFreezeConfig>(b"UpdateFreezeConfig".to_ascii_string(), config);
+        dao.test_enable_type<UpdateFreezeConfig>(
+            b"UpdateFreezeConfig".to_ascii_string(),
+            config.with_permissions(type_permissions::freeze_config()),
+        );
         test_scenario::return_shared(dao);
     };
 
@@ -574,7 +578,7 @@ fun add_freeze_exempt_type_e2e() {
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
         dao.test_enable_type<UpdateFreezeExemptTypes>(
             b"UpdateFreezeExemptTypes".to_ascii_string(),
-            config,
+            config.with_permissions(type_permissions::freeze_config()),
         );
         test_scenario::return_shared(dao);
     };
@@ -663,7 +667,7 @@ fun remove_freeze_exempt_type_e2e() {
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
         dao.test_enable_type<UpdateFreezeExemptTypes>(
             b"UpdateFreezeExemptTypes".to_ascii_string(),
-            config,
+            config.with_permissions(type_permissions::freeze_config()),
         );
         test_scenario::return_shared(dao);
     };
@@ -792,7 +796,7 @@ fun remove_mandatory_exempt_type_aborts() {
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
         dao.test_enable_type<UpdateFreezeExemptTypes>(
             b"UpdateFreezeExemptTypes".to_ascii_string(),
-            config,
+            config.with_permissions(type_permissions::freeze_config()),
         );
         test_scenario::return_shared(dao);
     };

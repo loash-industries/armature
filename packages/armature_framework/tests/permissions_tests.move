@@ -120,80 +120,102 @@ fun with_permissions_rejects_unknown_bit() {
 
 // === dao::assert_permitted ===
 
+fun permitted<P>(dao: &DAO, bits: u64): ExecutionRequest<P> {
+    proposal::new_permitted_request_for_testing<P>(dao.id(), fake_id(), bits)
+}
+
 #[test]
-/// A type passes for any subset of its bits, including all of them at once.
-fun assert_permitted_passes_for_granted_bits() {
-    let mut scenario = test_scenario::begin(CREATOR);
-    create_dao(&mut scenario);
-    scenario.next_tx(CREATOR);
-    {
-        let dao = scenario.take_shared<DAO>();
-        let req = proposal::new_execution_request_for_testing<Granted>(dao.id(), fake_id());
+/// A request passes for any subset of the bits it carries.
+fun assert_permitted_passes_for_carried_bits() {
+    with_dao!(|dao| {
+        let req = permitted<Granted>(dao, permissions::board_add() | permissions::pause());
         dao.assert_permitted(permissions::board_add(), &req);
         dao.assert_permitted(permissions::pause(), &req);
         dao.assert_permitted(permissions::board_add() | permissions::pause(), &req);
+        req.assert_permitted(0);
         assert!(!dao.is_permitted(permissions::board_remove(), &req));
         proposal::consume_execution_request_for_testing(req);
-        test_scenario::return_shared(dao);
-    };
-    scenario.end();
+    });
 }
 
-#[test, expected_failure(abort_code = dao::EPermissionDenied)]
-/// A type with a slot but without the bit is denied.
-fun assert_permitted_denies_ungranted_type() {
-    let mut scenario = test_scenario::begin(CREATOR);
-    create_dao(&mut scenario);
-    scenario.next_tx(CREATOR);
-    {
-        let dao = scenario.take_shared<DAO>();
-        let req = proposal::new_execution_request_for_testing<Ungranted>(dao.id(), fake_id());
+#[test, expected_failure(abort_code = proposal::EPermissionDenied)]
+/// A request carrying no bits is denied.
+fun assert_permitted_denies_request_without_bit() {
+    with_dao!(|dao| {
+        let req = permitted<Ungranted>(dao, 0);
         dao.assert_permitted(permissions::board_add(), &req);
         abort 0
-    }
+    });
 }
 
-#[test, expected_failure(abort_code = dao::EPermissionDenied)]
+#[test, expected_failure(abort_code = proposal::EPermissionDenied)]
 /// Holding some of the requested bits is not enough.
 fun assert_permitted_denies_partial_grant() {
-    let mut scenario = test_scenario::begin(CREATOR);
-    create_dao(&mut scenario);
-    scenario.next_tx(CREATOR);
-    {
-        let dao = scenario.take_shared<DAO>();
-        let req = proposal::new_execution_request_for_testing<Granted>(dao.id(), fake_id());
+    with_dao!(|dao| {
+        let req = permitted<Granted>(dao, permissions::board_add());
         dao.assert_permitted(permissions::board_add() | permissions::board_remove(), &req);
         abort 0
-    }
-}
-
-#[test, expected_failure(abort_code = dao::ETypeNotEnabled)]
-/// A type with no slot on the DAO is rejected before any bit is read.
-fun assert_permitted_rejects_missing_slot() {
-    let mut scenario = test_scenario::begin(CREATOR);
-    create_dao(&mut scenario);
-    scenario.next_tx(CREATOR);
-    {
-        let dao = scenario.take_shared<DAO>();
-        let req = proposal::new_execution_request_for_testing<Unknown>(dao.id(), fake_id());
-        assert!(!dao.is_permitted(0, &req));
-        dao.assert_permitted(0, &req);
-        abort 0
-    }
+    });
 }
 
 #[test, expected_failure(abort_code = dao::EDAOIdMismatch)]
-/// A request for another DAO is rejected even if the type holds the bit here.
+/// A request for another DAO is rejected even if it carries the bit.
 fun assert_permitted_rejects_cross_dao_request() {
+    with_dao!(|dao| {
+        let req = proposal::new_permitted_request_for_testing<Granted>(
+            fake_id(),
+            fake_id(),
+            permissions::board_add(),
+        );
+        assert!(!dao.is_permitted(permissions::board_add(), &req));
+        dao.assert_permitted(permissions::board_add(), &req);
+        abort 0
+    });
+}
+
+#[test]
+/// The vote path mints requests with the type's current slot bits: a grant
+/// or revocation applies from the next execution on.
+fun vote_path_request_carries_current_slot_bits() {
     let mut scenario = test_scenario::begin(CREATOR);
+    let clock = clock::create_for_testing(scenario.ctx());
     create_dao(&mut scenario);
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
-        let req = proposal::new_execution_request_for_testing<Granted>(fake_id(), fake_id());
-        dao.assert_permitted(permissions::board_add(), &req);
-        abort 0
-    }
+        let mut dao = scenario.take_shared<DAO>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+
+        let t1 = armature::board_voting::submit_vote_execute(
+            &mut dao,
+            option::none(),
+            Granted {},
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        assert!(
+            t1.ticket_request().req_permissions()
+                == permissions::board_add() | permissions::pause(),
+        );
+        t1.discharge();
+
+        dao.test_update_config<Granted>(base_config());
+        let t2 = armature::board_voting::submit_vote_execute(
+            &mut dao,
+            option::none(),
+            Granted {},
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        assert!(t2.ticket_request().req_permissions() == 0);
+        t2.discharge();
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(dao);
+    };
+    clock.destroy_for_testing();
+    scenario.end();
 }
 
 #[test]

@@ -364,6 +364,7 @@ public fun advance_step<P: store>(
         pipeline.dao_id,
         pipeline.composite_proposal_id,
         payload,
+        step_config.permissions(),
     );
 
     let Pipeline {

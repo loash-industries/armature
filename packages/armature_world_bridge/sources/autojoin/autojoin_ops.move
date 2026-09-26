@@ -39,6 +39,7 @@ use armature::capability_vault::CapabilityVault;
 use armature::dao::DAO;
 use armature::emergency::EmergencyFreeze;
 use armature::external_execution;
+use armature::permissions;
 use armature::proposal::{Self, ExecutionRequest, ExecutionTicket};
 use armature_world_bridge::configure_autojoin::ConfigureAutojoin;
 use armature_world_bridge::tribe_allowlist::TribeIdAllowlist;
@@ -82,6 +83,11 @@ public fun character_id(self: &AutojoinDAO): ID { self.character_id }
 public fun tribe_id(self: &AutojoinDAO): u32 { self.tribe_id }
 
 public fun joining_address(self: &AutojoinDAO): address { self.joining_address }
+
+/// The permission bits AutojoinDAO needs in the config its EnableBypassType
+/// carries: BOARD_ADD only (`execute_autojoin_dao` adds the joining member).
+/// ConfigureAutojoin needs none: it writes only its own type-state.
+public fun autojoin_permissions(): u64 { permissions::board_add() }
 
 // === Submit ===
 

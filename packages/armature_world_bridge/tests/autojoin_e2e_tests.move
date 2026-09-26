@@ -106,7 +106,10 @@ fun setup_dao_with_autojoin(scenario: &mut ts::Scenario): (ID, ID, ID) {
 
         // Enable both proposal types via test seams (slots are keyed by the Move type).
         let cfg = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type<AutojoinDAO>(b"AutojoinDAO".to_ascii_string(), cfg);
+        dao.test_enable_type<AutojoinDAO>(
+            b"AutojoinDAO".to_ascii_string(),
+            cfg.with_permissions(autojoin_ops::autojoin_permissions()),
+        );
         dao.test_enable_type<ConfigureAutojoin>(b"ConfigureAutojoin".to_ascii_string(), cfg);
 
         // Mint a synthetic cap for AutojoinDAO and deposit into the vault.

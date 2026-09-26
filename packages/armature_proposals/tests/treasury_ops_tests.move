@@ -11,6 +11,7 @@ use armature_proposals::send_coin::{Self, SendCoin};
 use armature_proposals::send_coin_to_dao::{Self, SendCoinToDAO};
 use armature_proposals::send_small_payment::{Self, SendSmallPayment};
 use armature_proposals::treasury_ops;
+use armature_proposals::type_permissions;
 use std::string;
 use sui::clock;
 use sui::coin;
@@ -46,11 +47,11 @@ fun enable_small_payment_type(scenario: &mut test_scenario::Scenario) {
         // One slot per concrete instantiation: generic payload types are distinct Move types.
         dao.test_enable_type<SendSmallPayment<SUI>>(
             b"SendSmallPayment<SUI>".to_ascii_string(),
-            config,
+            config.with_permissions(type_permissions::treasury_spend()),
         );
         dao.test_enable_type<SendSmallPayment<USDC>>(
             b"SendSmallPayment<USDC>".to_ascii_string(),
-            config,
+            config.with_permissions(type_permissions::treasury_spend()),
         );
         test_scenario::return_shared(dao);
     };
@@ -353,7 +354,10 @@ fun enable_send_coin_type(scenario: &mut test_scenario::Scenario) {
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type<SendCoin<SUI>>(b"SendCoin".to_ascii_string(), config);
+        dao.test_enable_type<SendCoin<SUI>>(
+            b"SendCoin".to_ascii_string(),
+            config.with_permissions(type_permissions::treasury_spend()),
+        );
         test_scenario::return_shared(dao);
     };
 }
@@ -559,7 +563,10 @@ fun send_coin_to_dao_e2e() {
     {
         let mut dao = scenario.take_shared_by_id<DAO>(source_dao_id);
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type<SendCoinToDAO<SUI>>(b"SendCoinToDAO".to_ascii_string(), config);
+        dao.test_enable_type<SendCoinToDAO<SUI>>(
+            b"SendCoinToDAO".to_ascii_string(),
+            config.with_permissions(type_permissions::treasury_spend()),
+        );
         test_scenario::return_shared(dao);
     };
 
@@ -685,7 +692,10 @@ fun send_coin_to_dao_target_mismatch_aborts() {
     {
         let mut dao = scenario.take_shared_by_id<DAO>(source_dao_id);
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type<SendCoinToDAO<SUI>>(b"SendCoinToDAO".to_ascii_string(), config);
+        dao.test_enable_type<SendCoinToDAO<SUI>>(
+            b"SendCoinToDAO".to_ascii_string(),
+            config.with_permissions(type_permissions::treasury_spend()),
+        );
         test_scenario::return_shared(dao);
     };
 

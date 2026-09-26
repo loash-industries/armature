@@ -33,6 +33,9 @@ const ENotStandaloneTicket: u64 = 17;
 const EExecutionWindowClosed: u64 = 19;
 /// vote called on an Active proposal after its voting period (expiry_ms) ended.
 const EVotingClosed: u64 = 20;
+/// The request's type does not hold the permission bits a mutator requires
+/// (see armature::permissions), and the request is not privileged.
+const EPermissionDenied: u64 = 21;
 
 // === Constants ===
 
@@ -73,13 +76,17 @@ public enum ProposalStatus has copy, drop, store {
 /// P is phantom — it exists only as a type tag to bind the request
 /// to the correct handler at the type level.
 ///
+/// `permissions` are the bits P's slot on the DAO held when the request was
+/// minted; every mint path reads the slot. Mutators check them with
+/// `assert_permitted`, so a request authorizes only what its type was granted.
+///
 /// `privileged` is true only for requests minted by a parent DAO's controller
 /// override (controller::privileged_submit). A privileged request passes
-/// every `dao::assert_permitted` check on its target SubDAO, whatever bits P
-/// holds there.
+/// every permission check on its target SubDAO, whatever bits it carries.
 public struct ExecutionRequest<phantom P> {
     dao_id: ID,
     proposal_id: ID,
+    permissions: u64,
     privileged: bool,
 }
 
@@ -495,7 +502,8 @@ fun execution_deadline_ms<P: store>(self: &Proposal<P>): u64 {
 // === Lifecycle: execute ===
 
 /// Execute a passed proposal and delete it. Returns the payload alongside an
-/// ExecutionRequest hot potato; the storage rebate goes to the transaction's
+/// ExecutionRequest hot potato carrying `permissions` (the type's current
+/// slot bits); the storage rebate goes to the transaction's
 /// gas payer. The executor must be a current board member. Checks the
 /// execution window (see `execution_deadline_ms`) and cooldown (time since
 /// last execution of this type in the DAO). Callers wrap both return values
@@ -505,6 +513,7 @@ public(package) fun execute<P: store>(
     governance: &GovernanceConfig,
     last_executed_at_ms: Option<u64>,
     execution_paused: bool,
+    permissions: u64,
     clock: &Clock,
     ctx: &TxContext,
 ): (P, ExecutionRequest<P>) {
@@ -541,7 +550,7 @@ public(package) fun execute<P: store>(
         executor,
     });
 
-    (payload, ExecutionRequest<P> { dao_id, proposal_id, privileged: false })
+    (payload, ExecutionRequest<P> { dao_id, proposal_id, permissions, privileged: false })
 }
 
 // === Lifecycle: single-PTB executions ===
@@ -595,7 +604,12 @@ public(package) fun execute_single_vote<P: store>(
     event::emit(ProposalExecuted { proposal_id, dao_id, executor: proposer });
 
     new_ticket_standalone(
-        ExecutionRequest { dao_id, proposal_id, privileged: false },
+        ExecutionRequest {
+            dao_id,
+            proposal_id,
+            permissions: config.permissions,
+            privileged: false,
+        },
         payload,
         yes_weight,
         total_snapshot_weight,
@@ -608,15 +622,17 @@ public(package) fun execute_single_vote<P: store>(
 /// and ProposalExecuted; there is no vote, so no VoteCast or ProposalPassed.
 /// The payload is only serialised into the event; the caller keeps it.
 ///
-/// `privileged` marks a controller override: only controller::privileged_submit
-/// passes true. The bypass path passes false, so a bypass request is held to
-/// the bits its type holds like any other.
+/// `permissions` are the type's slot bits (0 for a controller override, whose
+/// type may have no slot). `privileged` marks a controller override: only
+/// controller::privileged_submit passes true. The bypass path passes false,
+/// so a bypass request is held to the bits its type holds like any other.
 public(package) fun privileged_execute<P: store>(
     dao_id: ID,
     type_key: std::ascii::String,
     proposer: address,
     metadata_ipfs: Option<String>,
     payload: &P,
+    permissions: u64,
     privileged: bool,
     ctx: &mut TxContext,
 ): ExecutionRequest<P> {
@@ -627,7 +643,7 @@ public(package) fun privileged_execute<P: store>(
     event::emit(ProposalPayloadCreated { proposal_id, dao_id, payload_bcs });
     event::emit(ProposalExecuted { proposal_id, dao_id, executor: proposer });
 
-    ExecutionRequest { dao_id, proposal_id, privileged }
+    ExecutionRequest { dao_id, proposal_id, permissions, privileged }
 }
 
 /// Mint a proposal ID for an execution that has no Proposal object. It comes
@@ -639,9 +655,10 @@ fun fresh_proposal_id(ctx: &mut TxContext): ID {
 
 // === ExecutionRequest ===
 
-/// Create an unprivileged ExecutionRequest. Only callable within the framework package.
+/// Create an unprivileged ExecutionRequest holding no bits. Only callable
+/// within the framework package.
 public(package) fun new_execution_request<P>(dao_id: ID, proposal_id: ID): ExecutionRequest<P> {
-    ExecutionRequest { dao_id, proposal_id, privileged: false }
+    ExecutionRequest { dao_id, proposal_id, permissions: 0, privileged: false }
 }
 
 public fun req_dao_id<P>(self: &ExecutionRequest<P>): ID { self.dao_id }
@@ -651,9 +668,25 @@ public fun req_proposal_id<P>(self: &ExecutionRequest<P>): ID { self.proposal_id
 /// Whether this request is a controller override (see ExecutionRequest).
 public fun req_is_privileged<P>(self: &ExecutionRequest<P>): bool { self.privileged }
 
+/// The permission bits this request carries (see ExecutionRequest).
+public fun req_permissions<P>(self: &ExecutionRequest<P>): u64 { self.permissions }
+
+/// Whether this request may perform mutations requiring every bit of `bits`:
+/// it is privileged, or carries them all.
+public fun req_has_permission<P>(self: &ExecutionRequest<P>, bits: u64): bool {
+    self.privileged || permissions::contains(self.permissions, bits)
+}
+
+/// Abort with EPermissionDenied unless `req_has_permission(bits)`. Every
+/// framework mutator that acts on a request calls this after checking the
+/// request's DAO.
+public fun assert_permitted<P>(self: &ExecutionRequest<P>, bits: u64) {
+    assert!(self.req_has_permission(bits), EPermissionDenied);
+}
+
 /// Consume the execution request. Framework-internal only.
 public(package) fun consume<P>(req: ExecutionRequest<P>) {
-    let ExecutionRequest { dao_id: _, proposal_id: _, privileged: _ } = req;
+    let ExecutionRequest { dao_id: _, proposal_id: _, permissions: _, privileged: _ } = req;
 }
 
 // === ExternalExecutionCap ===
@@ -744,10 +777,12 @@ public fun discharge<P: store + drop>(ticket: ExecutionTicket<P>) {
     match (closeout) {
         Closeout::Standalone { proposal_id, .. } => {
             assert!(request.proposal_id == proposal_id, ERequestMismatch);
-            let ExecutionRequest { dao_id: _, proposal_id: _, privileged: _ } = request;
+            let ExecutionRequest { dao_id: _, proposal_id: _, permissions: _, privileged: _ } =
+                request;
         },
         Closeout::Composite | Closeout::External => {
-            let ExecutionRequest { dao_id: _, proposal_id: _, privileged: _ } = request;
+            let ExecutionRequest { dao_id: _, proposal_id: _, permissions: _, privileged: _ } =
+                request;
         },
     }
 }
@@ -759,10 +794,12 @@ public fun discharge_returning_payload<P: store>(ticket: ExecutionTicket<P>): P 
     match (closeout) {
         Closeout::Standalone { proposal_id, .. } => {
             assert!(request.proposal_id == proposal_id, ERequestMismatch);
-            let ExecutionRequest { dao_id: _, proposal_id: _, privileged: _ } = request;
+            let ExecutionRequest { dao_id: _, proposal_id: _, permissions: _, privileged: _ } =
+                request;
         },
         Closeout::Composite | Closeout::External => {
-            let ExecutionRequest { dao_id: _, proposal_id: _, privileged: _ } = request;
+            let ExecutionRequest { dao_id: _, proposal_id: _, permissions: _, privileged: _ } =
+                request;
         },
     };
     payload
@@ -785,14 +822,20 @@ public(package) fun new_ticket_standalone<P: store>(
     }
 }
 
-/// Called by composite::advance_step.
+/// Called by composite::advance_step with the step type's slot bits.
 public(package) fun new_ticket_composite<P>(
     dao_id: ID,
     composite_proposal_id: ID,
     payload: P,
+    permissions: u64,
 ): ExecutionTicket<P> {
     ExecutionTicket {
-        request: new_execution_request<P>(dao_id, composite_proposal_id),
+        request: ExecutionRequest {
+            dao_id,
+            proposal_id: composite_proposal_id,
+            permissions,
+            privileged: false,
+        },
         payload,
         closeout: Closeout::Composite,
     }
@@ -845,14 +888,26 @@ public fun new_external_execution_cap_for_testing<P>(
 /// Synthesize an ExecutionRequest<P> for testing. Cross-package tests (e.g.
 /// armature_world_bridge) need to thread a request between split-PTB test
 /// transactions; production code can never call this because it's #[test_only].
+/// The request carries every permission bit; use
+/// `new_permitted_request_for_testing` to choose them.
 public fun new_execution_request_for_testing<P>(dao_id: ID, proposal_id: ID): ExecutionRequest<P> {
-    ExecutionRequest { dao_id, proposal_id, privileged: false }
+    ExecutionRequest { dao_id, proposal_id, permissions: permissions::all(), privileged: false }
+}
+
+#[test_only]
+/// Synthesize an unprivileged ExecutionRequest<P> carrying exactly `bits`.
+public fun new_permitted_request_for_testing<P>(
+    dao_id: ID,
+    proposal_id: ID,
+    bits: u64,
+): ExecutionRequest<P> {
+    ExecutionRequest { dao_id, proposal_id, permissions: bits, privileged: false }
 }
 
 #[test_only]
 /// Synthesize a privileged (controller-override) ExecutionRequest<P> for testing.
 public fun new_privileged_request_for_testing<P>(dao_id: ID, proposal_id: ID): ExecutionRequest<P> {
-    ExecutionRequest { dao_id, proposal_id, privileged: true }
+    ExecutionRequest { dao_id, proposal_id, permissions: 0, privileged: true }
 }
 
 #[test_only]
@@ -866,7 +921,7 @@ public fun destroy_external_execution_cap_for_testing<P>(cap: ExternalExecutionC
 /// Consume a raw ExecutionRequest in tests (e.g. to drain the hot potato after
 /// privileged_create or after manually constructing one via new_execution_request_for_testing).
 public fun consume_execution_request_for_testing<P>(req: ExecutionRequest<P>) {
-    let ExecutionRequest { dao_id: _, proposal_id: _, privileged: _ } = req;
+    let ExecutionRequest { dao_id: _, proposal_id: _, permissions: _, privileged: _ } = req;
 }
 
 #[test_only]
@@ -879,7 +934,12 @@ public fun new_standalone_ticket_for_testing<P: store>(
     yes_weight: u64,
     total_snapshot_weight: u64,
 ): ExecutionTicket<P> {
-    let request = ExecutionRequest { dao_id, proposal_id, privileged: false };
+    let request = ExecutionRequest {
+        dao_id,
+        proposal_id,
+        permissions: permissions::all(),
+        privileged: false,
+    };
     ExecutionTicket {
         request,
         payload,
@@ -916,7 +976,12 @@ public fun privileged_create_for_testing<P: store>(
         executor: proposer,
     });
 
-    let request = ExecutionRequest { dao_id, proposal_id, privileged: false };
+    let request = ExecutionRequest {
+        dao_id,
+        proposal_id,
+        permissions: permissions::all(),
+        privileged: false,
+    };
     ExecutionTicket {
         request,
         payload,
@@ -932,7 +997,12 @@ public fun new_composite_ticket_for_testing<P: store>(
     proposal_id: ID,
     payload: P,
 ): ExecutionTicket<P> {
-    let request = ExecutionRequest { dao_id, proposal_id, privileged: false };
+    let request = ExecutionRequest {
+        dao_id,
+        proposal_id,
+        permissions: permissions::all(),
+        privileged: false,
+    };
     ExecutionTicket { request, payload, closeout: Closeout::Composite }
 }
 
@@ -944,6 +1014,11 @@ public fun new_external_ticket_for_testing<P: store>(
     proposal_id: ID,
     payload: P,
 ): ExecutionTicket<P> {
-    let request = ExecutionRequest { dao_id, proposal_id, privileged: false };
+    let request = ExecutionRequest {
+        dao_id,
+        proposal_id,
+        permissions: permissions::all(),
+        privileged: false,
+    };
     ExecutionTicket { request, payload, closeout: Closeout::External }
 }

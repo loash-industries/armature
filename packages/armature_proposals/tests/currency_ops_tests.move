@@ -16,6 +16,7 @@ use armature_proposals::currency_ops;
 use armature_proposals::mint_allowance::{Self, MintAllowance};
 use armature_proposals::mint_coin::{Self, MintCoin};
 use armature_proposals::return_currency_cap::{Self, ReturnCurrencyCap};
+use armature_proposals::type_permissions;
 use std::string;
 use std::type_name;
 use sui::clock;
@@ -44,11 +45,13 @@ fun create_dao(scenario: &mut test_scenario::Scenario) {
     };
 }
 
-fun enable_type<T>(scenario: &mut test_scenario::Scenario, type_key: vector<u8>) {
+fun enable_type<T>(scenario: &mut test_scenario::Scenario, type_key: vector<u8>, bits: u64) {
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();
-        let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+        let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0).with_permissions(
+            bits,
+        );
         dao.test_enable_type<T>(type_key.to_ascii_string(), config);
         test_scenario::return_shared(dao);
     };
@@ -57,7 +60,11 @@ fun enable_type<T>(scenario: &mut test_scenario::Scenario, type_key: vector<u8>)
 /// Mint a fresh TreasuryCap<GLYPH> and adopt it through a full proposal cycle.
 /// Returns the cap's object ID for use in later mint/burn proposals.
 fun adopt_glyph(scenario: &mut test_scenario::Scenario, clock: &clock::Clock): ID {
-    enable_type<AdoptCurrency<GLYPH>>(scenario, b"AdoptCurrency");
+    enable_type<AdoptCurrency<GLYPH>>(
+        scenario,
+        b"AdoptCurrency",
+        type_permissions::adopt_currency(),
+    );
 
     // Submit
     scenario.next_tx(CREATOR);
@@ -128,7 +135,7 @@ fun mint_into_treasury() {
 
     create_dao(&mut scenario);
     let cap_id = adopt_glyph(&mut scenario, &clock);
-    enable_type<MintCoin<GLYPH>>(&mut scenario, b"MintCoin");
+    enable_type<MintCoin<GLYPH>>(&mut scenario, b"MintCoin", type_permissions::mint());
 
     // Submit + vote
     scenario.next_tx(CREATOR);
@@ -198,7 +205,7 @@ fun mint_to_recipient() {
 
     create_dao(&mut scenario);
     let cap_id = adopt_glyph(&mut scenario, &clock);
-    enable_type<MintCoin<GLYPH>>(&mut scenario, b"MintCoin");
+    enable_type<MintCoin<GLYPH>>(&mut scenario, b"MintCoin", type_permissions::mint());
 
     scenario.next_tx(CREATOR);
     {
@@ -274,8 +281,8 @@ fun burn_from_treasury() {
 
     create_dao(&mut scenario);
     let cap_id = adopt_glyph(&mut scenario, &clock);
-    enable_type<MintCoin<GLYPH>>(&mut scenario, b"MintCoin");
-    enable_type<BurnCoin<GLYPH>>(&mut scenario, b"BurnCoin");
+    enable_type<MintCoin<GLYPH>>(&mut scenario, b"MintCoin", type_permissions::mint());
+    enable_type<BurnCoin<GLYPH>>(&mut scenario, b"BurnCoin", type_permissions::burn_coin());
 
     // Mint 1_000_000 into treasury (reuse the mint flow inline)
     scenario.next_tx(CREATOR);
@@ -390,7 +397,11 @@ fun return_cap_relinquishes_custody() {
 
     create_dao(&mut scenario);
     let cap_id = adopt_glyph(&mut scenario, &clock);
-    enable_type<ReturnCurrencyCap<GLYPH>>(&mut scenario, b"ReturnCurrencyCap");
+    enable_type<ReturnCurrencyCap<GLYPH>>(
+        &mut scenario,
+        b"ReturnCurrencyCap",
+        type_permissions::return_currency_cap(),
+    );
 
     scenario.next_tx(CREATOR);
     {
@@ -459,7 +470,7 @@ fun mint_with_unknown_cap_aborts() {
 
     create_dao(&mut scenario);
     adopt_glyph(&mut scenario, &clock);
-    enable_type<MintCoin<GLYPH>>(&mut scenario, b"MintCoin");
+    enable_type<MintCoin<GLYPH>>(&mut scenario, b"MintCoin", type_permissions::mint());
 
     // Bogus cap_id — a freshly minted, never-adopted cap.
     let bogus_cap_id;
@@ -543,7 +554,9 @@ fun mint_allowance_bypass_open_to_non_member() {
         let payload = external_execution::new_enable_bypass_type(
             b"MintAllowance".to_ascii_string(),
             type_name::with_defining_ids<MintAllowance<GLYPH>>(),
-            proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0),
+            proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0).with_permissions(
+                type_permissions::mint(),
+            ),
         );
         board_voting::submit_proposal(&dao, option::none(), payload, &clock, scenario.ctx());
         test_scenario::return_shared(dao);

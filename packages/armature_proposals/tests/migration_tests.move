@@ -15,8 +15,8 @@ use armature::spawn_dao::{Self, SpawnDAO};
 use armature::spin_out_subdao::{Self, SpinOutSubDAO};
 use armature::transfer_assets::{Self, TransferAssets};
 use armature::treasury_vault::TreasuryVault;
-use armature_proposals::board_ops;
 use armature_proposals::subdao_ops;
+use armature_proposals::type_permissions;
 use std::string;
 use sui::clock;
 use sui::coin;
@@ -26,6 +26,10 @@ use sui::test_scenario;
 const CREATOR: address = @0xA;
 const MEMBER_B: address = @0xB;
 const SUBDAO_MEMBER: address = @0xC;
+
+/// Test payload for a parent-side controller operation: granted VAULT_BORROW
+/// so its ticket may loan the SubDAOControl.
+public struct ControllerOp has drop, store {}
 
 // =========================================================================
 // E2E: Full migration lifecycle
@@ -508,25 +512,32 @@ fun controller_set_board_via_privileged_submit() {
         test_scenario::return_shared(child);
     };
 
-    // 6. Parent submits SetBoard on ITSELF (as vehicle to get ExecutionRequest for vault loan)
+    // 6. Parent passes a ControllerOp, a type granted VAULT_BORROW, to loan
+    // the SubDAOControl. (Any other ticket, e.g. SetBoard, is now denied.)
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
+        let mut dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
         clock.set_for_testing(5000);
-        let payload = set_board::new(vector[@0xD], vector[]);
+        dao.test_enable_type<ControllerOp>(
+            b"ControllerOp".to_ascii_string(),
+            proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0).with_permissions(
+                type_permissions::subdao_control(),
+            ),
+        );
         board_voting::submit_proposal(
             &dao,
-            option::some(string::utf8(b"Vehicle for controller op")),
-            payload,
+            option::some(string::utf8(b"Controller op")),
+            ControllerOp {},
             &clock,
             scenario.ctx(),
         );
         test_scenario::return_shared(dao);
     };
 
+    // CREATOR's yes meets quorum (1 of 2) and 100% approval of votes cast.
     scenario.next_tx(CREATOR);
     {
-        let mut proposal = scenario.take_shared<Proposal<SetBoard>>();
+        let mut proposal = scenario.take_shared<Proposal<ControllerOp>>();
         clock.set_for_testing(6000);
         let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
         board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
@@ -539,7 +550,7 @@ fun controller_set_board_via_privileged_submit() {
     scenario.next_tx(CREATOR);
     {
         let mut parent_dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
-        let mut parent_proposal = scenario.take_shared<Proposal<SetBoard>>();
+        let parent_proposal = scenario.take_shared<Proposal<ControllerOp>>();
         let parent_freeze = scenario.take_shared_by_id<
             EmergencyFreeze,
         >(parent_dao.emergency_freeze_id());
@@ -559,7 +570,7 @@ fun controller_set_board_via_privileged_submit() {
         );
 
         // Loan SubDAOControl from parent vault
-        let (control, loan) = vault.loan_cap<SubDAOControl, SetBoard>(
+        let (control, loan) = vault.loan_cap<SubDAOControl, ControllerOp>(
             control_cap_id,
             parent_req.ticket_request(),
         );
@@ -583,8 +594,7 @@ fun controller_set_board_via_privileged_submit() {
         // Return SubDAOControl to vault
         vault.return_cap(control, loan);
 
-        // Consume parent request by applying no-op board change (same members)
-        board_ops::execute_set_board(&mut parent_dao, parent_req);
+        parent_req.discharge();
 
         // Verify: SubDAO board now includes CREATOR
         assert!(subdao.governance().is_board_member(SUBDAO_MEMBER));
