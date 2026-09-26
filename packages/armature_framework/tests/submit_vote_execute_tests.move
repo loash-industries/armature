@@ -641,7 +641,7 @@ fun test_sve__controller_paused_aborts() {
 // =========================================================================
 
 #[test, expected_failure(abort_code = armature::board_voting::EFloorNotMet)]
-/// EnableProposalType config with approval_threshold below 66% is rejected at
+/// EnableProposalType config with approval_threshold below 80% is rejected at
 /// submission time — same floor enforced in submit_proposal.
 fun test_sve__enable_proposal_type_below_floor_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -649,7 +649,7 @@ fun test_sve__enable_proposal_type_below_floor_aborts() {
 
     create_single_member_dao(&mut scenario);
 
-    // Lower the EnableProposalType config threshold below the 66% floor.
+    // Lower the EnableProposalType config threshold below the 80% floor.
     // "EnableProposalType" is enabled by default; test_update_config replaces its config.
     scenario.next_tx(CREATOR);
     {

@@ -64,8 +64,8 @@ const ETargetNotEnabled: u64 = 18;
 /// Maximum steps in a single composite proposal. Guards against unbounded PTBs.
 const MAX_COMPOSITE_STEPS: u64 = 16;
 
-/// 66% floor for EnableProposalType steps inside a composite (basis points).
-const ENABLE_APPROVAL_FLOOR_BPS: u64 = 6_600;
+/// 80% floor for EnableProposalType steps inside a composite (basis points).
+const ENABLE_APPROVAL_FLOOR_BPS: u64 = 8_000;
 
 /// 80% floor for self-targeting UpdateProposalConfig steps inside a composite (basis points).
 const SELF_UPDATE_APPROVAL_FLOOR_BPS: u64 = 8_000;

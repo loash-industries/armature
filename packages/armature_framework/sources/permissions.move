@@ -34,14 +34,19 @@ const METADATA: u64 = 1 << 6;
 const TREASURY_WITHDRAW: u64 = 1 << 7;
 /// Store a capability in the DAO's CapabilityVault.
 const VAULT_STORE: u64 = 1 << 8;
-/// Borrow or loan a capability from the CapabilityVault.
+/// Borrow or loan a capability from the CapabilityVault. High-impact: a
+/// mutable borrow of a TreasuryCap mints, and a loaned SubDAOControl gives
+/// full control of the SubDAO.
 const VAULT_BORROW: u64 = 1 << 9;
 /// Extract a capability from the CapabilityVault, or create or destroy a
 /// SubDAOControl.
 const VAULT_EXTRACT: u64 = 1 << 10;
+/// Governance changes to the EmergencyFreeze: unfreeze, max duration,
+/// exempt set.
+const FREEZE: u64 = 1 << 11;
 
 /// Union of every defined bit.
-const ALL: u64 = (1 << 11) - 1;
+const ALL: u64 = (1 << 12) - 1;
 
 // === Accessors ===
 
@@ -66,6 +71,8 @@ public fun vault_store(): u64 { VAULT_STORE }
 public fun vault_borrow(): u64 { VAULT_BORROW }
 
 public fun vault_extract(): u64 { VAULT_EXTRACT }
+
+public fun emergency_freeze(): u64 { FREEZE }
 
 public fun all(): u64 { ALL }
 

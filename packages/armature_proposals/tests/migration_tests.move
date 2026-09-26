@@ -300,7 +300,9 @@ fun create_subdao_and_spin_out_e2e() {
         let dao = scenario.take_shared_by_id<DAO>(parent_dao_id);
         clock.set_for_testing(5000);
 
-        let spin_config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+        // SpawnDAO, SpinOutSubDAO and CreateSubDAO hold high-impact bits, so
+        // their configs need the 80% permission floor.
+        let spin_config = proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0);
         let payload = spin_out_subdao::new(
             subdao_id,
             control_cap_id,

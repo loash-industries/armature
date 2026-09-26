@@ -191,9 +191,8 @@ public fun disable_cap_id(self: &DisableBypassType): ID { self.cap_id() }
 /// `NewType` must be the type pinned in the payload (ETypeMismatch otherwise),
 /// so the executor cannot register a different type than the board approved.
 ///
-/// Enforces an 80% approval floor — strictly more consequential than
-/// `EnableProposalType` (66%) because every future submission under this
-/// type will execute without a vote.
+/// Enforces an 80% approval floor on the actual vote weights, because every
+/// future submission under this type will execute without a vote.
 public fun execute_enable_bypass_type<NewType: store>(
     dao: &mut DAO,
     vault: &mut CapabilityVault,

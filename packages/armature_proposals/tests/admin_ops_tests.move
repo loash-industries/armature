@@ -71,7 +71,10 @@ fun submit_enable_type_proposal<NewType>(
     scenario.next_tx(CREATOR);
     {
         let dao = scenario.take_shared<DAO>();
-        let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+        // Framework types carry fixed bits; meet the floor those bits need.
+        let bits = dao::framework_permissions(&type_name::with_defining_ids<NewType>());
+        let threshold = dao::permission_floor(bits).max(5_000);
+        let config = proposal::new_config(5_000, threshold, 0, 604_800_000, 0, 0);
         let payload = enable_proposal_type::new(
             type_key.to_ascii_string(),
             type_name::with_defining_ids<NewType>(),
@@ -348,7 +351,7 @@ fun disable_core_type_unfreeze_proposal_type_aborts() {
     scenario.end();
 }
 
-// --- EnableProposalType 66% approval floor ---
+// --- EnableProposalType 80% approval floor ---
 
 const MEMBER_B: address = @0xB;
 const MEMBER_C: address = @0xC;
@@ -357,9 +360,9 @@ const MEMBER_E: address = @0xE;
 
 #[test, expected_failure(abort_code = 6, location = armature::board_voting)]
 /// EnableProposalType submission is rejected when the DAO's config has an
-/// approval_threshold below the 66% floor (EFloorNotMet). The abort happens at
+/// approval_threshold below the 80% floor (EFloorNotMet). The abort happens at
 /// submit_proposal, before the proposal enters the object graph.
-fun enable_proposal_type_submission_floor_rejects_below_66_percent() {
+fun enable_proposal_type_submission_floor_rejects_below_80_percent() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
@@ -370,7 +373,7 @@ fun enable_proposal_type_submission_floor_rejects_below_66_percent() {
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();
-        let config = proposal::new_config(5_000, 6_500, 0, 604_800_000, 0, 0);
+        let config = proposal::new_config(5_000, 7_999, 0, 604_800_000, 0, 0);
         dao.test_update_config<EnableProposalType>(config);
         test_scenario::return_shared(dao);
     };
@@ -402,23 +405,23 @@ fun enable_proposal_type_submission_floor_rejects_below_66_percent() {
 
 #[test]
 /// EnableProposalType submission succeeds when the DAO's config has
-/// approval_threshold exactly at the 66% floor (6600 bps).
-fun enable_proposal_type_submission_floor_allows_66_percent() {
+/// approval_threshold exactly at the 80% floor (8000 bps).
+fun enable_proposal_type_submission_floor_allows_80_percent() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
     create_dao(&mut scenario);
 
-    // Set EnableProposalType threshold to exactly 66% (6600 bps).
+    // Set EnableProposalType threshold to exactly 80% (8000 bps).
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();
-        let config = proposal::new_config(5_000, 6_600, 0, 604_800_000, 0, 0);
+        let config = proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0);
         dao.test_update_config<EnableProposalType>(config);
         test_scenario::return_shared(dao);
     };
 
-    // Submit should succeed (6600 >= 6600).
+    // Submit should succeed (8000 >= 8000).
     scenario.next_tx(CREATOR);
     {
         let dao = scenario.take_shared<DAO>();
@@ -656,7 +659,7 @@ fun update_proposal_config_non_self_target_succeeds() {
 // =========================================================================
 
 #[test, expected_failure(abort_code = armature::dao::EThresholdBelowMinimum)]
-/// UpdateProposalConfig cannot lower EnableProposalType threshold below 66% floor.
+/// UpdateProposalConfig cannot lower EnableProposalType threshold below 80% floor.
 fun update_config_below_floor_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
@@ -672,7 +675,7 @@ fun update_config_below_floor_aborts() {
         let payload = update_proposal_config::new(
             b"EnableProposalType".to_ascii_string(),
             option::none(), // keep quorum
-            option::some(5_000), // lower threshold to 50% — below 66% floor
+            option::some(5_000), // lower threshold to 50% — below 80% floor
             option::none(),
             option::none(),
             option::none(),

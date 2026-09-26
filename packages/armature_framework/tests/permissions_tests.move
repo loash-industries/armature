@@ -102,6 +102,7 @@ fun permission_bits_are_distinct() {
         permissions::vault_store(),
         permissions::vault_borrow(),
         permissions::vault_extract(),
+        permissions::emergency_freeze(),
     ];
     let mut union = 0;
     bits.do!(|b| {
@@ -348,9 +349,10 @@ fun permission_floor_values() {
         dao::permission_floor(
             permissions::board_add() | permissions::board_remove() | permissions::board_set()
             | permissions::pause() | permissions::metadata() | permissions::vault_store()
-            | permissions::vault_borrow(),
+            | permissions::emergency_freeze(),
         ) == 0,
     );
+    assert!(dao::permission_floor(permissions::vault_borrow()) == 8_000);
     assert!(dao::permission_floor(permissions::type_admin()) == 8_000);
     assert!(dao::permission_floor(permissions::migrate()) == 8_000);
     assert!(dao::permission_floor(permissions::treasury_withdraw()) == 8_000);
@@ -366,12 +368,12 @@ fun enable_proposal_type_grants_low_bits() {
     });
 }
 
-#[test, expected_failure(abort_code = dao::EGrantFloorNotMet)]
-/// EnableProposalType's vote is held to 66%, so it cannot grant an 80% bit,
-/// even when the new type's own threshold is 80%.
-fun enable_proposal_type_cannot_grant_high_bits() {
+#[test]
+/// EnableProposalType sits at the 80% floor, so it may grant an 80% bit.
+fun enable_proposal_type_grants_high_bits() {
     with_dao!(|dao| {
         enable_target<EnableProposalType>(dao, config_at(8_000, permissions::treasury_withdraw()));
+        assert!(dao.type_config<Target>().has_permission(permissions::treasury_withdraw()));
     });
 }
 
@@ -451,8 +453,8 @@ fun update_without_bit_change_by_non_meta_type_passes() {
     });
 }
 
-#[test, expected_failure(abort_code = dao::ESelfPermissionChange)]
-/// UpdateProposalConfig cannot change its own bits.
+#[test, expected_failure(abort_code = dao::EFixedPermissions)]
+/// UpdateProposalConfig cannot change its own bits: framework bits are fixed.
 fun update_proposal_config_self_grant_aborts() {
     with_dao!(|dao| {
         let r = req<UpdateProposalConfig>(dao);
@@ -469,7 +471,7 @@ fun type_floor_holds_on_direct_update() {
     with_dao!(|dao| {
         let r = req<UpdateProposalConfig>(dao);
         let name = type_name::with_defining_ids<EnableProposalType>();
-        dao.update_proposal_config(name, config_at(6_599, 0), &r);
+        dao.update_proposal_config(name, config_at(7_999, permissions::type_admin()), &r);
         abort 0
     });
 }
@@ -487,7 +489,7 @@ fun privileged_request_may_change_bits() {
     });
 }
 
-#[test, expected_failure(abort_code = dao::ECompositeHoldsPermissions)]
+#[test, expected_failure(abort_code = dao::EFixedPermissions)]
 /// CompositePayload can never hold bits, even via a privileged request.
 fun composite_payload_cannot_hold_bits() {
     with_dao!(|dao| {
@@ -572,5 +574,51 @@ fun composite_update_step_keeping_bits_composes() {
         );
         composite::add_update_proposal_config_step(&mut frame, dao, restated);
         sui::test_utils::destroy(frame);
+    });
+}
+
+#[test, expected_failure(abort_code = dao::EFixedPermissions)]
+/// A framework type cannot be enabled with bits other than its fixed set.
+fun framework_type_enabled_with_other_bits_aborts() {
+    with_dao!(|dao| {
+        let r = req<EnableProposalType>(dao);
+        let config = config_at(8_000, permissions::treasury_withdraw());
+        dao.enable_proposal_type<armature::spawn_dao::SpawnDAO, EnableProposalType>(
+            b"SpawnDAO".to_ascii_string(),
+            config,
+            &r,
+        );
+        abort 0
+    });
+}
+
+#[test]
+/// A framework type enabled with no bits gets its fixed set, and its config
+/// must meet the floor those bits need.
+fun framework_type_enabled_without_bits_gets_fixed_set() {
+    with_dao!(|dao| {
+        let r = req<EnableProposalType>(dao);
+        dao.enable_proposal_type<armature::spawn_dao::SpawnDAO, EnableProposalType>(
+            b"SpawnDAO".to_ascii_string(),
+            config_at(8_000, 0),
+            &r,
+        );
+        proposal::consume_execution_request_for_testing(r);
+        let config = dao.type_config<armature::spawn_dao::SpawnDAO>();
+        assert!(config.permissions() == permissions::migrate());
+    });
+}
+
+#[test, expected_failure(abort_code = dao::EThresholdBelowMinimum)]
+/// SpawnDAO carries MIGRATE, so a config below 80% cannot enable it.
+fun framework_type_fixed_bits_need_their_floor() {
+    with_dao!(|dao| {
+        let r = req<EnableProposalType>(dao);
+        dao.enable_proposal_type<armature::spawn_dao::SpawnDAO, EnableProposalType>(
+            b"SpawnDAO".to_ascii_string(),
+            config_at(5_000, 0),
+            &r,
+        );
+        abort 0
     });
 }

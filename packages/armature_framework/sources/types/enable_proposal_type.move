@@ -10,7 +10,7 @@ use std::type_name::TypeName;
 /// `NewType` matches it, so an executor cannot register a different payload
 /// type under the display key the board voted on.
 ///
-/// Handler enforces a 66% approval floor at execution time.
+/// Proposals of this type need an 80% approval threshold (dao floor).
 public struct EnableProposalType has drop, store {
     /// Human-readable label shown in events and the UI. Unique per DAO.
     type_key: std::ascii::String,

@@ -1008,7 +1008,7 @@ fun composite_same_type_cooldown_snapshot_succeeds() {
 #[test]
 /// Composite with a single EnableProposalType step enables a new proposal type within
 /// the pipeline. Uses a single-member DAO so CREATOR's vote alone reaches 100% approval,
-/// satisfying the 66% effective threshold floor imposed by assert_composite_floors.
+/// satisfying the 80% effective threshold floor imposed by assert_composite_floors.
 fun composite_enable_proposal_type_step_e2e() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
@@ -1026,8 +1026,8 @@ fun composite_enable_proposal_type_step_e2e() {
     };
 
     // Submit composite: one EnableProposalType step that enables "MyGrant" / TestPayload.
-    // EnableProposalType default threshold = 6600; effective = max(Composite 5000, 6600) = 6600,
-    // meeting the 66% composite floor check.
+    // EnableProposalType default threshold = 8000; effective = max(Composite 5000, 8000) = 8000,
+    // meeting the 80% composite floor check.
     scenario.next_tx(CREATOR);
     {
         let dao = scenario.take_shared<DAO>();

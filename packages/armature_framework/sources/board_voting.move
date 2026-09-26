@@ -30,9 +30,9 @@ const ECooldownRequiresMutableDAO: u64 = 9;
 
 // === Constants ===
 
-/// 66% approval floor for EnableProposalType proposals (basis points).
-/// Matches the constant in admin_ops; enforced here at submission time.
-const ENABLE_APPROVAL_FLOOR_BPS: u64 = 6_600;
+/// 80% approval floor for EnableProposalType proposals (basis points).
+/// Matches dao::min_approval_threshold_for_type; enforced here at submission time.
+const ENABLE_APPROVAL_FLOOR_BPS: u64 = 8_000;
 
 // === Submit ===
 
@@ -298,7 +298,7 @@ fun assert_submittable(dao: &DAO, name: &TypeName) {
 }
 
 /// Submission-time floor enforcement for EnableProposalType.
-/// The proposal's approval_threshold must be >= 66% so that the vote guarantee
+/// The proposal's approval_threshold must be >= 80% so that the vote guarantee
 /// (yes/total_voted >= threshold >= floor) is locked in at proposal creation time
 /// rather than re-checked at execution (where only the ticket, not the proposal, is live).
 fun assert_enable_floor(name: &TypeName, config: &ProposalConfig) {

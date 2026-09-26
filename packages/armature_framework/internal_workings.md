@@ -350,3 +350,48 @@ public fun hijack(dao: &mut DAO, prop: &mut Proposal<Dummy>, clock: &Clock, ctx:
 **Fix 2 (defense-in-depth)**: `proposal::consume()` changed to `public(package) fun`. Added `public fun finalize<P: store>(req: ExecutionRequest<P>, proposal: &Proposal<P>)` as the validated public entry point. `finalize()` asserts: (1) `req.dao_id == proposal.dao_id`, (2) `req.proposal_id == object::id(proposal)`, (3) `proposal.status.is_executed()`. All 19 handler call sites in `armature_proposals` migrated from `proposal::consume(request)` to `proposal::finalize(request, proposal)`. New error constants: `ERequestMismatch` (13), `ENotExecuted` (14).
 
 **Fix 3 (open — additional hardening for `authorize_execution`)**: Check that the proposal's `type_key` is still enabled and not frozen before authorizing execution.
+
+## 9. Permission Bits (ROAD-39)
+
+Each proposal type's `ProposalConfig.permissions` names the DAO-wide mutations a request of that type may perform; `dao::assert_permitted<P>(bits, req)` enforces them. Bits are defined in `armature::permissions`. A config holding any bit marked 80% needs `approval_threshold >= 8000` (`dao::permission_floor`), on every path that stores a config.
+
+| Bit | Floor | Guards |
+|---|---|---|
+| `BOARD_ADD` | — | add board members |
+| `BOARD_REMOVE` | — | remove board members |
+| `BOARD_SET` | — | apply a SetBoard diff |
+| `TYPE_ADMIN` | 80% | enable, disable, reconfigure proposal types |
+| `PAUSE` | — | pause or resume execution |
+| `MIGRATE` | 80% | move the DAO to Migrating |
+| `METADATA` | — | charter metadata |
+| `TREASURY_WITHDRAW` | 80% | withdraw from the TreasuryVault |
+| `VAULT_STORE` | — | store a capability |
+| `VAULT_BORROW` | 80% | borrow or loan a capability (a mutable TreasuryCap borrow mints; a loaned SubDAOControl controls the SubDAO) |
+| `VAULT_EXTRACT` | 80% | extract a capability; create or destroy a SubDAOControl |
+| `FREEZE` | — | governance changes to the EmergencyFreeze |
+
+### 9.1 Framework types: fixed bits
+
+Framework payload types always hold exactly these bits (`dao::framework_permissions`), whatever config enabled them; `UpdateProposalConfig` cannot change them (`EFixedPermissions`). Default slots are seeded with them at DAO creation, with thresholds raised to the floor they need.
+
+| Type | Bits | Why |
+|---|---|---|
+| SetBoard | BOARD_SET | applies an add/remove diff |
+| AddMember, BatchAddMembers | BOARD_ADD | adds members |
+| RemoveMember, BatchRemoveMembers | BOARD_REMOVE | removes members |
+| UpdateMetadata | METADATA | `charter::update_metadata` |
+| EnableProposalType, DisableProposalType, UpdateProposalConfig | TYPE_ADMIN | type registry |
+| EnableBypassType | TYPE_ADMIN, VAULT_STORE | enables the type and stores its ExternalExecutionCap |
+| DisableBypassType | TYPE_ADMIN, VAULT_EXTRACT | extracts the cap to destroy it, disables the type |
+| TransferFreezeAdmin, UnfreezeProposalType | FREEZE | `unfreeze_all`, `governance_unfreeze_type` |
+| SpawnDAO | MIGRATE | `set_migrating` |
+| CreateSubDAO | VAULT_STORE, VAULT_EXTRACT | creates and stores a SubDAOControl, stores the SubDAO's FreezeAdminCap |
+| SpinOutSubDAO | VAULT_BORROW, VAULT_EXTRACT | loans the SubDAOControl, extracts the FreezeAdminCap, destroys the control |
+| TransferAssets | TREASURY_WITHDRAW, VAULT_EXTRACT | moves coins and caps to the successor |
+| CompositePayload | none | its ticket is consumed by `begin_pipeline` |
+
+Other types (e.g. `armature_proposals`' `SendCoin<T>`) hold the bits in the config that enabled them: a `ProposalTypeInit` override at creation, or an `EnableProposalType` / `EnableBypassType` payload. Both default to none.
+
+### 9.2 Who may change bits
+
+Only a request of type EnableProposalType, EnableBypassType or UpdateProposalConfig may change a non-framework type's bits, or a privileged (controller) request. All three meta-types sit at the 80% floor, so every grant is approved by an 80% vote. Grants are standalone-only: `composite::add_step` refuses EnableProposalType and UpdateProposalConfig steps, and the typed `add_enable_proposal_type_step` / `add_update_proposal_config_step` refuse any step that would change bits.

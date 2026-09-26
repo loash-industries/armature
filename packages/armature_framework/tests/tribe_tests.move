@@ -653,7 +653,7 @@ fun create_wired_subdao_aborts_on_blocked_type() {
 // === Test 17: EnableProposalType below floor aborts ===
 
 #[test, expected_failure(abort_code = dao::EThresholdBelowMinimum)]
-/// Setting EnableProposalType threshold below 66% aborts with EThresholdBelowMinimum.
+/// Setting EnableProposalType threshold below 80% aborts with EThresholdBelowMinimum.
 fun create_wired_subdao_aborts_on_enable_proposal_type_below_floor() {
     let mut scenario = test_scenario::begin(CREATOR);
     scenario.next_tx(CREATOR);
@@ -669,7 +669,7 @@ fun create_wired_subdao_aborts_on_enable_proposal_type_below_floor() {
         let overrides = vector[
             dao::new_type_init<EnableProposalType>(
                 b"EnableProposalType".to_ascii_string(),
-                proposal::new_config(5_000, 6_599, 0, 604_800_000, 0, 0),
+                proposal::new_config(5_000, 7_999, 0, 604_800_000, 0, 0),
             ),
         ];
 
@@ -733,7 +733,7 @@ fun create_wired_subdao_aborts_on_update_proposal_config_below_floor() {
 // === Test 19: EnableProposalType at exact floor passes ===
 
 #[test]
-/// Setting EnableProposalType threshold at exactly 66% (6600) succeeds.
+/// Setting EnableProposalType threshold at exactly 80% (8000) succeeds.
 fun create_wired_subdao_enable_proposal_type_at_floor_passes() {
     let mut scenario = test_scenario::begin(CREATOR);
     let subdao_id: ID;
@@ -750,7 +750,7 @@ fun create_wired_subdao_enable_proposal_type_at_floor_passes() {
         let overrides = vector[
             dao::new_type_init<EnableProposalType>(
                 b"EnableProposalType".to_ascii_string(),
-                proposal::new_config(5_000, 6_600, 0, 604_800_000, 0, 0),
+                proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0),
             ),
         ];
 
@@ -774,7 +774,7 @@ fun create_wired_subdao_enable_proposal_type_at_floor_passes() {
     {
         let subdao = scenario.take_shared_by_id<DAO>(subdao_id);
         let config = subdao.type_config<EnableProposalType>();
-        assert!(config.approval_threshold() == 6_600);
+        assert!(config.approval_threshold() == 8_000);
         test_scenario::return_shared(subdao);
     };
 
@@ -1028,7 +1028,7 @@ fun create_tribe_configured_aborts_on_update_config_below_floor() {
 // === Test 26: EnableProposalType below floor in member overrides aborts ===
 
 #[test, expected_failure(abort_code = dao::EThresholdBelowMinimum)]
-/// Setting EnableProposalType threshold below 66% in member overrides aborts.
+/// Setting EnableProposalType threshold below 80% in member overrides aborts.
 fun create_tribe_configured_aborts_on_enable_type_below_floor() {
     let mut scenario = test_scenario::begin(CREATOR);
     scenario.next_tx(CREATOR);
@@ -1036,7 +1036,7 @@ fun create_tribe_configured_aborts_on_enable_type_below_floor() {
         let member_overrides = vector[
             dao::new_type_init<EnableProposalType>(
                 b"EnableProposalType".to_ascii_string(),
-                proposal::new_config(5_000, 6_599, 0, 604_800_000, 0, 0),
+                proposal::new_config(5_000, 7_999, 0, 604_800_000, 0, 0),
             ),
         ];
 

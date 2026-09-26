@@ -14,6 +14,7 @@ use armature::emergency::{EmergencyFreeze, FreezeAdminCap};
 use armature::enable_bypass_type::EnableBypassType;
 use armature::enable_proposal_type::EnableProposalType;
 use armature::governance;
+use armature::permissions;
 use armature::proposal;
 use armature::remove_member::RemoveMember;
 use armature::set_board::SetBoard;
@@ -202,7 +203,24 @@ fun test_default_proposal_types() {
         assert!(config.composable_allowed());
 
         // Floor-gated types start at their floor; batch types are not composable.
-        assert!(dao.type_config<EnableProposalType>().approval_threshold() == 6_600);
+        assert!(dao.type_config<EnableProposalType>().approval_threshold() == 8_000);
+        // TYPE_ADMIN holders start at the 80% permission floor.
+        assert!(dao.type_config<DisableProposalType>().approval_threshold() == 8_000);
+        assert!(dao.type_config<DisableBypassType>().approval_threshold() == 8_000);
+
+        // Framework types start with their fixed permission bits.
+        assert!(dao.type_config<SetBoard>().permissions() == permissions::board_set());
+        assert!(dao.type_config<AddMember>().permissions() == permissions::board_add());
+        assert!(dao.type_config<RemoveMember>().permissions() == permissions::board_remove());
+        assert!(
+            dao.type_config<EnableBypassType>().permissions()
+                == permissions::type_admin() | permissions::vault_store(),
+        );
+        assert!(
+            dao.type_config<UnfreezeProposalType>().permissions()
+                == permissions::emergency_freeze(),
+        );
+        assert!(dao.type_config<CompositePayload>().permissions() == 0);
         assert!(dao.type_config<UpdateProposalConfig>().approval_threshold() == 8_000);
         assert!(dao.type_config<EnableBypassType>().approval_threshold() == 8_000);
         assert!(!dao.type_config<BatchAddMembers>().composable_allowed());

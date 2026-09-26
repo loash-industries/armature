@@ -61,14 +61,15 @@ const EPermissionDenied: u64 = 18;
 /// A config change would alter a type's permission bits, but the request is
 /// not EnableProposalType, EnableBypassType or UpdateProposalConfig.
 const EPermissionChangeNotAllowed: u64 = 19;
-/// A meta-type request tried to change its own type's permission bits.
-const ESelfPermissionChange: u64 = 20;
+// 20 is unused: a meta-type changing its own bits is ruled out by
+// EFixedPermissions, since every meta-type is a framework type.
 /// The bits being granted need a higher approval floor than the granting
 /// meta-type's vote is held to.
 const EGrantFloorNotMet: u64 = 21;
-/// CompositePayload must hold no permission bits: its ticket is consumed by
-/// begin_pipeline and never reaches a mutator.
-const ECompositeHoldsPermissions: u64 = 22;
+// 22 is unused: CompositePayload's fixed bits are 0 (EFixedPermissions).
+/// A config for a framework type names bits other than its fixed set
+/// (`framework_permissions`).
+const EFixedPermissions: u64 = 23;
 
 // === Constants ===
 
@@ -81,10 +82,10 @@ const DEFAULT_EXPIRY_MS: u64 = 604_800_000; // 7 days
 const DEFAULT_EXECUTION_DELAY_MS: u64 = 0;
 const DEFAULT_COOLDOWN_MS: u64 = 0;
 
-/// Minimum approval_threshold for EnableProposalType — matches the 66% submission-time
-/// floor enforced by board_voting::submit_proposal and the config-level floor in
-/// admin_ops::execute_update_proposal_config (assert_threshold_meets_floor).
-const ENABLE_PROPOSAL_TYPE_MIN_THRESHOLD: u16 = 6_600;
+/// Minimum approval_threshold for EnableProposalType — matches the 80% submission-time
+/// floor enforced by board_voting::submit_proposal. EnableProposalType holds
+/// TYPE_ADMIN and may grant high-impact bits, so it sits at the 80% floor.
+const ENABLE_PROPOSAL_TYPE_MIN_THRESHOLD: u16 = 8_000;
 
 /// Minimum approval_threshold for UpdateProposalConfig — matches the 80% submission-time
 /// floor enforced by admin_ops::propose_update_proposal_config (self-targeting) and the
@@ -96,8 +97,8 @@ const UPDATE_PROPOSAL_CONFIG_MIN_THRESHOLD: u16 = 8_000;
 const ENABLE_BYPASS_TYPE_MIN_THRESHOLD: u16 = 8_000;
 
 /// Minimum approval_threshold for a config holding any high-impact bit
-/// (TYPE_ADMIN, MIGRATE, TREASURY_WITHDRAW, VAULT_EXTRACT). Same as the
-/// EnableBypassType floor.
+/// (TYPE_ADMIN, MIGRATE, TREASURY_WITHDRAW, VAULT_BORROW, VAULT_EXTRACT).
+/// Same as the EnableBypassType floor.
 const HIGH_PERMISSION_MIN_THRESHOLD: u16 = 8_000;
 
 // === Enums ===
@@ -639,49 +640,132 @@ public fun assert_permitted<P>(self: &DAO, bits: u64, req: &ExecutionRequest<P>)
 }
 
 /// Minimum approval_threshold for a config holding `bits`: 80% if any of
-/// TYPE_ADMIN, MIGRATE, TREASURY_WITHDRAW or VAULT_EXTRACT is set, else 0.
+/// TYPE_ADMIN, MIGRATE, TREASURY_WITHDRAW, VAULT_BORROW or VAULT_EXTRACT is
+/// set, else 0.
 public fun permission_floor(bits: u64): u16 {
     let high =
         permissions::type_admin()
         | permissions::migrate()
         | permissions::treasury_withdraw()
+        | permissions::vault_borrow()
         | permissions::vault_extract();
     if (bits & high != 0) HIGH_PERMISSION_MIN_THRESHOLD else 0
 }
 
-/// Abort unless a config may be stored for the type named `name`:
-/// - its approval_threshold meets the type's own floor
-///   (`min_approval_threshold_for_type`; EThresholdBelowMinimum),
-/// - and the floor of the bits it holds (`permission_floor`; EThresholdBelowMinimum),
-/// - and CompositePayload holds no bits (ECompositeHoldsPermissions).
-/// Every path that stores a config runs this, so no caller can skip it.
+/// Returns true if `name` is one of the framework's own payload types
+/// (`armature::types`). Their permission bits are fixed; see
+/// `framework_permissions`.
+public fun is_framework_type(name: &TypeName): bool {
+    let n = *name;
+    n == type_name_of<SetBoard>()
+        || n == type_name_of<AddMember>()
+        || n == type_name_of<RemoveMember>()
+        || n == type_name_of<BatchAddMembers>()
+        || n == type_name_of<BatchRemoveMembers>()
+        || n == type_name_of<UpdateMetadata>()
+        || n == type_name_of<EnableProposalType>()
+        || n == type_name_of<DisableProposalType>()
+        || n == type_name_of<UpdateProposalConfig>()
+        || n == type_name_of<EnableBypassType>()
+        || n == type_name_of<DisableBypassType>()
+        || n == type_name_of<TransferFreezeAdmin>()
+        || n == type_name_of<UnfreezeProposalType>()
+        || n == type_name_of<CompositePayload>()
+        || n == type_name_of<SpawnDAO>()
+        || n == type_name_of<SpinOutSubDAO>()
+        || n == type_name_of<CreateSubDAO>()
+        || n == type_name_of<TransferAssets>()
+}
+
+/// The fixed permission bits of a framework type: exactly what its handler
+/// needs, and nothing else. A framework type's slot always holds these bits,
+/// whatever config enabled it, and no config update can change them. Returns
+/// 0 for any other type.
+///
+/// Why each type holds its bits:
+/// - SetBoard: BOARD_SET (applies an add/remove diff).
+/// - AddMember, BatchAddMembers: BOARD_ADD. RemoveMember, BatchRemoveMembers: BOARD_REMOVE.
+/// - UpdateMetadata: METADATA (charter::update_metadata).
+/// - EnableProposalType, DisableProposalType, UpdateProposalConfig: TYPE_ADMIN.
+/// - EnableBypassType: TYPE_ADMIN + VAULT_STORE (stores the new ExternalExecutionCap).
+/// - DisableBypassType: TYPE_ADMIN + VAULT_EXTRACT (extracts the cap to destroy it).
+/// - TransferFreezeAdmin (unfreeze_all), UnfreezeProposalType: FREEZE.
+/// - SpawnDAO: MIGRATE (set_migrating).
+/// - CreateSubDAO: VAULT_STORE + VAULT_EXTRACT (creates and stores a SubDAOControl,
+///   stores the SubDAO's FreezeAdminCap).
+/// - SpinOutSubDAO: VAULT_BORROW + VAULT_EXTRACT (loans the SubDAOControl, then
+///   extracts the FreezeAdminCap and destroys the control).
+/// - TransferAssets: TREASURY_WITHDRAW + VAULT_EXTRACT (moves coins and caps out).
+/// - CompositePayload: none; its ticket is consumed by begin_pipeline.
+public fun framework_permissions(name: &TypeName): u64 {
+    let n = *name;
+    if (n == type_name_of<SetBoard>()) {
+        permissions::board_set()
+    } else if (n == type_name_of<AddMember>() || n == type_name_of<BatchAddMembers>()) {
+        permissions::board_add()
+    } else if (n == type_name_of<RemoveMember>() || n == type_name_of<BatchRemoveMembers>()) {
+        permissions::board_remove()
+    } else if (n == type_name_of<UpdateMetadata>()) {
+        permissions::metadata()
+    } else if (
+        n == type_name_of<EnableProposalType>()
+            || n == type_name_of<DisableProposalType>()
+            || n == type_name_of<UpdateProposalConfig>()
+    ) {
+        permissions::type_admin()
+    } else if (n == type_name_of<EnableBypassType>()) {
+        permissions::type_admin() | permissions::vault_store()
+    } else if (n == type_name_of<DisableBypassType>()) {
+        permissions::type_admin() | permissions::vault_extract()
+    } else if (
+        n == type_name_of<TransferFreezeAdmin>() || n == type_name_of<UnfreezeProposalType>()
+    ) {
+        permissions::emergency_freeze()
+    } else if (n == type_name_of<SpawnDAO>()) {
+        permissions::migrate()
+    } else if (n == type_name_of<CreateSubDAO>()) {
+        permissions::vault_store() | permissions::vault_extract()
+    } else if (n == type_name_of<SpinOutSubDAO>()) {
+        permissions::vault_borrow() | permissions::vault_extract()
+    } else if (n == type_name_of<TransferAssets>()) {
+        permissions::treasury_withdraw() | permissions::vault_extract()
+    } else {
+        0
+    }
+}
+
+/// For a framework type, return `config` carrying its fixed bits; aborts with
+/// EFixedPermissions if `config` names any other non-zero set. Other types'
+/// configs are returned unchanged.
+fun with_fixed_permissions(name: &TypeName, config: ProposalConfig): ProposalConfig {
+    if (!is_framework_type(name)) return config;
+    let fixed = framework_permissions(name);
+    let bits = config.permissions();
+    assert!(bits == 0 || bits == fixed, EFixedPermissions);
+    config.with_permissions(fixed)
+}
+
+/// Abort with EThresholdBelowMinimum unless a config's approval_threshold
+/// meets both the type's own floor (`min_approval_threshold_for_type`) and the
+/// floor of the bits it holds (`permission_floor`). Every path that stores a
+/// config runs this, so no caller can skip it.
 fun assert_config_floors(name: &TypeName, config: &ProposalConfig) {
     let threshold = config.approval_threshold();
     assert!(threshold >= min_approval_threshold_for_type(name), EThresholdBelowMinimum);
     assert!(threshold >= permission_floor(config.permissions()), EThresholdBelowMinimum);
-    assert!(
-        *name != type_name_of<CompositePayload>() || config.permissions() == 0,
-        ECompositeHoldsPermissions,
-    );
 }
 
-/// Abort unless a request of type `P` may change the permission bits of the
-/// type named `target` from `old` to `new`. No change passes. A privileged
+/// Abort unless a request of type `P` may change a type's permission bits
+/// from `old` to `new`. No change passes. A privileged
 /// (controller) request passes. Otherwise `P` must be EnableProposalType,
 /// EnableBypassType or UpdateProposalConfig (EPermissionChangeNotAllowed),
-/// must not be `target` itself (ESelfPermissionChange), and the floor of the
-/// bits being added must not exceed `P`'s own approval floor
+/// and the floor of the bits being added must not exceed `P`'s own approval floor
 /// (EGrantFloorNotMet): the vote that grants a power is held to at least that
-/// power's floor. So EnableProposalType (66%) cannot grant 80% bits; enable
-/// the type without them and grant them with UpdateProposalConfig (80%).
+/// power's floor. All three meta-types sit at the 80% floor today, so this
+/// holds by construction; the check keeps it true if a floor is ever lowered.
 ///
 /// Grants are standalone-only: composite::add_step refuses grant steps.
-fun assert_may_change_permissions<P>(
-    target: &TypeName,
-    old: u64,
-    new: u64,
-    req: &ExecutionRequest<P>,
-) {
+fun assert_may_change_permissions<P>(old: u64, new: u64, req: &ExecutionRequest<P>) {
     if (old == new || req.req_is_privileged()) return;
     let granter = type_name_of<P>();
     assert!(
@@ -690,7 +774,6 @@ fun assert_may_change_permissions<P>(
             || granter == type_name_of<UpdateProposalConfig>(),
         EPermissionChangeNotAllowed,
     );
-    assert!(granter != *target, ESelfPermissionChange);
     let added = new ^ (new & old);
     assert!(
         permission_floor(added) <= min_approval_threshold_for_type(&granter),
@@ -809,8 +892,9 @@ public fun enable_proposal_type<NewType, P>(
 ) {
     assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
     let name = type_name_of<NewType>();
+    let config = with_fixed_permissions(&name, config);
     assert_config_floors(&name, &config);
-    assert_may_change_permissions(&name, 0, config.permissions(), req);
+    assert_may_change_permissions(0, config.permissions(), req);
     let dao_id = self.id();
     add_slot(&mut self.id, dao_id, new_type_init<NewType>(display_key, config));
 }
@@ -820,7 +904,7 @@ public fun enable_proposal_type<NewType, P>(
 ///
 /// Cooldown state is not preserved: if the type is re-enabled later, its first
 /// execution is not subject to the cooldown. Re-enabling requires an
-/// EnableProposalType (66% floor) or EnableBypassType (80% floor) vote.
+/// EnableProposalType or EnableBypassType vote (both 80% floor).
 /// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
 public fun disable_proposal_type<P>(self: &mut DAO, name: TypeName, req: &ExecutionRequest<P>) {
     assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
@@ -840,9 +924,13 @@ public fun update_proposal_config<P>(
     req: &ExecutionRequest<P>,
 ) {
     assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    assert!(
+        !is_framework_type(&name) || new_config.permissions() == framework_permissions(&name),
+        EFixedPermissions,
+    );
     assert_config_floors(&name, &new_config);
     let old = self.slot(&name).config.permissions();
-    assert_may_change_permissions(&name, old, new_config.permissions(), req);
+    assert_may_change_permissions(old, new_config.permissions(), req);
     let dao_id = self.id();
     let entry = self.slot_mut(&name);
     entry.config = new_config;
@@ -1088,15 +1176,18 @@ fun default_init<T>(display_key: vector<u8>): ProposalTypeInit {
 }
 
 /// Return the per-type default ProposalConfig for a given type.
-/// Types with hardcoded execution floors in admin_ops use a threshold that
-/// matches the floor so the config threshold is never misleadingly low.
+/// It carries the type's fixed bits (`framework_permissions`), and its
+/// threshold is the default raised to the type's own floor and the floor of
+/// its bits, so the config threshold is never misleadingly low.
 /// composable_allowed is true for single-operation types that make sense as steps
 /// inside a CompositeFrame. Batch types (BatchAddMembers, BatchRemoveMembers) are
 /// excluded: they have no _step handler variant and BatchAddMembers carries an
 /// explicit regression test guarding its deny-by-default status.
 fun config_for_type(name: &TypeName): ProposalConfig {
-    let min = min_approval_threshold_for_type(name);
-    let approval_threshold = if (min > 0) { min } else { DEFAULT_APPROVAL_THRESHOLD };
+    let bits = framework_permissions(name);
+    let approval_threshold = DEFAULT_APPROVAL_THRESHOLD
+        .max(min_approval_threshold_for_type(name))
+        .max(permission_floor(bits));
     let n = *name;
     let composable =
         n == type_name_of<AddMember>()
@@ -1111,7 +1202,9 @@ fun config_for_type(name: &TypeName): ProposalConfig {
         DEFAULT_EXPIRY_MS,
         DEFAULT_EXECUTION_DELAY_MS,
         DEFAULT_COOLDOWN_MS,
-    ).with_composable_allowed(composable)
+    )
+        .with_composable_allowed(composable)
+        .with_permissions(bits)
 }
 
 /// Apply `overrides` to an already-seeded registry.
@@ -1155,6 +1248,11 @@ fun apply_type_overrides(
                 config: entry.config,
             });
         } else {
+            let init = ProposalTypeInit {
+                type_name: init.type_name,
+                display_key: init.display_key,
+                config: with_fixed_permissions(&init.type_name, init.config),
+            };
             assert_config_floors(&init.type_name, &init.config);
             add_slot(id, dao_id, init);
         };
