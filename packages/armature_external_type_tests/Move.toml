@@ -1,0 +1,18 @@
+# Test-only fixture: a stand-in third-party package that defines its own
+# proposal type and handler on top of the framework. Never published.
+[package]
+name = "armature_external_type_tests"
+edition = "2024"
+version = "0.0.1"
+
+[dependencies]
+armature = { local = "../armature_framework", env = "testnet_wip" }
+armature_proposals = { local = "../armature_proposals", env = "testnet_wip" }
+
+[environments]
+testnet_wip = "4c78adac"
+testnet_stillness = "4c78adac"
+
+[dep-replacements.testnet_stillness]
+armature = { local = "../armature_framework" }
+armature_proposals = { local = "../armature_proposals" }
