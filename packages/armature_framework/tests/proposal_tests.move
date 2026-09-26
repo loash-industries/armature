@@ -220,6 +220,54 @@ fun test_cannot_vote_on_passed_aborts() {
     scenario.end();
 }
 
+// === Test 8b: Cannot vote after the voting period ===
+
+#[test, expected_failure(abort_code = proposal::EVotingClosed)]
+/// Abort — a late vote must not pass an expired proposal and open a fresh
+/// execution window.
+fun test_vote_after_expiry_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_test_dao(&mut scenario);
+    create_test_proposal(&mut scenario, &clock);
+
+    clock.set_for_testing(1_000_000 + 3_600_000);
+    scenario.next_tx(CREATOR);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        prop.vote(true, &clock, scenario.ctx());
+        test_scenario::return_shared(prop);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+/// The last millisecond of the voting period still accepts votes.
+fun test_vote_just_before_expiry() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_test_dao(&mut scenario);
+    create_test_proposal(&mut scenario, &clock);
+
+    clock.set_for_testing(1_000_000 + 3_600_000 - 1);
+    scenario.next_tx(CREATOR);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        prop.vote(true, &clock, scenario.ctx());
+        assert!(prop.status().is_passed());
+        test_scenario::return_shared(prop);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
 // === Test 9: Active proposal cannot be deleted before expiry ===
 
 #[test, expected_failure(abort_code = proposal::ENotExpired)]

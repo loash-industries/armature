@@ -30,6 +30,8 @@ const ECapDAOMismatch: u64 = 16;
 const ENotStandaloneTicket: u64 = 17;
 /// execute called on a Passed proposal after its execution window closed.
 const EExecutionWindowClosed: u64 = 19;
+/// vote called on an Active proposal after its voting period (expiry_ms) ended.
+const EVotingClosed: u64 = 20;
 
 // === Constants ===
 
@@ -354,11 +356,13 @@ public(package) fun create<P: store>(
 
 // === Lifecycle: vote ===
 
-/// Cast a vote on an active proposal. The voter must be in the snapshot
-/// and must not have already voted. If quorum and threshold are met,
-/// the proposal transitions to Passed.
+/// Cast a vote on an active proposal. The voting period must not have ended
+/// (see `voting_deadline_ms`), the voter must be in the snapshot and must not
+/// have already voted. If quorum and threshold are met, the proposal
+/// transitions to Passed.
 public fun vote<P: store>(self: &mut Proposal<P>, approve: bool, clock: &Clock, ctx: &TxContext) {
     assert!(self.status.is_active(), ENotActive);
+    assert!(clock.timestamp_ms() < self.voting_deadline_ms(), EVotingClosed);
 
     let voter = ctx.sender();
 
@@ -416,10 +420,7 @@ public fun vote<P: store>(self: &mut Proposal<P>, approve: bool, clock: &Clock, 
 public fun delete_expired_proposal<P: store + drop>(proposal: Proposal<P>, clock: &Clock) {
     let now = clock.timestamp_ms();
     let deadline = match (&proposal.status) {
-        ProposalStatus::Active => utils::saturating_add(
-            proposal.created_at_ms,
-            proposal.config.expiry_ms,
-        ),
+        ProposalStatus::Active => proposal.voting_deadline_ms(),
         ProposalStatus::Passed => proposal.execution_deadline_ms(),
     };
     assert!(now >= deadline, ENotExpired);
@@ -427,6 +428,12 @@ public fun delete_expired_proposal<P: store + drop>(proposal: Proposal<P>, clock
     let Proposal { id, dao_id, .. } = proposal;
     event::emit(ProposalExpired { proposal_id: id.to_inner(), dao_id });
     id.delete();
+}
+
+/// End of an Active proposal's voting period: `expiry_ms` after creation.
+/// Saturates at u64::MAX (see new_config).
+fun voting_deadline_ms<P: store>(self: &Proposal<P>): u64 {
+    utils::saturating_add(self.created_at_ms, self.config.expiry_ms)
 }
 
 /// End of a Passed proposal's execution window: it opens when the execution
