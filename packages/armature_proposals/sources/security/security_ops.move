@@ -58,7 +58,7 @@ public fun execute_unfreeze_proposal_type(
     ticket: ExecutionTicket<UnfreezeProposalType>,
 ) {
     let payload = ticket.ticket_payload();
-    emergency::governance_unfreeze_type(freeze, payload.type_key(), ticket.ticket_request());
+    emergency::governance_unfreeze_type(freeze, payload.type_name(), ticket.ticket_request());
     ticket.discharge();
 }
 

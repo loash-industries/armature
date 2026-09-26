@@ -290,7 +290,7 @@ fun ticket_from_cap_core<P: store>(
     assert!(!dao.is_controller_paused(), EControllerPaused);
 
     let display_key = dao.type_display_key_by_name(&name);
-    freeze.assert_not_frozen(&display_key, clock);
+    freeze.assert_not_frozen<P>(clock);
 
     let now = clock.timestamp_ms();
     let cooldown_ms = dao.type_config_by_name(&name).cooldown_ms();
