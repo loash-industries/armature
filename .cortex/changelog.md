@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-26 — negative authorization suite and CI gate check (ARMATURE-32, ROAD-39)
+
+- `armature_framework/tests/gate_tests.move`: one test per gated mutator (30) calls it with a request carrying every bit except the one it needs and expects `proposal::EPermissionDenied` (`dao::ENotPrivileged` for the controller-only pair), so each mutator is shown to check the right bit.
+- `scripts/check_request_gates.py`, run in `pr.yml` before the build: every `public fun` in `armature_framework/sources` taking an `ExecutionRequest` must call `assert_permitted` / `assert_controller` or sit on its reviewed allowlist (accessors, the checks themselves, `P`-scoped type-state, `privileged_consume`), and every gated function needs a `gate_tests` test named after it. Removing a gate or adding an ungated mutator fails CI.
+- Real tickets: `armature_external_type_tests` replays the confirmed attack (a `Rebalance<CredB>` bypass ticket calling `unfreeze_all` to lift a freeze on `Rebalance<CredA>`) plus treasury, board and migrate attempts, and a single-vote atomic ticket; `armature_world_bridge` checks an autojoin ticket carries BOARD_ADD only and cannot remove members, set the board, withdraw or reconfigure types; `composite_tests` checks bits do not pool across steps (AddMember step cannot withdraw, SendCoin step cannot add a member) and each step still performs its own mutation.
+- Tests: framework 343 → 374, proposals 121 → 124, world bridge 19 → 23, external-type fixture 6 → 11.
+
 ## 2026-09-26 — every framework mutator checks its request's permission bits (ARMATURE-26 – 29, ROAD-39)
 
 - Design change from the plan: the plan had treasury and vault mutators take `&DAO`, but `dao` constructs the treasury, capability vault, charter and freeze, so those modules cannot import it. Instead `proposal::ExecutionRequest` carries `permissions: u64`, the bits its type's slot held when the request was minted, and every mint path reads the slot: `board_voting` (two-PTB and atomic), `external_execution::ticket_from_cap`, `composite::advance_step`. Controller requests carry 0 bits and `privileged: true`. New `proposal::req_permissions`, `req_has_permission`, `assert_permitted(req, bits)` and `EPermissionDenied` (proposal 21). `dao::assert_permitted` is now the DAO check plus the request check; `dao::EPermissionDenied` (18) is retired. A grant or revocation takes effect from the next minted request. No mutator gained a `&DAO` argument, so treasury and vault call shapes are unchanged for SDKs and downstream packages.

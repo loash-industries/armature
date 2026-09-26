@@ -13,7 +13,8 @@ use armature::enable_bypass_type::EnableBypassType;
 use armature::enable_proposal_type::{Self, EnableProposalType};
 use armature::external_execution;
 use armature::governance;
-use armature::proposal::{Self, ExternalExecutionCap, Proposal};
+use armature::proposal::{Self, ExecutionRequest, ExternalExecutionCap, Proposal};
+use armature::treasury_vault::TreasuryVault;
 use armature::unfreeze_proposal_type::{Self, UnfreezeProposalType};
 use armature_external_type_tests::rebalance::{Self, Rebalance};
 use armature_proposals::admin_ops;
@@ -21,6 +22,7 @@ use armature_proposals::security_ops;
 use std::string;
 use std::type_name;
 use sui::clock::{Self, Clock};
+use sui::sui::SUI;
 use sui::test_scenario::{Self as ts, Scenario};
 
 const CREATOR: address = @0xA;
@@ -318,4 +320,105 @@ fun governance_unfreeze_restores_execution() {
     execute_atomic<CredA>(&mut scenario, &mut clock);
     execute_two_ptb<CredA>(&mut scenario, &mut clock);
     end(scenario, clock);
+}
+
+// === Permission denials (ROAD-39, ARMATURE-32) ===
+//
+// A ticket for Rebalance<CredB>, a type granted no bits, must not reach any
+// DAO-wide mutator. Before ROAD-39 its request could lift an admin freeze on
+// Rebalance<CredA>, drain the treasury or add a board member mid-PTB.
+
+/// Mint a Rebalance<CredB> ticket (bypass path when `bypass`, else a
+/// single-vote atomic execution) and hand its request to `$f`, which must abort.
+macro fun with_rebalance_request(
+    $bypass: bool,
+    $f: |
+        &mut DAO,
+        &mut EmergencyFreeze,
+        &mut TreasuryVault,
+        &ExecutionRequest<Rebalance<CredB>>,
+        &mut TxContext,
+    |,
+) {
+    let (mut scenario, mut clock) = begin();
+    admin_freeze<CredA>(&mut scenario, &mut clock);
+    let cap_id = if ($bypass) {
+        enable_bypass_via_vote<CredB>(&mut scenario, &mut clock, b"RebalanceB")
+    } else {
+        enable_via_vote<CredB>(&mut scenario, &mut clock, b"RebalanceB");
+        object::id_from_address(@0x0)
+    };
+
+    tick(&mut clock);
+    scenario.next_tx(CREATOR);
+    let mut dao = scenario.take_shared<DAO>();
+    let vault = scenario.take_shared<CapabilityVault>();
+    let mut freeze = scenario.take_shared<EmergencyFreeze>();
+    let mut treasury = scenario.take_shared<TreasuryVault>();
+    let ticket = if ($bypass) {
+        let cap: &ExternalExecutionCap<Rebalance<CredB>> = vault.borrow_external_cap(
+            dao.id(),
+            cap_id,
+        );
+        external_execution::ticket_from_cap_readonly(
+            cap,
+            &dao,
+            &freeze,
+            option::none(),
+            rebalance::new<CredB>(1),
+            &clock,
+            scenario.ctx(),
+        )
+    } else {
+        board_voting::submit_vote_execute_readonly(
+            &dao,
+            option::none(),
+            rebalance::new<CredB>(1),
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        )
+    };
+    $f(&mut dao, &mut freeze, &mut treasury, ticket.ticket_request(), scenario.ctx());
+    abort 0
+}
+
+#[test, expected_failure(abort_code = proposal::EPermissionDenied)]
+/// The confirmed attack: a Rebalance<CredB> bypass ticket lifting an admin
+/// freeze on Rebalance<CredA>.
+fun bypass_ticket_cannot_unfreeze_other_type() {
+    with_rebalance_request!(true, |_, freeze, _, req, _| {
+        freeze.unfreeze_all(req);
+    });
+}
+
+#[test, expected_failure(abort_code = proposal::EPermissionDenied)]
+fun bypass_ticket_cannot_withdraw_from_treasury() {
+    with_rebalance_request!(true, |_, _, treasury, req, ctx| {
+        let coin = treasury.withdraw<SUI, Rebalance<CredB>>(1, req, ctx);
+        abort 0
+    });
+}
+
+#[test, expected_failure(abort_code = proposal::EPermissionDenied)]
+fun bypass_ticket_cannot_add_board_member() {
+    with_rebalance_request!(true, |dao, _, _, req, _| {
+        dao.add_board_member_governance(@0xBAD, req);
+    });
+}
+
+#[test, expected_failure(abort_code = proposal::EPermissionDenied)]
+/// A single member's atomic vote on a low-threshold type carries no authority
+/// beyond its own type either.
+fun atomic_ticket_cannot_migrate_dao() {
+    with_rebalance_request!(false, |dao, _, _, req, _| {
+        dao.set_migrating(object::id_from_address(@0x2), req);
+    });
+}
+
+#[test, expected_failure(abort_code = proposal::EPermissionDenied)]
+fun atomic_ticket_cannot_unfreeze_other_type() {
+    with_rebalance_request!(false, |_, freeze, _, req, _| {
+        freeze.governance_unfreeze_type(type_name::with_defining_ids<Rebalance<CredA>>(), req);
+    });
 }

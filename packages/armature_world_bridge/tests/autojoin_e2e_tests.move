@@ -12,11 +12,14 @@ use armature::capability_vault::{Self, CapabilityVault};
 use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
-use armature::proposal::{Self, Proposal};
+use armature::permissions;
+use armature::proposal::{Self, ExecutionRequest, Proposal};
+use armature::treasury_vault::TreasuryVault;
 use armature_world_bridge::autojoin_ops::{Self, AutojoinDAO};
 use armature_world_bridge::configure_autojoin::{Self, ConfigureAutojoin};
 use std::string;
 use sui::clock;
+use sui::sui::SUI;
 use sui::test_scenario as ts;
 use world::access::{Self, AdminACL};
 use world::character::{Self, Character};
@@ -374,4 +377,72 @@ fun configure_rejects_zero_tribe_id() {
 
     clock.destroy_for_testing();
     ts::end(scenario);
+}
+
+// === Permission denials (ROAD-39, ARMATURE-32) ===
+//
+// Any allowlisted player can mint an AutojoinDAO ticket without a vote. It is
+// granted BOARD_ADD only, so its request must not reach any other mutator.
+
+/// Mint PLAYER's AutojoinDAO ticket and hand its request to `$f`, which must abort.
+macro fun with_autojoin_request(
+    $f: |&mut DAO, &mut TreasuryVault, &ExecutionRequest<AutojoinDAO>, &mut TxContext|,
+) {
+    let mut scenario = ts::begin(GOVERNOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    setup_world(&mut scenario);
+    let character_id = create_character(&mut scenario, 100, 42, PLAYER);
+    let (_, _, cap_id) = setup_dao_with_autojoin(&mut scenario);
+    configure_allowlist(&mut scenario, &mut clock, vector[42], true, 1000, 2000, 3000);
+    clock.set_for_testing(4000);
+
+    ts::next_tx(&mut scenario, PLAYER);
+    let mut dao = ts::take_shared<DAO>(&scenario);
+    let vault = ts::take_shared<CapabilityVault>(&scenario);
+    let character = ts::take_shared_by_id<Character>(&scenario, character_id);
+    let freeze = ts::take_shared<EmergencyFreeze>(&scenario);
+    let mut treasury = ts::take_shared<TreasuryVault>(&scenario);
+    let ticket = autojoin_ops::submit_autojoin(
+        &mut dao,
+        &vault,
+        cap_id,
+        &character,
+        &freeze,
+        &clock,
+        scenario.ctx(),
+    );
+    assert!(ticket.ticket_request().req_permissions() == permissions::board_add());
+    $f(&mut dao, &mut treasury, ticket.ticket_request(), scenario.ctx());
+    abort 0
+}
+
+#[test, expected_failure(abort_code = armature::proposal::EPermissionDenied)]
+fun autojoin_ticket_cannot_remove_member() {
+    with_autojoin_request!(|dao, _, req, _| {
+        dao.remove_board_member_governance(CREATOR, req);
+    });
+}
+
+#[test, expected_failure(abort_code = armature::proposal::EPermissionDenied)]
+fun autojoin_ticket_cannot_set_board() {
+    with_autojoin_request!(|dao, _, req, _| {
+        dao.set_board_governance(vector[PLAYER], vector[CREATOR], req);
+    });
+}
+
+#[test, expected_failure(abort_code = armature::proposal::EPermissionDenied)]
+fun autojoin_ticket_cannot_withdraw_from_treasury() {
+    with_autojoin_request!(|_, treasury, req, ctx| {
+        let coin = treasury.withdraw<SUI, AutojoinDAO>(1, req, ctx);
+        abort 0
+    });
+}
+
+#[test, expected_failure(abort_code = armature::proposal::EPermissionDenied)]
+fun autojoin_ticket_cannot_reconfigure_types() {
+    with_autojoin_request!(|dao, _, req, _| {
+        let name = std::type_name::with_defining_ids<AutojoinDAO>();
+        let config = dao.type_config_by_name(&name);
+        dao.update_proposal_config(name, config, req);
+    });
 }
