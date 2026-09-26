@@ -128,7 +128,7 @@ fun small_startup_lifecycle() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -145,7 +145,6 @@ fun small_startup_lifecycle() {
         assert!(vault.balance<SUI>() == 995_000);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(dao);
     };
@@ -193,7 +192,7 @@ fun small_startup_lifecycle() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -209,7 +208,6 @@ fun small_startup_lifecycle() {
         assert!(!dao.governance().is_board_member(CAROL));
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -255,7 +253,7 @@ fun small_startup_lifecycle() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -272,7 +270,6 @@ fun small_startup_lifecycle() {
         assert!(vault.balance<SUI>() == 994_000);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(dao);
     };
@@ -407,7 +404,7 @@ fun medium_enterprise_lifecycle() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -420,7 +417,6 @@ fun medium_enterprise_lifecycle() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -489,7 +485,7 @@ fun medium_enterprise_lifecycle() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -499,7 +495,6 @@ fun medium_enterprise_lifecycle() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -580,7 +575,7 @@ fun medium_enterprise_lifecycle() {
         // Authorize parent proposal
         let parent_req = board_voting::ticket_from_vote(
             &mut top_dao,
-            &mut top_proposal,
+            top_proposal,
             &top_freeze,
             &clock,
             scenario.ctx(),
@@ -645,7 +640,6 @@ fun medium_enterprise_lifecycle() {
         test_scenario::return_shared(eng_dao);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(top_freeze);
-        test_scenario::return_shared(top_proposal);
         test_scenario::return_shared(top_dao);
     };
 
@@ -685,7 +679,7 @@ fun medium_enterprise_lifecycle() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut eng_dao,
-            &mut proposal,
+            proposal,
             &eng_freeze,
             &clock,
             scenario.ctx(),
@@ -700,7 +694,6 @@ fun medium_enterprise_lifecycle() {
         assert!(!eng_freeze.is_frozen(&b"SendCoin".to_ascii_string(), &clock));
 
         test_scenario::return_shared(eng_freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(eng_dao);
     };
 
@@ -756,7 +749,7 @@ fun medium_enterprise_lifecycle() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut top_dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -774,7 +767,6 @@ fun medium_enterprise_lifecycle() {
         assert!(fin_vault.balance<USDC>() == 500_000);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(fin_vault);
         test_scenario::return_shared(top_vault);
         test_scenario::return_shared(top_dao);
@@ -823,7 +815,7 @@ fun medium_enterprise_lifecycle() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut fin_dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -839,7 +831,6 @@ fun medium_enterprise_lifecycle() {
         assert!(fin_vault.balance<USDC>() == 400_000);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(fin_vault);
         test_scenario::return_shared(fin_dao);
     };

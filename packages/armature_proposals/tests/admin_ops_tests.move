@@ -122,7 +122,7 @@ fun enable_blocked_type_aborts_for_subdao_with_controller() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut subdao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -133,7 +133,6 @@ fun enable_blocked_type_aborts_for_subdao_with_controller() {
         );
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(subdao);
     };
 
@@ -163,7 +162,7 @@ fun enable_non_blocked_type_succeeds_for_subdao_with_controller() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut subdao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -178,7 +177,6 @@ fun enable_non_blocked_type_succeeds_for_subdao_with_controller() {
         assert!(subdao.type_display_key<TestPayload>() == b"CustomAction".to_ascii_string());
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(subdao);
     };
 
@@ -207,7 +205,7 @@ fun enable_blocked_type_succeeds_for_independent_dao() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -218,7 +216,6 @@ fun enable_blocked_type_succeeds_for_independent_dao() {
         assert!(dao.is_type_enabled<SpawnDAO>());
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -275,7 +272,7 @@ fun disable_core_type_enable_proposal_type_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -283,7 +280,6 @@ fun disable_core_type_enable_proposal_type_aborts() {
         admin_ops::execute_disable_proposal_type(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -331,7 +327,7 @@ fun disable_core_type_unfreeze_proposal_type_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -339,7 +335,6 @@ fun disable_core_type_unfreeze_proposal_type_aborts() {
         admin_ops::execute_disable_proposal_type(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -625,7 +620,7 @@ fun update_proposal_config_non_self_target_succeeds() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -637,7 +632,6 @@ fun update_proposal_config_non_self_target_succeeds() {
         assert!(new_config.quorum() == 3_000);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -702,7 +696,7 @@ fun update_config_below_floor_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -710,7 +704,6 @@ fun update_config_below_floor_aborts() {
         admin_ops::execute_update_proposal_config(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -777,7 +770,7 @@ fun enable_type_with_sub_floor_config_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -785,7 +778,6 @@ fun enable_type_with_sub_floor_config_aborts() {
         admin_ops::execute_enable_proposal_type<UpdateProposalConfig>(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -842,14 +834,13 @@ fun run_enable_type<NewType: store>(
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             clock,
             scenario.ctx(),
         );
         admin_ops::execute_enable_proposal_type<NewType>(&mut dao, ticket);
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 }
@@ -985,7 +976,7 @@ fun execute_enable_proposal_type_wrong_new_type_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -993,7 +984,6 @@ fun execute_enable_proposal_type_wrong_new_type_aborts() {
         admin_ops::execute_enable_proposal_type<AltPayload>(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -1066,7 +1056,7 @@ fun update_proposal_config_composable_allowed_updates_config() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -1077,7 +1067,6 @@ fun update_proposal_config_composable_allowed_updates_config() {
         assert!(!dao.type_config<AddMember>().composable_allowed());
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -1123,7 +1112,7 @@ fun update_proposal_config_composable_allowed_updates_config() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -1139,7 +1128,6 @@ fun update_proposal_config_composable_allowed_updates_config() {
         assert!(cfg.approval_threshold() == 5_000);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -1206,7 +1194,7 @@ fun enable_proposal_type_composable_cooldown_conflict_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -1215,7 +1203,6 @@ fun enable_proposal_type_composable_cooldown_conflict_aborts() {
         admin_ops::execute_enable_proposal_type<TestPayload>(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -1277,7 +1264,7 @@ fun update_proposal_config_composable_cooldown_conflict_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -1286,7 +1273,6 @@ fun update_proposal_config_composable_cooldown_conflict_aborts() {
         admin_ops::execute_update_proposal_config(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 

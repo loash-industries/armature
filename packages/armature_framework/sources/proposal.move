@@ -24,13 +24,14 @@ const ENotExpired: u64 = 10;
 const ETypeNotEnabled: u64 = 11;
 const EExecutionPaused: u64 = 12;
 const ERequestMismatch: u64 = 13;
-const ENotExecuted: u64 = 14;
 const EDAONotActive: u64 = 15;
 const ECapDAOMismatch: u64 = 16;
 /// ticket_yes_weight or ticket_total_snapshot_weight called on a non-vote-path ticket.
 const ENotStandaloneTicket: u64 = 17;
-/// delete_executed_proposal called when payload has not been extracted.
-const EPayloadNotConsumed: u64 = 18;
+/// execute called on a Passed proposal after its execution window closed.
+const EExecutionWindowClosed: u64 = 19;
+/// vote called on an Active proposal after its voting period (expiry_ms) ended.
+const EVotingClosed: u64 = 20;
 
 // === Constants ===
 
@@ -43,6 +44,8 @@ public struct ProposalConfig has copy, drop, store {
     quorum: u16,
     approval_threshold: u16,
     propose_threshold: u64,
+    /// How long voting stays open, and how long a passed proposal stays
+    /// executable once its execution delay has elapsed.
     expiry_ms: u64,
     execution_delay_ms: u64,
     cooldown_ms: u64,
@@ -52,13 +55,12 @@ public struct ProposalConfig has copy, drop, store {
     composable_allowed: bool,
 }
 
-/// Proposal lifecycle status. Transitions are one-directional:
-/// Active -> Passed | Expired, Passed -> Executed.
+/// Status of a live proposal. Active -> Passed is the only transition.
+/// Execution and expiry delete the proposal, so neither is a stored status;
+/// ProposalExecuted and ProposalExpired record them.
 public enum ProposalStatus has copy, drop, store {
     Active,
     Passed,
-    Executed,
-    Expired,
 }
 
 /// Hot-potato authorization token emitted by execute().
@@ -109,14 +111,15 @@ public enum Closeout has drop {
 }
 
 /// A shared proposal object. Generic over the payload type P.
-/// Created by proposal::create, voted on, then executed or expired.
+/// Created by proposal::create and voted on. Execution (execute) and expiry
+/// (delete_expired_proposal) delete it and return its storage deposit.
 public struct Proposal<P: store> has key {
     id: UID,
     dao_id: ID,
     type_key: std::ascii::String,
     proposer: address,
     metadata_ipfs: Option<String>,
-    payload: Option<P>,
+    payload: P,
     vote_snapshot: VecMap<address, u64>,
     total_snapshot_weight: u64,
     votes_cast: VecMap<address, bool>,
@@ -139,8 +142,8 @@ public struct ProposalCreated has copy, drop {
 }
 
 /// Records the full BCS-serialised payload at proposal creation time.
-/// Payload remains queryable via this event even after execution sets
-/// Proposal.payload to None. Emitted for both vote-path and external-path proposals.
+/// Payload remains queryable via this event after the proposal is deleted.
+/// Emitted for both vote-path and external-path proposals.
 public struct ProposalPayloadCreated has copy, drop {
     proposal_id: ID,
     dao_id: ID,
@@ -178,6 +181,11 @@ public struct ProposalExpired has copy, drop {
 /// Create and validate a new ProposalConfig.
 /// Aborts if quorum not in [1, 10000], approval_threshold not in [5000, 10000],
 /// or expiry_ms < 1 hour.
+///
+/// There is no upper bound on expiry_ms or execution_delay_ms: deadlines
+/// saturate at u64::MAX, so an enormous value means "never expires". A Passed
+/// proposal under such a config can then only leave the chain by being
+/// executed; delete_expired_proposal never opens for it. Accepted by design.
 public fun new_config(
     quorum: u16,
     approval_threshold: u16,
@@ -240,7 +248,7 @@ public(package) fun passes(
 fun assert_cooldown_elapsed(self: &ProposalConfig, last_executed_at_ms: Option<u64>, now_ms: u64) {
     if (self.cooldown_ms > 0 && last_executed_at_ms.is_some()) {
         let last = last_executed_at_ms.destroy_some();
-        assert!(now_ms >= last + self.cooldown_ms, ECooldownActive);
+        assert!(now_ms >= utils::saturating_add(last, self.cooldown_ms), ECooldownActive);
     };
 }
 
@@ -260,25 +268,11 @@ public fun is_passed(self: &ProposalStatus): bool {
     }
 }
 
-public fun is_executed(self: &ProposalStatus): bool {
-    match (self) {
-        ProposalStatus::Executed => true,
-        _ => false,
-    }
-}
-
-public fun is_expired(self: &ProposalStatus): bool {
-    match (self) {
-        ProposalStatus::Expired => true,
-        _ => false,
-    }
-}
-
 // === Proposal ===
 
-/// Return the payload from a proposal. Panics if called post-execution (payload is None).
+/// Return the payload of a pending proposal.
 /// Handlers should read payload via ticket_payload() rather than this accessor.
-public fun payload<P: store>(self: &Proposal<P>): &P { self.payload.borrow() }
+public fun payload<P: store>(self: &Proposal<P>): &P { &self.payload }
 
 /// Return the DAO ID this proposal belongs to.
 public fun dao_id<P: store>(self: &Proposal<P>): ID { self.dao_id }
@@ -333,7 +327,7 @@ public(package) fun create<P: store>(
         type_key,
         proposer,
         metadata_ipfs,
-        payload: option::some(payload),
+        payload,
         vote_snapshot,
         total_snapshot_weight,
         votes_cast: vec_map::empty(),
@@ -362,11 +356,13 @@ public(package) fun create<P: store>(
 
 // === Lifecycle: vote ===
 
-/// Cast a vote on an active proposal. The voter must be in the snapshot
-/// and must not have already voted. If quorum and threshold are met,
-/// the proposal transitions to Passed.
+/// Cast a vote on an active proposal. The voting period must not have ended
+/// (see `voting_deadline_ms`), the voter must be in the snapshot and must not
+/// have already voted. If quorum and threshold are met, the proposal
+/// transitions to Passed.
 public fun vote<P: store>(self: &mut Proposal<P>, approve: bool, clock: &Clock, ctx: &TxContext) {
     assert!(self.status.is_active(), ENotActive);
+    assert!(clock.timestamp_ms() < self.voting_deadline_ms(), EVotingClosed);
 
     let voter = ctx.sender();
 
@@ -410,32 +406,57 @@ public fun vote<P: store>(self: &mut Proposal<P>, approve: bool, clock: &Clock, 
     };
 }
 
-// === Lifecycle: try_expire ===
+// === Lifecycle: expire ===
 
-/// Attempt to expire an active proposal. Succeeds if the current time
-/// exceeds created_at_ms + expiry_ms. Aborts if not Active or not expired.
-public fun try_expire<P: store>(self: &mut Proposal<P>, clock: &Clock) {
-    assert!(self.status.is_active(), ENotActive);
+/// Delete a proposal that can no longer be executed, and emit ProposalExpired.
+/// Anyone may call it; the storage rebate goes to the transaction's gas payer.
+///
+/// An Active proposal expires `expiry_ms` after creation. A Passed proposal
+/// expires when its execution window closes (see `execution_deadline_ms`).
+/// Aborts with ENotExpired before then. Deadlines saturate at u64::MAX, so a
+/// proposal whose config makes the sum overflow never expires (see new_config).
+///
+/// P must have `drop`: the payload is destroyed, never handed to the caller.
+public fun delete_expired_proposal<P: store + drop>(proposal: Proposal<P>, clock: &Clock) {
     let now = clock.timestamp_ms();
-    assert!(now >= self.created_at_ms + self.config.expiry_ms, ENotExpired);
+    let deadline = match (&proposal.status) {
+        ProposalStatus::Active => proposal.voting_deadline_ms(),
+        ProposalStatus::Passed => proposal.execution_deadline_ms(),
+    };
+    assert!(now >= deadline, ENotExpired);
 
-    self.status = ProposalStatus::Expired;
+    let Proposal { id, dao_id, .. } = proposal;
+    event::emit(ProposalExpired { proposal_id: id.to_inner(), dao_id });
+    id.delete();
+}
 
-    event::emit(ProposalExpired {
-        proposal_id: object::id(self),
-        dao_id: self.dao_id,
-    });
+/// End of an Active proposal's voting period: `expiry_ms` after creation.
+/// Saturates at u64::MAX (see new_config).
+fun voting_deadline_ms<P: store>(self: &Proposal<P>): u64 {
+    utils::saturating_add(self.created_at_ms, self.config.expiry_ms)
+}
+
+/// End of a Passed proposal's execution window: it opens when the execution
+/// delay elapses and stays open for `expiry_ms`. Saturates at u64::MAX, so a
+/// config with an enormous delay or expiry never expires rather than aborting.
+/// Aborts if not Passed.
+fun execution_deadline_ms<P: store>(self: &Proposal<P>): u64 {
+    utils::saturating_add(
+        utils::saturating_add(*self.passed_at_ms.borrow(), self.config.execution_delay_ms),
+        self.config.expiry_ms,
+    )
 }
 
 // === Lifecycle: execute ===
 
-/// Execute a passed proposal. Extracts and returns the payload alongside an
-/// ExecutionRequest hot potato. The executor must be a current board member.
-/// Checks execution_delay (time since passed) and cooldown (time since last
-/// execution of this type in the DAO). Callers wrap both return values into a
-/// ticket via proposal::new_ticket_standalone.
+/// Execute a passed proposal and delete it. Returns the payload alongside an
+/// ExecutionRequest hot potato; the storage rebate goes to the transaction's
+/// gas payer. The executor must be a current board member. Checks the
+/// execution window (see `execution_deadline_ms`) and cooldown (time since
+/// last execution of this type in the DAO). Callers wrap both return values
+/// into a ticket via proposal::new_ticket_standalone.
 public(package) fun execute<P: store>(
-    self: &mut Proposal<P>,
+    self: Proposal<P>,
     governance: &GovernanceConfig,
     last_executed_at_ms: Option<u64>,
     execution_paused: bool,
@@ -451,29 +472,29 @@ public(package) fun execute<P: store>(
     assert!(governance.is_board_member(executor), ENotEligible);
 
     let now = clock.timestamp_ms();
-    let passed_at = self.passed_at_ms.destroy_some();
+    let passed_at = *self.passed_at_ms.borrow();
 
     // Check execution delay
     if (self.config.execution_delay_ms > 0) {
-        assert!(now >= passed_at + self.config.execution_delay_ms, EDelayNotElapsed);
+        assert!(
+            now >= utils::saturating_add(passed_at, self.config.execution_delay_ms),
+            EDelayNotElapsed,
+        );
     };
+    assert!(now < self.execution_deadline_ms(), EExecutionWindowClosed);
 
     self.config.assert_cooldown_elapsed(last_executed_at_ms, now);
 
-    self.status = ProposalStatus::Executed;
-
-    let proposal_id = object::id(self);
-    let dao_id = self.dao_id;
+    // Deleting the object is the replay protection: nothing can execute it twice.
+    let Proposal { id, dao_id, payload, .. } = self;
+    let proposal_id = id.to_inner();
+    id.delete();
 
     event::emit(ProposalExecuted {
         proposal_id,
         dao_id,
         executor,
     });
-
-    // Extract payload from Option, leaving None. Unforgeable replay protection:
-    // a second call to execute() would abort because status is already Executed.
-    let payload = self.payload.extract();
 
     (payload, ExecutionRequest<P> { dao_id, proposal_id })
 }
@@ -730,35 +751,6 @@ public(package) fun new_ticket_external<P>(
     payload: P,
 ): ExecutionTicket<P> {
     ExecutionTicket { request, payload, closeout: Closeout::External }
-}
-
-// === Proposal cleanup ===
-
-/// Delete an executed proposal whose payload has already been consumed.
-/// Safe to call by any party — the audit record is preserved in events
-/// (ProposalCreated, ProposalExecuted, ProposalPayloadCreated) regardless.
-/// The caller receives the Sui storage rebate.
-public fun delete_executed_proposal<P: store + drop>(proposal: Proposal<P>) {
-    let Proposal {
-        id,
-        status,
-        payload,
-        dao_id: _,
-        type_key: _,
-        proposer: _,
-        metadata_ipfs: _,
-        vote_snapshot: _,
-        total_snapshot_weight: _,
-        votes_cast: _,
-        yes_weight: _,
-        no_weight: _,
-        config: _,
-        created_at_ms: _,
-        passed_at_ms: _,
-    } = proposal;
-    assert!(status.is_executed(), ENotExecuted);
-    assert!(payload.is_none(), EPayloadNotConsumed);
-    object::delete(id);
 }
 
 // === Test Helpers ===

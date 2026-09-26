@@ -109,7 +109,7 @@ fun upgrade_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -132,7 +132,6 @@ fun upgrade_e2e() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -230,7 +229,7 @@ fun upgrade_vault_mismatch_aborts() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut first_dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -247,7 +246,6 @@ fun upgrade_vault_mismatch_aborts() {
 
         test_scenario::return_shared(wrong_vault);
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(first_dao);
     };
 

@@ -103,7 +103,7 @@ fun spawn_dao_and_destroy_origin_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -119,7 +119,6 @@ fun spawn_dao_and_destroy_origin_e2e() {
         assert!(dao.status().is_migrating());
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -241,7 +240,7 @@ fun create_subdao_and_spin_out_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -267,7 +266,6 @@ fun create_subdao_and_spin_out_e2e() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -347,7 +345,7 @@ fun create_subdao_and_spin_out_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut parent_dao,
-            &mut proposal,
+            proposal,
             &parent_freeze,
             &clock,
             scenario.ctx(),
@@ -383,7 +381,6 @@ fun create_subdao_and_spin_out_e2e() {
         test_scenario::return_shared(subdao);
         test_scenario::return_shared(parent_vault);
         test_scenario::return_shared(parent_freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(parent_dao);
     };
 
@@ -465,7 +462,7 @@ fun controller_set_board_via_privileged_submit() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -482,7 +479,6 @@ fun controller_set_board_via_privileged_submit() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -544,7 +540,7 @@ fun controller_set_board_via_privileged_submit() {
         // Get parent ExecutionRequest (for vault loan authorization)
         let parent_req = board_voting::ticket_from_vote(
             &mut parent_dao,
-            &mut parent_proposal,
+            parent_proposal,
             &parent_freeze,
             &clock,
             scenario.ctx(),
@@ -585,7 +581,6 @@ fun controller_set_board_via_privileged_submit() {
         test_scenario::return_shared(subdao);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(parent_freeze);
-        test_scenario::return_shared(parent_proposal);
         test_scenario::return_shared(parent_dao);
     };
 
@@ -674,7 +669,7 @@ fun migration_with_transfer_assets_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -684,7 +679,6 @@ fun migration_with_transfer_assets_e2e() {
         assert!(dao.status().is_migrating());
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(dao);
     };
 
@@ -754,7 +748,7 @@ fun migration_with_transfer_assets_e2e() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut origin_dao,
-            &mut proposal,
+            proposal,
             &origin_freeze,
             &clock,
             scenario.ctx(),
@@ -789,7 +783,6 @@ fun migration_with_transfer_assets_e2e() {
         test_scenario::return_shared(origin_vault);
         test_scenario::return_shared(origin_treasury);
         test_scenario::return_shared(origin_freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(origin_dao);
     };
 

@@ -34,7 +34,7 @@ chronicle_changes({
 
 - Move packages: `armature_framework` (core primitives) and `armature_proposals` (concrete proposal types)
 - Proposal execution uses the **hot-potato pattern** — proposals must be consumed in a single PTB
-- Status transitions are **forward-only**: `active → passed → executed` (or `active → expired`)
+- Status transitions are **forward-only**: `Active → Passed` is the only stored transition. Execution (`ticket_from_vote`) deletes the `Proposal` and emits `ProposalExecuted`; `proposal::delete_expired_proposal` lets anyone delete an Active proposal past `expiry_ms`, or a Passed one whose execution window (`passed_at + execution_delay_ms + expiry_ms`) has closed, emitting `ProposalExpired`. The storage rebate goes to that transaction's gas payer
 - Single-PTB executions (`submit_vote_execute`, `ticket_from_cap`, `controller::privileged_submit`) create **no** `Proposal` object — the `proposal_id` is minted via `ctx.fresh_object_address()` and the audit trail is events only. `privileged_submit` emits `ProposalCreated` + `ProposalPayloadCreated` + `ProposalExecuted` (no `ProposalPassed`)
 - UI is at `ui/` — React 19 + Vite + TanStack + shadcn/ui
 

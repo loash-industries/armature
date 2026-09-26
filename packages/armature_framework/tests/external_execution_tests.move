@@ -100,12 +100,12 @@ fun run_enable_bypass<NewType: store>(
     {
         let mut dao = scenario.take_shared<DAO>();
         let mut vault = scenario.take_shared<CapabilityVault>();
-        let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
+        let proposal = scenario.take_shared<Proposal<EnableBypassType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             clock,
             scenario.ctx(),
@@ -121,7 +121,6 @@ fun run_enable_bypass<NewType: store>(
         cap_id_opt.fill(ids[0]);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(dao);
     };
@@ -436,12 +435,12 @@ fun execute_enable_bypass_type_e2e() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let mut vault = scenario.take_shared<CapabilityVault>();
-        let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
+        let proposal = scenario.take_shared<Proposal<EnableBypassType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -461,7 +460,6 @@ fun execute_enable_bypass_type_e2e() {
         cap_id_opt.fill(ids[0]);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(dao);
     };
@@ -556,12 +554,12 @@ fun execute_enable_bypass_type_below_floor_aborts() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let mut vault = scenario.take_shared<CapabilityVault>();
-        let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
+        let proposal = scenario.take_shared<Proposal<EnableBypassType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -574,7 +572,6 @@ fun execute_enable_bypass_type_below_floor_aborts() {
         );
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(dao);
     };
@@ -627,12 +624,12 @@ fun execute_enable_bypass_type_self_bootstrap_denied() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let mut vault = scenario.take_shared<CapabilityVault>();
-        let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
+        let proposal = scenario.take_shared<Proposal<EnableBypassType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -646,7 +643,6 @@ fun execute_enable_bypass_type_self_bootstrap_denied() {
         );
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(dao);
     };
@@ -862,12 +858,12 @@ fun execute_disable_bypass_type_e2e() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let mut vault = scenario.take_shared<CapabilityVault>();
-        let mut proposal = scenario.take_shared<Proposal<DisableBypassType>>();
+        let proposal = scenario.take_shared<Proposal<DisableBypassType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -886,7 +882,6 @@ fun execute_disable_bypass_type_e2e() {
         assert!(remaining.is_empty());
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(dao);
     };
@@ -955,12 +950,12 @@ fun execute_disable_bypass_type_wrong_new_type_aborts() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let mut vault = scenario.take_shared<CapabilityVault>();
-        let mut proposal = scenario.take_shared<Proposal<DisableBypassType>>();
+        let proposal = scenario.take_shared<Proposal<DisableBypassType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -973,7 +968,6 @@ fun execute_disable_bypass_type_wrong_new_type_aborts() {
         );
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(dao);
     };
@@ -1032,12 +1026,12 @@ fun execute_disable_bypass_type_wrong_cap_id_aborts() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let mut vault = scenario.take_shared<CapabilityVault>();
-        let mut proposal = scenario.take_shared<Proposal<DisableBypassType>>();
+        let proposal = scenario.take_shared<Proposal<DisableBypassType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -1049,7 +1043,6 @@ fun execute_disable_bypass_type_wrong_cap_id_aborts() {
         );
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(dao);
     };
@@ -1106,12 +1099,12 @@ fun execute_enable_bypass_type_wrong_new_type_aborts() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let mut vault = scenario.take_shared<CapabilityVault>();
-        let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
+        let proposal = scenario.take_shared<Proposal<EnableBypassType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -1125,7 +1118,6 @@ fun execute_enable_bypass_type_wrong_new_type_aborts() {
         );
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(dao);
     };
@@ -1191,12 +1183,12 @@ fun enable_bypass_type_composable_cooldown_conflict_aborts() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let mut vault = scenario.take_shared<CapabilityVault>();
-        let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
+        let proposal = scenario.take_shared<Proposal<EnableBypassType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -1210,7 +1202,6 @@ fun enable_bypass_type_composable_cooldown_conflict_aborts() {
         );
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(dao);
     };

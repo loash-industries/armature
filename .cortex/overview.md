@@ -35,7 +35,7 @@ This repo contains only the on-chain Move smart contracts. Indexing lives in `ar
 ## Notable Design Patterns
 
 - **Hot-potato pattern** for proposal execution — proposals must be consumed in a single PTB, preventing partial execution
-- **Forward-only status transitions** — proposals move `active → passed → executed` (or `active → expired`) with no reversals
+- **Forward-only status transitions** — a live proposal moves `Active → Passed` only. Execution deletes it (`ProposalExecuted`), and anyone can delete it with `delete_expired_proposal` once voting expires (Active) or its execution window closes (Passed), emitting `ProposalExpired`
 - **`controller::privileged_submit`** — proposals bypass voting and go directly to `executed`; no `ProposalPassed` event emitted
 - **Event-only audit for single-PTB executions** — `submit_vote_execute`, `ticket_from_cap` and `privileged_submit` create no `Proposal` object; the proposal ID is minted like an object ID and the lifecycle events are the audit record. Only two-PTB `submit_proposal` shares a `Proposal<P>`
 - **Read-only execution for cooldown-free types** — `submit_vote_execute_readonly` / `ticket_from_vote_readonly` / `ticket_from_cap_readonly` take `&DAO` and skip the last-executed write, so single-vote trades leave the DAO unmodified and do not serialise on it; `&mut DAO` variants remain for types with a cooldown
@@ -43,6 +43,7 @@ This repo contains only the on-chain Move smart contracts. Indexing lives in `ar
 
 ## Recent Changes
 
+- **2026-09-25 — executed proposals are deleted, expired ones can be deleted by anyone (ARMATURE-12)**: `ticket_from_vote` consumes and deletes the `Proposal`; `delete_expired_proposal` replaces `try_expire` and also covers passed proposals whose execution window has closed. See `changelog.md`.
 - **2026-09-24 — event-only audit for single-PTB executions (ARMATURE-11)**: atomic, bypass and controller executions emit events instead of creating a shared `Proposal<P>`; `ProposalCreated` gains `metadata_ipfs`. See `changelog.md`.
 - **2026-09-24 — read-only DAO on the atomic and bypass paths (ARMATURE-10)**: `&DAO` variants of `submit_vote_execute`, `ticket_from_vote` and `ticket_from_cap` for types with cooldown 0; no DAO write or write lock on the trading path. See `changelog.md`.
 - **2026-09-24 — type-keyed proposal registry (ARMATURE-9)**: replaced the string-keyed proposal-type maps on `dao::DAO` with one dynamic-field slot per enabled type, keyed by the payload's canonical `TypeName`. Removes the per-transaction rewrite of a root that grew with every enabled type, and removes the caller-supplied `type_key` from submission and execution calls. See `changelog.md`.

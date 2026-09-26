@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-26 — PR #165 review fix: no votes after the voting period (ARMATURE-12)
+
+- `proposal::vote` now aborts with `EVotingClosed` (20) once an Active proposal's voting period (`created_at + expiry_ms`) has ended. Before this, a late vote could still move an expired Active proposal to Passed and open a fresh execution window from `passed_at`, provided nobody had called `delete_expired_proposal` first. The deadline is computed by a new private `voting_deadline_ms` helper, which `delete_expired_proposal` also uses, so voting closes exactly when deletion opens. Code 18 (the removed `EPayloadNotConsumed`) is left unused so that abort codes from the old deployment still decode unambiguously. Tests: framework 289 → 291.
+
+## 2026-09-25 — PR #165 review fix: saturating proposal deadlines (ARMATURE-12)
+
+- Added `utils::saturating_add`, which returns `u64::MAX` instead of aborting on overflow. `proposal.move` uses it for the Active expiry deadline, the Passed execution deadline (`passed_at + execution_delay_ms + expiry_ms`), the execution-delay check and the cooldown check. `new_config` has no upper bound on `expiry_ms` or `execution_delay_ms`, so before this fix an enormous value overflowed and left a Passed proposal neither executable nor deletable. Such a config now means "never expires": the proposal stays executable, but `delete_expired_proposal` never opens for it, so it only leaves the chain by being executed. Accepted by design and documented on `new_config` and `delete_expired_proposal`. Tests: framework 286 → 289.
+
+## 2026-09-25 — executed proposals are deleted, expired ones can be deleted by anyone (ARMATURE-12)
+
+- `board_voting::ticket_from_vote` and `ticket_from_vote_readonly` take `Proposal<P>` by value. `proposal::execute` emits `ProposalExecuted`, moves the payload into the ticket and deletes the object, so the storage rebate goes to the executing transaction's gas payer (the gas station on sponsored flows). A second execute attempt fails because the object no longer exists. Client PTB builders pass the same shared-object argument; only the Move signature changed.
+- `proposal::try_expire` is replaced by `delete_expired_proposal<P: store + drop>(proposal, clock)`, which anyone can call and which emits `ProposalExpired`. It deletes an Active proposal once `created_at + expiry_ms` has passed, and a Passed proposal once its execution window `passed_at + execution_delay_ms + expiry_ms` has closed. `execute` now aborts with `EExecutionWindowClosed` (19) after the window; before this change a passed proposal stayed executable forever and could never be cleaned up. Accepted behaviour: with the default 7-day expiry and 7-day freeze, freezing a type right after one of its proposals passes cancels that proposal.
+- Removed `delete_executed_proposal`, the `Executed` and `Expired` status variants (`is_executed`, `is_expired`), `ENotExecuted` (14), `EPayloadNotConsumed` (18) and the `Option` around `Proposal.payload`. Off-chain readers must get the executed and expired statuses from `ProposalExecuted` / `ProposalExpired` (ARMATURE-16); specs and docs still describe `try_expire` (ARMATURE-17). Tests: framework 287 → 286, proposals 116 → 118, world bridge 19.
+
 ## 2026-09-25 — PR #164 review nits (ARMATURE-11)
 
 - `proposal::privileged_create_for_testing` (test-only) no longer creates or shares a `Proposal<P>`: it mints the ID via `fresh_proposal_id` and drops its `clock` parameter, matching the production single-PTB paths. `CLAUDE.md` now describes single-PTB executions as event-only (no `Proposal` object) instead of an `active → executed` transition.

@@ -85,7 +85,7 @@ fun receive_cap_cross_dao() {
 
         let ticket = board_voting::ticket_from_vote(
             &mut dao,
-            &mut proposal,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
@@ -106,7 +106,6 @@ fun receive_cap_cross_dao() {
         admin_ops::execute_enable_proposal_type<SomeType>(&mut dao, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(dao);
     };
