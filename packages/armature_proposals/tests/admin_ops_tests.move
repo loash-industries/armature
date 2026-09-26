@@ -2,6 +2,7 @@
 module armature_proposals::admin_ops_tests;
 
 use armature::add_member::AddMember;
+use armature::admin_ops;
 use armature::board_voting;
 use armature::dao::{Self, DAO};
 use armature::disable_proposal_type::{Self, DisableProposalType};
@@ -12,7 +13,6 @@ use armature::proposal::{Self, Proposal};
 use armature::set_board::SetBoard;
 use armature::spawn_dao::SpawnDAO;
 use armature::update_proposal_config::{Self, UpdateProposalConfig};
-use armature_proposals::admin_ops;
 use std::string;
 use std::type_name;
 use sui::clock;
@@ -71,7 +71,10 @@ fun submit_enable_type_proposal<NewType>(
     scenario.next_tx(CREATOR);
     {
         let dao = scenario.take_shared<DAO>();
-        let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
+        // Framework types carry fixed bits; meet the floor those bits need.
+        let bits = dao::framework_permissions(&type_name::with_defining_ids<NewType>());
+        let threshold = dao::permission_floor(bits).max(5_000);
+        let config = proposal::new_config(5_000, threshold, 0, 604_800_000, 0, 0);
         let payload = enable_proposal_type::new(
             type_key.to_ascii_string(),
             type_name::with_defining_ids<NewType>(),
@@ -348,7 +351,7 @@ fun disable_core_type_unfreeze_proposal_type_aborts() {
     scenario.end();
 }
 
-// --- EnableProposalType 66% approval floor ---
+// --- EnableProposalType 80% approval floor ---
 
 const MEMBER_B: address = @0xB;
 const MEMBER_C: address = @0xC;
@@ -357,9 +360,9 @@ const MEMBER_E: address = @0xE;
 
 #[test, expected_failure(abort_code = 6, location = armature::board_voting)]
 /// EnableProposalType submission is rejected when the DAO's config has an
-/// approval_threshold below the 66% floor (EFloorNotMet). The abort happens at
+/// approval_threshold below the 80% floor (EFloorNotMet). The abort happens at
 /// submit_proposal, before the proposal enters the object graph.
-fun enable_proposal_type_submission_floor_rejects_below_66_percent() {
+fun enable_proposal_type_submission_floor_rejects_below_80_percent() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
@@ -370,7 +373,7 @@ fun enable_proposal_type_submission_floor_rejects_below_66_percent() {
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();
-        let config = proposal::new_config(5_000, 6_500, 0, 604_800_000, 0, 0);
+        let config = proposal::new_config(5_000, 7_999, 0, 604_800_000, 0, 0);
         dao.test_update_config<EnableProposalType>(config);
         test_scenario::return_shared(dao);
     };
@@ -402,23 +405,23 @@ fun enable_proposal_type_submission_floor_rejects_below_66_percent() {
 
 #[test]
 /// EnableProposalType submission succeeds when the DAO's config has
-/// approval_threshold exactly at the 66% floor (6600 bps).
-fun enable_proposal_type_submission_floor_allows_66_percent() {
+/// approval_threshold exactly at the 80% floor (8000 bps).
+fun enable_proposal_type_submission_floor_allows_80_percent() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
     create_dao(&mut scenario);
 
-    // Set EnableProposalType threshold to exactly 66% (6600 bps).
+    // Set EnableProposalType threshold to exactly 80% (8000 bps).
     scenario.next_tx(CREATOR);
     {
         let mut dao = scenario.take_shared<DAO>();
-        let config = proposal::new_config(5_000, 6_600, 0, 604_800_000, 0, 0);
+        let config = proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0);
         dao.test_update_config<EnableProposalType>(config);
         test_scenario::return_shared(dao);
     };
 
-    // Submit should succeed (6600 >= 6600).
+    // Submit should succeed (8000 >= 8000).
     scenario.next_tx(CREATOR);
     {
         let dao = scenario.take_shared<DAO>();
@@ -655,8 +658,8 @@ fun update_proposal_config_non_self_target_succeeds() {
 // EThresholdBelowFloor tests
 // =========================================================================
 
-#[test, expected_failure(abort_code = admin_ops::EThresholdBelowFloor)]
-/// UpdateProposalConfig cannot lower EnableProposalType threshold below 66% floor.
+#[test, expected_failure(abort_code = armature::dao::EThresholdBelowMinimum)]
+/// UpdateProposalConfig cannot lower EnableProposalType threshold below 80% floor.
 fun update_config_below_floor_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
@@ -672,7 +675,7 @@ fun update_config_below_floor_aborts() {
         let payload = update_proposal_config::new(
             b"EnableProposalType".to_ascii_string(),
             option::none(), // keep quorum
-            option::some(5_000), // lower threshold to 50% — below 66% floor
+            option::some(5_000), // lower threshold to 50% — below 80% floor
             option::none(),
             option::none(),
             option::none(),
@@ -725,7 +728,7 @@ fun update_config_below_floor_aborts() {
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = admin_ops::EThresholdBelowFloor)]
+#[test, expected_failure(abort_code = armature::dao::EThresholdBelowMinimum)]
 /// EnableProposalType cannot enable a floor-gated type with a sub-floor threshold.
 /// Uses a SubDAO that has had UpdateProposalConfig disabled via test helper,
 /// then tries to re-enable it with a threshold below the 80% floor.
@@ -1161,7 +1164,7 @@ fun update_proposal_config_composable_allowed_updates_config() {
 // EComposableCooldownConflict: enable_proposal_type rejects cooldown+composable
 // =========================================================================
 
-#[test, expected_failure(abort_code = armature_proposals::admin_ops::EComposableCooldownConflict)]
+#[test, expected_failure(abort_code = armature::admin_ops::EComposableCooldownConflict)]
 /// execute_enable_proposal_type aborts when config has cooldown > 0 AND composable_allowed = true.
 fun enable_proposal_type_composable_cooldown_conflict_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -1234,7 +1237,7 @@ fun enable_proposal_type_composable_cooldown_conflict_aborts() {
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = armature_proposals::admin_ops::EComposableCooldownConflict)]
+#[test, expected_failure(abort_code = armature::admin_ops::EComposableCooldownConflict)]
 /// execute_update_proposal_config aborts when updated config has cooldown > 0 AND
 /// composable_allowed = true.
 fun update_proposal_config_composable_cooldown_conflict_aborts() {
@@ -1297,6 +1300,76 @@ fun update_proposal_config_composable_cooldown_conflict_aborts() {
         );
 
         admin_ops::execute_update_proposal_config(&mut dao, ticket);
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+/// UpdateProposalConfig rebuilds the target's config from the payload; it must
+/// keep the target's permission bits, not reset them to none.
+fun update_proposal_config_preserves_permissions() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    let bits = armature::permissions::board_add() | armature::permissions::pause();
+
+    create_dao(&mut scenario);
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        dao.test_enable_type<TestPayload>(
+            b"TestPayload".to_ascii_string(),
+            proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0).with_permissions(bits),
+        );
+        test_scenario::return_shared(dao);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        clock.set_for_testing(1000);
+        let payload = update_proposal_config::new(
+            b"TestPayload".to_ascii_string(),
+            option::none(),
+            option::some(6_000),
+            option::none(),
+            option::none(),
+            option::none(),
+            option::none(),
+            option::none(),
+        );
+        board_voting::submit_proposal(&dao, option::none(), payload, &clock, scenario.ctx());
+        test_scenario::return_shared(dao);
+    };
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
+        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
+        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
+        test_scenario::return_shared(proposal);
+    };
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        let ticket = board_voting::ticket_from_vote(
+            &mut dao,
+            proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        admin_ops::execute_update_proposal_config(&mut dao, ticket);
+
+        let config = dao.type_config<TestPayload>();
+        assert!(config.approval_threshold() == 6_000);
+        assert!(config.permissions() == bits);
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(dao);

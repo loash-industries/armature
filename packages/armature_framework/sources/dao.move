@@ -13,6 +13,7 @@ use armature::emergency;
 use armature::enable_bypass_type::EnableBypassType;
 use armature::enable_proposal_type::EnableProposalType;
 use armature::governance::{Self, GovernanceConfig, GovernanceTypeInit};
+use armature::permissions;
 use armature::proposal::{Self, ExecutionRequest, ProposalConfig};
 use armature::remove_member::RemoveMember;
 use armature::set_board::SetBoard;
@@ -22,6 +23,8 @@ use armature::transfer_assets::TransferAssets;
 use armature::transfer_freeze_admin::TransferFreezeAdmin;
 use armature::treasury_vault;
 use armature::unfreeze_proposal_type::UnfreezeProposalType;
+use armature::update_freeze_config::UpdateFreezeConfig;
+use armature::update_freeze_exempt_types::UpdateFreezeExemptTypes;
 use armature::update_metadata::UpdateMetadata;
 use armature::update_proposal_config::UpdateProposalConfig;
 use std::string::String;
@@ -54,6 +57,21 @@ const EDisplayKeyTaken: u64 = 15;
 const EEmptyDisplayKey: u64 = 16;
 /// Override for an already-enabled type names a display key other than the slot's.
 const EDisplayKeyMismatch: u64 = 17;
+// 18 is unused: permission denials abort with proposal::EPermissionDenied.
+/// A config change would alter a type's permission bits, but the request is
+/// not EnableProposalType, EnableBypassType or UpdateProposalConfig.
+const EPermissionChangeNotAllowed: u64 = 19;
+// 20 is unused: a meta-type changing its own bits is ruled out by
+// EFixedPermissions, since every meta-type is a framework type.
+/// The bits being granted need a higher approval floor than the granting
+/// meta-type's vote is held to.
+const EGrantFloorNotMet: u64 = 21;
+// 22 is unused: CompositePayload's fixed bits are 0 (EFixedPermissions).
+/// A config for a framework type names bits other than its fixed set
+/// (`framework_permissions`).
+const EFixedPermissions: u64 = 23;
+/// A controller-only mutator was called with an unprivileged request.
+const ENotPrivileged: u64 = 24;
 
 // === Constants ===
 
@@ -66,19 +84,24 @@ const DEFAULT_EXPIRY_MS: u64 = 604_800_000; // 7 days
 const DEFAULT_EXECUTION_DELAY_MS: u64 = 0;
 const DEFAULT_COOLDOWN_MS: u64 = 0;
 
-/// Minimum approval_threshold for EnableProposalType — matches the 66% submission-time
-/// floor enforced by board_voting::submit_proposal and the config-level floor in
-/// admin_ops::execute_update_proposal_config (assert_threshold_meets_floor).
-const ENABLE_PROPOSAL_TYPE_MIN_THRESHOLD: u16 = 6_600;
+/// Minimum approval_threshold for EnableProposalType — matches the 80% submission-time
+/// floor enforced by board_voting::submit_proposal. EnableProposalType holds
+/// TYPE_ADMIN and may grant high-impact bits, so it sits at the 80% floor.
+const ENABLE_PROPOSAL_TYPE_MIN_THRESHOLD: u16 = 8_000;
 
-/// Minimum approval_threshold for UpdateProposalConfig — matches the 80% submission-time
-/// floor enforced by admin_ops::propose_update_proposal_config (self-targeting) and the
-/// config-level floor in admin_ops::execute_update_proposal_config.
+/// Minimum approval_threshold for UpdateProposalConfig — enforced on every stored
+/// config by `assert_config_floors`, and at submission by
+/// admin_ops::propose_update_proposal_config (self-targeting).
 const UPDATE_PROPOSAL_CONFIG_MIN_THRESHOLD: u16 = 8_000;
 
 /// Minimum approval_threshold for EnableBypassType — must be >= the 80% execution
 /// floor enforced by external_execution::execute_enable_bypass_type.
 const ENABLE_BYPASS_TYPE_MIN_THRESHOLD: u16 = 8_000;
+
+/// Minimum approval_threshold for a config holding any high-impact bit
+/// (TYPE_ADMIN, MIGRATE, TREASURY_WITHDRAW, VAULT_BORROW, VAULT_EXTRACT).
+/// Same as the EnableBypassType floor.
+const HIGH_PERMISSION_MIN_THRESHOLD: u16 = 8_000;
 
 // === Enums ===
 
@@ -592,6 +615,210 @@ public fun type_for_display_key(self: &DAO, key: &std::ascii::String): Option<Ty
     }
 }
 
+// === Permissions ===
+
+/// Whether a request may perform mutations requiring `bits` on this DAO: it
+/// belongs to this DAO and is privileged or carries every bit (the bits its
+/// type's slot held when the request was minted).
+public fun is_permitted<P>(self: &DAO, bits: u64, req: &ExecutionRequest<P>): bool {
+    self.id() == req.req_dao_id() && req.req_has_permission(bits)
+}
+
+/// The authorization check every DAO mutator runs before acting on a request.
+/// Aborts with EDAOIdMismatch if `req` belongs to another DAO and with
+/// proposal::EPermissionDenied unless it is privileged or carries `bits`.
+///
+/// Holding a ticket for one type must not authorize mutations that type was
+/// never granted: without this check, any request for the DAO would do.
+/// Modules `dao` depends on (treasury_vault, capability_vault, charter,
+/// emergency) cannot take `&DAO`; they call `proposal::assert_permitted` on
+/// the request directly after their own DAO check.
+public fun assert_permitted<P>(self: &DAO, bits: u64, req: &ExecutionRequest<P>) {
+    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    req.assert_permitted(bits);
+}
+
+/// Minimum approval_threshold for a config holding `bits`: 80% if any of
+/// TYPE_ADMIN, MIGRATE, TREASURY_WITHDRAW, VAULT_BORROW or VAULT_EXTRACT is
+/// set, else 0.
+public fun permission_floor(bits: u64): u16 {
+    let high =
+        permissions::type_admin()
+        | permissions::migrate()
+        | permissions::treasury_withdraw()
+        | permissions::vault_borrow()
+        | permissions::vault_extract();
+    if (bits & high != 0) HIGH_PERMISSION_MIN_THRESHOLD else 0
+}
+
+/// Returns true if `name` is one of the framework's own payload types
+/// (`armature::types`). Their permission bits are fixed; see
+/// `framework_permissions`.
+public fun is_framework_type(name: &TypeName): bool {
+    let n = *name;
+    n == type_name_of<SetBoard>()
+        || n == type_name_of<AddMember>()
+        || n == type_name_of<RemoveMember>()
+        || n == type_name_of<BatchAddMembers>()
+        || n == type_name_of<BatchRemoveMembers>()
+        || n == type_name_of<UpdateMetadata>()
+        || n == type_name_of<EnableProposalType>()
+        || n == type_name_of<DisableProposalType>()
+        || n == type_name_of<UpdateProposalConfig>()
+        || n == type_name_of<EnableBypassType>()
+        || n == type_name_of<DisableBypassType>()
+        || n == type_name_of<TransferFreezeAdmin>()
+        || n == type_name_of<UnfreezeProposalType>()
+        || n == type_name_of<UpdateFreezeConfig>()
+        || n == type_name_of<UpdateFreezeExemptTypes>()
+        || n == type_name_of<CompositePayload>()
+        || n == type_name_of<SpawnDAO>()
+        || n == type_name_of<SpinOutSubDAO>()
+        || n == type_name_of<CreateSubDAO>()
+        || n == type_name_of<TransferAssets>()
+}
+
+/// The fixed permission bits of a framework type: exactly what its handler
+/// needs, and nothing else. A framework type's slot always holds these bits,
+/// whatever config enabled it, and no config update can change them. Returns
+/// 0 for any other type.
+///
+/// Why each type holds its bits:
+/// - SetBoard: BOARD_SET (applies an add/remove diff).
+/// - AddMember, BatchAddMembers: BOARD_ADD. RemoveMember, BatchRemoveMembers: BOARD_REMOVE.
+/// - UpdateMetadata: METADATA (charter::update_metadata).
+/// - EnableProposalType, DisableProposalType, UpdateProposalConfig: TYPE_ADMIN.
+/// - EnableBypassType: TYPE_ADMIN + VAULT_STORE (stores the new ExternalExecutionCap).
+/// - DisableBypassType: TYPE_ADMIN + VAULT_EXTRACT (extracts the cap to destroy it).
+/// - TransferFreezeAdmin (unfreeze_all), UnfreezeProposalType, UpdateFreezeConfig,
+/// UpdateFreezeExemptTypes: FREEZE (governance changes to the EmergencyFreeze).
+/// - SpawnDAO: MIGRATE (set_migrating).
+/// - CreateSubDAO: VAULT_STORE + VAULT_EXTRACT (creates and stores a SubDAOControl,
+/// stores the SubDAO's FreezeAdminCap).
+/// - SpinOutSubDAO: VAULT_BORROW + VAULT_EXTRACT (loans the SubDAOControl, then
+/// extracts the FreezeAdminCap and destroys the control).
+/// - TransferAssets: TREASURY_WITHDRAW + VAULT_EXTRACT (moves coins and caps out).
+/// - CompositePayload: none; its ticket is consumed by begin_pipeline.
+public fun framework_permissions(name: &TypeName): u64 {
+    let n = *name;
+    if (n == type_name_of<SetBoard>()) {
+        permissions::board_set()
+    } else if (n == type_name_of<AddMember>() || n == type_name_of<BatchAddMembers>()) {
+        permissions::board_add()
+    } else if (n == type_name_of<RemoveMember>() || n == type_name_of<BatchRemoveMembers>()) {
+        permissions::board_remove()
+    } else if (n == type_name_of<UpdateMetadata>()) {
+        permissions::metadata()
+    } else if (
+        n == type_name_of<EnableProposalType>()
+            || n == type_name_of<DisableProposalType>()
+            || n == type_name_of<UpdateProposalConfig>()
+    ) {
+        permissions::type_admin()
+    } else if (n == type_name_of<EnableBypassType>()) {
+        permissions::type_admin() | permissions::vault_store()
+    } else if (n == type_name_of<DisableBypassType>()) {
+        permissions::type_admin() | permissions::vault_extract()
+    } else if (
+        n == type_name_of<TransferFreezeAdmin>()
+            || n == type_name_of<UnfreezeProposalType>()
+            || n == type_name_of<UpdateFreezeConfig>()
+            || n == type_name_of<UpdateFreezeExemptTypes>()
+    ) {
+        permissions::emergency_freeze()
+    } else if (n == type_name_of<SpawnDAO>()) {
+        permissions::migrate()
+    } else if (n == type_name_of<CreateSubDAO>()) {
+        permissions::vault_store() | permissions::vault_extract()
+    } else if (n == type_name_of<SpinOutSubDAO>()) {
+        permissions::vault_borrow() | permissions::vault_extract()
+    } else if (n == type_name_of<TransferAssets>()) {
+        permissions::treasury_withdraw() | permissions::vault_extract()
+    } else {
+        0
+    }
+}
+
+/// The fixed borrow scope of a framework type: the capability types its
+/// handler borrows or loans. SpinOutSubDAO loans the SubDAOControl; no other
+/// framework type borrows. Returns empty for any other type.
+public fun framework_borrow_scope(name: &TypeName): vector<TypeName> {
+    if (*name == type_name_of<SpinOutSubDAO>()) {
+        vector[type_name_of<capability_vault::SubDAOControl>()]
+    } else {
+        vector[]
+    }
+}
+
+/// For a framework type, return `config` carrying its fixed bits and borrow
+/// scope; aborts with EFixedPermissions if `config` names any other non-empty
+/// set of either. Other types' configs are returned unchanged.
+fun with_fixed_permissions(name: &TypeName, config: ProposalConfig): ProposalConfig {
+    if (!is_framework_type(name)) return config;
+    let fixed = framework_permissions(name);
+    let bits = config.permissions();
+    assert!(bits == 0 || bits == fixed, EFixedPermissions);
+    let fixed_scope = framework_borrow_scope(name);
+    let scope = config.borrow_scope();
+    assert!(scope.is_empty() || scope == fixed_scope, EFixedPermissions);
+    config.with_permissions(fixed).with_borrow_scope(fixed_scope)
+}
+
+/// Abort with EThresholdBelowMinimum unless a config's approval_threshold
+/// meets both the type's own floor (`min_approval_threshold_for_type`) and the
+/// floor of the bits it holds (`permission_floor`). Every path that stores a
+/// config runs this, so no caller can skip it.
+fun assert_config_floors(name: &TypeName, config: &ProposalConfig) {
+    let threshold = config.approval_threshold();
+    assert!(threshold >= min_approval_threshold_for_type(name), EThresholdBelowMinimum);
+    assert!(threshold >= permission_floor(config.permissions()), EThresholdBelowMinimum);
+}
+
+/// Abort unless a request of type `P` may change a type's grant from
+/// (`old`, `old_scope`) to (`new`, `new_scope`): its permission bits and its
+/// borrow scope. No change passes. A privileged (controller) request passes.
+/// Otherwise `P` must be EnableProposalType, EnableBypassType or
+/// UpdateProposalConfig (EPermissionChangeNotAllowed), and the floor of the
+/// bits being added must not exceed `P`'s own approval floor
+/// (EGrantFloorNotMet): the vote that grants a power is held to at least that
+/// power's floor. A scope change counts as a VAULT_BORROW grant for the floor.
+/// All three meta-types sit at the 80% floor today, so this holds by
+/// construction; the check keeps it true if a floor is ever lowered.
+///
+/// Grants are standalone-only: composite::add_step refuses grant steps.
+fun assert_may_change_permissions<P>(
+    old: u64,
+    new: u64,
+    old_scope: &vector<TypeName>,
+    new_scope: &vector<TypeName>,
+    req: &ExecutionRequest<P>,
+) {
+    let scope_changed = old_scope != new_scope;
+    if ((old == new && !scope_changed) || req.req_is_privileged()) return;
+    let granter = type_name_of<P>();
+    assert!(
+        granter == type_name_of<EnableProposalType>()
+            || granter == type_name_of<EnableBypassType>()
+            || granter == type_name_of<UpdateProposalConfig>(),
+        EPermissionChangeNotAllowed,
+    );
+    let mut added = new ^ (new & old);
+    if (scope_changed) added = added | permissions::vault_borrow();
+    assert!(
+        permission_floor(added) <= min_approval_threshold_for_type(&granter),
+        EGrantFloorNotMet,
+    );
+}
+
+/// Abort unless `req` is a controller override (privileged) for this DAO:
+/// EDAOIdMismatch for another DAO, ENotPrivileged otherwise. Guards the
+/// mutators only a parent DAO's controller may call (set_controller_paused,
+/// clear_controller); no permission bit grants them.
+public fun assert_controller<P>(self: &DAO, req: &ExecutionRequest<P>) {
+    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    assert!(req.req_is_privileged(), ENotPrivileged);
+}
+
 // === Proposal-type registry: ProposalTypeInit ===
 
 /// Build a slot initializer for type `T`.
@@ -611,7 +838,7 @@ public fun init_config(self: &ProposalTypeInit): &ProposalConfig { &self.config 
 // === Public Mutators (ExecutionRequest-gated) ===
 
 /// Add `to_add` to and remove `to_remove` from the DAO's board as one change.
-/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+/// Requires BOARD_SET (`assert_permitted`).
 /// Auto-increments encrypt_epoch if any member was removed, providing forward security.
 public fun set_board_governance<P>(
     self: &mut DAO,
@@ -619,7 +846,7 @@ public fun set_board_governance<P>(
     to_remove: vector<address>,
     req: &ExecutionRequest<P>,
 ) {
-    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    self.assert_permitted(permissions::board_set(), req);
     let any_removed = !to_remove.is_empty();
     self.governance.set_board(to_add, to_remove);
     if (any_removed) {
@@ -628,13 +855,13 @@ public fun set_board_governance<P>(
 }
 
 /// Add a single member to the DAO's board.
-/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+/// Requires BOARD_ADD (`assert_permitted`).
 public fun add_board_member_governance<P>(
     self: &mut DAO,
     member: address,
     req: &ExecutionRequest<P>,
 ) {
-    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    self.assert_permitted(permissions::board_add(), req);
     self.governance.add_board_member(member);
 }
 
@@ -653,53 +880,59 @@ public fun add_board_member_governance<P>(
 /// Callers MUST surface `skipped` in any event they emit so the on-chain
 /// audit trail reflects actual state changes, not just proposer intent.
 ///
-/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+/// Requires BOARD_ADD (`assert_permitted`).
 public fun add_board_members_governance<P>(
     self: &mut DAO,
     new_members: vector<address>,
     req: &ExecutionRequest<P>,
 ): (vector<address>, vector<address>) {
-    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    self.assert_permitted(permissions::board_add(), req);
     self.governance.add_board_members(new_members)
 }
 
 /// Remove a single member from the DAO's board.
-/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+/// Requires BOARD_REMOVE (`assert_permitted`).
 /// Auto-increments encrypt_epoch for forward security.
 public fun remove_board_member_governance<P>(
     self: &mut DAO,
     member: address,
     req: &ExecutionRequest<P>,
 ) {
-    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    self.assert_permitted(permissions::board_remove(), req);
     self.governance.remove_board_member(member);
     self.increment_encrypt_epoch();
 }
 
 /// Remove multiple members from the DAO's board atomically.
-/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+/// Requires BOARD_REMOVE (`assert_permitted`).
 /// Auto-increments encrypt_epoch once for the batch.
 public fun remove_board_members_governance<P>(
     self: &mut DAO,
     members: vector<address>,
     req: &ExecutionRequest<P>,
 ): vector<address> {
-    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    self.assert_permitted(permissions::board_remove(), req);
     let removed = self.governance.remove_board_members(members);
     self.increment_encrypt_epoch();
     removed
 }
 
 /// Enable proposal type `NewType` with a display key and config.
-/// Aborts if `NewType` already has a slot or the display key is taken.
-/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+/// Aborts if `NewType` already has a slot or the display key is taken, if the
+/// config misses a floor (`assert_config_floors`), or if it holds permission
+/// bits that `P` may not grant (`assert_may_change_permissions`).
+/// Requires TYPE_ADMIN (`assert_permitted`).
 public fun enable_proposal_type<NewType, P>(
     self: &mut DAO,
     display_key: std::ascii::String,
     config: ProposalConfig,
     req: &ExecutionRequest<P>,
 ) {
-    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    self.assert_permitted(permissions::type_admin(), req);
+    let name = type_name_of<NewType>();
+    let config = with_fixed_permissions(&name, config);
+    assert_config_floors(&name, &config);
+    assert_may_change_permissions(0, config.permissions(), &vector[], &config.borrow_scope(), req);
     let dao_id = self.id();
     add_slot(&mut self.id, dao_id, new_type_init<NewType>(display_key, config));
 }
@@ -709,24 +942,41 @@ public fun enable_proposal_type<NewType, P>(
 ///
 /// Cooldown state is not preserved: if the type is re-enabled later, its first
 /// execution is not subject to the cooldown. Re-enabling requires an
-/// EnableProposalType (66% floor) or EnableBypassType (80% floor) vote.
-/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+/// EnableProposalType or EnableBypassType vote (both 80% floor).
+/// Requires TYPE_ADMIN (`assert_permitted`).
 public fun disable_proposal_type<P>(self: &mut DAO, name: TypeName, req: &ExecutionRequest<P>) {
-    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    self.assert_permitted(permissions::type_admin(), req);
     let dao_id = self.id();
     remove_slot(&mut self.id, dao_id, name);
 }
 
 /// Replace the ProposalConfig of the type named `name`.
-/// Aborts with ETypeNotEnabled if absent.
-/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+/// Aborts with ETypeNotEnabled if absent, if the new config misses a floor
+/// (`assert_config_floors`), or if it changes the type's permission bits in a
+/// way `P` may not (`assert_may_change_permissions`).
+/// Requires TYPE_ADMIN (`assert_permitted`).
 public fun update_proposal_config<P>(
     self: &mut DAO,
     name: TypeName,
     new_config: ProposalConfig,
     req: &ExecutionRequest<P>,
 ) {
-    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    self.assert_permitted(permissions::type_admin(), req);
+    assert!(
+        !is_framework_type(&name)
+            || (new_config.permissions() == framework_permissions(&name)
+                && new_config.borrow_scope() == framework_borrow_scope(&name)),
+        EFixedPermissions,
+    );
+    assert_config_floors(&name, &new_config);
+    let old = self.slot(&name).config;
+    assert_may_change_permissions(
+        old.permissions(),
+        new_config.permissions(),
+        &old.borrow_scope(),
+        &new_config.borrow_scope(),
+        req,
+    );
     let dao_id = self.id();
     let entry = self.slot_mut(&name);
     entry.config = new_config;
@@ -739,32 +989,32 @@ public fun update_proposal_config<P>(
 }
 
 /// Pause or resume proposal execution on this DAO.
-/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+/// Requires PAUSE (`assert_permitted`).
 public fun set_execution_paused<P>(self: &mut DAO, paused: bool, req: &ExecutionRequest<P>) {
-    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    self.assert_permitted(permissions::pause(), req);
     self.execution_paused = paused;
 }
 
 /// Set or clear controller-initiated pause on this SubDAO.
-/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+/// Controller override only: requires a privileged request (`assert_controller`).
 public fun set_controller_paused<P>(self: &mut DAO, paused: bool, req: &ExecutionRequest<P>) {
-    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    self.assert_controller(req);
     self.controller_paused = paused;
 }
 
 /// Clear the controller relationship (for SpinOutSubDAO).
 /// Resets controller_cap_id to none and controller_paused to false.
-/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+/// Controller override only: requires a privileged request (`assert_controller`).
 public fun clear_controller<P>(self: &mut DAO, req: &ExecutionRequest<P>) {
-    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    self.assert_controller(req);
     self.controller_cap_id = option::none();
     self.controller_paused = false;
 }
 
 /// Transition the DAO to Migrating status (irreversible).
-/// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+/// Requires MIGRATE (`assert_permitted`).
 public fun set_migrating<P>(self: &mut DAO, successor_dao_id: ID, req: &ExecutionRequest<P>) {
-    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+    self.assert_permitted(permissions::migrate(), req);
     self.status = DAOStatus::Migrating { successor_dao_id };
 }
 
@@ -972,15 +1222,18 @@ fun default_init<T>(display_key: vector<u8>): ProposalTypeInit {
 }
 
 /// Return the per-type default ProposalConfig for a given type.
-/// Types with hardcoded execution floors in admin_ops use a threshold that
-/// matches the floor so the config threshold is never misleadingly low.
+/// It carries the type's fixed bits (`framework_permissions`), and its
+/// threshold is the default raised to the type's own floor and the floor of
+/// its bits, so the config threshold is never misleadingly low.
 /// composable_allowed is true for single-operation types that make sense as steps
 /// inside a CompositeFrame. Batch types (BatchAddMembers, BatchRemoveMembers) are
 /// excluded: they have no _step handler variant and BatchAddMembers carries an
 /// explicit regression test guarding its deny-by-default status.
 fun config_for_type(name: &TypeName): ProposalConfig {
-    let min = min_approval_threshold_for_type(name);
-    let approval_threshold = if (min > 0) { min } else { DEFAULT_APPROVAL_THRESHOLD };
+    let bits = framework_permissions(name);
+    let approval_threshold = DEFAULT_APPROVAL_THRESHOLD
+        .max(min_approval_threshold_for_type(name))
+        .max(permission_floor(bits));
     let n = *name;
     let composable =
         n == type_name_of<AddMember>()
@@ -995,18 +1248,22 @@ fun config_for_type(name: &TypeName): ProposalConfig {
         DEFAULT_EXPIRY_MS,
         DEFAULT_EXECUTION_DELAY_MS,
         DEFAULT_COOLDOWN_MS,
-    ).with_composable_allowed(composable)
+    )
+        .with_composable_allowed(composable)
+        .with_permissions(bits)
+        .with_borrow_scope(framework_borrow_scope(name))
 }
 
 /// Apply `overrides` to an already-seeded registry.
-/// - Type already enabled: replace its ProposalConfig, preserving composable_allowed.
-///   The override's display key must equal the slot's (EDisplayKeyMismatch otherwise);
-///   default display keys cannot be renamed at construction time.
+/// - Type already enabled: replace its ProposalConfig, preserving composable_allowed,
+/// permissions and borrow_scope.
+/// The override's display key must equal the slot's (EDisplayKeyMismatch otherwise);
+/// default display keys cannot be renamed at construction time.
 /// - Type not yet enabled: add its slot (enables the type at construction time).
 /// - Type is a SubDAO-blocked type AND `check_subdao_blocked` is true: abort with
-///   EBlockedProposalType. Pass false for parent DAOs, which legitimately have these
-///   types (e.g. CreateSubDAO).
-/// - Config sets approval_threshold below the hardcoded minimum: abort with EThresholdBelowMinimum.
+/// EBlockedProposalType. Pass false for parent DAOs, which legitimately have these
+/// types (e.g. CreateSubDAO).
+/// - The resulting config misses a floor (`assert_config_floors`): abort.
 fun apply_type_overrides(
     id: &mut UID,
     dao_id: ID,
@@ -1020,13 +1277,19 @@ fun apply_type_overrides(
             !check_subdao_blocked || !is_subdao_blocked_type(&init.type_name),
             EBlockedProposalType,
         );
-        let floor = min_approval_threshold_for_type(&init.type_name);
-        assert!(init.config.approval_threshold() >= floor, EThresholdBelowMinimum);
         if (df::exists(id, TypeSlot { name: init.type_name })) {
             let entry: &mut ProposalType = df::borrow_mut(id, TypeSlot { name: init.type_name });
             assert!(entry.display_key == init.display_key, EDisplayKeyMismatch);
             let composable = entry.config.composable_allowed();
-            entry.config = init.config.with_composable_allowed(composable);
+            let permissions = entry.config.permissions();
+            let borrow_scope = entry.config.borrow_scope();
+            let config = init
+                .config
+                .with_composable_allowed(composable)
+                .with_permissions(permissions)
+                .with_borrow_scope(borrow_scope);
+            assert_config_floors(&init.type_name, &config);
+            entry.config = config;
             event::emit(TypeSlotConfigUpdated {
                 dao_id,
                 type_name: init.type_name.into_string(),
@@ -1034,6 +1297,12 @@ fun apply_type_overrides(
                 config: entry.config,
             });
         } else {
+            let init = ProposalTypeInit {
+                type_name: init.type_name,
+                display_key: init.display_key,
+                config: with_fixed_permissions(&init.type_name, init.config),
+            };
+            assert_config_floors(&init.type_name, &init.config);
             add_slot(id, dao_id, init);
         };
         i = i + 1;
@@ -1084,21 +1353,24 @@ fun slot_mut(self: &mut DAO, name: &TypeName): &mut ProposalType {
 // === Test Helpers ===
 
 #[test_only]
-/// Enable proposal type `T` on the DAO without an ExecutionRequest.
+/// Enable proposal type `T` on the DAO without an ExecutionRequest or floor
+/// checks. A framework type gets its fixed bits, as on every real path.
 public fun test_enable_type<T>(
     self: &mut DAO,
     display_key: std::ascii::String,
     config: ProposalConfig,
 ) {
     let dao_id = self.id();
+    let config = with_fixed_permissions(&type_name_of<T>(), config);
     add_slot(&mut self.id, dao_id, new_type_init<T>(display_key, config));
 }
 
 #[test_only]
-/// Replace the config of an already-enabled proposal type `T`.
+/// Replace the config of an already-enabled proposal type `T`, without floor
+/// checks. A framework type keeps its fixed bits, as on every real path.
 public fun test_update_config<T>(self: &mut DAO, config: ProposalConfig) {
     let name = type_name_of<T>();
-    self.slot_mut(&name).config = config;
+    self.slot_mut(&name).config = with_fixed_permissions(&name, config);
 }
 
 #[test_only]

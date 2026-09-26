@@ -1,13 +1,13 @@
 #[test_only]
 module armature_proposals::board_ops_tests;
 
+use armature::board_ops;
 use armature::board_voting;
 use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
 use armature::proposal::{Self, Proposal};
 use armature::set_board::{Self, SetBoard};
-use armature_proposals::board_ops;
 use std::string;
 use sui::clock;
 use sui::test_scenario;

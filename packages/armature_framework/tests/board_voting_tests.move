@@ -7,6 +7,7 @@ use armature::emergency::EmergencyFreeze;
 use armature::governance;
 use armature::proposal::{Self, Proposal};
 use armature::set_board::{Self, SetBoard};
+use std::internal;
 use std::string;
 use sui::clock::{Self, Clock};
 use sui::test_scenario;
@@ -682,7 +683,7 @@ fun ticket_readonly_and_discharge(scenario: &mut test_scenario::Scenario, clock:
             scenario.ctx(),
         );
         assert!(ticket.ticket_payload().value == 7);
-        ticket.discharge();
+        ticket.discharge(internal::permit());
         assert!(dao.last_executed_ms<TestPayload>().is_none());
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(dao);
@@ -723,7 +724,7 @@ fun ticket_from_vote__records_execution() {
             &clock,
             scenario.ctx(),
         );
-        ticket.discharge();
+        ticket.discharge(internal::permit());
         assert!(dao.last_executed_ms<TestPayload>() == option::some(1_000));
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(dao);

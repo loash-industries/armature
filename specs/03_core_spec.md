@@ -46,7 +46,7 @@ struct TreasuryVault has key {
 
 **API:**
 - `deposit<T>(vault, coin)` — permissionless. First deposit uses `dynamic_field::add`; subsequent deposits use `borrow_mut` + `balance::join`.
-- `withdraw<T, P>(vault, amount, &ExecutionRequest<P>, ctx) → Coin<T>` — `public(friend)`, requires governance authorization.
+- `withdraw<T, P>(vault, amount, &ExecutionRequest<P>, ctx) → Coin<T>` — requires a request for this DAO carrying `TREASURY_WITHDRAW` (§4.5). `withdraw_multicoin<P>` is gated the same way.
 - `claim_coin<T>(vault, Receiving<Coin<T>>)` — permissionless recovery of directly-transferred coins.
 - `balance<T>(vault) → u64` — read-only query.
 
@@ -67,14 +67,18 @@ struct CapabilityVault has key {
 ```
 
 **API:**
-- `store_cap_init<C>(vault, cap)` — `public(friend)`, DAO initialization only.
-- `store_cap<C, P>(vault, cap, &ExecutionRequest<P>)` — governance-gated storage.
-- `borrow_cap<C, P>(vault, cap_id, &ExecutionRequest<P>) → &C` — immutable borrow.
-- `borrow_cap_mut<C, P>(vault, cap_id, &ExecutionRequest<P>) → &mut C` — mutable borrow.
-- `loan_cap<C, P>(vault, cap_id, &ExecutionRequest<P>) → (C, CapLoan)` — temporary extraction with guaranteed return.
+Every request-taking function asserts the vault belongs to the request's DAO, then the request's permission bits (§4.5):
+
+- `store_cap_init<C>(vault, cap)` — `public(package)`, DAO initialization only.
+- `store_cap<C, P>(vault, cap, &ExecutionRequest<P>)` — requires `VAULT_STORE`.
+- `borrow_cap<C, P>(vault, cap_id, &ExecutionRequest<P>) → &C` — immutable borrow, requires `VAULT_BORROW`.
+- `borrow_cap_mut<C, P>(vault, cap_id, &ExecutionRequest<P>) → &mut C` — mutable borrow, requires `VAULT_BORROW`.
+- `loan_cap<C, P>(vault, cap_id, &ExecutionRequest<P>) → (C, CapLoan)` — temporary extraction with guaranteed return, requires `VAULT_BORROW`.
 - `return_cap<C>(vault, cap, loan)` — consumes `CapLoan`, re-stores capability.
-- `extract_cap<C, P>(vault, cap_id, &ExecutionRequest<P>) → C` — permanent removal (migration/destruction only).
-- `privileged_extract<C>(vault, cap_id, &SubDAOControl) → C` — controller reclaim, `public(friend)`.
+- `extract_cap<C, P>(vault, cap_id, &ExecutionRequest<P>) → C` — permanent removal, requires `VAULT_EXTRACT`. `create_subdao_control` / `destroy_subdao_control` also require `VAULT_EXTRACT`.
+- `receive_cap<C, P>(vault, cap, &ExecutionRequest<P>)` — cross-DAO receive; requires `VAULT_EXTRACT` on the **sending** DAO's request and does not check the receiving DAO. `receive_cap_authorized<C, Send, Recv>` also requires `VAULT_STORE` on a request from the receiving DAO.
+- `borrow_external_cap<P>(vault, dao_id, cap_id) → &ExternalExecutionCap<P>` — ungated; the cap is bearer authority for bypass execution (see the bypass caveat in §4.5).
+- `privileged_extract<C>(vault, cap_id, &SubDAOControl) → C` — controller reclaim, authorized by the `SubDAOControl`.
 - `contains(vault, cap_id) → bool`, `ids_for_type(vault, type_name) → &vector<ID>` — queries.
 
 ### 1.4 `Charter`
@@ -133,14 +137,19 @@ Stored in controller's `CapabilityVault`. One per SubDAO. Enables `privileged_su
 ### 1.7 Hot Potatoes
 
 ```rust
-struct ExecutionRequest<phantom P> { dao_id: ID, proposal_id: ID }
+struct ExecutionRequest<phantom P> {
+    dao_id:      ID,
+    proposal_id: ID,
+    permissions: u64,   // P's slot bits when the request was minted
+    privileged:  bool,  // true only for controller::privileged_submit
+}
 // abilities: none
 
 struct CapLoan { cap_id: ID, type_name: TypeName, dao_id: ID, vault_id: ID }
 // abilities: none
 ```
 
-Both must be consumed in the same PTB they are created.
+Both must be consumed in the same PTB they are created. An `ExecutionRequest` authorizes only the mutations its `permissions` name, or any mutation on its SubDAO if `privileged` (§4.5).
 
 ---
 
@@ -219,6 +228,8 @@ struct ProposalConfig has copy, drop, store {
     expiry_ms:          u64,   // ≥ 3,600,000 (1 hour)
     execution_delay_ms: u64,   // ≥ 0 (0 = immediate)
     cooldown_ms:        u64,   // ≥ 0 (0 = no cooldown)
+    composable_allowed: bool,  // may appear as a composite step; default false
+    permissions:        u64,   // armature::permissions bits; default 0 (deny)
 }
 ```
 
@@ -247,34 +258,66 @@ ProposalStatus = Active | Passed | Executed | Expired
 
 ### 4.3 Lifecycle
 
-1. **Create** — `proposal::create<P>(dao, payload, metadata, ctx)`. Asserts type enabled, proposer eligible, builds vote snapshot.
-2. **Vote** — `proposal::vote<P>(proposal, vote, ctx)`. Records vote, checks pass condition. If met, `status = Passed`.
-3. **Expire** — `proposal::try_expire<P>(proposal, clock)`. If past `expiry_ms` and still `Active`, set `Expired`.
-4. **Execute** — `proposal::execute<P>(proposal, dao, freeze, clock, ctx) → ExecutionRequest<P>`.
-   - Asserts `status == Passed`.
-   - Asserts `dao.status == Active`.
-   - Asserts `controller_paused == false` (exempt for pause/unpause types).
-   - Asserts not frozen (or freeze expired). `TransferFreezeAdmin` and `UnfreezeProposalType` exempt.
-   - Asserts `execution_delay_ms` elapsed since `passed_at_ms`.
+1. **Create** — `board_voting::submit_proposal<P>(dao, metadata, payload, clock, ctx)`. Asserts type enabled, proposer is a board member, config meets submission floors; records the roster version as the vote snapshot.
+2. **Vote** — `board_voting::vote<P>(proposal, dao, approve, clock, ctx)`. Voter must have been a member at the snapshot; voting closes at `created_at_ms + expiry_ms`. If the pass condition is met, `status = Passed`.
+3. **Expire** — `proposal::delete_expired_proposal<P>(proposal, clock)`. Anyone may delete an `Active` proposal past its voting period, or a `Passed` one whose execution window (`passed_at + execution_delay_ms + expiry_ms`) has closed.
+4. **Execute** — `board_voting::ticket_from_vote<P>(dao, proposal, freeze, clock, ctx) → ExecutionTicket<P>`.
+   - Asserts `status == Passed`, `dao.status == Active` (or `Migrating` for `TransferAssets`), type still enabled.
+   - Asserts `controller_paused == false` and execution not paused.
+   - Asserts `P` not frozen. `TransferFreezeAdmin` and `UnfreezeProposalType` cannot be frozen.
+   - Asserts `execution_delay_ms` elapsed and the execution window open.
    - Asserts `cooldown_ms` elapsed since last execution of this type.
-   - Asserts executor is eligible (board member for Board governance).
-   - Sets `status = Executed`, updates `last_executed_ms`.
-   - Returns `ExecutionRequest<P>` hot potato.
+   - Asserts executor is a current board member.
+   - Deletes the `Proposal`, emits `ProposalExecuted`, updates `last_executed_ms`.
+   - Returns a ticket holding the payload and an `ExecutionRequest<P>` whose `permissions` are `P`'s slot bits **now** (at execution, not submission).
+5. **Handle** — only `P`'s handler can spend or close the ticket. `ticket_request(permit)` and `discharge(permit)` take `std::internal::Permit<P>`, which only the module defining `P` can mint; a package whose handlers live beside the type exposes it as `public(package) fun permit()`. The handler reads the arguments for each gated mutator from the payload; each mutator aborts `EPermissionDenied` unless the request holds its bit. `discharge` ends the PTB.
 
-**Status transitions:** `Active → Passed/Expired`, `Passed → Executed`. One-directional, irreversible.
+   A ticket holder therefore cannot pass the request to a mutator with arguments of their own choosing (a larger `amount`, another recipient, other board members, another cap). Permission bits bound what a type's handler may touch; the permit binds who may spend the request, and so which arguments it is spent with.
 
-**Retry on failure:** If a handler aborts, the PTB reverts (including the `Executed` write). Proposal remains `Passed` and can be retried.
+The single-PTB paths (`submit_vote_execute`, `ticket_from_cap`, `composite::advance_step`) create no `Proposal` object but mint the request the same way: its bits are read from `P`'s slot at mint time. `ticket_from_cap` also takes `Permit<P>`: only `P`'s module can mint a bypass ticket, so the extension's authorization check must run there.
+
+**Status transitions:** `Active → Passed` is the only stored transition. Execution and expiry delete the proposal (`ProposalExecuted` / `ProposalExpired` events).
+
+**Retry on failure:** If a handler aborts, the PTB reverts (including the deletion). Proposal remains `Passed` and can be retried while its execution window is open.
 
 ### 4.4 `privileged_submit` (Controller Bypass)
 
 When a controller DAO executes a proposal that targets a SubDAO:
 1. Controller's handler calls `loan_cap` to extract `SubDAOControl` + `CapLoan`.
-2. Calls `privileged_submit<P>(control, subdao, payload, ctx)` — creates proposal in `Passed` status directly.
-3. SubDAO's handler consumes the SubDAO's `ExecutionRequest`.
+2. Calls `privileged_submit<P>(control, subdao, type_key, metadata, payload, ctx)` — no `Proposal` object; returns a SubDAO `ExecutionRequest<P>` with `privileged = true` and `permissions = 0`.
+3. SubDAO mutators accept the privileged request whatever its bits; `set_controller_paused` and `clear_controller` accept **only** privileged requests.
 4. `SubDAOControl` returned via `return_cap`.
 5. Controller's `ExecutionRequest` consumed.
 
-Two hot potatoes alive simultaneously in the same PTB.
+Two hot potatoes alive simultaneously in the same PTB. The controller's own request must carry `VAULT_BORROW` to loan the `SubDAOControl` in step 1.
+
+### 4.5 Permissions
+
+`ProposalConfig.permissions` names the DAO-wide mutations a type's requests may perform. Deny-by-default.
+
+| Bit | Floor | Guards |
+|---|---|---|
+| `BOARD_ADD` | — | `add_board_member(s)_governance` |
+| `BOARD_REMOVE` | — | `remove_board_member(s)_governance` |
+| `BOARD_SET` | — | `set_board_governance` |
+| `TYPE_ADMIN` | 80% | `enable_proposal_type`, `disable_proposal_type`, `update_proposal_config` |
+| `PAUSE` | — | `set_execution_paused` |
+| `MIGRATE` | 80% | `set_migrating` |
+| `METADATA` | — | `charter::update_metadata` |
+| `TREASURY_WITHDRAW` | 80% | `treasury_vault::withdraw`, `withdraw_multicoin` |
+| `VAULT_STORE` | — | `store_cap`; receiver side of `receive_cap_authorized` |
+| `VAULT_BORROW` | 80% | `borrow_cap`, `borrow_cap_mut`, `loan_cap`, limited to the cap types in the config's `borrow_scope` (`EBorrowScopeDenied`, 22) |
+| `VAULT_EXTRACT` | 80% | `extract_cap`, `create/destroy_subdao_control`, sender side of `receive_cap(_authorized)` |
+| `FREEZE` | — | `governance_unfreeze_type`, `update_freeze_duration`, `unfreeze_all`, `add/remove_freeze_exempt_type` |
+
+- **Check.** Mutators in `dao` call `dao::assert_permitted(bits, req)` (DAO id, then bits). The vault, charter, emergency and tribe modules cannot import `dao`, so they check their own `dao_id` and then `proposal::assert_permitted(req, bits)`. Denial aborts `proposal::EPermissionDenied` (21). A privileged request passes every bit check.
+- **Floors.** `dao::permission_floor(bits)` is 80% if the config holds `TYPE_ADMIN`, `MIGRATE`, `TREASURY_WITHDRAW`, `VAULT_BORROW` or `VAULT_EXTRACT`. `dao` enforces it, together with the per-type floors (80% for `EnableProposalType`, `UpdateProposalConfig`, `EnableBypassType`), on every config it stores (`EThresholdBelowMinimum`).
+- **Fixed framework bits.** Framework payload types (`dao::is_framework_type`) always hold exactly `dao::framework_permissions`; a config naming other bits aborts `EFixedPermissions` (23). Table: `packages/armature_framework/internal_workings.md` §9.1.
+- **Grants.** Only `EnableProposalType`, `EnableBypassType` or `UpdateProposalConfig` requests (all 80%), or a privileged request, may change a type's bits (`EPermissionChangeNotAllowed`, 19). Grants are standalone-only: composites refuse grant steps (`EUseTypedStep`, `EGrantInComposite`). Other types get bits from their enabling config; `armature_proposals::type_permissions` lists what each built-in type needs.
+- **Mint time.** Requests carry the bits their slot held when minted, so a grant or revocation applies from the next execution.
+- **Borrow scope.** `ProposalConfig.borrow_scope` lists the capability types a `VAULT_BORROW` request may borrow or loan (deny-by-default, empty borrows nothing). It is copied into the request at mint time, checked by the vault after the bit, fixed for framework types (`dao::framework_borrow_scope`), and changed only under the grant rules above (a scope change counts as a VAULT_BORROW grant; never in a composite).
+- **Bypass-safe bits.** A bypass-enabled type may not hold `TYPE_ADMIN`, `MIGRATE`, `VAULT_EXTRACT` or `FREEZE` (`external_execution::bypass_forbidden_bits`, `EBypassForbiddenBits` 15), checked at `EnableBypassType` and at every `ticket_from_cap`.
+- **Bypass authorization.** `borrow_external_cap` is public and `ticket_from_cap` does not check the sender, but it takes `Permit<P>`: only `P`'s module can mint a bypass ticket, so that module's mint entry is the authorization point. `MintAllowance<T>` is minted only by `currency_ops::mint_allowance_bypass`, gated by the `ConfigureMintAllowance<T>` allowlist (ARMATURE-31). Placement rules: `docs/package-boundaries.md`.
 
 ---
 
@@ -286,9 +329,9 @@ Two hot potatoes alive simultaneously in the same PTB.
 
 | # | Type | Default | Safety Rail |
 |---|---|---|---|
-| 1 | `UpdateProposalConfig` | ✅ | 80% floor when self-referential |
-| 2 | `EnableProposalType` | ✅ | 66% floor; SubDAO blocklist for hierarchy types |
-| 3 | `DisableProposalType` | ✅ | Cannot disable itself, `EnableProposalType`, `TransferFreezeAdmin`, `UnfreezeProposalType` |
+| 1 | `UpdateProposalConfig` | ✅ | 80% floor; may change bits |
+| 2 | `EnableProposalType` | ✅ | 80% floor; may grant bits; SubDAO blocklist for hierarchy types |
+| 3 | `DisableProposalType` | ✅ | 80% floor (`TYPE_ADMIN`); cannot disable itself, `EnableProposalType`, the bypass meta-types, `TransferFreezeAdmin`, `UnfreezeProposalType` |
 | 4 | `UpdateMetadata` | ✅ | — |
 | 5 | `TransferFreezeAdmin` | ✅ | Cannot be frozen or disabled |
 | 6 | `UnfreezeProposalType` | ✅ | Cannot be frozen or disabled |
@@ -324,11 +367,12 @@ Two hot potatoes alive simultaneously in the same PTB.
 | 16 | `AmendCharter` | ⬜ opt-in (recommended 80% threshold) |
 | 17 | `RenewCharterStorage` | ⬜ opt-in (lower threshold OK) |
 
-### 5.6 Freeze Config (`admin.move`)
+### 5.6 Freeze Config (`freeze_ops.move`, framework)
 
 | # | Type | Default |
 |---|---|---|
-| 18 | `UpdateFreezeConfig` | ⬜ opt-in |
+| 18 | `UpdateFreezeConfig` | ⬜ opt-in (framework type, fixed `FREEZE`) |
+| 19 | `UpdateFreezeExemptTypes` | ⬜ opt-in (framework type, fixed `FREEZE`) |
 
 ---
 
@@ -342,8 +386,8 @@ Two hot potatoes alive simultaneously in the same PTB.
 | Governance state mutations are `public(friend)`, callable only from handler code. |
 | `proposal::create<P>` aborts if `TypeName::get<P>()` not in `enabled_proposals`. |
 | `EnableProposalType` cannot be disabled. `DisableProposalType` cannot disable itself. |
-| `UpdateProposalConfig` self-referential: 80% floor at execution. |
-| `EnableProposalType`: 66% floor at execution. |
+| `EnableProposalType`, `UpdateProposalConfig`, `EnableBypassType`: 80% floor on every stored config (`dao::min_approval_threshold_for_type`). |
+| Every stored config meets `dao::permission_floor(permissions)`. |
 | `ProposalConfig` validation: `quorum ∈ [1, 10000]`, `approval_threshold ∈ [5000, 10000]`, `expiry_ms ≥ 3,600,000`. |
 
 ### Proposals
@@ -351,17 +395,29 @@ Two hot potatoes alive simultaneously in the same PTB.
 | Invariant |
 |---|
 | `ExecutionRequest<P>` has no `drop`/`store`/`copy`. Must be consumed in same PTB. |
+| `ExecutionRequest.permissions` equals `P`'s slot bits at mint time; `privileged` is true only from `controller::privileged_submit`. |
 | `CapLoan` has no `drop`/`store`/`copy`. `return_cap` verifies `cap_id` match. |
-| Status transitions are monotonic: `Active → Passed/Expired`, `Passed → Executed`. |
+| Status transitions are monotonic: `Active → Passed`; execution and expiry delete the proposal. |
 | `vote_snapshot` and `total_snapshot_weight` are write-once at creation. |
 | Executor eligibility: Board → current member. |
 | `Passed` proposals that abort on execution remain `Passed` and retryable. |
+
+### Permissions
+
+| Invariant |
+|---|
+| Every framework mutator taking an `ExecutionRequest` checks the request's DAO, then its bits (or `privileged`); CI (`scripts/check_request_gates.py`) fails on an ungated one. |
+| `set_controller_paused` / `clear_controller` accept only privileged requests (`dao::ENotPrivileged`). |
+| Framework types hold exactly `dao::framework_permissions`; no config changes them. |
+| Only `EnableProposalType`, `EnableBypassType`, `UpdateProposalConfig` or a privileged request change a type's bits; never inside a composite. |
+| Composite steps do not pool bits: each step's request carries its own type's bits. |
+| A bypass type's bits are exercisable by anyone who can construct its payload (ARMATURE-31). |
 
 ### Treasury
 
 | Invariant |
 |---|
-| `withdraw` is `public(friend)`, requires `ExecutionRequest`. |
+| `withdraw` / `withdraw_multicoin` require a request of this DAO carrying `TREASURY_WITHDRAW`. |
 | `coin_types` exactly reflects non-zero `Balance<T>` dynamic fields. |
 | No `Balance<T>` with value zero may exist. Zero-balance withdrawal removes both field and registry entry. |
 
@@ -369,7 +425,7 @@ Two hot potatoes alive simultaneously in the same PTB.
 
 | Invariant |
 |---|
-| All vault access (borrow, loan, extract) requires `ExecutionRequest`. |
+| Store requires `VAULT_STORE`; borrow and loan require `VAULT_BORROW`; extract and SubDAOControl create/destroy require `VAULT_EXTRACT`. `borrow_external_cap` is the only ungated read of a stored cap. |
 | `cap_types` reflects stored types. `cap_ids` maps types to complete ID lists. |
 | `loan_cap` does NOT update registries (ID considered "held" during loan). |
 | `privileged_extract` requires `&SubDAOControl` and asserts `control.subdao_id == vault.dao_id`. |
@@ -381,7 +437,7 @@ Two hot potatoes alive simultaneously in the same PTB.
 | Controlled SubDAO cannot enable `SpawnDAO`, `SpinOutSubDAO`, `CreateSubDAO`. |
 | `controller_cap_id` set at creation, cleared at spinout. |
 | Only one `SubDAOControl` per SubDAO ID. |
-| `controller_paused`: set/cleared only via `privileged_submit` with valid `SubDAOControl`. |
+| `controller_paused`: set/cleared only via a privileged request from `privileged_submit` with valid `SubDAOControl` (`dao::assert_controller`). |
 | When `controller_paused == true`, `proposal::execute` aborts for all types. |
 | `SpinOutSubDAO` clears `controller_paused` to `false`. |
 
@@ -415,7 +471,7 @@ All state-changing operations emit events for indexer consumption. Key events:
 | `VoteCast` | `proposal::vote` | `proposal_id`, voter, vote, yes_weight, no_weight |
 | `ProposalPassed` | `proposal::vote` | `proposal_id`, `passed_at_ms` |
 | `ProposalExecuted` | `proposal::execute` | `proposal_id`, executor |
-| `ProposalExpired` | `proposal::try_expire` | `proposal_id` |
+| `ProposalExpired` | `proposal::delete_expired_proposal` | `proposal_id` |
 | `SubDAOCreated` | `CreateSubDAO` handler | `parent_dao_id`, `subdao_id`, `control_id` |
 | `SubDAOSpunOut` | `SpinOutSubDAO` handler | `controller_dao_id`, `subdao_id` |
 | `CharterAmended` | `AmendCharter` handler | `dao_id`, `charter_id`, `version`, `new_blob_id` |

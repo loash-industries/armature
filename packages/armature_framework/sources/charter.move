@@ -1,5 +1,6 @@
 module armature::charter;
 
+use armature::permissions;
 use armature::proposal::ExecutionRequest;
 
 // === Errors ===
@@ -61,11 +62,13 @@ public(package) fun destroy(charter: Charter) {
 
 /// Update the DAO's metadata URL.
 /// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+/// Requires METADATA (`proposal::assert_permitted`).
 public fun update_metadata<P>(
     self: &mut Charter,
     new_metadata_uri: std::string::String,
     req: &ExecutionRequest<P>,
 ) {
     assert!(self.dao_id == req.req_dao_id(), EDaoMismatch);
+    req.assert_permitted(permissions::metadata());
     self.metadata_uri = new_metadata_uri;
 }

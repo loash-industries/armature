@@ -135,10 +135,10 @@ fun create_tribe_control_hierarchy_is_tribe_officers_members() {
         let tribe_ctrl_ids = tribe_vault.ids_for_type<SubDAOControl>();
         assert!(tribe_ctrl_ids.length() == 1);
 
-        let req = proposal::new_execution_request<TestProposal>(
+        let req = proposal::new_execution_request_for_testing<TestProposal>(
             tribe_vault.dao_id(),
             object::id_from_address(@0xBEEF),
-        );
+        ).with_borrow_scope_for_testing(vector[std::type_name::with_defining_ids<SubDAOControl>()]);
         let (tribe_ctrl, tribe_loan) = tribe_vault.loan_cap<SubDAOControl, TestProposal>(
             tribe_ctrl_ids[0],
             &req,
@@ -153,10 +153,10 @@ fun create_tribe_control_hierarchy_is_tribe_officers_members() {
         let officer_ctrl_ids = officer_vault.ids_for_type<SubDAOControl>();
         assert!(officer_ctrl_ids.length() == 1);
 
-        let req = proposal::new_execution_request<TestProposal>(
+        let req = proposal::new_execution_request_for_testing<TestProposal>(
             officer_vault.dao_id(),
             object::id_from_address(@0xBEEF),
-        );
+        ).with_borrow_scope_for_testing(vector[std::type_name::with_defining_ids<SubDAOControl>()]);
         let (officer_ctrl, officer_loan) = officer_vault.loan_cap<SubDAOControl, TestProposal>(
             officer_ctrl_ids[0],
             &req,
@@ -363,7 +363,7 @@ fun do_create_parent_and_wired_subdao(scenario: &mut test_scenario::Scenario): (
         string::utf8(b"https://example.com/parent.png"),
         scenario.ctx(),
     );
-    let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
+    let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
     let subdao_id = tribe::create_wired_subdao(
         vector[OFFICER_A],
         string::utf8(b"SubDAO"),
@@ -417,10 +417,10 @@ fun create_wired_subdao_wires_control_into_parent_vault() {
         let ctrl_ids = vault.ids_for_type<SubDAOControl>();
         assert!(ctrl_ids.length() == 1);
 
-        let req = proposal::new_execution_request<TestProposal>(
+        let req = proposal::new_execution_request_for_testing<TestProposal>(
             vault.dao_id(),
             object::id_from_address(@0xBEEF),
-        );
+        ).with_borrow_scope_for_testing(vector[std::type_name::with_defining_ids<SubDAOControl>()]);
         let (ctrl, loan) = vault.loan_cap<SubDAOControl, TestProposal>(ctrl_ids[0], &req);
         assert!(ctrl.subdao_id() == subdao_id);
         vault.return_cap(ctrl, loan);
@@ -530,7 +530,7 @@ fun create_wired_subdao_config_override_applied() {
             ),
         ];
 
-        let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
+        let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
         subdao_id =
             tribe::create_wired_subdao(
                 vector[OFFICER_A],
@@ -583,7 +583,7 @@ fun create_wired_subdao_new_type_enabled_via_override() {
             ),
         ];
 
-        let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
+        let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
         subdao_id =
             tribe::create_wired_subdao(
                 vector[OFFICER_A],
@@ -633,7 +633,7 @@ fun create_wired_subdao_aborts_on_blocked_type() {
             ),
         ];
 
-        let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
+        let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
         tribe::create_wired_subdao(
             vector[OFFICER_A],
             string::utf8(b"SubDAO"),
@@ -653,7 +653,7 @@ fun create_wired_subdao_aborts_on_blocked_type() {
 // === Test 17: EnableProposalType below floor aborts ===
 
 #[test, expected_failure(abort_code = dao::EThresholdBelowMinimum)]
-/// Setting EnableProposalType threshold below 66% aborts with EThresholdBelowMinimum.
+/// Setting EnableProposalType threshold below 80% aborts with EThresholdBelowMinimum.
 fun create_wired_subdao_aborts_on_enable_proposal_type_below_floor() {
     let mut scenario = test_scenario::begin(CREATOR);
     scenario.next_tx(CREATOR);
@@ -669,11 +669,11 @@ fun create_wired_subdao_aborts_on_enable_proposal_type_below_floor() {
         let overrides = vector[
             dao::new_type_init<EnableProposalType>(
                 b"EnableProposalType".to_ascii_string(),
-                proposal::new_config(5_000, 6_599, 0, 604_800_000, 0, 0),
+                proposal::new_config(5_000, 7_999, 0, 604_800_000, 0, 0),
             ),
         ];
 
-        let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
+        let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
         tribe::create_wired_subdao(
             vector[OFFICER_A],
             string::utf8(b"SubDAO"),
@@ -713,7 +713,7 @@ fun create_wired_subdao_aborts_on_update_proposal_config_below_floor() {
             ),
         ];
 
-        let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
+        let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
         tribe::create_wired_subdao(
             vector[OFFICER_A],
             string::utf8(b"SubDAO"),
@@ -733,7 +733,7 @@ fun create_wired_subdao_aborts_on_update_proposal_config_below_floor() {
 // === Test 19: EnableProposalType at exact floor passes ===
 
 #[test]
-/// Setting EnableProposalType threshold at exactly 66% (6600) succeeds.
+/// Setting EnableProposalType threshold at exactly 80% (8000) succeeds.
 fun create_wired_subdao_enable_proposal_type_at_floor_passes() {
     let mut scenario = test_scenario::begin(CREATOR);
     let subdao_id: ID;
@@ -750,11 +750,11 @@ fun create_wired_subdao_enable_proposal_type_at_floor_passes() {
         let overrides = vector[
             dao::new_type_init<EnableProposalType>(
                 b"EnableProposalType".to_ascii_string(),
-                proposal::new_config(5_000, 6_600, 0, 604_800_000, 0, 0),
+                proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0),
             ),
         ];
 
-        let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
+        let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
         subdao_id =
             tribe::create_wired_subdao(
                 vector[OFFICER_A],
@@ -774,7 +774,7 @@ fun create_wired_subdao_enable_proposal_type_at_floor_passes() {
     {
         let subdao = scenario.take_shared_by_id<DAO>(subdao_id);
         let config = subdao.type_config<EnableProposalType>();
-        assert!(config.approval_threshold() == 6_600);
+        assert!(config.approval_threshold() == 8_000);
         test_scenario::return_shared(subdao);
     };
 
@@ -1028,7 +1028,7 @@ fun create_tribe_configured_aborts_on_update_config_below_floor() {
 // === Test 26: EnableProposalType below floor in member overrides aborts ===
 
 #[test, expected_failure(abort_code = dao::EThresholdBelowMinimum)]
-/// Setting EnableProposalType threshold below 66% in member overrides aborts.
+/// Setting EnableProposalType threshold below 80% in member overrides aborts.
 fun create_tribe_configured_aborts_on_enable_type_below_floor() {
     let mut scenario = test_scenario::begin(CREATOR);
     scenario.next_tx(CREATOR);
@@ -1036,7 +1036,7 @@ fun create_tribe_configured_aborts_on_enable_type_below_floor() {
         let member_overrides = vector[
             dao::new_type_init<EnableProposalType>(
                 b"EnableProposalType".to_ascii_string(),
-                proposal::new_config(5_000, 6_599, 0, 604_800_000, 0, 0),
+                proposal::new_config(5_000, 7_999, 0, 604_800_000, 0, 0),
             ),
         ];
 
@@ -1136,7 +1136,7 @@ fun create_wired_subdao_preserves_composable_allowed_on_override() {
             ),
         ];
 
-        let req = proposal::new_execution_request<TestProposal>(parent_id, parent_id);
+        let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
         subdao_id =
             tribe::create_wired_subdao(
                 vector[OFFICER_A],

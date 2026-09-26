@@ -1,5 +1,6 @@
 module armature::composite_payload;
 
+use std::internal::{Self, Permit};
 use std::type_name::TypeName;
 
 /// Stored inside `Proposal<CompositePayload>` (the "Composite" proposal type).
@@ -41,3 +42,9 @@ public fun step_count(self: &CompositePayload): u64 { self.step_type_keys.length
 public fun step_type_key_at(self: &CompositePayload, index: u64): std::ascii::String {
     self.step_type_keys[index]
 }
+
+// === Handler authority ===
+
+/// `Permit<CompositePayload>` for this package's handler: the only way to spend or close
+/// an `ExecutionTicket<CompositePayload>` (see `proposal::ticket_request`).
+public(package) fun permit(): Permit<CompositePayload> { internal::permit() }

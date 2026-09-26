@@ -1,117 +1,78 @@
 #[test_only]
 module armature_proposals::capability_vault_tests;
 
-use armature::board_voting;
 use armature::capability_vault::CapabilityVault;
 use armature::dao::{Self, DAO};
-use armature::emergency::EmergencyFreeze;
-use armature::enable_proposal_type::{Self, EnableProposalType};
 use armature::governance;
-use armature::proposal::{Self, Proposal};
-use armature_proposals::admin_ops;
+use armature::permissions;
+use armature::proposal;
 use std::string;
-use std::type_name;
-use sui::clock;
 use sui::test_scenario;
 
 const OWNER: address = @0xA1;
 
-/// Payload type enabled by the vehicle proposal.
+/// Payload type of the sending DAO's request.
 public struct SomeType has drop, store {}
 
 public struct ForeignCap has key, store {
     id: UID,
 }
 
+fun create_dao(scenario: &mut test_scenario::Scenario): ID {
+    scenario.next_tx(OWNER);
+    let init = governance::init_board(vector[OWNER]);
+    dao::create(&init, string::utf8(b"Receiving DAO"), string::utf8(b""), scenario.ctx())
+}
+
 #[test]
-/// receive_cap stores a cap in a vault without checking dao_id match.
-/// This enables cross-DAO capability transfers: a cap extracted from DAO A
-/// can be received into DAO B's vault using B's ExecutionRequest.
+/// receive_cap stores a cap in a vault without checking dao_id match: a cap
+/// extracted from DAO A is received into DAO B's vault on A's request. The
+/// sending request must carry VAULT_EXTRACT.
 fun receive_cap_cross_dao() {
     let mut scenario = test_scenario::begin(OWNER);
-    let mut clock = clock::create_for_testing(scenario.ctx());
+    let dao_id = create_dao(&mut scenario);
 
-    // Create a DAO — we'll receive a foreign cap into its vault
-    let dao_id;
-    scenario.next_tx(OWNER);
-    {
-        let init = governance::init_board(vector[OWNER]);
-        dao_id =
-            dao::create(
-                &init,
-                string::utf8(b"Receiving DAO"),
-                string::utf8(b""),
-                scenario.ctx(),
-            );
-    };
-
-    // Submit a vehicle proposal to get an ExecutionRequest
     scenario.next_tx(OWNER);
     {
         let dao = scenario.take_shared_by_id<DAO>(dao_id);
-        clock.set_for_testing(1_000);
-        let config = proposal::new_config(5_000, 6_600, 0, 604_800_000, 0, 0);
-        board_voting::submit_proposal(
-            &dao,
-            option::some(string::utf8(b"Vehicle for receive_cap")),
-            enable_proposal_type::new(
-                b"SomeType".to_ascii_string(),
-                type_name::with_defining_ids<SomeType>(),
-                config,
-            ),
-            &clock,
-            scenario.ctx(),
-        );
-        test_scenario::return_shared(dao);
-    };
-
-    scenario.next_tx(OWNER);
-    {
-        let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
-        clock.set_for_testing(2_000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
-        test_scenario::return_shared(proposal);
-    };
-
-    // Execute: create a ForeignCap (simulating an asset from another DAO)
-    // and store it via receive_cap (which doesn't check dao_id)
-    scenario.next_tx(OWNER);
-    {
-        let mut dao = scenario.take_shared_by_id<DAO>(dao_id);
         let mut vault = scenario.take_shared_by_id<CapabilityVault>(dao.capability_vault_id());
-        let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
-        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(dao.emergency_freeze_id());
-        clock.set_for_testing(3_000);
 
-        let ticket = board_voting::ticket_from_vote(
-            &mut dao,
-            proposal,
-            &freeze,
-            &clock,
-            scenario.ctx(),
+        // A request from another DAO that may move caps out of its vault.
+        let sender_dao = object::id_from_address(@0x5E);
+        let req = proposal::new_permitted_request_for_testing<SomeType>(
+            sender_dao,
+            object::id_from_address(@0x1),
+            permissions::vault_extract(),
         );
 
-        // Create a cap that doesn't belong to this DAO
         let foreign = ForeignCap { id: object::new(scenario.ctx()) };
         let foreign_id = object::id(&foreign);
-
-        // receive_cap accepts caps regardless of origin DAO — key difference
-        // from store_cap which asserts dao_id == req.req_dao_id()
-        vault.receive_cap(foreign, ticket.ticket_request());
-
-        // Verify cap is stored in the vault
+        vault.receive_cap(foreign, &req);
         assert!(vault.contains(foreign_id));
 
-        // Consume the request via the handler
-        admin_ops::execute_enable_proposal_type<SomeType>(&mut dao, ticket);
-
-        test_scenario::return_shared(freeze);
+        proposal::consume_execution_request_for_testing(req);
         test_scenario::return_shared(vault);
         test_scenario::return_shared(dao);
     };
-
-    clock.destroy_for_testing();
     scenario.end();
+}
+
+#[test, expected_failure(abort_code = proposal::EPermissionDenied)]
+/// A sending request without VAULT_EXTRACT cannot push a cap into a vault.
+fun receive_cap_without_vault_extract_aborts() {
+    let mut scenario = test_scenario::begin(OWNER);
+    let dao_id = create_dao(&mut scenario);
+
+    scenario.next_tx(OWNER);
+    {
+        let dao = scenario.take_shared_by_id<DAO>(dao_id);
+        let mut vault = scenario.take_shared_by_id<CapabilityVault>(dao.capability_vault_id());
+        let req = proposal::new_permitted_request_for_testing<SomeType>(
+            object::id_from_address(@0x5E),
+            object::id_from_address(@0x1),
+            permissions::vault_store(),
+        );
+        vault.receive_cap(ForeignCap { id: object::new(scenario.ctx()) }, &req);
+        abort 0
+    }
 }

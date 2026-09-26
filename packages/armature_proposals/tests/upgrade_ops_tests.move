@@ -8,6 +8,7 @@ use armature::emergency::EmergencyFreeze;
 use armature::governance;
 use armature::proposal::{Self, Proposal};
 use armature_proposals::propose_upgrade::{Self, ProposeUpgrade};
+use armature_proposals::type_permissions;
 use armature_proposals::upgrade_ops;
 use std::string;
 use sui::clock;
@@ -36,7 +37,12 @@ fun enable_upgrade_type(scenario: &mut test_scenario::Scenario) {
     {
         let mut dao = scenario.take_shared<DAO>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type<ProposeUpgrade>(b"ProposeUpgrade".to_ascii_string(), config);
+        dao.test_enable_type<ProposeUpgrade>(
+            b"ProposeUpgrade".to_ascii_string(),
+            config
+                .with_permissions(type_permissions::propose_upgrade())
+                .with_borrow_scope(type_permissions::propose_upgrade_scope()),
+        );
         test_scenario::return_shared(dao);
     };
 }
@@ -117,8 +123,8 @@ fun upgrade_e2e() {
             scenario.ctx(),
         );
 
-        // Step 1: authorize upgrade — returns ticket, cap, and loan
-        let (ticket, cap, loan) = upgrade_ops::execute_propose_upgrade(
+        // Step 1: authorize upgrade — returns the upgrade ticket and the pending cap
+        let (ticket, pending) = upgrade_ops::execute_propose_upgrade(
             &mut vault,
             ticket,
         );
@@ -127,7 +133,7 @@ fun upgrade_e2e() {
         let receipt = package::test_upgrade(ticket);
 
         // Step 3: commit upgrade and return cap to vault
-        upgrade_ops::commit_upgrade(&mut vault, cap, receipt, loan);
+        upgrade_ops::commit_upgrade(&mut vault, pending, receipt);
 
         // Verify: UpgradeCap is back in the vault
         assert!(vault.contains(cap_id));
@@ -178,7 +184,12 @@ fun upgrade_vault_mismatch_aborts() {
     {
         let mut dao = scenario.take_shared_by_id<DAO>(first_dao_id);
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type<ProposeUpgrade>(b"ProposeUpgrade".to_ascii_string(), config);
+        dao.test_enable_type<ProposeUpgrade>(
+            b"ProposeUpgrade".to_ascii_string(),
+            config
+                .with_permissions(type_permissions::propose_upgrade())
+                .with_borrow_scope(type_permissions::propose_upgrade_scope()),
+        );
         test_scenario::return_shared(dao);
     };
 
@@ -240,13 +251,13 @@ fun upgrade_vault_mismatch_aborts() {
         );
 
         // This will abort: wrong_vault.dao_id() != request.req_dao_id()
-        let (ticket, cap, loan) = upgrade_ops::execute_propose_upgrade(
+        let (ticket, pending) = upgrade_ops::execute_propose_upgrade(
             &mut wrong_vault,
             ticket,
         );
 
         let receipt = package::test_upgrade(ticket);
-        upgrade_ops::commit_upgrade(&mut wrong_vault, cap, receipt, loan);
+        upgrade_ops::commit_upgrade(&mut wrong_vault, pending, receipt);
 
         test_scenario::return_shared(wrong_vault);
         test_scenario::return_shared(freeze);

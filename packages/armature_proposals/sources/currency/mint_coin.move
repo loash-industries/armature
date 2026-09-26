@@ -1,5 +1,7 @@
 module armature_proposals::mint_coin;
 
+use std::internal::{Self, Permit};
+
 /// Mint `amount` of `Coin<T>` using the DAO's custodied `TreasuryCap<T>`.
 ///
 /// `recipient = none` mints into the DAO's own `TreasuryVault`, where existing
@@ -26,3 +28,9 @@ public fun treasury_cap_id<T>(self: &MintCoin<T>): ID { self.treasury_cap_id }
 public fun amount<T>(self: &MintCoin<T>): u64 { self.amount }
 
 public fun recipient<T>(self: &MintCoin<T>): Option<address> { self.recipient }
+
+// === Handler authority ===
+
+/// `Permit<MintCoin>` for this package's handler: the only way to spend or close
+/// an `ExecutionTicket<MintCoin>` (see `proposal::ticket_request`).
+public(package) fun permit<T>(): Permit<MintCoin<T>> { internal::permit() }

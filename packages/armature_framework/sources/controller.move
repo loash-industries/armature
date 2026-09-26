@@ -36,6 +36,9 @@ public fun privileged_submit<P: store + drop>(
         ctx.sender(),
         metadata_ipfs,
         &payload,
+        0,
+        vector[],
+        true,
         ctx,
     )
 }

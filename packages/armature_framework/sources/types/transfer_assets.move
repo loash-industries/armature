@@ -1,5 +1,6 @@
 module armature::transfer_assets;
 
+use std::internal::{Self, Permit};
 use std::type_name::TypeName;
 
 /// Move treasury and capability vault contents to a target DAO.
@@ -35,3 +36,9 @@ public fun target_vault_id(self: &TransferAssets): ID { self.target_vault_id }
 public fun coin_types(self: &TransferAssets): &vector<TypeName> { &self.coin_types }
 
 public fun cap_ids(self: &TransferAssets): &vector<ID> { &self.cap_ids }
+
+// === Handler authority ===
+
+/// `Permit<TransferAssets>` for this package's handler: the only way to spend or close
+/// an `ExecutionTicket<TransferAssets>` (see `proposal::ticket_request`).
+public(package) fun permit(): Permit<TransferAssets> { internal::permit() }

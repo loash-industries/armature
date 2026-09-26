@@ -16,8 +16,8 @@ This repo contains only the on-chain Move smart contracts. Indexing lives in `ar
 
 | Package | Purpose |
 |---------|---------|
-| `armature_framework` | Core DAO primitive: lifecycle, governance, treasury vault, capability vault, charter, emergency freeze, board voting, proposal execution engine, plus the default/classification payload types under `sources/types/` (33 modules) |
-| `armature_proposals` | Handlers and domain-specific payload types: admin, board, security, sub-DAO, treasury, currency, upgrades (27 modules) |
+| `armature_framework` | Core DAO primitive: lifecycle, governance, treasury vault, capability vault, charter, emergency freeze, board voting, proposal execution engine, plus the framework payload types under `sources/types/` and their handlers under `sources/handlers/` (admin, board, member, lifecycle, freeze). Holds every type that changes who may do what; see `docs/package-boundaries.md` |
+| `armature_proposals` | First-party extension: asset-operation payload types and handlers for treasury, currency (incl. the `MintAllowance` bypass allowlist), sub-DAO control and upgrades. Mechanically a third-party package; no special treatment from the framework |
 | `armature_world_bridge` | EVE Frontier world bridge: tribe-allowlisted AutojoinDAO self-join via the bypass path (3 modules) |
 
 ### Key Modules
@@ -30,10 +30,12 @@ This repo contains only the on-chain Move smart contracts. Indexing lives in `ar
 - **`charter`** — Governance constitution document
 - **`board_voting`** — Proposal submission, voting (`board_voting::vote`) and execution for board governance
 - **`controller`** — Privileged execution path (bypasses voting)
+- **`permissions`** — Permission bits a proposal type holds in `ProposalConfig.permissions`. Each `ExecutionRequest` carries its type's bits from mint time, and every framework mutator checks them (`proposal::assert_permitted`); controller requests are privileged and pass
 - **`emergency`** — Protocol freeze and recovery; frozen and exempt types are keyed by the payload's `TypeName`, like the registry slots
 
 ## Notable Design Patterns
 
+- **Per-type execution permissions** — a ticket authorizes only the mutations its proposal type was granted (`ProposalConfig.permissions`, see `internal_workings.md` §9), and may borrow only the capability types in its `borrow_scope`. Framework types hold fixed bits and scope; configs holding high-impact bits need 80% approval; only the 80% type-admin meta-types can grant bits or scope, and never inside a composite. A bypass-enabled type may not hold TYPE_ADMIN, MIGRATE, VAULT_EXTRACT or FREEZE
 - **Hot-potato pattern** for proposal execution — proposals must be consumed in a single PTB, preventing partial execution
 - **Forward-only status transitions** — a live proposal moves `Active → Passed` only. Execution deletes it (`ProposalExecuted`), and anyone can delete it with `delete_expired_proposal` once voting expires (Active) or its execution window closes (Passed), emitting `ProposalExpired`
 - **`controller::privileged_submit`** — proposals bypass voting and go directly to `executed`; no `ProposalPassed` event emitted
@@ -44,6 +46,9 @@ This repo contains only the on-chain Move smart contracts. Indexing lives in `ar
 
 ## Recent Changes
 
+- **2026-09-26 — package boundaries, borrow scope, bypass-safe bits, authenticated MintAllowance bypass (ROAD-39, ARMATURE-31)**: freeze-governance types move into the framework; `ProposalConfig.borrow_scope` limits `VAULT_BORROW` to named cap types; bypass types may not hold authority-graph bits; `MintAllowance<T>` is minted only through an allowlisted bypass entry. Placement rule in `docs/package-boundaries.md`. See `changelog.md`.
+- **2026-09-26 — framework mutators gated by permission bits (ARMATURE-25 – 29, ROAD-39)**: requests carry their type's bits; board, type-registry, lifecycle, charter, freeze, treasury and vault mutators check them; framework types have fixed bits; EnableProposalType's floor is now 80%. See `changelog.md`.
+- **2026-09-26 — per-type permission bits (ARMATURE-22, ARMATURE-23, ROAD-39)**: `ProposalConfig.permissions` (deny-by-default), `ExecutionRequest.privileged` (controller only) and `dao::assert_permitted<P>`; mutators are gated in follow-ups. See `changelog.md`.
 - **2026-09-26 — emergency freeze keyed by Move type (ARMATURE-15)**: `freeze_type<P>` / `assert_not_frozen<P>` replace string keys on every execution path; mandatory exemptions are matched by type; freeze events carry `type_name`. See `changelog.md`.
 - **2026-09-26 — table-backed board roster and snapshot-by-version voting (ARMATURE-13, ARMATURE-14)**: the roster moves out of the DAO root into a versioned `Table`; proposals store `snapshot_version` instead of a roster copy; voting moves to `board_voting::vote(proposal, &DAO, …)`; `SetBoard` becomes `{ to_add, to_remove }`. See `changelog.md`.
 - **2026-09-25 — executed proposals are deleted, expired ones can be deleted by anyone (ARMATURE-12)**: `ticket_from_vote` consumes and deletes the `Proposal`; `delete_expired_proposal` replaces `try_expire` and also covers passed proposals whose execution window has closed. See `changelog.md`.

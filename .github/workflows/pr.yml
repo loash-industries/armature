@@ -67,6 +67,9 @@ jobs:
           npm i @mysten/prettier-plugin-move
           npx prettier-move -c packages/armature_proposals/**/*.move
 
+      - name: Check every ExecutionRequest consumer is gated (ROAD-39)
+        run: python3 scripts/check_request_gates.py
+
       - name: Build Move packages
         run: |
           for dir in packages/*; do

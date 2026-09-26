@@ -1,5 +1,6 @@
 module armature::unfreeze_proposal_type;
 
+use std::internal::{Self, Permit};
 use std::type_name::{Self, TypeName};
 
 /// Governance-initiated unfreeze of a proposal type.
@@ -20,3 +21,9 @@ public fun new<T>(): UnfreezeProposalType {
 // === Accessors ===
 
 public fun type_name(self: &UnfreezeProposalType): TypeName { self.type_name }
+
+// === Handler authority ===
+
+/// `Permit<UnfreezeProposalType>` for this package's handler: the only way to spend or close
+/// an `ExecutionTicket<UnfreezeProposalType>` (see `proposal::ticket_request`).
+public(package) fun permit(): Permit<UnfreezeProposalType> { internal::permit() }

@@ -62,7 +62,7 @@ fun create_two_daos(scenario: &mut test_scenario::Scenario): (ID, ID) {
 /// Crafts an ExecutionRequest with the correct dao_id so the mismatch assert passes.
 #[test_only]
 fun do_set_board(dao: &mut DAO, to_add: vector<address>, to_remove: vector<address>) {
-    let req = proposal::new_execution_request<SetBoardWitness>(
+    let req = proposal::new_execution_request_for_testing<SetBoardWitness>(
         dao.id(),
         object::id_from_address(@0xDEAD),
     );
@@ -1280,7 +1280,7 @@ fun test_destroy_with_entries_aborts() {
     {
         let mut dao = scenario.take_shared<DAO>();
         let successor_id = object::id_from_address(@0xBEEF);
-        let req = proposal::new_execution_request<SetBoardWitness>(
+        let req = proposal::new_execution_request_for_testing<SetBoardWitness>(
             dao.id(),
             object::id_from_address(@0xDEAD),
         );

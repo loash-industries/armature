@@ -30,9 +30,9 @@ const ECooldownRequiresMutableDAO: u64 = 9;
 
 // === Constants ===
 
-/// 66% approval floor for EnableProposalType proposals (basis points).
-/// Matches the constant in admin_ops; enforced here at submission time.
-const ENABLE_APPROVAL_FLOOR_BPS: u64 = 6_600;
+/// 80% approval floor for EnableProposalType proposals (basis points).
+/// Matches dao::min_approval_threshold_for_type; enforced here at submission time.
+const ENABLE_APPROVAL_FLOOR_BPS: u64 = 8_000;
 
 // === Submit ===
 
@@ -100,8 +100,8 @@ public fun vote<P: store>(
 /// ProposalExecuted) are the audit record, under a freshly minted proposal ID.
 ///
 /// Requires:
-///   - execution_delay_ms = 0 for this proposal type (EDelayForbidsAtomicExecution)
-///   - The caller's single vote satisfies quorum and approval_threshold (EInsufficientVotingWeight)
+/// - execution_delay_ms = 0 for this proposal type (EDelayForbidsAtomicExecution)
+/// - The caller's single vote satisfies quorum and approval_threshold (EInsufficientVotingWeight)
 ///
 /// All other validation mirrors submit_proposal + ticket_from_vote in order.
 /// Returns a Standalone ExecutionTicket<P>; execution-time floor checks in
@@ -279,6 +279,8 @@ fun ticket_from_vote_core<P: store>(
         dao.governance(),
         last_ms,
         dao.is_execution_paused(),
+        dao.type_config_by_name(&name).permissions(),
+        dao.type_config_by_name(&name).borrow_scope(),
         clock,
         ctx,
     );
@@ -298,7 +300,7 @@ fun assert_submittable(dao: &DAO, name: &TypeName) {
 }
 
 /// Submission-time floor enforcement for EnableProposalType.
-/// The proposal's approval_threshold must be >= 66% so that the vote guarantee
+/// The proposal's approval_threshold must be >= 80% so that the vote guarantee
 /// (yes/total_voted >= threshold >= floor) is locked in at proposal creation time
 /// rather than re-checked at execution (where only the ticket, not the proposal, is live).
 fun assert_enable_floor(name: &TypeName, config: &ProposalConfig) {

@@ -36,7 +36,7 @@ fun create_test_dao(scenario: &mut test_scenario::Scenario) {
 fun create_test_execution_request<P>(vault: &TreasuryVault): proposal::ExecutionRequest<P> {
     let dao_id = vault.dao_id();
     let proposal_id = object::id_from_address(@0x2);
-    proposal::new_execution_request<P>(dao_id, proposal_id)
+    proposal::new_execution_request_for_testing<P>(dao_id, proposal_id)
 }
 
 // A phantom type to parameterize ExecutionRequest in tests

@@ -8,6 +8,7 @@ use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
 use armature::proposal::{Self, Proposal, ProposalCreated, ProposalExecuted, ProposalPayloadCreated};
+use std::internal;
 use std::string;
 use sui::clock;
 use sui::event;
@@ -270,7 +271,7 @@ fun authorize_execution_blocks_when_controller_paused() {
     {
         let mut dao = scenario.take_shared<DAO>();
         // Simulate controller_paused by using set_controller_paused with a fake exec req
-        let req = proposal::new_execution_request<TestPayload>(
+        let req = proposal::new_privileged_request_for_testing<TestPayload>(
             dao.id(),
             object::id_from_address(@0xBEEF),
         );
@@ -294,7 +295,7 @@ fun authorize_execution_blocks_when_controller_paused() {
             scenario.ctx(),
         );
 
-        req.discharge();
+        req.discharge(internal::permit());
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(dao);
     };
@@ -330,7 +331,7 @@ fun privileged_submit_rejects_inactive_subdao() {
         );
 
         // Transition SubDAO to Migrating
-        let req = proposal::new_execution_request<TestPayload>(
+        let req = proposal::new_execution_request_for_testing<TestPayload>(
             object::id(&subdao),
             object::id_from_address(@0xBEEF),
         );

@@ -1,19 +1,20 @@
 module armature_proposals::mint_allowance;
 
+use std::internal::{Self, Permit};
+
 /// Operational minting twin of `MintCoin`. Structurally identical, but kept as
 /// a distinct type so a DAO can `EnableBypassType` on it (80% floor) to allow
 /// minting *without a fresh vote each time*, while plain `MintCoin` stays
-/// fully vote-gated. The bypass path runs through the framework's
-/// `ExternalExecutionCap<MintAllowance<T>>` (#141): an approved actor mints up
-/// to `amount` per call, throttled by the proposal type's `cooldown_ms`.
+/// fully vote-gated. The bypass path is `currency_ops::mint_allowance_bypass`:
+/// only an address on the DAO's `ConfigureMintAllowance<T>` allowlist may mint,
+/// up to the configured per-call cap, throttled by the type's `cooldown_ms`.
+/// `ticket_from_cap` takes `Permit<MintAllowance<T>>`, so that function is the
+/// only place a bypass ticket for this type can be minted (ARMATURE-31).
 ///
 /// This is the mint-side counterpart to `SendSmallPayment` on the spend side.
-/// Note the deliberate asymmetry: `SendSmallPayment` enforces a per-epoch
-/// budget via `SmallPaymentState`; this type does NOT — per the DAO's
-/// governance-only policy choice, the cooldown plus per-call `amount` are the
-/// only throttles. If enforced per-epoch mint budgets are ever wanted, the
-/// seam is a `MintAllowanceState` type-state mirroring `SmallPaymentState`,
-/// checked in `currency_ops::execute_mint_allowance`.
+/// The per-call cap and cooldown are the only throttles; there is no per-epoch
+/// budget. If one is ever wanted, the seam is a field on `MintAllowanceConfig`
+/// checked in `mint_allowance_bypass`.
 public struct MintAllowance<phantom T> has drop, store {
     treasury_cap_id: ID,
     amount: u64,
@@ -33,3 +34,9 @@ public fun treasury_cap_id<T>(self: &MintAllowance<T>): ID { self.treasury_cap_i
 public fun amount<T>(self: &MintAllowance<T>): u64 { self.amount }
 
 public fun recipient<T>(self: &MintAllowance<T>): Option<address> { self.recipient }
+
+// === Handler authority ===
+
+/// `Permit<MintAllowance>` for this package's handler: the only way to spend or close
+/// an `ExecutionTicket<MintAllowance>` (see `proposal::ticket_request`).
+public(package) fun permit<T>(): Permit<MintAllowance<T>> { internal::permit() }

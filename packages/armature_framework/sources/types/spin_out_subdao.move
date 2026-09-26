@@ -1,6 +1,7 @@
 module armature::spin_out_subdao;
 
 use armature::proposal::ProposalConfig;
+use std::internal::{Self, Permit};
 
 /// Destroy SubDAOControl and grant a SubDAO full independence.
 public struct SpinOutSubDAO has drop, store {
@@ -49,3 +50,9 @@ public fun spin_out_subdao_config(self: &SpinOutSubDAO): &ProposalConfig {
 public fun create_subdao_config(self: &SpinOutSubDAO): &ProposalConfig {
     &self.create_subdao_config
 }
+
+// === Handler authority ===
+
+/// `Permit<SpinOutSubDAO>` for this package's handler: the only way to spend or close
+/// an `ExecutionTicket<SpinOutSubDAO>` (see `proposal::ticket_request`).
+public(package) fun permit(): Permit<SpinOutSubDAO> { internal::permit() }
