@@ -14,8 +14,8 @@ The protocol's security model is built on **defense-in-depth** — no single mec
 | **Governance thresholds** | Per-type `approval_threshold`; 80% floors for `EnableProposalType`, `UpdateProposalConfig`, `EnableBypassType` and for any config holding a high-impact bit; grants only by the 80% meta-types, never in a composite | Privilege escalation, config weakening, minority capture |
 | **Timing controls** | `execution_delay_ms`, `cooldown_ms`, `expiry_ms` (voting deadline and execution window) | Flash attacks, reaction-time attacks, rapid-fire drains, stale approvals |
 | **Emergency circuit breaker** | `EmergencyFreeze` + `FreezeAdminCap`, per-type freezes with auto-expiry, governance override | Discovered vulnerabilities, compromised members, active attacks |
-| **Hierarchy controls** | `SubDAOControl`, `controller_cap_id`, `controller_paused`, SubDAO blocklist | Rogue SubDAOs, unauthorized independence, self-granted bypass |
-| **Blast radius isolation** | Separate `TreasuryVault` and `CapabilityVault` per DAO; gated mutators check the request's DAO (the receiving side of a cross-DAO cap move takes the sender's request) | Cross-DAO contamination, cascading treasury drain |
+| **Hierarchy controls** | `SubDAOControl` (must be the SubDAO's registered `controller_cap_id`), `controller_paused`, SubDAO blocklist | Rogue SubDAOs, forged controllers, unauthorized independence, self-granted bypass |
+| **Blast radius isolation** | Separate `TreasuryVault` and `CapabilityVault` per DAO; gated mutators check the request's DAO (a cross-DAO cap move needs both DAOs' requests or the receiver's registered controller) | Cross-DAO contamination, cascading treasury drain |
 
 ---
 
@@ -57,7 +57,7 @@ These threats were identified in design or security review and resolved with pro
 
 **Original risk:** Delegated capabilities required a two-step process with a race condition window.
 
-**Resolution:** `ReclaimCapFromSubDAO` loans the `SubDAOControl`, calls `privileged_extract` and stores the capability in the controller's vault in one handler. Pause, board changes and reclaim can run in a single PTB (see [04](04_subdao_hierarchy.md) §5).
+**Resolution:** `ReclaimCapFromSubDAO` loans the `SubDAOControl`, calls `controller::privileged_extract` and stores the capability in the controller's vault in one handler. Pause, board changes and reclaim can run in a single PTB (see [04](04_subdao_hierarchy.md) §5).
 
 ### 2.7 Multi-PTB Migration Window → Resolved
 
@@ -111,7 +111,7 @@ These threats were identified in design or security review and resolved with pro
 
 **Original risk:** Freezes keyed by display key could be sidestepped by disabling and re-enabling a type under a new key, and could not target one instantiation of a generic type.
 
-**Resolution:** Freezes are keyed by `TypeName` and checked with `assert_not_frozen<P>` on the two-PTB, atomic, bypass and composite paths.
+**Resolution:** Freezes are keyed by `TypeName` and checked with `assert_not_frozen<P>` on the two-PTB, atomic, bypass and composite paths, against the executing DAO's own freeze (§2.20).
 
 ### 2.16 Stale Approvals → Resolved (ARMATURE-12)
 
@@ -130,6 +130,30 @@ These threats were identified in design or security review and resolved with pro
 **Original risk:** `execute_mint_coin` / `execute_mint_allowance` deposited into any treasury passed in, and `execute_propose_upgrade` returned the raw `UpgradeCap` to the caller.
 
 **Resolution:** The treasury is checked against the request's DAO, and the `UpgradeCap` stays inside a `PendingUpgrade` hot potato until `commit_upgrade` returns it to the vault.
+
+### 2.19 Forged `SubDAOControl` → Resolved (ARMATURE-37)
+
+**Original risk:** `create_subdao_control` accepted any `subdao_id`, and `privileged_submit` / `privileged_extract` compared only `control.subdao_id` with the target. Any DAO could mint a control naming another DAO and drive or drain it; a spun-out SubDAO's old control kept working.
+
+**Resolution:** `controller::assert_registered_control` also requires the control to be the target's `controller_cap_id` (`controller::ENotController`). `privileged_submit` and the public `controller::privileged_extract` call it; `capability_vault::privileged_extract` and `create_subdao_control` are `public(package)`. `clear_controller` at spin-out retires the old control.
+
+### 2.20 Foreign Freeze Object → Resolved (ARMATURE-38)
+
+**Original risk:** `assert_not_frozen<P>` did not check which DAO the freeze object belonged to, so an executor could pass another DAO's unfrozen `EmergencyFreeze` and run a frozen type.
+
+**Resolution:** `assert_not_frozen<P>(freeze, dao_id, clock)` aborts `emergency::EDAOMismatch` unless the freeze is the executing DAO's, on the two-PTB, atomic, bypass and composite-step paths.
+
+### 2.21 Unscoped Cross-DAO Capability Receive → Resolved (ARMATURE-39)
+
+**Original risk:** `capability_vault::receive_cap` was public and did not check the receiving DAO, so any request carrying `VAULT_EXTRACT` could push caps into any vault, and `TransferCapToSubDAO` could target a DAO that was not the sender's SubDAO.
+
+**Resolution:** `receive_cap` is `public(package)`; its framework callers (SpinOutSubDAO, TransferAssets) tie the sender to the target themselves. Parent→child moves go through `controller::receive_cap_from_controller`, which requires the sender's vault to hold the SubDAO's registered control; `TransferCapToSubDAO` uses it. Other cross-DAO moves use `receive_cap_authorized`, which needs a request from both sides.
+
+### 2.22 Composite Steps Against Another DAO → Resolved (ARMATURE-40)
+
+**Original risk:** `begin_pipeline` and `advance_step` did not bind the `DAO` argument to the ticket or pipeline, so a step could take another DAO's type config and bits. Steps also ran after the DAO was paused or the step's type was disabled.
+
+**Resolution:** `begin_pipeline` and `advance_step` assert the DAO (`composite::EDAOIdMismatch`); each step also checks `EExecutionPaused`, `EControllerPaused` and `ETypeNotEnabled`.
 
 ---
 
@@ -179,25 +203,19 @@ These threats were identified in design or security review and resolved with pro
 
 **Mitigation:** `EnableBypassType` needs 80% on actual vote weights and is a vote on that module's code. Bypass-safe bits and borrow scope limit the damage a flawed mint entry can do.
 
-### 3.8 Cross-DAO Capability Transfers Are Sender-Authorized
-
-**Risk:** `TransferCapToSubDAO` checks that the target vault belongs to the DAO named in the payload but not that it is a SubDAO of the sender. `capability_vault::receive_cap` does not check the receiving DAO.
-
-**Mitigation:** The sending DAO's vote (80%, `VAULT_EXTRACT`) names the target and is the authority. Third-party cross-DAO handlers should use `receive_cap_authorized`, which needs a request from both sides.
-
-### 3.9 Freeze vs. Execution Window
+### 3.8 Freeze vs. Execution Window
 
 **Risk:** With the default 7-day expiry and 7-day maximum freeze, freezing a type right after one of its proposals passes can run out that proposal's execution window.
 
 **Status:** Accepted (ARMATURE-12). The proposal must be resubmitted after the freeze.
 
-### 3.10 Saturating Deadlines
+### 3.9 Saturating Deadlines
 
 **Risk:** `new_config` has no upper bound on `expiry_ms` or `execution_delay_ms`; deadlines saturate at `u64::MAX`, so such a config never expires and its passed proposals can only leave the chain by execution.
 
 **Status:** Accepted by design.
 
-### 3.11 Re-enabled Types Lose Cooldown State
+### 3.10 Re-enabled Types Lose Cooldown State
 
 **Risk:** `disable_proposal_type` removes the slot's last-executed time, so a re-enabled type's first execution is not rate-limited.
 
@@ -227,8 +245,8 @@ The planned Walrus-backed charter ([05 Charter](05_charter.md) Part B) adds thre
 The protocol is designed to provide these guarantees:
 
 1. **No admin keys over assets or governance.** The only admin-like capability, `FreezeAdminCap`, is held by an address or a vault. It can freeze and unfreeze proposal types (each freeze expires on its own) but cannot execute, access the treasury, or change governance.
-2. **Execution requires an authorization path.** Every governed mutation (roster, type registry, lifecycle, treasury withdrawals, vault custody, charter, freeze governance) requires an `ExecutionRequest`. That request comes from a vote, from a bypass type the DAO opted into by an 80% vote, or from the controller override for SubDAOs (`privileged_submit`, which requires a `SubDAOControl` naming the target DAO). The exceptions are permissionless deposits and claims, voting, deleting expired proposals, the freeze admin's own freeze and unfreeze, and `privileged_extract` with a `SubDAOControl`.
+2. **Execution requires an authorization path.** Every governed mutation (roster, type registry, lifecycle, treasury withdrawals, vault custody, charter, freeze governance) requires an `ExecutionRequest`. That request comes from a vote, from a bypass type the DAO opted into by an 80% vote, or from the controller override for SubDAOs (`privileged_submit`, which requires the target's registered `SubDAOControl`). The exceptions are permissionless deposits and claims, voting, deleting expired proposals, the freeze admin's own freeze and unfreeze, and `controller::privileged_extract` with the registered `SubDAOControl`.
 3. **A request does only what its type was granted.** Its permission bits and borrow scope come from its type's slot, and only its type's own module can spend it.
 4. **Atomic execution.** Every proposal execution is atomic (PTB). Partial execution is impossible. Failed execution reverts cleanly.
-5. **Blast radius isolation.** Each DAO's treasury and capabilities are independent shared objects, and gated mutators check the request's DAO. The one exception is receiving a capability from another DAO (`receive_cap`), where the sending DAO's request is the authority. Assets leave a DAO only on its own request or, for a SubDAO, through its controller's `SubDAOControl`.
+5. **Blast radius isolation.** Each DAO's treasury and capabilities are independent shared objects, and gated mutators check the request's DAO. Capabilities enter a DAO's vault from another DAO only with both DAOs' requests (`receive_cap_authorized`), from its registered controller (`receive_cap_from_controller`), or through the framework's SpinOutSubDAO / TransferAssets handlers. Assets leave a DAO only on its own request or, for a SubDAO, through its controller's `SubDAOControl`.
 6. **On-chain auditability.** Every proposal, including single-PTB executions that create no object, emits `ProposalCreated`, `ProposalPayloadCreated` (with the payload's BCS bytes) and `ProposalExecuted` or `ProposalExpired`. On the vote path every payload is visible before voting and every vote is recorded. Handlers emit their own events for what they changed.

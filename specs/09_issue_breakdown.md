@@ -105,8 +105,8 @@
 
 **Scope:**
 - `CapabilityVault` struct with dynamic object fields
-- `store_cap_init` (`public(package)`, creation only) / `store_cap` (VAULT_STORE); `borrow_cap` / `borrow_cap_mut` (VAULT_BORROW, cap type in `borrow_scope`); `loan_cap` / `return_cap` (same gate; hot potato `CapLoan { cap_id, vault_id }`, and `return_cap` checks both IDs); `extract_cap` (VAULT_EXTRACT); `privileged_extract` (controller reclaim: needs a `&SubDAOControl` whose `subdao_id` is the vault's DAO, and nothing else is compared)
-- `SubDAOControl { id, subdao_id }` lives here, with `create_subdao_control` / `destroy_subdao_control` (VAULT_EXTRACT); `receive_cap` / `receive_cap_authorized` for cross-DAO moves; `borrow_external_cap` (ungated) for bypass caps
+- `store_cap_init` (`public(package)`, creation only) / `store_cap` (VAULT_STORE); `borrow_cap` / `borrow_cap_mut` (VAULT_BORROW, cap type in `borrow_scope`); `loan_cap` / `return_cap` (same gate; hot potato `CapLoan { cap_id, vault_id }`, and `return_cap` checks both IDs); `extract_cap` (VAULT_EXTRACT); `privileged_extract` (`public(package)` controller reclaim; the public entry `controller::privileged_extract` also needs the control to be the SubDAO's registered `controller_cap_id`)
+- `SubDAOControl { id, subdao_id }` lives here, with `create_subdao_control` (`public(package)`) / `destroy_subdao_control` (VAULT_EXTRACT); `receive_cap` (`public(package)`) / `receive_cap_authorized` for cross-DAO moves (plus `controller::receive_cap_from_controller`); `borrow_external_cap` (ungated) for bypass caps
 - `contains` / `ids_for_type` queries, registry tracking
 
 **Acceptance:** Access control, registry sync, loan semantics, privileged extract, contains, ID queries (20 tests)
@@ -234,15 +234,15 @@
 
 #### C-10: SubDAOControl struct and controller machinery — Part of #2
 
-**Outcome: Done differently** (PRs #72, #82). The machinery is in the framework. Blocklist enforcement exists; "acyclic graph" and "single controller" were never implemented as checks.
+**Outcome: Done differently** (PRs #72, #82). The machinery is in the framework. Blocklist enforcement exists; "single controller" is enforced through the registered `controller_cap_id`; "acyclic graph" was never implemented as a check.
 
 **Module:** `dao.move` (extend), `capability_vault.move` (extend)
 
 **Scope** (corrected):
 - `SubDAOControl { id, subdao_id }` in `capability_vault.move`; on the DAO, `controller_cap_id: Option<ID>` (set by `dao::share_subdao`, cleared by `clear_controller` at spin-out) and `controller_paused`
-- `privileged_extract(vault, cap_id, &SubDAOControl)` checks only that `control.subdao_id` is the vault's DAO
+- `controller::privileged_extract(vault, cap_id, subdao, &SubDAOControl)` and `privileged_submit` call `controller::assert_registered_control`: `control.subdao_id` is the target and the control is the target's `controller_cap_id`
 - Blocklist: a DAO with `controller_cap_id` set cannot enable SpawnDAO, SpinOutSubDAO, CreateSubDAO, EnableBypassType or DisableBypassType. This is checked in the `admin_ops` and `external_execution` handlers and on creation-time overrides
-- Acyclicity and single controller: not enforced. The framework's creation paths mint one control per new SubDAO, but `create_subdao_control` (VAULT_EXTRACT) accepts any `subdao_id`, and `privileged_submit` / `privileged_extract` compare only `control.subdao_id` with the target. Neither checks the target's `controller_cap_id`
+- Single controller: enforced through `controller_cap_id`; only the registered control passes `assert_registered_control`, and `create_subdao_control` is `public(package)` (only CreateSubDAO calls it). Acyclicity: not enforced
 
 **Acceptance:** All SubDAO invariants (subset covering struct/machinery)
 
@@ -259,7 +259,7 @@
 **Scope** (corrected):
 - `CreateSubDAO { name, initial_board, metadata_uri }` creates the child DAO with the default SubDAO slots (no bypass meta-types; the enable handlers refuse blocked types) and stores the `SubDAOControl` and the child's `FreezeAdminCap` in the parent vault. The payload carries no funding (fund with `SendCoinToDAO`). Event `SubDAOCreated { controller_dao_id, subdao_id, control_cap_id }`. Fixed bits VAULT_STORE + VAULT_EXTRACT, 80% floor
 - `SpinOutSubDAO` loans the control, runs `clear_controller` on the SubDAO through `privileged_submit`, re-enables SpawnDAO / SpinOutSubDAO / CreateSubDAO with the payload's configs, moves the `FreezeAdminCap` into the SubDAO's vault and destroys the control. Irreversible. Event `SubDAOSpunOut`
-- `TransferCapToSubDAO`, `ReclaimCapFromSubDAO` → events `CapTransferredToSubDAO`, `CapReclaimedFromSubDAO` (not `CapabilityTransferred` / `CapabilityReclaimed`). Reclaim is loan control → `privileged_extract` → `store_cap` in one PTB
+- `TransferCapToSubDAO`, `ReclaimCapFromSubDAO` → events `CapTransferredToSubDAO`, `CapReclaimedFromSubDAO` (not `CapabilityTransferred` / `CapabilityReclaimed`). Reclaim is loan control → `controller::privileged_extract` → `store_cap` in one PTB; transfer deposits through `controller::receive_cap_from_controller`
 - `PauseSubDAOExecution`, `UnpauseSubDAOExecution` are voted on the controller DAO (VAULT_BORROW scoped to `SubDAOControl`); the SubDAO side runs `set_controller_paused` on a privileged request. Events `SubDAOExecutionPaused` / `SubDAOExecutionUnpaused`
 - Added later: `ControllerBatchAddMembers` / `ControllerBatchRemoveMembers` (#158)
 

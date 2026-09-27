@@ -97,10 +97,10 @@ Every request-taking function asserts the vault belongs to the request's DAO, th
 - `borrow_cap_mut<C, P>(vault, cap_id, &ExecutionRequest<P>) → &mut C` — mutable borrow; same checks.
 - `loan_cap<C, P>(vault, cap_id, &ExecutionRequest<P>) → (C, CapLoan)` — temporary extraction with guaranteed return; same checks.
 - `return_cap<C>(vault, cap, loan)` — consumes `CapLoan`, checks the cap ID and vault ID, re-stores the capability.
-- `extract_cap<C, P>(vault, cap_id, &ExecutionRequest<P>) → C` — permanent removal, requires `VAULT_EXTRACT`. `create_subdao_control` / `destroy_subdao_control` also require `VAULT_EXTRACT`.
-- `receive_cap<C, P>(vault, cap, &ExecutionRequest<P>)` — cross-DAO receive; requires `VAULT_EXTRACT` on the **sending** DAO's request and does not check the receiving DAO. `receive_cap_authorized<C, Send, Recv>` also requires `VAULT_STORE` on a request from the receiving DAO.
+- `extract_cap<C, P>(vault, cap_id, &ExecutionRequest<P>) → C` — permanent removal, requires `VAULT_EXTRACT`. `create_subdao_control` / `destroy_subdao_control` also require `VAULT_EXTRACT`; `create_subdao_control` is `public(package)` (it does not check `subdao_id`, so its only caller is `CreateSubDAO`, with the SubDAO it just created).
+- `receive_cap<C, P>(vault, cap, &ExecutionRequest<P>)` — `public(package)` cross-DAO receive; requires `VAULT_EXTRACT` on the **sending** DAO's request and does not check the receiving DAO, so each caller ties the two (SpinOutSubDAO: its own SubDAO; TransferAssets: the voted target). Outside the framework, `controller::receive_cap_from_controller<C, P>(subdao_vault, cap, subdao, controller_vault, &req)` moves a cap from a controller to its SubDAO: `subdao_vault` must be the SubDAO's and `controller_vault` `req`'s DAO's (`controller::EControlMismatch`), and `controller_vault` must hold the SubDAO's registered control (`controller::ENotController`). `receive_cap_authorized<C, Send, Recv>` serves other cross-DAO moves and also requires `VAULT_STORE` on a request from the receiving DAO.
 - `borrow_external_cap<P>(vault, dao_id, cap_id) → &ExternalExecutionCap<P>` — ungated read. The cap is the DAO's opt-in to bypass execution, not a bearer credential: only `P`'s own module can mint a bypass ticket with it (§4.7).
-- `privileged_extract<C>(vault, cap_id, &SubDAOControl) → C` — controller reclaim; checks `control.subdao_id == vault.dao_id`.
+- `privileged_extract<C>(vault, cap_id, &SubDAOControl) → C` — `public(package)`; checks `control.subdao_id == vault.dao_id`. The public entry is `controller::privileged_extract<C>(subdao_vault, cap_id, subdao, &control)`, which also checks that `subdao_vault` is `subdao`'s (`EControlMismatch`) and that `control` is its registered controller (`controller::assert_registered_control`).
 - `contains(vault, cap_id)`, `ids_for_type<C>(vault) → vector<ID>`, `cap_types`, `cap_ids`, `is_empty` — queries.
 
 ### 1.4 `Charter`
@@ -142,7 +142,7 @@ struct FreezeAdminCap has key, store {
 - **Freeze:** the cap holder calls `emergency::freeze_type<P>(freeze, &cap, clock)` directly; no proposal is involved. Expiry = `now + max_freeze_duration_ms`; freezing an already-frozen type refreshes its expiry.
 - **Unfreeze:** the cap holder calls `unfreeze_type<P>(freeze, &cap)`, or governance passes `UnfreezeProposalType`. `TransferFreezeAdmin` unfreezes every type and hands the cap to a new admin; its handler takes the cap by value, so the executing PTB must supply it.
 - **Auto-expiry:** a freeze whose expiry has passed is treated as inactive.
-- **Keyed by type:** entries use the payload's canonical `TypeName`, the same key as the registry, so freezing `PlaceLimitOrder<CRED>` blocks only that instantiation. `assert_not_frozen<P>` runs on the two-PTB, atomic, bypass and composite-step paths.
+- **Keyed by type:** entries use the payload's canonical `TypeName`, the same key as the registry, so freezing `PlaceLimitOrder<CRED>` blocks only that instantiation. `assert_not_frozen<P>(freeze, dao_id, clock)` runs on the two-PTB, atomic, bypass and composite-step paths, and first checks that the freeze object is the executing DAO's (`emergency::EDAOMismatch`), so another DAO's unfrozen freeze does not satisfy it.
 - **Governance changes** (unfreeze a type, change the max duration, unfreeze all, edit the exempt set) require the `FREEZE` bit.
 - **Mandatory exemptions:** `TransferFreezeAdmin` and `UnfreezeProposalType` can never be frozen or removed from the exempt set. They are matched by the framework's own struct types, so a same-named type in another package gets no exemption.
 
@@ -155,7 +155,7 @@ struct SubDAOControl has key, store {
 }
 ```
 
-Stored in the controller's `CapabilityVault`. The framework's creation paths (`CreateSubDAO`, `tribe::create_tribe(_configured)`, `tribe::create_wired_subdao`) mint one per SubDAO and record its ID in the SubDAO's `controller_cap_id`. Holding it enables `controller::privileged_submit` and `capability_vault::privileged_extract`; both check that `control.subdao_id` names the target DAO. See [04 SubDAO Hierarchy](04_subdao_hierarchy.md).
+Stored in the controller's `CapabilityVault`. The framework's creation paths (`CreateSubDAO`, `tribe::create_tribe(_configured)`, `tribe::create_wired_subdao`) mint one per SubDAO and record its ID in the SubDAO's `controller_cap_id`. Holding it enables `controller::privileged_submit` and `controller::privileged_extract`. Both call `controller::assert_registered_control`: `control.subdao_id` must name the target DAO (`EControlMismatch`) and the target's `controller_cap_id` must be `some(object::id(control))` (`ENotController`). A control minted elsewhere, or one whose SubDAO has been spun out (`clear_controller`), is refused. See [04 SubDAO Hierarchy](04_subdao_hierarchy.md).
 
 ### 1.7 Hot Potatoes
 
@@ -194,7 +194,7 @@ armature_framework/  (armature::)            -- kernel; not touched after a rele
 ├── board_voting.move       // submit_proposal, vote, ticket_from_vote(_readonly), submit_vote_execute(_readonly)
 ├── external_execution.move // ticket_from_cap(_readonly); EnableBypassType / DisableBypassType handlers
 ├── composite.move          // CompositeFrame + Pipeline
-├── controller.move         // privileged_submit / privileged_consume (SubDAOControl override)
+├── controller.move         // privileged_submit / privileged_consume / privileged_extract / receive_cap_from_controller
 ├── permissions.move        // permission bits
 ├── treasury_vault.move     // TreasuryVault
 ├── capability_vault.move   // CapabilityVault, CapLoan, SubDAOControl
@@ -353,7 +353,7 @@ A `Proposal` exists only on the two-PTB vote path (and for a composite). Executi
 
 When a controller DAO executes a proposal that targets a SubDAO:
 1. The controller's handler calls `loan_cap` to take the `SubDAOControl` and a `CapLoan`. The controller's own request must carry `VAULT_BORROW` with `SubDAOControl` in its borrow scope.
-2. It calls `privileged_submit<P>(control, subdao, type_key, metadata_ipfs, payload, ctx)` (`P: store + drop`). This creates no `Proposal` object: it emits `ProposalCreated`, `ProposalPayloadCreated` and `ProposalExecuted` (no `ProposalPassed`) and returns a SubDAO `ExecutionRequest<P>` with `privileged = true`, no bits and an empty scope. `type_key` is a free-form label here, since `P` may have no slot on the SubDAO.
+2. It calls `privileged_submit<P>(control, subdao, type_key, metadata_ipfs, payload, ctx)` (`P: store + drop`). `control` must be the SubDAO's registered controller (`assert_registered_control`). This creates no `Proposal` object: it emits `ProposalCreated`, `ProposalPayloadCreated` and `ProposalExecuted` (no `ProposalPassed`) and returns a SubDAO `ExecutionRequest<P>` with `privileged = true`, no bits and an empty scope. `type_key` is a free-form label here, since `P` may have no slot on the SubDAO.
 3. SubDAO mutators accept the privileged request whatever its bits; `set_controller_paused` and `clear_controller` accept **only** privileged requests.
 4. The handler closes the request with `controller::privileged_consume(req, &control)` and returns the `SubDAOControl` with `return_cap`.
 5. The controller's own ticket is discharged.
@@ -376,7 +376,7 @@ Two hot potatoes are alive at once in the same PTB: the controller's ticket and 
 | `TREASURY_WITHDRAW` | 80% | `treasury_vault::withdraw`, `withdraw_multicoin` |
 | `VAULT_STORE` | — | `store_cap`; receiver side of `receive_cap_authorized` |
 | `VAULT_BORROW` | 80% | `borrow_cap`, `borrow_cap_mut`, `loan_cap`, limited to the cap types in the config's `borrow_scope` (`EBorrowScopeDenied`, 22) |
-| `VAULT_EXTRACT` | 80% | `extract_cap`, `create/destroy_subdao_control`, sender side of `receive_cap(_authorized)` |
+| `VAULT_EXTRACT` | 80% | `extract_cap`, `destroy_subdao_control`, sender side of `receive_cap_authorized` and `controller::receive_cap_from_controller`; package-only `create_subdao_control` and `receive_cap` |
 | `FREEZE` | — | `governance_unfreeze_type`, `update_freeze_duration`, `unfreeze_all`, `add/remove_freeze_exempt_type` |
 
 - **Check.** Mutators in `dao` call `dao::assert_permitted(bits, req)` (DAO id, then bits). The vault, charter, emergency and tribe modules cannot import `dao`, so they check their own `dao_id` and then `proposal::assert_permitted(req, bits)`. Denial aborts `proposal::EPermissionDenied` (21). A privileged request passes every bit check. Type-state accessors (`init_type_state`, `borrow_type_state_mut`, `remove_type_state`) are scoped to the request's own `P` and need no bit.
@@ -416,8 +416,8 @@ A composite bundles up to 16 typed steps under one vote.
 
 1. `composite::new_frame(dao_id, ctx)`, then `add_step<P>(frame, dao, payload)` per step. A step's type must be enabled and `composable_allowed`; `CompositePayload` cannot nest. `EnableProposalType` and `UpdateProposalConfig` steps must use `add_enable_proposal_type_step` / `add_update_proposal_config_step`, which refuse any change to bits or scope.
 2. `submit_composite(dao, frame, metadata_ipfs, clock, ctx)` seals and shares the frame and creates a `Proposal<CompositePayload>`. Its quorum, approval threshold, execution delay and cooldown are the max across the `Composite` slot and every step's config; propose threshold and expiry come from the `Composite` slot. `EnableProposalType` and `UpdateProposalConfig` steps force at least 80%.
-3. After the vote passes, `ticket_from_vote<CompositePayload>` → `begin_pipeline(dao, frame, ticket) → Pipeline`.
-4. `advance_step<P>(dao, frame, pipeline, freeze, clock) → (ExecutionTicket<P>, Pipeline)` for each step in order, passing each ticket to that type's ordinary handler. Each step is freeze-checked, and its ticket carries only its own type's bits and scope: bits never pool across steps. Steps are not checked against their type's cooldown (`begin_pipeline` records a last-executed snapshot that nothing reads); cooldown-bearing types are meant to stay out of composites through the exclusion in §4.1. Each step does record its type's execution time.
+3. After the vote passes, `ticket_from_vote<CompositePayload>` → `begin_pipeline(dao, frame, ticket) → Pipeline` (`dao` must be the ticket's DAO, `composite::EDAOIdMismatch`).
+4. `advance_step<P>(dao, frame, pipeline, freeze, clock) → (ExecutionTicket<P>, Pipeline)` for each step in order, passing each ticket to that type's ordinary handler. Each step re-checks that `dao` is the pipeline's (`EDAOIdMismatch`), that it is not execution- or controller-paused (`EExecutionPaused`, `EControllerPaused`) and that the step type is still enabled (`ETypeNotEnabled`); each step is freeze-checked against the DAO's own freeze, and its ticket carries only its own type's bits and scope: bits never pool across steps. Steps are not checked against their type's cooldown (`begin_pipeline` records a last-executed snapshot that nothing reads); cooldown-bearing types are meant to stay out of composites through the exclusion in §4.1. Each step does record its type's execution time.
 5. `finalize_pipeline(pipeline)`. Afterwards anyone can call `delete_exhausted_frame(frame)` for the storage rebate.
 
 ---
@@ -547,7 +547,7 @@ Proposed on the controller DAO; the SubDAO-side effect runs on a privileged requ
 
 | Invariant |
 |---|
-| Every framework mutator taking an `ExecutionRequest` checks its bits (or `privileged`), and the request's DAO against its target. The exceptions to the DAO check are `capability_vault::receive_cap` and the sending request of `receive_cap_authorized`: for a cross-DAO move the sending DAO's request is the authority. CI (`scripts/check_request_gates.py`) fails on an ungated mutator. |
+| Every framework mutator taking an `ExecutionRequest` checks its bits (or `privileged`), and the request's DAO against its target. The exceptions to the DAO check are `capability_vault::receive_cap` (`public(package)`; each caller ties the sender to the receiving vault, e.g. `controller::receive_cap_from_controller`) and the sending request of `receive_cap_authorized`. CI (`scripts/check_request_gates.py`) fails on an ungated mutator. |
 | `borrow_cap`, `borrow_cap_mut` and `loan_cap` also require the cap type in the request's `borrow_scope` (or `privileged`). |
 | `set_controller_paused` / `clear_controller` accept only privileged requests (`dao::ENotPrivileged`). |
 | Framework types hold exactly `dao::framework_permissions` and `dao::framework_borrow_scope`; no config changes them. |
@@ -570,7 +570,8 @@ Proposed on the controller DAO; the SubDAO-side effect runs on a privileged requ
 | Store requires `VAULT_STORE`; borrow and loan require `VAULT_BORROW` plus scope; extract and SubDAOControl create/destroy require `VAULT_EXTRACT`. `borrow_external_cap` is the only ungated read of a stored cap. |
 | `cap_types`, `cap_ids` and `ids_by_type` reflect the stored caps. |
 | `loan_cap` does NOT update registries (ID considered "held" during loan). |
-| `privileged_extract` requires `&SubDAOControl` and asserts `control.subdao_id == vault.dao_id`. |
+| `controller::privileged_extract` requires the SubDAO's registered `&SubDAOControl` and the SubDAO's vault; `capability_vault::privileged_extract` is `public(package)`. |
+| Caps enter a SubDAO's vault from another DAO only through `receive_cap_from_controller` (sender holds the registered control), `receive_cap_authorized` (both DAOs' requests), or the framework's SpinOutSubDAO / TransferAssets handlers. |
 
 ### SubDAO
 
@@ -578,7 +579,7 @@ Proposed on the controller DAO; the SubDAO-side effect runs on a privileged requ
 |---|
 | A DAO with a controller cannot enable `SpawnDAO`, `SpinOutSubDAO`, `CreateSubDAO`, `EnableBypassType` or `DisableBypassType` at creation (`dao::EBlockedProposalType`) or through the `EnableProposalType` / `EnableBypassType` handlers (`ESubDAOBlockedType`). `dao::enable_proposal_type` itself checks only `TYPE_ADMIN`, so a privileged request, or a type the SubDAO has granted `TYPE_ADMIN`, is not bound by the list. |
 | `controller_cap_id` is set when the SubDAO is shared and cleared at spin-out. |
-| `privileged_submit` requires a `&SubDAOControl` whose `subdao_id` is the target DAO (`EControlMismatch`) and an `Active` target. |
+| `privileged_submit` requires a `&SubDAOControl` whose `subdao_id` is the target DAO (`EControlMismatch`) and whose ID is the target's `controller_cap_id` (`ENotController`), and an `Active` target. |
 | `controller_paused` is set or cleared only by a privileged request (`dao::assert_controller`). |
 | When `controller_paused == true`, the SubDAO's vote, atomic and bypass paths abort; only the controller's privileged path still runs (so it can unpause). |
 | `SpinOutSubDAO` clears `controller_paused` to `false`. |

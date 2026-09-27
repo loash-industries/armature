@@ -17,16 +17,16 @@ public fun privileged_submit<P: store + drop>(
 public fun privileged_consume<P>(req: ExecutionRequest<P>, control: &SubDAOControl)
 ```
 
-- **Checks:** `control.subdao_id() == subdao.id()` (`controller::EControlMismatch`) and the SubDAO is Active (`controller::EDAONotActive`). Nothing else is checked: not the SubDAO's `controller_cap_id`, not `controller_paused`, not the SubDAO's freezes, and not whether `P` has a slot on the SubDAO.
+- **Checks:** `controller::assert_registered_control` — `control.subdao_id() == subdao.id()` (`controller::EControlMismatch`) and `subdao.controller_cap_id() == some(object::id(control))` (`controller::ENotController`), so a control minted elsewhere or retired by `clear_controller` is refused — and the SubDAO is Active (`controller::EDAONotActive`). Nothing else is checked: not `controller_paused`, not the SubDAO's freezes, and not whether `P` has a slot on the SubDAO.
 - **No `Proposal` object.** The proposal ID is minted from `ctx.fresh_object_address()`. The call emits `ProposalCreated`, `ProposalPayloadCreated` (the payload's BCS) and `ProposalExecuted`, with no `VoteCast` or `ProposalPassed`; these events are the audit record. The payload is dropped after serialisation (hence `P: drop`). There is no clock argument.
-- **Privileged request.** The returned `ExecutionRequest<P>` carries `permissions = 0`, an empty borrow scope and `privileged = true`. It passes every permission-bit check (`proposal::req_has_permission`) and every borrow-scope check (`proposal::req_may_borrow`), and it may change a type's bits or scope without the grant rules. Mutators that act on a DAO's objects check the request's DAO first, so it works only on that SubDAO's objects; the exception is `capability_vault::receive_cap` (and the sending request of `receive_cap_authorized`), which checks only the bit. Floors and fixed framework bits still apply. `dao::set_controller_paused` and `dao::clear_controller` accept only privileged requests (`dao::assert_controller`, `dao::ENotPrivileged`).
+- **Privileged request.** The returned `ExecutionRequest<P>` carries `permissions = 0`, an empty borrow scope and `privileged = true`. It passes every permission-bit check (`proposal::req_has_permission`) and every borrow-scope check (`proposal::req_may_borrow`), and it may change a type's bits or scope without the grant rules. Mutators that act on a DAO's objects check the request's DAO first, so it works only on that SubDAO's objects; the exception is the sending request of `receive_cap_authorized`, which checks only the bit (`capability_vault::receive_cap` is `public(package)`, and its public wrapper `controller::receive_cap_from_controller` ties the request's DAO to the controller vault). Floors and fixed framework bits still apply. `dao::set_controller_paused` and `dao::clear_controller` accept only privileged requests (`dao::assert_controller`, `dao::ENotPrivileged`).
 - **Closing.** A privileged request is a bare hot potato, not a ticket. `privileged_consume(req, &control)` destroys it after checking `req`'s DAO against `control.subdao_id()` (`controller::EControlMismatch`).
 
 The `SubDAOControl` sits in the controller's `CapabilityVault`, so a controller-side handler first spends its own ticket to loan it: `capability_vault::loan_cap<SubDAOControl, P>` needs `VAULT_BORROW` and `SubDAOControl` in the ticket type's borrow scope, and returns the control with a `CapLoan` hot potato that only `return_cap` (cap and vault IDs checked: `capability_vault::ECapIdMismatch`, `EVaultIdMismatch`) can close. The PTB therefore holds three hot potatoes at once, the controller's ticket, the `CapLoan` and the SubDAO's privileged request, and cannot complete until each is closed.
 
-First-party users, all proposed and voted on the controller: `SpinOutSubDAO` (framework `lifecycle_ops`), `PauseSubDAOExecution` / `UnpauseSubDAOExecution` and `ControllerBatchAddMembers` / `ControllerBatchRemoveMembers` (`armature_proposals::subdao_ops`). `ReclaimCapFromSubDAO` uses `capability_vault::privileged_extract` instead (`13_subdao_ops.md`).
+First-party users, all proposed and voted on the controller: `SpinOutSubDAO` (framework `lifecycle_ops`), `PauseSubDAOExecution` / `UnpauseSubDAOExecution` and `ControllerBatchAddMembers` / `ControllerBatchRemoveMembers` (`armature_proposals::subdao_ops`). `ReclaimCapFromSubDAO` uses `controller::privileged_extract` instead, which applies the same `assert_registered_control` (`13_subdao_ops.md`).
 
-Real suites: `packages/armature_framework/tests/controller_tests.move` (5), plus tests cited from `permissions_tests.move`, `borrow_scope_tests.move`, `gate_tests.move`, `migration_tests.move`, `subdao_ops_tests.move` and `lifecycle_tests.move`.
+Real suites: `packages/armature_framework/tests/controller_tests.move` (5), plus tests cited from `cross_dao_auth_tests.move`, `permissions_tests.move`, `borrow_scope_tests.move`, `gate_tests.move`, `migration_tests.move`, `subdao_ops_tests.move` and `lifecycle_tests.move`.
 
 ## Test Matrix
 
@@ -34,6 +34,8 @@ Real suites: `packages/armature_framework/tests/controller_tests.move` (5), plus
 |------|----------|
 | `controller_tests::privileged_submit_records_execution_in_events` | Request bound to the SubDAO; no object created; exactly 3 events (`ProposalCreated` with the metadata, `ProposalPayloadCreated` with the payload BCS, `ProposalExecuted`) under the request's proposal ID |
 | `controller_tests::privileged_submit_rejects_wrong_control` | Control for another DAO: Abort `controller::EControlMismatch` |
+| `cross_dao_auth_tests::forged_control_cannot_privileged_submit` | Another DAO mints a control naming the SubDAO (`create_subdao_control`) and calls `privileged_submit`: Abort `controller::ENotController` |
+| `cross_dao_auth_tests::cleared_controller_rejects_old_control` | After `clear_controller`, the old control: Abort `controller::ENotController` |
 | `controller_tests::privileged_consume_rejects_wrong_control` | Request closed with a control for another DAO: Abort `controller::EControlMismatch` |
 | `controller_tests::privileged_submit_rejects_inactive_subdao` | SubDAO Migrating: Abort `controller::EDAONotActive` |
 | `controller_tests::authorize_execution_blocks_when_controller_paused` | The SubDAO's own vote path is blocked while paused: Abort `board_voting::EControllerPaused` |
@@ -96,11 +98,11 @@ assert!(effects.num_user_events() == 3);
 
 ---
 
-### Requires the SubDAO's control and an Active SubDAO
+### Requires the SubDAO's registered control and an Active SubDAO
 
-**Requirement:** `privileged_submit` aborts with `controller::EControlMismatch` unless `control.subdao_id() == subdao.id()`, and with `controller::EDAONotActive` if the SubDAO is Migrating. `privileged_consume` aborts with `controller::EControlMismatch` unless the request is for the control's SubDAO.
+**Requirement:** `privileged_submit` aborts with `controller::EControlMismatch` unless `control.subdao_id() == subdao.id()`, with `controller::ENotController` unless `control` is the SubDAO's `controller_cap_id`, and with `controller::EDAONotActive` if the SubDAO is Migrating. `privileged_consume` aborts with `controller::EControlMismatch` unless the request is for the control's SubDAO.
 
-**Why it matters:** The `SubDAOControl` is the proof of authority over one SubDAO. Without the check, any DAO holding any control could act on any other DAO.
+**Why it matters:** The `SubDAOControl` is the proof of authority over one SubDAO. Without the checks, any DAO holding any control could act on any other DAO, or mint a control naming a DAO it does not control.
 
 ```move
 #[test, expected_failure(abort_code = controller::EControlMismatch)]

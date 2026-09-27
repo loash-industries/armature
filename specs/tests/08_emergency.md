@@ -60,6 +60,7 @@ These tests verify cap custody, freezing and unfreezing, expiry, type-keyed free
 | `frozen_type_blocks_two_ptb`, `frozen_type_blocks_atomic`, `frozen_type_blocks_bypass` | A third-party type enabled by vote: `emergency::EFrozen` | `armature_external_type_tests::external_type_lifecycle_tests` |
 | `freeze_leaves_other_instantiation_executable` | `Rebalance<CredB>` executes while `Rebalance<CredA>` is frozen | `armature_external_type_tests::external_type_lifecycle_tests` |
 | `test_composite_frozen_step_aborts` | `composite::advance_step` for a frozen step type: `emergency::EFrozen` | planned |
+| `foreign_freeze__ticket_from_vote_aborts`, `foreign_freeze__submit_vote_execute_aborts`, `foreign_freeze__ticket_from_cap_aborts`, `foreign_freeze__advance_step_aborts` | A frozen type executed with another DAO's unfrozen `EmergencyFreeze`: `emergency::EDAOMismatch` on each path | `cross_dao_auth_tests` |
 | submission and voting are not blocked | `two_ptb__frozen_instantiation_aborts` submits and votes while frozen and aborts only at `ticket_from_vote`; `auto_expiry_allows_execution` votes while frozen | `freeze_path_tests`, `armature_proposals::emergency_freeze_tests` |
 | controller override is not blocked | `controller::privileged_submit` takes no `EmergencyFreeze` | structural |
 | `freeze_outlasting_window_blocks_execution` | A freeze that outlasts a Passed proposal's window: `proposal::EExecutionWindowClosed` once it lifts (accepted behaviour) | `armature_proposals::emergency_freeze_tests` |
@@ -175,14 +176,14 @@ scenario.next_tx(CREATOR);
 freeze.freeze_type<PlaceOrder<CredA>>(&cap, &clock);
 assert!(freeze.is_frozen<PlaceOrder<CredA>>(&clock));
 assert!(!freeze.is_frozen<PlaceOrder<CredB>>(&clock));
-freeze.assert_not_frozen<PlaceOrder<CredB>>(&clock);
+freeze.assert_not_frozen<PlaceOrder<CredB>>(freeze.dao_id(), &clock);
 ```
 
 ---
 
 ### A frozen type cannot execute on any path
 
-**Requirement:** `emergency::assert_not_frozen<P>(&freeze, &clock)` (`emergency::EFrozen`) runs in `board_voting::ticket_from_vote(_readonly)`, `board_voting::submit_vote_execute(_readonly)`, `external_execution::ticket_from_cap(_readonly)` and, per step, `composite::advance_step<P>`. It does not run on submission (`submit_proposal`, `submit_composite`), on `vote`, on `delete_expired_proposal`, or on `controller::privileged_submit`, which takes no `EmergencyFreeze`. So a frozen type's proposals can still be submitted and voted; they wait until the freeze ends or their window closes. Each path checks the `EmergencyFreeze` object it is given; none compares it with the DAO's own (`dao.emergency_freeze_id()`), and no test covers a mismatched freeze object.
+**Requirement:** `emergency::assert_not_frozen<P>(&freeze, dao_id, &clock)` runs in `board_voting::ticket_from_vote(_readonly)`, `board_voting::submit_vote_execute(_readonly)`, `external_execution::ticket_from_cap(_readonly)` and, per step, `composite::advance_step<P>`. It does not run on submission (`submit_proposal`, `submit_composite`), on `vote`, on `delete_expired_proposal`, or on `controller::privileged_submit`, which takes no `EmergencyFreeze`. So a frozen type's proposals can still be submitted and voted; they wait until the freeze ends or their window closes. It first checks that the freeze object belongs to the executing DAO (`emergency::EDAOMismatch`; each path passes `dao.id()`, `advance_step` the pipeline's DAO), then that `P` is not frozen on it (`emergency::EFrozen`), so another DAO's unfrozen freeze object does not satisfy it.
 
 **Why it matters:** A freeze that one path ignored would not stop anything, since the same type can usually run on several paths.
 
@@ -243,7 +244,7 @@ assert!(freeze.is_frozen<TreasuryWithdraw>(&clock));
 
 clock.set_for_testing(now + freeze.max_freeze_duration_ms() + 1);
 assert!(!freeze.is_frozen<TreasuryWithdraw>(&clock));
-freeze.assert_not_frozen<TreasuryWithdraw>(&clock);
+freeze.assert_not_frozen<TreasuryWithdraw>(freeze.dao_id(), &clock);
 ```
 
 ---

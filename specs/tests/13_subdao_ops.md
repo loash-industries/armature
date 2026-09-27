@@ -8,26 +8,27 @@ Eight proposal types create, control and release SubDAOs. Each is proposed and v
 |------|-------------------|--------------|-------|
 | `CreateSubDAO { name, initial_board, metadata_uri }` | framework `lifecycle_ops::execute_create_subdao(vault, ticket, ctx)` | `VAULT_STORE` + `VAULT_EXTRACT` (fixed) | 80% |
 | `SpinOutSubDAO { subdao_id, control_cap_id, freeze_admin_cap_id, spawn_dao_config, spin_out_subdao_config, create_subdao_config }` | framework `lifecycle_ops::execute_spin_out_subdao(vault, subdao_vault, subdao, ticket, ctx)` | `VAULT_BORROW` + `VAULT_EXTRACT` ([`SubDAOControl`], fixed) | 80% |
-| `TransferCapToSubDAO { cap_id, target_subdao }` | `armature_proposals::subdao_ops::execute_transfer_cap<T>(source_vault, target_vault, ticket)` | `VAULT_EXTRACT` | 80% |
-| `ReclaimCapFromSubDAO { subdao_id, cap_id, control_id }` | `subdao_ops::execute_reclaim_cap<T>(controller_vault, subdao_vault, ticket)` | `VAULT_BORROW` + `VAULT_STORE` ([`SubDAOControl`]) | 80% |
+| `TransferCapToSubDAO { cap_id, target_subdao }` | `armature_proposals::subdao_ops::execute_transfer_cap<T>(source_vault, target_vault, target_subdao, ticket)` | `VAULT_EXTRACT` | 80% |
+| `ReclaimCapFromSubDAO { subdao_id, cap_id, control_id }` | `subdao_ops::execute_reclaim_cap<T>(controller_vault, subdao_vault, subdao, ticket)` | `VAULT_BORROW` + `VAULT_STORE` ([`SubDAOControl`]) | 80% |
 | `PauseSubDAOExecution { control_id }` / `UnpauseSubDAOExecution { control_id }` | `subdao_ops::execute_pause_subdao_execution(controller_vault, subdao, ticket, ctx)` / `execute_unpause_subdao_execution` | `VAULT_BORROW` ([`SubDAOControl`]) | 80% |
 | `ControllerBatchAddMembers { control_id, members }` / `ControllerBatchRemoveMembers` | `subdao_ops::execute_controller_batch_add_members(controller_vault, members_dao, ticket, ctx)` / `execute_controller_batch_remove_members` (same arguments) | `VAULT_BORROW` ([`SubDAOControl`]) | 80% |
 
 None is a default type. The `armature_proposals` types must be enabled with the bits and scope `type_permissions` names (`transfer_cap_to_subdao()`, `reclaim_cap_from_subdao()`, `subdao_control()`, `subdao_control_scope()`); the framework types hold theirs whatever config enables them.
 
-The controller-side handlers that act on the SubDAO loan the `SubDAOControl` from the controller's vault (`capability_vault::loan_cap`, which needs `VAULT_BORROW` and `SubDAOControl` in the request's borrow scope), then either extract from the SubDAO's vault with `capability_vault::privileged_extract` or obtain a privileged request on the SubDAO with `controller::privileged_submit` (see `15_privileged_submit.md`), and return the control in the same PTB. The checks involved are exactly:
+The controller-side handlers that act on the SubDAO loan the `SubDAOControl` from the controller's vault (`capability_vault::loan_cap`, which needs `VAULT_BORROW` and `SubDAOControl` in the request's borrow scope), then either extract from the SubDAO's vault with `controller::privileged_extract` or obtain a privileged request on the SubDAO with `controller::privileged_submit` (see `15_privileged_submit.md`), and return the control in the same PTB. The checks involved are exactly:
 
-- `privileged_submit`: `control.subdao_id == subdao.id()` (`controller::EControlMismatch`) and the SubDAO is Active (`controller::EDAONotActive`).
-- `privileged_extract`: `control.subdao_id == vault.dao_id` (`capability_vault::ENotController`).
+- `privileged_submit`: `controller::assert_registered_control` — `control.subdao_id == subdao.id()` (`controller::EControlMismatch`) and `subdao.controller_cap_id() == some(object::id(control))` (`controller::ENotController`) — and the SubDAO is Active (`controller::EDAONotActive`).
+- `controller::privileged_extract`: the vault is the SubDAO's (`controller::EControlMismatch`), then `assert_registered_control`.
+- `controller::receive_cap_from_controller` (used by `TransferCapToSubDAO`, no control loaned): the target vault is the SubDAO's and the controller vault is the request's DAO's (`controller::EControlMismatch`), and the controller vault holds the SubDAO's registered control (`controller::ENotController`).
 - `set_controller_paused` / `clear_controller`: the request is privileged and for this DAO (`dao::ENotPrivileged`, `dao::EDAOIdMismatch`).
 
-None of them reads the SubDAO's `controller_cap_id`. That field is set by `dao::share_subdao` when the SubDAO is shared, cleared by `clear_controller` at spin-out, and is what makes the DAO "controlled" for the SubDAO blocklist. The framework's creation paths (`CreateSubDAO`, `tribe::create_tribe(_configured)`, `tribe::create_wired_subdao`) mint one `SubDAOControl` per SubDAO they create; `capability_vault::create_subdao_control` is a public mutator (`VAULT_EXTRACT`) that takes any `subdao_id`, and nothing tracks how many controls name a SubDAO.
+`controller_cap_id` is set by `dao::share_subdao` when the SubDAO is shared, cleared by `clear_controller` at spin-out (so the old control stops working), and is what makes the DAO "controlled" for the SubDAO blocklist. The framework's creation paths (`CreateSubDAO`, `tribe::create_tribe(_configured)`, `tribe::create_wired_subdao`) mint one `SubDAOControl` per SubDAO they create; `capability_vault::create_subdao_control` is `public(package)` and only `CreateSubDAO` calls it. Any other control naming a SubDAO fails `assert_registered_control`.
 
 A DAO with `controller_cap_id` set cannot enable SpawnDAO, SpinOutSubDAO, CreateSubDAO, EnableBypassType or DisableBypassType (`dao::is_subdao_blocked_type`): not by an EnableProposalType vote (`admin_ops::ESubDAOBlockedType`) and not by a creation-time override (`dao::EBlockedProposalType`). SubDAOs are not seeded with the bypass meta-types, so they have no first-party way to enable a bypass type; `external_execution::execute_enable_bypass_type` repeats the blocklist check for `NewType` (`external_execution::ESubDAOBlockedType`) regardless.
 
 While `controller_paused` is set, the SubDAO's two-PTB, atomic and bypass paths refuse to mint tickets (`board_voting::EControllerPaused`, `external_execution::EControllerPaused`); composites are covered because their ticket comes from `ticket_from_vote`. Submission and voting are not blocked, and the controller's privileged path still runs, so it can unpause.
 
-Real suites: `packages/armature_proposals/tests/subdao_ops_tests.move` (16) and `migration_tests.move` (`create_subdao_and_spin_out_e2e`, `controller_set_board_via_privileged_submit`), plus tests cited from `admin_ops_tests.move`, `controller_tests.move`, `capability_vault_tests.move`, `gate_tests.move`, `tribe_tests.move`, `dao_tests.move` and `lifecycle_tests.move`. The hierarchy model is specified in `specs/04_subdao_hierarchy.md`.
+Real suites: `packages/armature_proposals/tests/subdao_ops_tests.move` (16) and `migration_tests.move` (`create_subdao_and_spin_out_e2e`, `controller_set_board_via_privileged_submit`), plus tests cited from `admin_ops_tests.move`, `controller_tests.move`, `cross_dao_auth_tests.move`, `capability_vault_tests.move`, `gate_tests.move`, `tribe_tests.move`, `dao_tests.move` and `lifecycle_tests.move`. The hierarchy model is specified in `specs/04_subdao_hierarchy.md`.
 
 ## Test Matrix
 
@@ -58,8 +59,16 @@ Real suites: `packages/armature_proposals/tests/subdao_ops_tests.move` (16) and 
 | `test_transfer_cap__wrong_target_vault_aborts` (planned) | Target vault's DAO ≠ `target_subdao`: Abort `subdao_ops::ESubDAOVaultMismatch` |
 | `subdao_ops_tests::reclaim_cap_from_subdao_e2e` | Cap back in the parent vault, gone from the child's |
 | `subdao_ops_tests::reclaim_cap_wrong_vault_aborts` | Wrong controller vault: Abort `subdao_ops::EVaultDAOMismatch` |
-| `test_reclaim_cap__control_for_other_subdao_aborts` (planned) | `control_id` names another SubDAO's control: Abort `capability_vault::ENotController` |
-| `capability_vault_tests::test_privileged_extract_wrong_subdao_aborts` | `privileged_extract` with a control for another DAO: Abort `capability_vault::ENotController` |
+| `test_reclaim_cap__control_for_other_subdao_aborts` (planned) | `control_id` names another SubDAO's control: Abort `controller::EControlMismatch` |
+| `capability_vault_tests::test_privileged_extract_wrong_subdao_aborts` | Package-level `privileged_extract` with a control for another DAO: Abort `capability_vault::ENotController` |
+| `cross_dao_auth_tests::forged_control_cannot_privileged_submit` | Another DAO mints a control naming the victim and calls `privileged_submit`: Abort `controller::ENotController` |
+| `cross_dao_auth_tests::unregistered_control_cannot_privileged_extract` | A control naming the SubDAO but not its `controller_cap_id`: Abort `controller::ENotController` |
+| `cross_dao_auth_tests::registered_control_privileged_extract_succeeds` | The registered control extracts through `controller::privileged_extract` |
+| `cross_dao_auth_tests::cleared_controller_rejects_old_control` | After `clear_controller`, `privileged_submit` with the old control: Abort `controller::ENotController` |
+| `cross_dao_auth_tests::unrelated_dao_cannot_deposit_into_subdao_vault` | `receive_cap_from_controller` from a DAO without the SubDAO's control: Abort `controller::ENotController` |
+| `cross_dao_auth_tests::cannot_deposit_into_top_level_dao_vault` | Target has no controller: Abort `controller::ENotController` |
+| `cross_dao_auth_tests::controller_vault_must_match_request` | The real controller's vault with another DAO's request: Abort `controller::EControlMismatch` |
+| `test_transfer_cap__target_not_controlled_aborts` (planned) | `TransferCapToSubDAO` naming a DAO the sender does not control: Abort `controller::ENotController` |
 | `subdao_ops_tests::pause_and_unpause_subdao_e2e` | Controller vote pauses, a second vote unpauses |
 | `subdao_ops_tests::paused_subdao_blocks_execution` | While paused, the SubDAO submits and votes a SetBoard; `ticket_from_vote` aborts `board_voting::EControllerPaused` |
 | `controller_tests::authorize_execution_blocks_when_controller_paused` | Abort `board_voting::EControllerPaused` |
@@ -82,10 +91,10 @@ Real suites: `packages/armature_proposals/tests/subdao_ops_tests.move` (16) and 
 
 | Old test | Why |
 |----------|-----|
-| `test_only_one_control_per_subdao`, `test_each_subdao_has_at_most_one_controller` | Not enforced. See the Summary for what is checked: creation paths mint one control per SubDAO, and `controller_cap_id` holds one ID, but `privileged_submit` / `privileged_extract` check only `control.subdao_id`. |
-| `test_acyclic_graph_enforced` | No graph check exists. Creation paths only build trees; `TransferCapToSubDAO` can move a `SubDAOControl` into any vault it names. |
+| `test_only_one_control_per_subdao`, `test_each_subdao_has_at_most_one_controller` | Replaced: `controller_cap_id` holds one ID and only that control passes `assert_registered_control`, so other controls naming the SubDAO have no authority (`cross_dao_auth_tests::forged_control_cannot_privileged_submit`, `unregistered_control_cannot_privileged_extract`). |
+| `test_acyclic_graph_enforced` | No graph check exists. Creation paths only build trees; `TransferCapToSubDAO` can move a `SubDAOControl` into the vault of any SubDAO the sender controls. |
 | `test_create_subdao__funds_child_treasury` | `CreateSubDAO` carries no funding. Fund a SubDAO with a separate `SendCoinToDAO<T>` (`lifecycle_tests::medium_enterprise_lifecycle`, step 9). |
-| `test_transfer_cap__requires_subdao_control` | `TransferCapToSubDAO` needs no `SubDAOControl`: it checks only that the target vault belongs to `target_subdao`. |
+| `test_transfer_cap__requires_subdao_control` | `TransferCapToSubDAO` loans no `SubDAOControl`; instead `receive_cap_from_controller` requires the sender's vault to hold the target's registered control (`cross_dao_auth_tests::unrelated_dao_cannot_deposit_into_subdao_vault`). |
 | `test_pause_requires_privileged_submit`, `test_unpause_requires_privileged_submit` | Pause/unpause are ordinary types voted on the controller; only their SubDAO-side effect needs a privileged request. Covered by `pause_and_unpause_subdao_e2e` and the two `gate_tests` above. |
 
 ## Tests
@@ -191,15 +200,15 @@ assert!(subdao_vault.ids_for_type<FreezeAdminCap>()[0] == freeze_admin_cap_id);
 
 ### TransferCapToSubDAO: moves a cap into the target vault
 
-**Requirement:** `execute_transfer_cap<T>` checks the source vault belongs to the ticket's DAO (`subdao_ops::EVaultDAOMismatch`) and the target vault belongs to `payload.target_subdao` (`subdao_ops::ESubDAOVaultMismatch`), extracts `cap_id` (VAULT_EXTRACT) and hands it to the target vault with `receive_cap` on the same request. Emits `CapTransferredToSubDAO`.
+**Requirement:** `execute_transfer_cap<T>` checks the source vault belongs to the ticket's DAO (`subdao_ops::EVaultDAOMismatch`) and the target vault belongs to `payload.target_subdao` (`subdao_ops::ESubDAOVaultMismatch`), extracts `cap_id` (VAULT_EXTRACT) and hands it to the target vault with `controller::receive_cap_from_controller` on the same request, which requires `target_subdao` to be a SubDAO whose registered `SubDAOControl` sits in the source vault (`controller::ENotController`). Emits `CapTransferredToSubDAO`.
 
-**Why it matters:** This is how a DAO delegates a capability. The handler does not check that `target_subdao` is controlled by the sender; the sending DAO's vote is the authority, and only a SubDAO's controller can later reclaim the cap with `ReclaimCapFromSubDAO`.
+**Why it matters:** This is how a DAO delegates a capability. Only the SubDAO's controller can push caps into its vault this way, and only it can later reclaim them with `ReclaimCapFromSubDAO`.
 
 ```move
 // subdao_ops_tests::transfer_cap_to_subdao_e2e
 let payload = transfer_cap_to_subdao::new(test_cap_id, subdao_id);
 // ... submit, vote, ticket_from_vote on the parent ...
-subdao_ops::execute_transfer_cap<TestCap>(&mut parent_vault, &mut subdao_vault, ticket);
+subdao_ops::execute_transfer_cap<TestCap>(&mut parent_vault, &mut subdao_vault, &subdao, ticket);
 assert!(!parent_vault.contains(test_cap_id));
 assert!(subdao_vault.contains(test_cap_id));
 ```
@@ -208,7 +217,7 @@ assert!(subdao_vault.contains(test_cap_id));
 
 ### ReclaimCapFromSubDAO: returns a delegated cap
 
-**Requirement:** `execute_reclaim_cap<T>` checks both vaults (`subdao_ops::EVaultDAOMismatch`, `subdao_ops::ESubDAOVaultMismatch`), loans the control named by `control_id`, calls `subdao_vault.privileged_extract(cap_id, &control)` (`capability_vault::ENotController` unless the control names the SubDAO), stores the cap in the controller vault (VAULT_STORE), returns the control and emits `CapReclaimedFromSubDAO`. The SubDAO's board is not involved and its pause state does not matter.
+**Requirement:** `execute_reclaim_cap<T>` checks both vaults (`subdao_ops::EVaultDAOMismatch`, `subdao_ops::ESubDAOVaultMismatch`), loans the control named by `control_id`, calls `controller::privileged_extract(subdao_vault, cap_id, subdao, &control)` (`controller::EControlMismatch` unless `subdao_vault` is `subdao`'s and the control names it, `controller::ENotController` unless it is the SubDAO's registered control), stores the cap in the controller vault (VAULT_STORE), returns the control and emits `CapReclaimedFromSubDAO`. The SubDAO's board is not involved and its pause state does not matter.
 
 **Why it matters:** Delegation is revocable only if the controller can take the cap back without the SubDAO's cooperation.
 
@@ -216,7 +225,7 @@ assert!(subdao_vault.contains(test_cap_id));
 // subdao_ops_tests::reclaim_cap_from_subdao_e2e
 let payload = reclaim_cap_from_subdao::new(subdao_id, test_cap_id, control_cap_id);
 // ... submit, vote, ticket_from_vote on the parent ...
-subdao_ops::execute_reclaim_cap<TestCap>(&mut parent_vault, &mut subdao_vault, ticket);
+subdao_ops::execute_reclaim_cap<TestCap>(&mut parent_vault, &mut subdao_vault, &subdao, ticket);
 assert!(parent_vault.contains(test_cap_id));
 assert!(!subdao_vault.contains(test_cap_id));
 ```
@@ -249,7 +258,7 @@ let t2 = board_voting::ticket_from_vote(&mut parent, remove_prop, &parent_freeze
 subdao_ops::execute_controller_batch_remove_members(&mut parent_vault, &mut subdao, t2, ctx);
 
 let t3 = board_voting::ticket_from_vote(&mut parent, reclaim_prop, &parent_freeze, &clock, ctx);
-subdao_ops::execute_reclaim_cap<GateCap>(&mut parent_vault, &mut subdao_vault, t3);
+subdao_ops::execute_reclaim_cap<GateCap>(&mut parent_vault, &mut subdao_vault, &subdao, t3);
 
 let t4 = board_voting::ticket_from_vote(&mut parent, unpause_prop, &parent_freeze, &clock, ctx);
 subdao_ops::execute_unpause_subdao_execution(&mut parent_vault, &mut subdao, t4, ctx);

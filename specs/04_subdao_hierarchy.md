@@ -17,9 +17,9 @@ struct SubDAOControl has key, store {
 
 Stored in the controller's `CapabilityVault`. Holding it lets the controller:
 - **Mint privileged requests** on the SubDAO with `controller::privileged_submit`. A privileged request passes every permission check on that SubDAO, and it is the only request that `set_controller_paused` and `clear_controller` accept.
-- **Extract capabilities** from the SubDAO's vault with `capability_vault::privileged_extract`.
+- **Extract capabilities** from the SubDAO's vault with `controller::privileged_extract`.
 
-Both check that `control.subdao_id` names the target DAO. The first-party types that use the control are proposed and voted on the **controller** DAO. Each loans the `SubDAOControl` from the controller's vault, which needs `VAULT_BORROW` with `SubDAOControl` in the type's borrow scope:
+Both call `controller::assert_registered_control`: `control.subdao_id` must name the target DAO (`EControlMismatch`) and the control must be the one recorded in the SubDAO's `controller_cap_id` (`ENotController`). The controller can also push a capability into the SubDAO's vault with `controller::receive_cap_from_controller`, which needs its own request (VAULT_EXTRACT) and checks that its vault holds the SubDAO's registered control. The first-party types that use the control are proposed and voted on the **controller** DAO. Each loans the `SubDAOControl` from the controller's vault, which needs `VAULT_BORROW` with `SubDAOControl` in the type's borrow scope:
 
 | Type (package) | Effect on the SubDAO |
 |---|---|
@@ -76,13 +76,13 @@ Top-Level DAO
 └── Operations SubDAO
 ```
 
-`TransferCapToSubDAO` moves any capability type. The handler checks that the target vault belongs to the DAO named in the payload (`target_subdao`). It does not check that this DAO is a SubDAO of the sender; the sending DAO's vote is the authority, so keeping capabilities flowing downward is the voters' responsibility.
+`TransferCapToSubDAO` moves any capability type. The handler checks that the target vault belongs to the DAO named in the payload (`target_subdao`) and deposits through `controller::receive_cap_from_controller`, so the target must be a SubDAO whose registered `SubDAOControl` sits in the sender's vault (`controller::ENotController` otherwise). Capabilities therefore only flow to the sender's direct SubDAOs.
 
 ---
 
 ## 5. Reclaim
 
-`ReclaimCapFromSubDAO` returns a delegated capability in one handler: loan the `SubDAOControl`, `privileged_extract` the capability from the SubDAO's vault, `store_cap` it in the controller's vault, return the control.
+`ReclaimCapFromSubDAO` returns a delegated capability in one handler: loan the `SubDAOControl`, `controller::privileged_extract` the capability from the SubDAO's vault, `store_cap` it in the controller's vault, return the control.
 
 To also stop the SubDAO and change its board, the controller can execute `PauseSubDAOExecution`, `ControllerBatchRemoveMembers` / `ControllerBatchAddMembers`, `ReclaimCapFromSubDAO` and `UnpauseSubDAOExecution` in one PTB. They can run as separately passed proposals, or as steps of one composite if those types are composable in the controller's config. The SubDAO is paused for zero real time.
 
@@ -122,12 +122,12 @@ These invariants keep the organizational graph well-formed:
 | A DAO with a controller cannot enable `SpawnDAO`, `SpinOutSubDAO`, `CreateSubDAO`, `EnableBypassType` or `DisableBypassType`, at creation or through the `EnableProposalType` / `EnableBypassType` handlers | Prevents unilateral independence, hierarchy manipulation, and self-granted no-vote execution. The check lives in those handlers and in the creation path; `dao::enable_proposal_type` itself checks only `TYPE_ADMIN`, so it does not bind a privileged request or a type the SubDAO has granted `TYPE_ADMIN` |
 | `controller_cap_id` is set when the SubDAO is shared and cleared at spinout | On-chain record of the control relationship |
 | A SubDAO records at most one controller (`controller_cap_id` is a single `Option<ID>`) | Single controller per SubDAO |
-| `privileged_submit` and `privileged_extract` require a `SubDAOControl` whose `subdao_id` is the target DAO | Control is bound to one SubDAO |
+| `privileged_submit` and `privileged_extract` require the `SubDAOControl` whose `subdao_id` is the target DAO and whose ID is the target's `controller_cap_id` | Control is bound to one SubDAO; a forged or spun-out control is refused |
 | `controller_paused` is set or cleared only by a privileged request (`dao::assert_controller`) | Controller-exclusive pause authority |
 | When `controller_paused == true`, the SubDAO's vote, atomic and bypass paths abort | Execution freeze; the controller's privileged path still runs so it can unpause |
 | `SpinOutSubDAO` clears `controller_paused` to `false` | Clean independence |
 
-The framework's creation paths only ever produce trees: each new SubDAO's control is minted into its creator's vault. The framework does not check the graph afterwards. A `TransferCapToSubDAO` vote can move a `SubDAOControl` into any vault it names, so keeping the graph acyclic is a governance rule, not an enforced one.
+The framework's creation paths only ever produce trees: each new SubDAO's control is minted into its creator's vault. The framework does not check the graph afterwards. A `TransferCapToSubDAO` vote can move a `SubDAOControl` into the vault of any SubDAO the sender controls, so keeping the graph acyclic is a governance rule, not an enforced one.
 
 ---
 

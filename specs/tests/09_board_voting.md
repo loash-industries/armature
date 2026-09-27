@@ -12,7 +12,7 @@ The pass rule is `ProposalConfig::passes` (package-internal in `proposal`), eval
 
 Both comparisons cross-multiply in u128 (`utils::gte_bps`), so there is no division and no rounding. The first vote that satisfies the rule sets the proposal to `Passed`; after that `vote` aborts with `proposal::ENotActive`. Non-voters count toward neither `yes` nor `no`. Approval floors (80% for `EnableProposalType`, `UpdateProposalConfig`, `EnableBypassType` and any config holding a high-impact bit) bound `approval_threshold`, which is measured against votes cast; participation is governed by `quorum` alone.
 
-These tests cover quorum and threshold arithmetic, the propose threshold, type-slot submission, read-only execution and the atomic single-vote path. Real suites: `packages/armature_framework/tests/board_voting_tests.move` (21 tests) and `packages/armature_framework/tests/submit_vote_execute_tests.move` (26 tests). The proposal lifecycle rules this module relies on (snapshot eligibility, voting deadline, execution window, delay, cooldown, deletion) are tested in `proposal_tests.move` and specified in `04_proposals.md`.
+These tests cover quorum and threshold arithmetic, the propose threshold, type-slot submission, read-only execution and the atomic single-vote path. Real suites: `packages/armature_framework/tests/board_voting_tests.move` (22 tests) and `packages/armature_framework/tests/submit_vote_execute_tests.move` (26 tests). The proposal lifecycle rules this module relies on (snapshot eligibility, voting deadline, execution window, delay, cooldown, deletion) are tested in `proposal_tests.move` and specified in `04_proposals.md`.
 
 ## Test Matrix
 
@@ -42,6 +42,7 @@ These tests cover quorum and threshold arithmetic, the propose threshold, type-s
 | `submit_proposal_aborts_for_type_without_slot` | Abort `board_voting::ETypeNotEnabled`: another type's slot does not enable `P` |
 | `submit_proposal_default_type_uses_its_payload_slot` | A `SetBoard` payload submits against the default "SetBoard" slot |
 | `ticket_from_vote__records_execution` | Ticket minted, proposal deleted, `last_executed_ms<P>()` = clock |
+| `ticket_from_vote__type_disabled_after_pass_aborts` | Type disabled after its proposal passed → Abort `board_voting::ETypeNotEnabled` |
 | `ticket_from_vote_readonly__executes_without_recording` | Ticket minted from `&DAO`; `last_executed_ms<P>()` stays `none` |
 | `ticket_from_vote_readonly__slot_cooldown_aborts` | Slot cooldown > 0 → Abort `board_voting::ECooldownRequiresMutableDAO` |
 | `ticket_from_vote_readonly__slot_only_cooldown_aborts` | Cooldown raised on the slot after submission → same abort |

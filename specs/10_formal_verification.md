@@ -10,7 +10,7 @@ This protocol governs treasury funds, capability delegation, organizational hier
 
 **Testing proves the presence of correct behavior. Formal verification proves the absence of incorrect behavior.**
 
-The invariants in `03_core_spec.md` §6 are covered by about 556 Move tests (framework 400, proposals 125, world bridge 20, external-type fixture 11) and by a CI check that every mutator is gated. Tests only cover enumerated scenarios. The prover checks specs against *all* possible inputs, catching edge cases no human would think to write tests for: integer boundary overflows, obscure abort paths, and subtle state-machine violations.
+The invariants in `03_core_spec.md` §6 are covered by about 573 Move tests (framework 419, proposals 123, world bridge 20, external-type fixture 11) and by a CI check that every mutator is gated. Tests only cover enumerated scenarios. The prover checks specs against *all* possible inputs, catching edge cases no human would think to write tests for: integer boundary overflows, obscure abort paths, and subtle state-machine violations.
 
 ### High-Value Targets
 
@@ -121,7 +121,7 @@ A proved spec means: *for ALL possible inputs satisfying `requires`, the `ensure
 
 Each invariant below restates one from `03_core_spec.md` §6 (Consolidated Invariants) or `packages/armature_framework/internal_workings.md` and maps to one proposed spec file. **No row has a spec yet.** "Enforced today by" names what holds the property until a proof exists; "type system" means the Move compiler rejects any violation.
 
-**Changes from the March tracker (41 rows).** Dropped: `Charter::VersionMonotonic`, `Charter::AmendmentRecords` and `Charter::RenewStorage` (no Walrus charter, versions or amendments), and every property of the removed `Executed` / `Expired` statuses. Changed: `Admin::EnableTypeFloor` (66%) and `Admin::UpdateConfigFloor` (self-referential 80%) became `Permissions::Floors` (80% on every stored config); `Proposal::TypeGate` ("in `enabled_proposals`") became `Registry::TypeSelectsSlot`; `SubDAO::HierarchyBlocklist` moved into `Registry::ClassificationSets`. Removed as unenforced: "only one `SubDAOControl` per SubDAO" (see §4.1). Added: the Permissions, Registry, Composite and SpendGuard groups and the deletion and deadline rows.
+**Changes from the March tracker (41 rows).** Dropped: `Charter::VersionMonotonic`, `Charter::AmendmentRecords` and `Charter::RenewStorage` (no Walrus charter, versions or amendments), and every property of the removed `Executed` / `Expired` statuses. Changed: `Admin::EnableTypeFloor` (66%) and `Admin::UpdateConfigFloor` (self-referential 80%) became `Permissions::Floors` (80% on every stored config); `Proposal::TypeGate` ("in `enabled_proposals`") became `Registry::TypeSelectsSlot`; `SubDAO::HierarchyBlocklist` moved into `Registry::ClassificationSets`. Removed as unenforced: "only one `SubDAOControl` per SubDAO" (now covered by `SubDAO::PrivilegedScope`: only the registered control has authority). Added: the Permissions, Registry, Composite and SpendGuard groups and the deletion and deadline rows.
 
 ### Permissions (`permissions_spec.move`)
 
@@ -193,13 +193,14 @@ Each invariant below restates one from `03_core_spec.md` §6 (Consolidated Invar
 | `CapabilityVault::RegistrySynced` | `cap_types`, `cap_ids` and `ids_by_type` match the stored caps | `capability_vault_tests` |
 | `CapabilityVault::LoanPreservesRegistries` | `loan_cap` leaves the registries unchanged (the ID counts as held) | `capability_vault_tests` |
 | `CapabilityVault::CapLoanVerification` | `return_cap` accepts only the loaned cap, into the vault it came from (`ECapIdMismatch`, `EVaultIdMismatch`) | Code only; no negative test exists |
-| `CapabilityVault::PrivilegedExtract` | `privileged_extract` needs a `&SubDAOControl` with `control.subdao_id == vault.dao_id`, and checks nothing else | `capability_vault_tests` |
+| `CapabilityVault::PrivilegedExtract` | `controller::privileged_extract` needs the SubDAO's vault (`EControlMismatch`) and its registered `&SubDAOControl` (`assert_registered_control`); `capability_vault::privileged_extract` is `public(package)` and checks `control.subdao_id == vault.dao_id` | `capability_vault_tests`, `cross_dao_auth_tests` |
+| `CapabilityVault::ReceiveFromController` | A cap enters another DAO's vault only through `receive_cap_authorized` (both requests), `controller::receive_cap_from_controller` (sender's vault holds the target's registered control; `ENotController`) or the framework's SpinOutSubDAO / TransferAssets handlers; `receive_cap` is `public(package)` | `capability_vault_tests`, `cross_dao_auth_tests` |
 
 ### Emergency Freeze (`emergency_spec.move`)
 
 | ID | Invariant | Enforced today by |
 |----|-----------|-------------------|
-| `EmergencyFreeze::BlocksExecution` | A frozen type cannot execute on the two-PTB, atomic, bypass or composite-step path (`assert_not_frozen<P>`) | `freeze_path_tests`, `external_type_lifecycle_tests` |
+| `EmergencyFreeze::BlocksExecution` | A frozen type cannot execute on the two-PTB, atomic, bypass or composite-step path (`assert_not_frozen<P>`); the freeze passed must be the executing DAO's (`EDAOMismatch`) | `freeze_path_tests`, `external_type_lifecycle_tests`, `cross_dao_auth_tests` |
 | `EmergencyFreeze::KeyedByTypeName` | Freezing one instantiation (`Rebalance<CredA>`) leaves others executable | `freeze_path_tests`, `external_type_lifecycle_tests` |
 | `EmergencyFreeze::AutoExpiry` | A freeze ends at `now + max_freeze_duration_ms` with no further action | `emergency_tests` |
 | `EmergencyFreeze::MandatoryExemptions` | `TransferFreezeAdmin` and `UnfreezeProposalType`, matched by framework type, can never be frozen (`EProtectedType`) or un-exempted (`EMandatoryExemptType`) | `emergency_tests`, `freeze_ops_tests` |
@@ -213,13 +214,14 @@ Each invariant below restates one from `03_core_spec.md` §6 (Consolidated Invar
 | `SubDAO::PauseCompleteness` | While `controller_paused`, the vote, atomic and bypass paths abort (`EControllerPaused`); only the controller's privileged path still runs | `controller_tests`, `subdao_ops_tests` (`paused_subdao_blocks_execution`) |
 | `SubDAO::PauseGranularity` | While paused, submission and voting still work | `subdao_ops_tests` |
 | `SubDAO::SpinOutCleanup` | `clear_controller` resets `controller_paused` to false | `migration_tests` |
-| `SubDAO::PrivilegedScope` | `privileged_submit` needs `control.subdao_id == subdao.id` (`EControlMismatch`) and an Active target; its request passes every check on that DAO and on no other | `controller_tests` |
+| `SubDAO::PrivilegedScope` | `privileged_submit` needs `control.subdao_id == subdao.id` (`EControlMismatch`), `subdao.controller_cap_id == some(id(control))` (`ENotController`) and an Active target; its request passes every check on that DAO and on no other | `controller_tests`, `cross_dao_auth_tests` |
 
 ### Composite (`composite_spec.move`)
 
 | ID | Invariant | Enforced today by |
 |----|-----------|-------------------|
 | `Composite::Bounds` | At most 16 steps; no nested `CompositePayload` (`ECompositeNesting`); each step type is enabled and `composable_allowed` | `composite_tests` (both packages) |
+| `Composite::DAOBound` | `begin_pipeline` and `advance_step` take only the ticket's / pipeline's DAO (`EDAOIdMismatch`); each step aborts if the DAO is execution- or controller-paused (`EExecutionPaused`, `EControllerPaused`) or the step type is disabled (`ETypeNotEnabled`) | `cross_dao_auth_tests` |
 | `Composite::ConfigMaximum` | The composite's config is the component-wise maximum of the "Composite" slot and every step's config; EnableProposalType and UpdateProposalConfig steps force ≥ 80% (`composite::EFloorNotMet`) | Code (`submit_composite`); `composite_tests` cover the passing case only |
 
 ### DAO Lifecycle (`dao_lifecycle_spec.move`)
@@ -240,7 +242,6 @@ Each invariant below restates one from `03_core_spec.md` §6 (Consolidated Invar
 
 Specs written naively for these would fail. Each needs a decision (change the code, or state the weaker property) before it can be specified.
 
-- **Controller authority is bound only by `SubDAOControl.subdao_id`.** `controller::privileged_submit` and `capability_vault::privileged_extract` compare the control's `subdao_id` with the target and do not consult the target's `controller_cap_id`, and `capability_vault::create_subdao_control` takes the `subdao_id` as an argument. "One control per SubDAO" is therefore not an invariant the code states; the binding between a control and its SubDAO must be decided before controller authority can be specified.
 - **Classification checks are handler-level.** The undisableable, SubDAO-blocked and composable-versus-cooldown checks run in the framework handlers (`admin_ops`, `external_execution`), and the SubDAO blocklist also on creation-time overrides. They do not run in `dao::enable_proposal_type`, `disable_proposal_type` or `update_proposal_config`. A non-framework type granted TYPE_ADMIN (an 80% vote; never bypass-enabled) reaches those mutators with arguments of its own handler's choosing. The properties therefore hold only if no such type is enabled, or must be proved per handler.
 - **Composite steps skip the step type's cooldown.** `composite::advance_step` checks no per-step cooldown: it asserts only `cooldown_ms == 0 || composable_allowed`, and the `last_executed_snapshot` that `begin_pipeline` records is never read. The design relies on cooldown types not being composable, but only the `admin_ops` and `external_execution` handlers refuse a config that is both. Creation-time overrides keep a default slot's `composable_allowed` and do not run that check. A default-composable type such as AddMember, given a cooldown at creation, therefore runs inside composites without its own cooldown; the composite is rate-limited only by the `CompositePayload` slot's last execution. The module's doc comments still say `advance_step` enforces cooldowns.
 - **Arithmetic that aborts instead of saturating.** `emergency::freeze_type` computes `now + max_freeze_duration_ms` unchecked, and `update_freeze_duration` accepts any value, so a very large duration makes every freeze abort until governance lowers it. `external_execution` checks the bypass cooldown as `last + cooldown_ms` unchecked, whereas the vote paths use `utils::saturating_add`; the outcome is the same (blocked), but the abort code differs. `spend_guard::charge` divides by `epoch_duration_ms`, so a window created with a zero duration aborts every charge.
@@ -251,7 +252,7 @@ Accepted behaviours, which specs must state rather than forbid:
 - A config with an enormous `expiry_ms` or `execution_delay_ms` never expires: a Passed proposal under it leaves the chain only by execution.
 - With the default 7-day freeze and 7-day expiry, freezing a type right after one of its proposals passes can run out that proposal's execution window.
 - `disable_proposal_type` drops the type's cooldown state, so a re-enabled type's first execution is not rate-limited.
-- `receive_cap` does not check the receiving vault's DAO; the sending DAO's VAULT_EXTRACT request is the authority.
+- `capability_vault::receive_cap` (`public(package)`) does not check the receiving vault's DAO; its framework callers (SpinOutSubDAO, TransferAssets, `receive_cap_from_controller`) tie the sender to the target.
 - Destroying a DAO leaves its type slots attached to the deleted UID and drops the roster table without reclaiming entry deposits.
 
 ## 5. What Enforces These Today, and CI Integration
@@ -259,9 +260,10 @@ Accepted behaviours, which specs must state rather than forbid:
 ### Current enforcement (in place of proofs)
 
 - **Move type system.** Hot potatoes have no abilities. `ExecutionRequest` has no public constructor: its mint functions and `proposal::create`, `record_vote`, `execute` and `consume` are `public(package)`. `std::internal::Permit<P>` can be minted only by `P`'s defining module.
-- **Unit and scenario tests** (`sui move test` per package; counts from the ROAD-39 changelog entry): framework 400, proposals 125, world bridge 20, external-type fixture 11. The security-relevant suites are:
+- **Unit and scenario tests** (`sui move test` per package): framework 419, proposals 123, world bridge 20, external-type fixture 11. The security-relevant suites are:
   - `gate_tests.move`: one denial test per gated mutator (30). Each mutator must refuse a request holding every bit except the one it needs; for the controller-only pair, any unprivileged request
   - `permissions_tests`, `borrow_scope_tests`, `freeze_path_tests`, `submit_vote_execute_tests`
+  - `cross_dao_auth_tests`: forged or spun-out `SubDAOControl`s, another DAO's freeze object, deposits into a vault the sender does not control, and composites run against another DAO or after a pause or disable
   - `proposal_tests`: deadlines, deletion, snapshot eligibility, the saturating maximum expiry
   - `armature_external_type_tests`: a third-party type on every path, and replays of the confirmed cross-type attacks
   - the world bridge's autojoin tickets, which carry BOARD_ADD only

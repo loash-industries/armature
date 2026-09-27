@@ -8,29 +8,30 @@ Four packages carry tests. Every test file is a `#[test_only]` module named `<ad
 
 | Package (address) | Test modules | Tests |
 |---|---|---|
-| `armature_framework` (`armature::`) | 20 files in `packages/armature_framework/tests/` + `sources/utils.move` | 400 |
-| `armature_proposals` | 14 files in `packages/armature_proposals/tests/` | 125 |
+| `armature_framework` (`armature::`) | 21 files in `packages/armature_framework/tests/` + `sources/utils.move` | 419 |
+| `armature_proposals` | 13 files in `packages/armature_proposals/tests/` | 123 |
 | `armature_world_bridge` | `autojoin_e2e_tests` (8), `tribe_allowlist_tests` (12) | 20 |
 | `armature_external_type_tests` | `external_type_lifecycle_tests` (third-party fixture, never published) | 11 |
 
-Counts are from `sui move test` at commit `6ed2b77` (2026-09-26); all 556 pass.
+Counts are from `sui move test` on the working tree on top of commit `6ed2b77` (2026-09-26); all 573 pass.
 
 **Framework test modules**
 
 | Module | Tests | Covers |
 |---|---|---|
-| `board_voting_tests` | 21 | Board pass math, propose threshold, slot-keyed submission, `ticket_from_vote` vs `_readonly` |
+| `board_voting_tests` | 22 | Board pass math, propose threshold, slot-keyed submission, `ticket_from_vote` vs `_readonly` |
 | `borrow_scope_tests` | 9 | `borrow_scope` on requests and in the vault; scope changes as grants |
-| `capability_vault_tests` | 23 | store / borrow / loan / extract, registries, `privileged_extract`, `receive_cap(_authorized)` |
+| `capability_vault_tests` | 23 | store / borrow / loan / extract, registries, `privileged_extract`, `receive_cap(_authorized)` (package-level) |
 | `composite_tests` | 2 | composite nesting refused, per-step display key |
 | `controller_tests` | 5 | `privileged_submit` / `privileged_consume`, controller pause |
+| `cross_dao_auth_tests` | 17 | registered `SubDAOControl`, the DAO's own freeze object, `receive_cap_from_controller`, composites bound to their DAO |
 | `dao_tests` | 20 | creation, default slots, type registry, root size, `ProposalConfig` bounds, `create_returning_vault` |
 | `emergency_tests` | 18 | freeze / unfreeze / expiry / exemptions on a standalone `EmergencyFreeze` |
 | `encrypted_entry_tests` | 39 | Seal-encrypted entries, epoch rotation, `destroy` with entries |
 | `external_execution_tests` | 22 | `EnableBypassType` / `DisableBypassType`, `ticket_from_cap(_readonly)` |
 | `freeze_ops_tests` | 5 | `UpdateFreezeConfig`, `UpdateFreezeExemptTypes` through governance |
 | `freeze_path_tests` | 7 | freeze keyed by `TypeName` on the atomic, bypass and two-PTB paths |
-| `gate_tests` | 34 | one denial test per gated mutator (see CI gate check) |
+| `gate_tests` | 35 | one denial test per gated mutator (see CI gate check) |
 | `lifecycle_ops_tests` | 5 | `TransferAssets` hot-potato flow |
 | `permissions_tests` | 35 | permission bits, floors, grant rules, fixed framework bits, composite grants |
 | `proposal_tests` | 42 | proposal lifecycle, deletion, expiry, snapshot versions, tickets |
@@ -41,7 +42,7 @@ Counts are from `sui move test` at commit `6ed2b77` (2026-09-26); all 556 pass.
 | `tribe_tests` | 30 | tribe constructors, `create_wired_subdao`, creation-time overrides |
 | `utils` (in `sources/`) | 8 | bps math, `saturating_add` |
 
-**`armature_proposals` test modules**: `admin_ops_tests` (21), `batch_multicoin_ops_tests` (6), `board_ops_tests` (6), `capability_vault_tests` (2), `charter_tests` (2), `composite_tests` (20), `currency_ops_tests` (12), `emergency_freeze_tests` (8), `lifecycle_tests` (2), `member_ops_tests` (15), `migration_tests` (4), `subdao_ops_tests` (16), `treasury_ops_tests` (9), `upgrade_ops_tests` (2). Several of them drive framework handlers (`admin_ops`, `board_ops`, `member_ops`, `freeze_ops`, `lifecycle_ops`) end to end.
+**`armature_proposals` test modules**: `admin_ops_tests` (21), `batch_multicoin_ops_tests` (6), `board_ops_tests` (6), `charter_tests` (2), `composite_tests` (20), `currency_ops_tests` (12), `emergency_freeze_tests` (8), `lifecycle_tests` (2), `member_ops_tests` (15), `migration_tests` (4), `subdao_ops_tests` (16), `treasury_ops_tests` (9), `upgrade_ops_tests` (2). Several of them drive framework handlers (`admin_ops`, `board_ops`, `member_ops`, `freeze_ops`, `lifecycle_ops`) end to end.
 
 ## Citing Tests in These Specs
 

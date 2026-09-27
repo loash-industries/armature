@@ -249,7 +249,7 @@ Membership is readable per address: `governance::is_board_member(dao.governance(
 // subdao_ops_tests::transfer_cap_to_subdao_e2e (with a TestCap standing in for the gate cap)
 let payload = transfer_cap_to_subdao::new(test_cap_id, subdao_id);
 // ... submit, vote, ticket_from_vote on the parent ...
-subdao_ops::execute_transfer_cap<TestCap>(&mut parent_vault, &mut subdao_vault, ticket);
+subdao_ops::execute_transfer_cap<TestCap>(&mut parent_vault, &mut subdao_vault, &subdao, ticket);
 assert!(!parent_vault.contains(test_cap_id));
 assert!(subdao_vault.contains(test_cap_id));
 ```

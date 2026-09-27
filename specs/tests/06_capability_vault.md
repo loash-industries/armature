@@ -2,7 +2,7 @@
 
 ## Summary
 
-`capability_vault.move` stores arbitrary `key + store` capabilities as dynamic object fields keyed by object ID, with three registries: `cap_ids` (every stored ID), and `cap_types` and `ids_by_type`, keyed by the cap type's name string (`type_name::with_defining_ids<T>()`). Every function that takes an `ExecutionRequest` checks a permission bit, and all but `receive_cap` first check the request's DAO against the vault's (`capability_vault::EDAOIdMismatch`); borrowing and loaning also need the cap's type in the request's borrow scope. A loan hands out the cap with a `CapLoan` hot potato. `privileged_extract` takes a `SubDAOControl` instead of a request.
+`capability_vault.move` stores arbitrary `key + store` capabilities as dynamic object fields keyed by object ID, with three registries: `cap_ids` (every stored ID), and `cap_types` and `ids_by_type`, keyed by the cap type's name string (`type_name::with_defining_ids<T>()`). Every function that takes an `ExecutionRequest` checks a permission bit, and all but `receive_cap` first check the request's DAO against the vault's (`capability_vault::EDAOIdMismatch`); borrowing and loaning also need the cap's type in the request's borrow scope. A loan hands out the cap with a `CapLoan` hot potato. `privileged_extract` takes a `SubDAOControl` instead of a request. `receive_cap`, `privileged_extract` and `create_subdao_control` are `public(package)`; other packages reach the first two through `controller::receive_cap_from_controller` and `controller::privileged_extract`, which check the SubDAO's registered controller.
 
 These tests verify the gates, the borrow scope, registry bookkeeping, loan semantics, cross-DAO receipt, the controller reclaim path and the bypass-cap lookup.
 
@@ -62,9 +62,11 @@ These tests verify the gates, the borrow scope, registry bookkeeping, loan seman
 
 | Test | Expected | Where |
 |------|----------|-------|
-| `receive_cap_unguarded_accepts_any_req_dao_id` | `receive_cap` does not check the receiving vault's DAO | `capability_vault_tests` |
-| `receive_cap_cross_dao` | A request of another DAO carrying `VAULT_EXTRACT` pushes a cap into this vault | `armature_proposals::capability_vault_tests` |
-| `receive_cap_without_vault_extract_aborts` | `proposal::EPermissionDenied` | `armature_proposals::capability_vault_tests` |
+| `receive_cap_unguarded_accepts_any_req_dao_id` | `receive_cap` (package-only) does not check the receiving vault's DAO | `capability_vault_tests` |
+| `unrelated_dao_cannot_deposit_into_subdao_vault` | `receive_cap_from_controller` from a DAO whose vault lacks the SubDAO's registered control: `controller::ENotController` | `cross_dao_auth_tests` |
+| `cannot_deposit_into_top_level_dao_vault` | Target has no controller: `controller::ENotController` | `cross_dao_auth_tests` |
+| `controller_vault_must_match_request` | `controller_vault` is not the request's DAO's: `controller::EControlMismatch` | `cross_dao_auth_tests` |
+| `transfer_cap_to_subdao_e2e` | The controller's `TransferCapToSubDAO` deposits through `receive_cap_from_controller` | `armature_proposals::subdao_ops_tests` |
 | `receive_cap_authorized_succeeds_with_matching_recv_dao` | Sender and receiver requests both present | `capability_vault_tests` |
 | `receive_cap_authorized_aborts_on_recv_dao_mismatch` | Receiver request for another DAO: `capability_vault::EDAOIdMismatch` | `capability_vault_tests` |
 
@@ -75,7 +77,9 @@ These tests verify the gates, the borrow scope, registry bookkeeping, loan seman
 | `test_privileged_extract_requires_subdao_control`, `test_privileged_extract_verifies_subdao_id` | A `SubDAOControl` whose `subdao_id` is the vault's DAO extracts the cap | `capability_vault_tests` |
 | `test_privileged_extract_succeeds` | ... and the registries drop it | `capability_vault_tests` |
 | `test_privileged_extract_wrong_subdao_aborts` | `control.subdao_id` is another DAO: `capability_vault::ENotController` | `capability_vault_tests` |
-| `reclaim_cap_from_subdao_e2e` | Parent loans its control, `privileged_extract`s from the SubDAO vault, stores the cap | `armature_proposals::subdao_ops_tests` |
+| `registered_control_privileged_extract_succeeds` | `controller::privileged_extract` with the SubDAO's registered control extracts the cap | `cross_dao_auth_tests` |
+| `unregistered_control_cannot_privileged_extract` | A control bound to the SubDAO but not its `controller_cap_id`: `controller::ENotController` | `cross_dao_auth_tests` |
+| `reclaim_cap_from_subdao_e2e` | Parent loans its control, `controller::privileged_extract`s from the SubDAO vault, stores the cap | `armature_proposals::subdao_ops_tests` |
 | `create_subdao_and_spin_out_e2e` | `create_subdao_control` stores a control in the parent vault; spin-out destroys it and leaves the parent vault empty | `armature_proposals::migration_tests` |
 
 **Bypass caps and emptiness**
@@ -93,17 +97,17 @@ These tests verify the gates, the borrow scope, registry bookkeeping, loan seman
 
 ### Every vault mutator checks the request's DAO and one bit
 
-**Requirement:** Each request-taking function except `receive_cap` checks the vault's DAO first (`capability_vault::EDAOIdMismatch`), then the bit it needs (`proposal::EPermissionDenied` unless the request carries it or is privileged):
+**Requirement:** Each request-taking function except the package-only `receive_cap` checks the vault's DAO first (`capability_vault::EDAOIdMismatch`), then the bit it needs (`proposal::EPermissionDenied` unless the request carries it or is privileged):
 
 | Function | Bit |
 |---|---|
 | `store_cap<T, P>(vault, cap, &req)` | `VAULT_STORE` |
 | `borrow_cap<T, P>`, `borrow_cap_mut<T, P>`, `loan_cap<T, P>` | `VAULT_BORROW`, and `T` in the request's borrow scope |
 | `extract_cap<T, P>`, `create_subdao_control<P>`, `destroy_subdao_control<P>` | `VAULT_EXTRACT` |
-| `receive_cap<T, P>(vault, cap, &req)` | `VAULT_EXTRACT` on the sending DAO's request; the receiving vault is not checked |
+| `receive_cap<T, P>(vault, cap, &req)` (`public(package)`) | `VAULT_EXTRACT` on the sending DAO's request; the receiving vault is not checked |
 | `receive_cap_authorized<T, Send, Recv>(vault, cap, &send, &recv)` | `VAULT_EXTRACT` on `send`, `VAULT_STORE` on `recv`; `recv` must be the vault's DAO |
 
-`store_cap_init` is `public(package)` and used only by framework construction paths. `borrow_external_cap` and `privileged_extract` take no request (below).
+`store_cap_init` is `public(package)` and used only by framework construction paths; `create_subdao_control` is `public(package)` and called only by `CreateSubDAO`. `borrow_external_cap` and `privileged_extract` take no request (below).
 
 **Why it matters:** The vault holds the DAO's most powerful objects (`TreasuryCap`, `UpgradeCap`, `SubDAOControl`, a SubDAO's `FreezeAdminCap`). A request of an unrelated type, or of another DAO, must not reach them.
 
@@ -190,9 +194,9 @@ fun test_return_wrong_cap_aborts() {   // planned
 
 ### Cross-DAO receipt
 
-**Requirement:** `receive_cap` needs `VAULT_EXTRACT` on the sending DAO's request and does not check which DAO the receiving vault belongs to; it serves transfers where the source DAO's vote is the authority (`TransferCapToSubDAO`, `SpinOutSubDAO` moving the SubDAO's `FreezeAdminCap`, `TransferAssets`). `receive_cap_authorized` also requires `VAULT_STORE` on a request of the receiving DAO and checks that DAO owns the vault (`capability_vault::EDAOIdMismatch`); third-party cross-DAO handlers are meant to use it.
+**Requirement:** `receive_cap` needs `VAULT_EXTRACT` on the sending DAO's request and does not check which DAO the receiving vault belongs to, so it is `public(package)` and each caller ties the sender to the target: `SpinOutSubDAO` moving its own SubDAO's `FreezeAdminCap`, `TransferAssets` to the voted target, and `controller::receive_cap_from_controller`. That public entry checks that `subdao_vault` is the SubDAO's and `controller_vault` the request's DAO's (`controller::EControlMismatch`), and that `controller_vault` holds the SubDAO's registered control (`controller::ENotController`); `TransferCapToSubDAO` uses it. `receive_cap_authorized` also requires `VAULT_STORE` on a request of the receiving DAO and checks that DAO owns the vault (`capability_vault::EDAOIdMismatch`); other cross-DAO handlers use it.
 
-**Why it matters:** The unguarded form must still require a vote to take the cap out of the source; the dual form lets a receiving DAO refuse caps it did not vote to accept.
+**Why it matters:** An unrelated DAO must not push caps into another DAO's vault. The controller form relies on the control relationship; the dual form lets a receiving DAO refuse caps it did not vote to accept.
 
 ```move
 // From capability_vault_tests::receive_cap_authorized_aborts_on_recv_dao_mismatch
@@ -206,9 +210,9 @@ recv_vault.receive_cap_authorized(extracted, &send_req, &wrong_recv_req);   // E
 
 ### Controller reclaim with SubDAOControl
 
-**Requirement:** `privileged_extract<T>(vault, cap_id, &SubDAOControl)` extracts a cap without a request. It checks only `control.subdao_id == vault.dao_id` (`capability_vault::ENotController`); it does not consult the SubDAO's `controller_cap_id`. The parent reaches its `SubDAOControl` by loaning it from its own vault with a request whose type holds `VAULT_BORROW` scoped to `SubDAOControl` (`ReclaimCapFromSubDAO`, `SpinOutSubDAO`). `create_subdao_control<P>` mints a control into the vault and `destroy_subdao_control<P>` deletes one, both under `VAULT_EXTRACT`.
+**Requirement:** `controller::privileged_extract<T>(subdao_vault, cap_id, &subdao, &SubDAOControl)` extracts a cap without a request. It checks that `subdao_vault` is `subdao`'s (`controller::EControlMismatch`) and calls `controller::assert_registered_control` (`EControlMismatch` unless `control.subdao_id` is the SubDAO, `ENotController` unless the control is its `controller_cap_id`), then the package-only `capability_vault::privileged_extract`, which checks `control.subdao_id == vault.dao_id` (`capability_vault::ENotController`). The parent reaches its `SubDAOControl` by loaning it from its own vault with a request whose type holds `VAULT_BORROW` scoped to `SubDAOControl` (`ReclaimCapFromSubDAO`, `SpinOutSubDAO`). `create_subdao_control<P>` (package-only) mints a control into the vault and `destroy_subdao_control<P>` deletes one, both under `VAULT_EXTRACT`.
 
-**Why it matters:** This is how a controller DAO takes back what it delegated. A control for one SubDAO must not open another SubDAO's vault.
+**Why it matters:** This is how a controller DAO takes back what it delegated. A control for one SubDAO must not open another SubDAO's vault, and a control minted outside the SubDAO's creation (or retired at spin-out) must not open its own.
 
 ```move
 #[test, expected_failure(abort_code = capability_vault::ENotController)]
