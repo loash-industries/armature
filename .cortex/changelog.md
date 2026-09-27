@@ -10,6 +10,24 @@
 - Tightened emergency and composite execution: `emergency::assert_not_frozen` takes the DAO id and rejects another DAO's freeze object on all four execution paths, and `composite::begin_pipeline`/`advance_step` now assert the pipeline's DAO, re-check execution/controller pause, and validate the step type is still enabled (new errors 19–21).
 - Added a `cross_dao_auth_tests` regression suite plus a disabled-type `ticket_from_vote` test and a gate test; updated internal docs to match (spec updates ride with the ARMATURE-17 specs refresh).
 
+## 2026-09-26 — specs refresh aligned to the implemented framework (ARMATURE-17)
+
+- Updated `specs/` to match the implementation at `6ed2b77` (ARMATURE-9 … ARMATURE-35, ROAD-39). The core specs (00–06, 08) cover:
+  - package boundaries and `Permit`-bound tickets;
+  - the type-keyed registry;
+  - the table-backed roster with snapshot-by-version voting, and `SetBoard` as a diff;
+  - proposals deleted on execution and expiry (`Active → Passed` only);
+  - event-only single-PTB executions (`submit_vote_execute` and its `_readonly` variant, bypass, controller);
+  - composite proposals;
+  - permission bits, borrow scope, bypass-safe bits and the 80% floors;
+  - the `TypeName`-keyed freeze with a creator-held `FreezeAdminCap`;
+  - the charter as name + metadata URI, with Walrus amendments marked planned;
+  - the indexer-backed data layer.
+- Invariants now say where a check is enforced: in a handler, in `dao`, or at creation.
+- `specs/tests/` is rewritten against the real suites; tests not yet written are marked planned. The roadmap, issue breakdown and formal-verification plan are annotated with outcomes.
+- `specs/stretch/` is left as originally written, and `08_stretch_features.md` records which stretch features have shipped. `specs/ui/` is removed; the UI lives in a separate repo.
+- Still stale outside `specs/`: `docs/single-vote-execute.md`, `docs/tribe_configuration_proposals_config.md` (its 66% `EnableProposalType` configs now abort), `docs/indexing_board_events.md`, `docs/tribe-creation.md`, `README.md`, `ROADMAP.md`.
+
 ## 2026-09-26 — package boundaries: freeze governance in the framework, bypass-safe bits, borrow scope, authenticated MintAllowance bypass (ROAD-39, ARMATURE-31)
 
 - New `docs/package-boundaries.md` states the placement rule: the framework holds every type that can change who may do what (type registry, lifecycle, cap custody, freeze governance, board membership), extension packages hold every type that moves or uses assets inside an authority graph already set. `armature_proposals` and `armature_world_bridge` are first-party extensions with no special treatment from the framework; `armature_external_type_tests` is the third-party template. A type's package is a one-way door (its identity is its defining package), so placement is settled before the ROAD-39 fresh publish.
