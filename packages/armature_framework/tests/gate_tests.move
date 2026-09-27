@@ -7,7 +7,8 @@
 #[test_only]
 module armature::gate_tests;
 
-use armature::capability_vault::CapabilityVault;
+use armature::capability_vault::{Self, CapabilityVault};
+use armature::controller;
 use armature::charter::Charter;
 use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
@@ -279,6 +280,22 @@ fun receive_cap_needs_vault_extract_on_sender() {
     run!(|dao, _, vault, _, _, ctx| {
         let r = all_but(dao, permissions::vault_extract());
         vault.receive_cap(TestCap { id: object::new(ctx) }, &r);
+        abort 0
+    });
+}
+
+#[test, expected_failure(abort_code = proposal::EPermissionDenied)]
+fun receive_cap_from_controller_needs_vault_extract() {
+    run!(|dao, _, vault, _, _, ctx| {
+        let r = all_but(dao, permissions::vault_extract());
+        let controller_vault = capability_vault::new(dao.id(), ctx);
+        controller::receive_cap_from_controller(
+            vault,
+            TestCap { id: object::new(ctx) },
+            dao,
+            &controller_vault,
+            &r,
+        );
         abort 0
     });
 }

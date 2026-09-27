@@ -734,6 +734,42 @@ fun ticket_from_vote__records_execution() {
     scenario.end();
 }
 
+#[test, expected_failure(abort_code = armature::board_voting::ETypeNotEnabled)]
+/// Disabling a type cancels its already-passed proposals: the enabled check is
+/// repeated at execution, not only at submission.
+fun ticket_from_vote__type_disabled_after_pass_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000);
+
+    passed_test_proposal(&mut scenario, &clock, 0);
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        dao.test_disable_type<TestPayload>();
+        test_scenario::return_shared(dao);
+    };
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        let ticket = board_voting::ticket_from_vote(
+            &mut dao,
+            prop,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        ticket.discharge(internal::permit());
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(dao);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
 #[test, expected_failure(abort_code = armature::board_voting::ECooldownRequiresMutableDAO)]
 /// A type whose slot carries a cooldown cannot take the read-only path.
 fun ticket_from_vote_readonly__slot_cooldown_aborts() {

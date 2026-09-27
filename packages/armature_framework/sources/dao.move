@@ -1374,6 +1374,13 @@ public fun test_update_config<T>(self: &mut DAO, config: ProposalConfig) {
 }
 
 #[test_only]
+/// Register `control_id` as this SubDAO's controller without sharing it, for
+/// tests that call `controller::privileged_submit` on an unshared SubDAO.
+public fun set_controller_for_testing(self: &mut DAO, control_id: ID) {
+    self.controller_cap_id = option::some(control_id);
+}
+
+#[test_only]
 /// Disable proposal type `T` on the DAO without an ExecutionRequest.
 public fun test_disable_type<T>(self: &mut DAO) {
     let dao_id = self.id();

@@ -320,7 +320,7 @@ fun ticket_from_cap_core<P: store>(
 
     let display_key = dao.type_display_key_by_name(&name);
     assert_bypass_safe_bits(dao.type_config_by_name(&name).permissions());
-    freeze.assert_not_frozen<P>(clock);
+    freeze.assert_not_frozen<P>(dao.id(), clock);
 
     let now = clock.timestamp_ms();
     let cooldown_ms = dao.type_config_by_name(&name).cooldown_ms();

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-26 — close cross-DAO authority holes (ARMATURE-37..41)
+
+- Hardened cross-DAO authorization across the framework: `privileged_submit` and the new `controller::privileged_extract` now require the SubDAO's registered SubDAOControl (`controller_cap_id`), `create_subdao_control`, `capability_vault::privileged_extract`, and `receive_cap` are `public(package)` only, and the new `controller::receive_cap_from_controller` verifies the sender's vault holds the SubDAO's registered control. `subdao_ops::execute_transfer_cap`/`execute_reclaim_cap` gained a `&DAO` argument for this check.
+- Tightened emergency and composite execution: `emergency::assert_not_frozen` takes the DAO id and rejects another DAO's freeze object on all four execution paths, and `composite::begin_pipeline`/`advance_step` now assert the pipeline's DAO, re-check execution/controller pause, and validate the step type is still enabled (new errors 19–21).
+- Added a `cross_dao_auth_tests` regression suite plus a disabled-type `ticket_from_vote` test and a gate test; updated internal docs to match (spec updates ride with the ARMATURE-17 specs refresh).
+
 ## 2026-09-26 — package boundaries: freeze governance in the framework, bypass-safe bits, borrow scope, authenticated MintAllowance bypass (ROAD-39, ARMATURE-31)
 
 - New `docs/package-boundaries.md` states the placement rule: the framework holds every type that can change who may do what (type registry, lifecycle, cap custody, freeze governance, board membership), extension packages hold every type that moves or uses assets inside an authority graph already set. `armature_proposals` and `armature_world_bridge` are first-party extensions with no special treatment from the framework; `armature_external_type_tests` is the third-party template. A type's package is a one-way door (its identity is its defining package), so placement is settled before the ROAD-39 fresh publish.

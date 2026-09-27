@@ -430,6 +430,7 @@ fun transfer_cap_to_subdao_e2e() {
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(parent_dao.emergency_freeze_id());
         clock.set_for_testing(7000);
 
+        let subdao = scenario.take_shared_by_id<DAO>(subdao_id);
         let ticket = board_voting::ticket_from_vote(
             &mut parent_dao,
             proposal,
@@ -441,6 +442,7 @@ fun transfer_cap_to_subdao_e2e() {
         subdao_ops::execute_transfer_cap<TestCap>(
             &mut parent_vault,
             &mut subdao_vault,
+            &subdao,
             ticket,
         );
 
@@ -448,6 +450,7 @@ fun transfer_cap_to_subdao_e2e() {
         assert!(!parent_vault.contains(test_cap_id));
         assert!(subdao_vault.contains(test_cap_id));
 
+        test_scenario::return_shared(subdao);
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(subdao_vault);
         test_scenario::return_shared(parent_vault);
@@ -542,6 +545,7 @@ fun reclaim_cap_from_subdao_e2e() {
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(parent_dao.emergency_freeze_id());
         clock.set_for_testing(7000);
 
+        let subdao = scenario.take_shared_by_id<DAO>(subdao_id);
         let ticket = board_voting::ticket_from_vote(
             &mut parent_dao,
             proposal,
@@ -553,6 +557,7 @@ fun reclaim_cap_from_subdao_e2e() {
         subdao_ops::execute_reclaim_cap<TestCap>(
             &mut parent_vault,
             &mut subdao_vault,
+            &subdao,
             ticket,
         );
 
@@ -560,6 +565,7 @@ fun reclaim_cap_from_subdao_e2e() {
         assert!(parent_vault.contains(test_cap_id));
         assert!(!subdao_vault.contains(test_cap_id));
 
+        test_scenario::return_shared(subdao);
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(subdao_vault);
         test_scenario::return_shared(parent_vault);
@@ -640,6 +646,7 @@ fun reclaim_cap_wrong_vault_aborts() {
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(parent_dao.emergency_freeze_id());
         clock.set_for_testing(7000);
 
+        let subdao = scenario.take_shared_by_id<DAO>(subdao_id);
         let ticket = board_voting::ticket_from_vote(
             &mut parent_dao,
             proposal,
@@ -652,9 +659,11 @@ fun reclaim_cap_wrong_vault_aborts() {
         subdao_ops::execute_reclaim_cap<TestCap>(
             &mut subdao_vault,
             &mut parent_vault,
+            &subdao,
             ticket,
         );
 
+        test_scenario::return_shared(subdao);
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(parent_vault);
         test_scenario::return_shared(subdao_vault);

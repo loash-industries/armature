@@ -142,7 +142,7 @@ Destroy the `SubDAOControl` relationship and grant a SubDAO full independence. I
 **Bits:** `VAULT_BORROW` + `VAULT_EXTRACT` (fixed), scoped to `SubDAOControl` (fixed). **Floor:** 80%.
 
 ### `TransferCapToSubDAO`
-Transfer a capability from this DAO's `CapabilityVault` to a SubDAO's vault. Used to delegate specific authorities (e.g. a `TreasuryCap`) to a subordinate DAO.
+Transfer a capability from this DAO's `CapabilityVault` to a SubDAO's vault. Used to delegate specific authorities (e.g. a `TreasuryCap`) to a subordinate DAO. The target must be a SubDAO whose registered `SubDAOControl` sits in this DAO's vault (`controller::receive_cap_from_controller`).
 
 **Bits:** `type_permissions::transfer_cap_to_subdao()` = `VAULT_EXTRACT`. **Floor:** 80%.
 
@@ -222,7 +222,7 @@ A type's `ProposalConfig.permissions` is a bitmask from `armature::permissions` 
 | `TREASURY_WITHDRAW` | 80% | `treasury_vault::withdraw`, `withdraw_multicoin` |
 | `VAULT_STORE` | — | `store_cap`; receiving side of `receive_cap_authorized` |
 | `VAULT_BORROW` | 80% | `borrow_cap`, `borrow_cap_mut`, `loan_cap`, further limited to the cap types in the config's `borrow_scope` |
-| `VAULT_EXTRACT` | 80% | `extract_cap`, `create/destroy_subdao_control`; sending side of `receive_cap(_authorized)` |
+| `VAULT_EXTRACT` | 80% | `extract_cap`, `destroy_subdao_control`; sending side of `receive_cap_authorized` and `controller::receive_cap_from_controller`; package-only `create_subdao_control` and `receive_cap` |
 | `FREEZE` (`permissions::emergency_freeze()`) | — | governance changes to the `EmergencyFreeze` |
 
 A config holding any 80% bit must have `approval_threshold >= 8000` (`dao::permission_floor`); `dao` checks this on every config it stores (`EThresholdBelowMinimum`).

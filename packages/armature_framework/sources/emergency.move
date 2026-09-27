@@ -157,8 +157,11 @@ public fun is_frozen_by_name(self: &EmergencyFreeze, name: &TypeName, clock: &Cl
     clock.timestamp_ms() < expiry_ms
 }
 
-/// Assert that proposal type `P` is not frozen. Aborts with EFrozen if it is.
-public fun assert_not_frozen<P>(self: &EmergencyFreeze, clock: &Clock) {
+/// Assert that this is `dao_id`'s freeze object (EDAOMismatch) and that
+/// proposal type `P` is not frozen on it (EFrozen). Checking the owner here
+/// means no execution path can be satisfied by another DAO's unfrozen object.
+public fun assert_not_frozen<P>(self: &EmergencyFreeze, dao_id: ID, clock: &Clock) {
+    assert!(self.dao_id == dao_id, EDAOMismatch);
     assert!(!self.is_frozen<P>(clock), EFrozen);
 }
 

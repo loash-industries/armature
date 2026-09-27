@@ -58,6 +58,12 @@ const EUseTypedStep: u64 = 16;
 const EGrantInComposite: u64 = 17;
 /// An UpdateProposalConfig step names a display key no enabled type carries.
 const ETargetNotEnabled: u64 = 18;
+/// advance_step on a DAO whose execution is paused.
+const EExecutionPaused: u64 = 19;
+/// advance_step on a SubDAO whose controller has paused it.
+const EControllerPaused: u64 = 20;
+/// advance_step for a step type the DAO has since disabled.
+const ETypeNotEnabled: u64 = 21;
 
 // === Constants ===
 
@@ -300,6 +306,7 @@ public fun begin_pipeline(
     frame: &CompositeFrame,
     ticket: ExecutionTicket<CompositePayload>,
 ): Pipeline {
+    assert!(dao.id() == ticket.ticket_dao_id(), EDAOIdMismatch);
     let payload = ticket.ticket_payload();
     assert!(payload.frame_id() == object::id(frame), EFrameMismatch);
 
@@ -326,8 +333,10 @@ public fun begin_pipeline(
     }
 }
 
-/// Advance the pipeline by one step. Validates the caller-supplied type P
-/// against the recorded TypeName, enforces per-step freeze check, asserts
+/// Advance the pipeline by one step. Validates that `dao` is the pipeline's
+/// DAO and is not execution- or controller-paused, checks the caller-supplied
+/// type P against the recorded TypeName and that it is still enabled,
+/// enforces the per-step freeze check against the DAO's own freeze, asserts
 /// the type has no cooldown (cooldown-bearing types are prohibited from
 /// composites), extracts the payload, and returns
 /// (ExecutionTicket<P>, next_pipeline: Pipeline)
@@ -342,15 +351,21 @@ public fun advance_step<P: store>(
     freeze: &EmergencyFreeze,
     clock: &Clock,
 ): (ExecutionTicket<P>, Pipeline) {
+    assert!(dao.id() == pipeline.dao_id, EDAOIdMismatch);
     assert!(object::id(frame) == pipeline.frame_id, EFrameMismatch);
     assert!(pipeline.current_step < pipeline.total_steps, EPipelineComplete);
+    // Re-checked per step: an earlier step (or the controller) may have paused
+    // the DAO or disabled a later step's type since the composite was voted.
+    assert!(!dao.is_execution_paused(), EExecutionPaused);
+    assert!(!dao.is_controller_paused(), EControllerPaused);
 
     let step_idx = pipeline.current_step;
     let expected_type = frame.step_types[step_idx];
 
     assert!(type_name::with_defining_ids<P>() == expected_type, EStepTypeMismatch);
+    assert!(dao.is_type_name_enabled(&expected_type), ETypeNotEnabled);
 
-    freeze.assert_not_frozen<P>(clock);
+    freeze.assert_not_frozen<P>(pipeline.dao_id, clock);
 
     let step_config = dao.type_config_by_name(&expected_type);
 

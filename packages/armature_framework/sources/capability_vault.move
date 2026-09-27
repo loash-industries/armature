@@ -111,11 +111,13 @@ public fun store_cap<T: key + store, P>(
 /// Receive a capability into the vault for cross-DAO transfers.
 /// Requires an ExecutionRequest for governance authorization but does NOT
 /// check dao_id match, since the request originates from the source DAO.
-/// This is correct for intra-framework parent→child transfers where the source DAO's
-/// governance vote is the sole authorization. Third-party cross-DAO handlers should
-/// use `receive_cap_authorized` instead to also require the receiving DAO's approval.
+/// Package-only: nothing here ties the request's DAO to this vault, so each
+/// framework caller establishes that link itself (SpinOutSubDAO's own SubDAO,
+/// TransferAssets' voted target, `controller::receive_cap_from_controller`).
+/// Other packages use `controller::receive_cap_from_controller` for
+/// parent→child transfers, or `receive_cap_authorized` for anything else.
 /// Requires VAULT_EXTRACT on the sending DAO's request (`proposal::assert_permitted`).
-public fun receive_cap<T: key + store, P>(
+public(package) fun receive_cap<T: key + store, P>(
     self: &mut CapabilityVault,
     cap: T,
     req: &ExecutionRequest<P>,
@@ -243,8 +245,10 @@ public fun extract_cap<T: key + store, P>(
 }
 
 /// Extract a capability using SubDAOControl (controller reclaim).
-/// Asserts that `control.subdao_id == vault.dao_id`.
-public fun privileged_extract<T: key + store>(
+/// Asserts that `control.subdao_id == vault.dao_id`. Package-only: whether
+/// `control` is the SubDAO's registered controller can only be checked against
+/// the DAO, so callers go through `controller::privileged_extract`.
+public(package) fun privileged_extract<T: key + store>(
     self: &mut CapabilityVault,
     cap_id: ID,
     control: &SubDAOControl,
@@ -257,8 +261,10 @@ public fun privileged_extract<T: key + store>(
 /// Create a SubDAOControl for `subdao_id` and store it in this vault.
 /// Returns the ID of the newly created control token.
 /// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+/// Package-only: `subdao_id` is not checked, so the only caller is CreateSubDAO,
+/// which passes the SubDAO it has just created.
 /// Requires VAULT_EXTRACT (`proposal::assert_permitted`).
-public fun create_subdao_control<P>(
+public(package) fun create_subdao_control<P>(
     self: &mut CapabilityVault,
     subdao_id: ID,
     req: &ExecutionRequest<P>,

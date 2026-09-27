@@ -214,7 +214,7 @@ fun submit_vote_execute_core<P: store>(
     // --- Validation from ticket_from_vote ---
 
     assert!(!dao.is_controller_paused(), EControllerPaused);
-    freeze.assert_not_frozen<P>(clock);
+    freeze.assert_not_frozen<P>(dao.id(), clock);
 
     // --- Vote: the proposer's YES must pass on its own ---
 
@@ -266,7 +266,7 @@ fun ticket_from_vote_core<P: store>(
             && prop.config().cooldown_ms() == 0),
         ECooldownRequiresMutableDAO,
     );
-    freeze.assert_not_frozen<P>(clock);
+    freeze.assert_not_frozen<P>(dao.id(), clock);
 
     let last_ms = dao.last_executed_ms_by_name(&name);
 

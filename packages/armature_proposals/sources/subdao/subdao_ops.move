@@ -62,10 +62,13 @@ public struct ControllerMembersBatchRemoved has copy, drop {
 
 // === Handlers ===
 
-/// Execute a TransferCapToSubDAO proposal.
+/// Execute a TransferCapToSubDAO proposal. `target_subdao` must be a SubDAO
+/// whose registered SubDAOControl sits in `source_vault`
+/// (`controller::receive_cap_from_controller`).
 public fun execute_transfer_cap<T: key + store>(
     source_vault: &mut CapabilityVault,
     target_vault: &mut CapabilityVault,
+    target_subdao: &DAO,
     ticket: ExecutionTicket<TransferCapToSubDAO>,
 ) {
     assert!(source_vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
@@ -76,7 +79,7 @@ public fun execute_transfer_cap<T: key + store>(
     let cap_id = payload.cap_id();
     let req = ticket.ticket_request(transfer_cap_to_subdao::permit());
     let cap: T = source_vault.extract_cap(cap_id, req);
-    target_vault.receive_cap(cap, req);
+    controller::receive_cap_from_controller(target_vault, cap, target_subdao, source_vault, req);
 
     event::emit(CapTransferredToSubDAO {
         dao_id: source_vault.dao_id(),
@@ -87,10 +90,12 @@ public fun execute_transfer_cap<T: key + store>(
     ticket.discharge(transfer_cap_to_subdao::permit());
 }
 
-/// Execute a ReclaimCapFromSubDAO proposal.
+/// Execute a ReclaimCapFromSubDAO proposal. `control_id` must be `subdao`'s
+/// registered SubDAOControl (`controller::privileged_extract`).
 public fun execute_reclaim_cap<T: key + store>(
     controller_vault: &mut CapabilityVault,
     subdao_vault: &mut CapabilityVault,
+    subdao: &DAO,
     ticket: ExecutionTicket<ReclaimCapFromSubDAO>,
 ) {
     assert!(controller_vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
@@ -108,7 +113,7 @@ public fun execute_reclaim_cap<T: key + store>(
         req,
     );
 
-    let cap: T = subdao_vault.privileged_extract(cap_id, &control);
+    let cap: T = controller::privileged_extract(subdao_vault, cap_id, subdao, &control);
     controller_vault.store_cap(cap, req);
     controller_vault.return_cap(control, loan);
 

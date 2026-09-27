@@ -270,7 +270,7 @@ fun only_controller_requests_are_privileged() {
     // Controller override on a SubDAO.
     {
         let init = governance::init_board(vector[CREATOR]);
-        let (subdao, freeze_cap) = dao::create_subdao(
+        let (mut subdao, freeze_cap) = dao::create_subdao(
             &init,
             string::utf8(b"SubDAO"),
             string::utf8(b"https://example.com/sub.png"),
@@ -280,6 +280,7 @@ fun only_controller_requests_are_privileged() {
             object::id(&subdao),
             scenario.ctx(),
         );
+        subdao.set_controller_for_testing(object::id(&control));
         let req = controller::privileged_submit(
             &control,
             &subdao,
