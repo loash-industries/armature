@@ -26,7 +26,6 @@ const ENotExpired: u64 = 10;
 #[allow(unused_const)]
 const ETypeNotEnabled: u64 = 11;
 const EExecutionPaused: u64 = 12;
-const ERequestMismatch: u64 = 13;
 const EDAONotActive: u64 = 15;
 const ECapDAOMismatch: u64 = 16;
 /// ticket_yes_weight or ticket_total_snapshot_weight called on a non-vote-path ticket.
@@ -121,9 +120,9 @@ public struct ExternalExecutionCap<phantom P> has key, store {
 }
 
 /// Hot potato — no abilities. Created only by the three framework mint functions.
-/// Carries the owned payload and a package-private closeout tag so that
-/// `discharge()` can run the correct finalisation logic regardless of which
-/// path minted the ticket.
+/// Carries the owned payload and a package-private closeout tag recording
+/// which path minted the ticket (and, on the vote path, its vote weights).
+/// Only `P`'s handler can close it, via `discharge()` with a `Permit<P>`.
 public struct ExecutionTicket<P> {
     request: ExecutionRequest<P>,
     payload: P,
@@ -134,7 +133,6 @@ public struct ExecutionTicket<P> {
 /// `Standalone` captures vote-weight data for approval-floor checks.
 public enum Closeout has drop {
     Standalone {
-        proposal_id: ID,
         yes_weight: u64,
         total_snapshot_weight: u64,
     },
@@ -855,61 +853,33 @@ public fun ticket_total_snapshot_weight<P>(ticket: &ExecutionTicket<P>): u64 {
     }
 }
 
-/// Consume the ticket, enforce the path-appropriate closeout, drop the payload.
+/// Consume the ticket and drop the payload.
 /// P must have `drop` — all existing payload types satisfy this.
 /// Requires `Permit<P>` (see `ticket_request`): only `P`'s handler can close a
 /// ticket, so a ticket can only leave a PTB through that handler.
 public fun discharge<P: store + drop>(ticket: ExecutionTicket<P>, _: Permit<P>) {
-    let ExecutionTicket { request, payload: _, closeout } = ticket;
-    match (closeout) {
-        Closeout::Standalone { proposal_id, .. } => {
-            assert!(request.proposal_id == proposal_id, ERequestMismatch);
-            let ExecutionRequest {
-                dao_id: _,
-                proposal_id: _,
-                permissions: _,
-                borrow_scope: _,
-                privileged: _,
-            } = request;
-        },
-        Closeout::Composite | Closeout::External => {
-            let ExecutionRequest {
-                dao_id: _,
-                proposal_id: _,
-                permissions: _,
-                borrow_scope: _,
-                privileged: _,
-            } = request;
-        },
-    }
+    let ExecutionTicket { request, payload: _, closeout: _ } = ticket;
+    let ExecutionRequest {
+        dao_id: _,
+        proposal_id: _,
+        permissions: _,
+        borrow_scope: _,
+        privileged: _,
+    } = request;
 }
 
 /// Like `discharge` but returns the payload instead of dropping it.
 /// Use for payload types that lack `drop` (e.g., wrappers around `TreasuryCap`).
 /// Requires `Permit<P>` (see `discharge`).
 public fun discharge_returning_payload<P: store>(ticket: ExecutionTicket<P>, _: Permit<P>): P {
-    let ExecutionTicket { request, payload, closeout } = ticket;
-    match (closeout) {
-        Closeout::Standalone { proposal_id, .. } => {
-            assert!(request.proposal_id == proposal_id, ERequestMismatch);
-            let ExecutionRequest {
-                dao_id: _,
-                proposal_id: _,
-                permissions: _,
-                borrow_scope: _,
-                privileged: _,
-            } = request;
-        },
-        Closeout::Composite | Closeout::External => {
-            let ExecutionRequest {
-                dao_id: _,
-                proposal_id: _,
-                permissions: _,
-                borrow_scope: _,
-                privileged: _,
-            } = request;
-        },
-    };
+    let ExecutionTicket { request, payload, closeout: _ } = ticket;
+    let ExecutionRequest {
+        dao_id: _,
+        proposal_id: _,
+        permissions: _,
+        borrow_scope: _,
+        privileged: _,
+    } = request;
     payload
 }
 
@@ -922,11 +892,10 @@ public(package) fun new_ticket_standalone<P: store>(
     yes_weight: u64,
     total_snapshot_weight: u64,
 ): ExecutionTicket<P> {
-    let proposal_id = request.proposal_id;
     ExecutionTicket {
         request,
         payload,
-        closeout: Closeout::Standalone { proposal_id, yes_weight, total_snapshot_weight },
+        closeout: Closeout::Standalone { yes_weight, total_snapshot_weight },
     }
 }
 
@@ -1088,7 +1057,7 @@ public fun new_standalone_ticket_for_testing<P: store>(
     ExecutionTicket {
         request,
         payload,
-        closeout: Closeout::Standalone { proposal_id, yes_weight, total_snapshot_weight },
+        closeout: Closeout::Standalone { yes_weight, total_snapshot_weight },
     }
 }
 
@@ -1131,7 +1100,7 @@ public fun privileged_create_for_testing<P: store>(
     ExecutionTicket {
         request,
         payload,
-        closeout: Closeout::Standalone { proposal_id, yes_weight: 0, total_snapshot_weight: 0 },
+        closeout: Closeout::Standalone { yes_weight: 0, total_snapshot_weight: 0 },
     }
 }
 

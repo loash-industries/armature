@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-09-27 — remove dead proposal_id check from discharge (ARMATURE-42)
+
+- Removed the always-true request/closeout `proposal_id` check from `proposal::discharge` and `discharge_returning_payload`, along with the now-redundant `proposal_id` field on `Closeout::Standalone` and the unused `ERequestMismatch` (13) error constant. Discharge safety is unchanged: `Permit<P>` is what prevents discharging a ticket outside `P`'s handler, and `internal_workings.md` now documents this explicitly.
+
 ## 2026-09-26 — close cross-DAO authority holes (ARMATURE-37..41)
 
 - Hardened cross-DAO authorization across the framework: `privileged_submit` and the new `controller::privileged_extract` now require the SubDAO's registered SubDAOControl (`controller_cap_id`), `create_subdao_control`, `capability_vault::privileged_extract`, and `receive_cap` are `public(package)` only, and the new `controller::receive_cap_from_controller` verifies the sender's vault holds the SubDAO's registered control. `subdao_ops::execute_transfer_cap`/`execute_reclaim_cap` gained a `&DAO` argument for this check.

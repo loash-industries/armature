@@ -241,7 +241,7 @@ An `ExecutionRequest<P>` carries a `dao_id`. To prevent "shopping" — using a r
 
 Exceptions, by design: `capability_vault::receive_cap` does not check the receiving vault's DAO, so it is `public(package)` and each framework caller ties the sender to the receiving vault (SpinOutSubDAO: its own SubDAO; TransferAssets: the voted target; `controller::receive_cap_from_controller`: the sender's vault holds the SubDAO's registered control). Other packages use `receive_cap_from_controller` for parent→child moves and `receive_cap_authorized` for anything else. Also by design, `tribe::create_wired_subdao` relies on `store_cap`'s vault check. Handlers in `armature_proposals` additionally assert their target objects' DAO against the ticket.
 
-Tickets are closed with `proposal::discharge()`, which checks a vote-path ticket's request against the proposal it came from (`ERequestMismatch`, 13). `proposal::consume()` is `public(package)`; `controller::privileged_consume()` checks the request's DAO against the `SubDAOControl`.
+Tickets are closed with `proposal::discharge()`, which takes a `Permit<P>` that only `P`'s handler module can create, so a ticket cannot be discharged without running its handler. `proposal::consume()` is `public(package)`; `controller::privileged_consume()` checks the request's DAO against the `SubDAOControl`.
 
 ---
 
@@ -349,7 +349,7 @@ public fun hijack(dao: &mut DAO, ticket: ExecutionTicket<Dummy>, ctx: &TxContext
 
 **Fix 1 (blocks the attack)**: `proposal::create()` changed to `public(package) fun`. Forces all proposal creation through `board_voting`, which validates the type is enabled and uses the DAO's stored `ProposalConfig`.
 
-**Fix 2 (defense-in-depth)**: `proposal::consume()` changed to `public(package) fun`. Handlers receive an `ExecutionTicket<P>` and close it with `discharge()`, which checks a vote-path ticket's request against its proposal (`ERequestMismatch`, 13).
+**Fix 2 (defense-in-depth)**: `proposal::consume()` changed to `public(package) fun`. Handlers receive an `ExecutionTicket<P>` and close it with `discharge()`, which requires a `Permit<P>` from `P`'s handler module.
 
 **Fix 3 (ROAD-39)**: per-type permission bits (§9). `ExecutionRequest` carries the bits of its type's slot; every mutator checks them; floors live in `dao`; framework types have fixed bits; only the 80% meta-types may grant.
 
