@@ -5,10 +5,10 @@ use armature::proposal::{ExecutionRequest, ExecutionTicket};
 use armature::treasury_vault::TreasuryVault;
 use armature::utils;
 use armature_proposals::multicoin_item::MultiCoinItem;
-use armature_proposals::send_batch_multicoin_to_dao::SendBatchMulticoinToDAO;
-use armature_proposals::send_batch_multicoin_to_player::SendBatchMulticoinToAddress;
-use armature_proposals::send_coin::SendCoin;
-use armature_proposals::send_coin_to_dao::SendCoinToDAO;
+use armature_proposals::send_batch_multicoin_to_dao::{Self, SendBatchMulticoinToDAO};
+use armature_proposals::send_batch_multicoin_to_player::{Self, SendBatchMulticoinToAddress};
+use armature_proposals::send_coin::{Self, SendCoin};
+use armature_proposals::send_coin_to_dao::{Self, SendCoinToDAO};
 use armature_proposals::send_small_payment::{Self, SendSmallPayment, SmallPaymentState};
 use multicoin::multicoin::Balance as MultiCoinBalance;
 use sui::clock::Clock;
@@ -64,8 +64,13 @@ public fun execute_send_coin<T>(
     ticket: ExecutionTicket<SendCoin<T>>,
     ctx: &mut TxContext,
 ) {
-    send_coin_impl(vault, ticket.ticket_payload(), ticket.ticket_request(), ctx);
-    ticket.discharge();
+    send_coin_impl(
+        vault,
+        ticket.ticket_payload(),
+        ticket.ticket_request(send_coin::permit<T>()),
+        ctx,
+    );
+    ticket.discharge(send_coin::permit<T>());
 }
 
 public fun execute_send_coin_to_dao<T>(
@@ -78,10 +83,10 @@ public fun execute_send_coin_to_dao<T>(
         source_vault,
         target_vault,
         ticket.ticket_payload(),
-        ticket.ticket_request(),
+        ticket.ticket_request(send_coin_to_dao::permit<T>()),
         ctx,
     );
-    ticket.discharge();
+    ticket.discharge(send_coin_to_dao::permit<T>());
 }
 
 /// Execute a SendSmallPayment proposal: rate-limited withdrawal from treasury.
@@ -96,7 +101,7 @@ public fun execute_send_small_payment<T>(
     assert!(vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
 
     let payload = ticket.ticket_payload();
-    let req = ticket.ticket_request();
+    let req = ticket.ticket_request(send_small_payment::permit<T>());
     let now = clock.timestamp_ms();
 
     if (!dao.has_type_state<SendSmallPayment<T>>()) {
@@ -138,7 +143,7 @@ public fun execute_send_small_payment<T>(
 
     transfer::public_transfer(coin, payload.recipient());
 
-    ticket.discharge();
+    ticket.discharge(send_small_payment::permit<T>());
 }
 
 public fun execute_send_batch_multicoin_to_player(
@@ -147,7 +152,7 @@ public fun execute_send_batch_multicoin_to_player(
     ctx: &mut TxContext,
 ) {
     let payload = ticket.ticket_payload();
-    let req = ticket.ticket_request();
+    let req = ticket.ticket_request(send_batch_multicoin_to_player::permit());
     assert!(vault.dao_id() == req.req_dao_id(), EVaultDAOMismatch);
     let recipient = payload.recipient();
     let item_count = payload.items().length();
@@ -166,7 +171,7 @@ public fun execute_send_batch_multicoin_to_player(
         recipient,
         item_count,
     });
-    ticket.discharge();
+    ticket.discharge(send_batch_multicoin_to_player::permit());
 }
 
 public fun execute_send_batch_multicoin_to_dao(
@@ -176,7 +181,7 @@ public fun execute_send_batch_multicoin_to_dao(
     ctx: &mut TxContext,
 ) {
     let payload = ticket.ticket_payload();
-    let req = ticket.ticket_request();
+    let req = ticket.ticket_request(send_batch_multicoin_to_dao::permit());
     assert!(source_vault.dao_id() == req.req_dao_id(), EVaultDAOMismatch);
     assert!(object::id(target_vault) == payload.recipient_treasury(), ETargetVaultMismatch);
     let item_count = payload.items().length();
@@ -195,7 +200,7 @@ public fun execute_send_batch_multicoin_to_dao(
         target_treasury: payload.recipient_treasury(),
         item_count,
     });
-    ticket.discharge();
+    ticket.discharge(send_batch_multicoin_to_dao::permit());
 }
 
 // === Internal ===

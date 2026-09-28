@@ -1,5 +1,7 @@
 module armature_proposals::send_small_payment;
 
+use std::internal::{Self, Permit};
+
 /// Rate-limited small payment from treasury. Uses ProposalTypeState
 /// to enforce a cumulative spend cap within rolling time epochs.
 public struct SendSmallPayment<phantom T> has drop, store {
@@ -79,3 +81,9 @@ public fun reset_epoch(self: &mut SmallPaymentState, epoch_start_ms: u64, max_ep
 public fun default_epoch_duration_ms(): u64 { DEFAULT_EPOCH_DURATION_MS }
 
 public fun default_spend_limit_bps(): u64 { DEFAULT_SPEND_LIMIT_BPS }
+
+// === Handler authority ===
+
+/// `Permit<SendSmallPayment>` for this package's handler: the only way to spend or close
+/// an `ExecutionTicket<SendSmallPayment>` (see `proposal::ticket_request`).
+public(package) fun permit<T>(): Permit<SendSmallPayment<T>> { internal::permit() }

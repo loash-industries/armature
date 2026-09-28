@@ -1,13 +1,13 @@
-module armature_proposals::admin_ops;
+module armature::admin_ops;
 
 use armature::board_voting;
 use armature::charter::Charter;
 use armature::dao::{Self, DAO};
-use armature::disable_proposal_type::DisableProposalType;
-use armature::enable_proposal_type::EnableProposalType;
+use armature::disable_proposal_type::{Self, DisableProposalType};
+use armature::enable_proposal_type::{Self, EnableProposalType};
 use armature::proposal::{Self, ExecutionRequest, ExecutionTicket};
-use armature::update_metadata::UpdateMetadata;
-use armature::update_proposal_config::UpdateProposalConfig;
+use armature::update_metadata::{Self, UpdateMetadata};
+use armature::update_proposal_config::{Self, UpdateProposalConfig};
 use std::string::String;
 use std::type_name::{Self, TypeName};
 use sui::clock::Clock;
@@ -19,7 +19,8 @@ const EDaoMismatch: u64 = 0;
 const ECharterDaoMismatch: u64 = 1;
 const EUndisableableType: u64 = 2;
 const ESubDAOBlockedType: u64 = 4;
-const EThresholdBelowFloor: u64 = 5;
+// 5 was EThresholdBelowFloor: config floors are now enforced by
+// dao::enable_proposal_type / update_proposal_config (dao::EThresholdBelowMinimum).
 /// Proposal's approval_threshold is below the hardcoded floor for this type.
 /// Enforced at submission time by propose_update_proposal_config.
 const EFloorNotMet: u64 = 6;
@@ -66,9 +67,12 @@ public fun execute_disable_proposal_type(
     let type_key = ticket.ticket_payload().type_key();
     let name = resolve_display_key(dao, &type_key);
     assert_disableable(&name);
-    dao.disable_proposal_type<DisableProposalType>(name, ticket.ticket_request());
+    dao.disable_proposal_type<DisableProposalType>(
+        name,
+        ticket.ticket_request(disable_proposal_type::permit()),
+    );
     event::emit(ProposalTypeDisabled { dao_id: dao.id(), type_key });
-    ticket.discharge();
+    ticket.discharge(disable_proposal_type::permit());
 }
 
 /// Execute an EnableProposalType proposal: add a slot for `NewType` under the
@@ -78,8 +82,12 @@ public fun execute_enable_proposal_type<NewType: store>(
     dao: &mut DAO,
     ticket: ExecutionTicket<EnableProposalType>,
 ) {
-    enable_proposal_type_impl<NewType>(dao, ticket.ticket_payload(), ticket.ticket_request());
-    ticket.discharge();
+    enable_proposal_type_impl<NewType>(
+        dao,
+        ticket.ticket_payload(),
+        ticket.ticket_request(enable_proposal_type::permit()),
+    );
+    ticket.discharge(enable_proposal_type::permit());
 }
 
 /// Execute an UpdateProposalConfig proposal: merge optional field overrides
@@ -102,27 +110,37 @@ public fun execute_update_proposal_config(
         payload.expiry_ms().destroy_with_default(existing.expiry_ms()),
         payload.execution_delay_ms().destroy_with_default(existing.execution_delay_ms()),
         payload.cooldown_ms().destroy_with_default(existing.cooldown_ms()),
-    ).with_composable_allowed(payload
-        .composable_allowed()
-        .destroy_with_default(existing.composable_allowed()));
+    )
+        .with_composable_allowed(payload
+            .composable_allowed()
+            .destroy_with_default(existing.composable_allowed()))
+        .with_permissions(payload.permissions().destroy_with_default(existing.permissions()))
+        .with_borrow_scope(payload.borrow_scope().destroy_with_default(existing.borrow_scope()));
 
-    assert_threshold_meets_floor(&name, &new_config);
     assert_config_composability(&new_config);
 
-    dao.update_proposal_config<UpdateProposalConfig>(name, new_config, ticket.ticket_request());
+    dao.update_proposal_config<UpdateProposalConfig>(
+        name,
+        new_config,
+        ticket.ticket_request(update_proposal_config::permit()),
+    );
 
     event::emit(ProposalConfigUpdated {
         dao_id: dao.id(),
         target_type_key: target_key,
     });
 
-    ticket.discharge();
+    ticket.discharge(update_proposal_config::permit());
 }
 
 /// Execute an UpdateMetadata proposal: update the DAO charter's IPFS CID.
 public fun execute_update_metadata(charter: &mut Charter, ticket: ExecutionTicket<UpdateMetadata>) {
-    update_metadata_impl(charter, ticket.ticket_payload(), ticket.ticket_request());
-    ticket.discharge();
+    update_metadata_impl(
+        charter,
+        ticket.ticket_payload(),
+        ticket.ticket_request(update_metadata::permit()),
+    );
+    ticket.discharge(update_metadata::permit());
 }
 
 // === Internal ===
@@ -144,7 +162,6 @@ fun enable_proposal_type_impl<NewType: store>(
         assert!(!dao::is_subdao_blocked_type(&name), ESubDAOBlockedType);
     };
 
-    assert_threshold_meets_floor(&name, &config);
     assert_config_composability(&config);
 
     dao.enable_proposal_type<NewType, EnableProposalType>(type_key, config, request);
@@ -180,7 +197,8 @@ fun update_metadata_impl(
 /// The target display key must resolve to an enabled type (ETypeNotEnabled).
 ///
 /// Callers that need non-self-targeting UpdateProposalConfig submissions can use
-/// board_voting::submit_proposal<UpdateProposalConfig> directly — no floor applies.
+/// board_voting::submit_proposal<UpdateProposalConfig> directly. They are still
+/// held to 80%: dao keeps UpdateProposalConfig's own config at or above its floor.
 #[allow(lint(share_owned, custom_state_change))]
 public fun propose_update_proposal_config(
     dao: &DAO,
@@ -214,17 +232,6 @@ fun resolve_display_key(dao: &DAO, type_key: &std::ascii::String): TypeName {
 /// Abort if the type is one of the core undisableable types.
 fun assert_disableable(name: &TypeName) {
     assert!(!dao::is_undisableable_type(name), EUndisableableType);
-}
-
-/// Assert that a config's approval_threshold is not below the execution floor
-/// for the given type. Types without a floor are unconstrained. The floors are
-/// the framework's single source of truth (`dao::min_approval_threshold_for_type`):
-/// 66% for EnableProposalType, 80% for UpdateProposalConfig and EnableBypassType.
-fun assert_threshold_meets_floor(name: &TypeName, config: &proposal::ProposalConfig) {
-    let floor = dao::min_approval_threshold_for_type(name);
-    if (floor > 0) {
-        assert!(config.approval_threshold() >= floor, EThresholdBelowFloor);
-    };
 }
 
 /// Enforce the composability–cooldown mutual exclusion:

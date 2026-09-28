@@ -1,5 +1,7 @@
 module armature_proposals::transfer_cap_to_subdao;
 
+use std::internal::{Self, Permit};
+
 /// Transfer a capability from this DAO's vault to a SubDAO's vault.
 public struct TransferCapToSubDAO has drop, store {
     cap_id: ID,
@@ -17,3 +19,9 @@ public fun new(cap_id: ID, target_subdao: ID): TransferCapToSubDAO {
 public fun cap_id(self: &TransferCapToSubDAO): ID { self.cap_id }
 
 public fun target_subdao(self: &TransferCapToSubDAO): ID { self.target_subdao }
+
+// === Handler authority ===
+
+/// `Permit<TransferCapToSubDAO>` for this package's handler: the only way to spend or close
+/// an `ExecutionTicket<TransferCapToSubDAO>` (see `proposal::ticket_request`).
+public(package) fun permit(): Permit<TransferCapToSubDAO> { internal::permit() }

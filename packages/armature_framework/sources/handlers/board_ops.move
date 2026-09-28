@@ -1,8 +1,8 @@
-module armature_proposals::board_ops;
+module armature::board_ops;
 
 use armature::dao::DAO;
 use armature::proposal::{ExecutionRequest, ExecutionTicket};
-use armature::set_board::SetBoard;
+use armature::set_board::{Self, SetBoard};
 use sui::event;
 
 // === Errors ===
@@ -24,8 +24,8 @@ public struct BoardUpdated has copy, drop {
 /// Validation (non-empty result, no duplicates, adds not already members,
 /// removals currently members) is enforced by governance::set_board.
 public fun execute_set_board(dao: &mut DAO, ticket: ExecutionTicket<SetBoard>) {
-    set_board_impl(dao, ticket.ticket_payload(), ticket.ticket_request());
-    ticket.discharge();
+    set_board_impl(dao, ticket.ticket_payload(), ticket.ticket_request(set_board::permit()));
+    ticket.discharge(set_board::permit());
 }
 
 // === Internal ===

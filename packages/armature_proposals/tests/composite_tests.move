@@ -2,7 +2,9 @@
 module armature_proposals::composite_tests;
 
 use armature::add_member::{Self, AddMember};
+use armature::admin_ops;
 use armature::batch_add_members::{Self, BatchAddMembers};
+use armature::board_ops;
 use armature::board_voting;
 use armature::charter::Charter;
 use armature::composite::{Self, CompositeFrame};
@@ -11,17 +13,17 @@ use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
 use armature::enable_proposal_type::{Self, EnableProposalType};
 use armature::governance;
+use armature::member_ops;
 use armature::proposal::{Self, Proposal};
 use armature::remove_member::{Self, RemoveMember};
 use armature::set_board::{Self, SetBoard};
 use armature::treasury_vault::TreasuryVault;
 use armature::update_metadata::{Self, UpdateMetadata};
-use armature_proposals::admin_ops;
-use armature_proposals::board_ops;
-use armature_proposals::member_ops;
 use armature_proposals::send_coin::{Self, SendCoin};
 use armature_proposals::send_coin_to_dao::{Self, SendCoinToDAO};
 use armature_proposals::treasury_ops;
+use armature_proposals::type_permissions;
+use std::internal;
 use std::string;
 use std::type_name;
 use sui::clock;
@@ -487,7 +489,10 @@ fun composite_send_coin_step_e2e() {
             0,
             0,
         ).with_composable_allowed(true);
-        dao.test_enable_type<SendCoin<SUI>>(b"SendCoin".to_ascii_string(), config);
+        dao.test_enable_type<SendCoin<SUI>>(
+            b"SendCoin".to_ascii_string(),
+            config.with_permissions(type_permissions::treasury_spend()),
+        );
         test_scenario::return_shared(dao);
     };
 
@@ -631,7 +636,10 @@ fun composite_send_coin_to_dao_step_e2e() {
             0,
             0,
         ).with_composable_allowed(true);
-        dao.test_enable_type<SendCoinToDAO<SUI>>(b"SendCoinToDAO".to_ascii_string(), config);
+        dao.test_enable_type<SendCoinToDAO<SUI>>(
+            b"SendCoinToDAO".to_ascii_string(),
+            config.with_permissions(type_permissions::treasury_spend()),
+        );
         test_scenario::return_shared(dao);
     };
 
@@ -1008,7 +1016,7 @@ fun composite_same_type_cooldown_snapshot_succeeds() {
 #[test]
 /// Composite with a single EnableProposalType step enables a new proposal type within
 /// the pipeline. Uses a single-member DAO so CREATOR's vote alone reaches 100% approval,
-/// satisfying the 66% effective threshold floor imposed by assert_composite_floors.
+/// satisfying the 80% effective threshold floor imposed by assert_composite_floors.
 fun composite_enable_proposal_type_step_e2e() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
@@ -1026,8 +1034,8 @@ fun composite_enable_proposal_type_step_e2e() {
     };
 
     // Submit composite: one EnableProposalType step that enables "MyGrant" / TestPayload.
-    // EnableProposalType default threshold = 6600; effective = max(Composite 5000, 6600) = 6600,
-    // meeting the 66% composite floor check.
+    // EnableProposalType default threshold = 8000; effective = max(Composite 5000, 8000) = 8000,
+    // meeting the 80% composite floor check.
     scenario.next_tx(CREATOR);
     {
         let dao = scenario.take_shared<DAO>();
@@ -1039,11 +1047,7 @@ fun composite_enable_proposal_type_step_e2e() {
             type_config,
         );
         let mut frame = composite::new_frame(dao.id(), scenario.ctx());
-        composite::add_step<EnableProposalType>(
-            &mut frame,
-            &dao,
-            step_payload,
-        );
+        composite::add_enable_proposal_type_step(&mut frame, &dao, step_payload);
         composite::submit_composite(&dao, frame, option::none(), &clock, scenario.ctx());
         test_scenario::return_shared(dao);
     };
@@ -1376,4 +1380,118 @@ fun composite_cooldown_type_not_composable_aborts() {
 
     clock.destroy_for_testing();
     scenario.end();
+}
+
+// === Permissions do not pool across steps (ROAD-39, ARMATURE-32) ===
+
+/// Pass a composite of AddMember + SendCoin<SUI> and hand `$f` both step
+/// tickets. Each step ticket carries only its own type's bits.
+macro fun with_add_member_and_send_coin_steps(
+    $f: |
+        &mut DAO,
+        &mut TreasuryVault,
+        proposal::ExecutionTicket<AddMember>,
+        proposal::ExecutionTicket<SendCoin<SUI>>,
+        composite::Pipeline,
+        &mut TxContext,
+    |,
+) {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(vector[CREATOR]);
+        dao::create(&init, string::utf8(b"DAO"), string::utf8(b""), scenario.ctx());
+    };
+    scenario.next_tx(CREATOR);
+    {
+        let mut dao = scenario.take_shared<DAO>();
+        let config = proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0)
+            .with_composable_allowed(true)
+            .with_permissions(type_permissions::treasury_spend());
+        dao.test_enable_type<SendCoin<SUI>>(b"SendCoin".to_ascii_string(), config);
+        let mut vault = scenario.take_shared<TreasuryVault>();
+        vault.deposit(coin::mint_for_testing<SUI>(1_000, scenario.ctx()), scenario.ctx());
+        test_scenario::return_shared(vault);
+        test_scenario::return_shared(dao);
+    };
+    scenario.next_tx(CREATOR);
+    {
+        let dao = scenario.take_shared<DAO>();
+        clock.set_for_testing(1000);
+        let mut frame = composite::new_frame(dao.id(), scenario.ctx());
+        composite::add_step(&mut frame, &dao, add_member::new(MEMBER_B));
+        composite::add_step(&mut frame, &dao, send_coin::new<SUI>(RECIPIENT, 100));
+        composite::submit_composite(&dao, frame, option::none(), &clock, scenario.ctx());
+        test_scenario::return_shared(dao);
+    };
+    scenario.next_tx(CREATOR);
+    {
+        let mut prop = scenario.take_shared<Proposal<CompositePayload>>();
+        clock.set_for_testing(2000);
+        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
+        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_dao);
+        test_scenario::return_shared(prop);
+    };
+    scenario.next_tx(CREATOR);
+    let mut dao = scenario.take_shared<DAO>();
+    let mut vault = scenario.take_shared<TreasuryVault>();
+    let prop = scenario.take_shared<Proposal<CompositePayload>>();
+    let mut frame = scenario.take_shared<CompositeFrame>();
+    let freeze = scenario.take_shared<EmergencyFreeze>();
+    clock.set_for_testing(3000);
+    let ticket = board_voting::ticket_from_vote(&mut dao, prop, &freeze, &clock, scenario.ctx());
+    let pipeline = composite::begin_pipeline(&dao, &frame, ticket);
+    let (add_ticket, pipeline) = composite::advance_step<AddMember>(
+        &mut dao,
+        &mut frame,
+        pipeline,
+        &freeze,
+        &clock,
+    );
+    let (send_ticket, pipeline) = composite::advance_step<SendCoin<SUI>>(
+        &mut dao,
+        &mut frame,
+        pipeline,
+        &freeze,
+        &clock,
+    );
+    $f(&mut dao, &mut vault, add_ticket, send_ticket, pipeline, scenario.ctx());
+
+    test_scenario::return_shared(freeze);
+    test_scenario::return_shared(frame);
+    test_scenario::return_shared(vault);
+    test_scenario::return_shared(dao);
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+/// Each step ticket performs its own permitted mutation inside the pipeline.
+fun composite_steps_perform_their_own_mutations() {
+    with_add_member_and_send_coin_steps!(|dao, vault, add_ticket, send_ticket, pipeline, ctx| {
+        member_ops::execute_add_member(dao, add_ticket);
+        treasury_ops::execute_send_coin<SUI>(vault, send_ticket, ctx);
+        composite::finalize_pipeline(pipeline);
+        assert!(dao.governance().is_board_member(MEMBER_B));
+        assert!(vault.balance<SUI>() == 900);
+    });
+}
+
+// A step ticket's request is reachable only with that step type's Permit, so
+// outside code cannot hand the AddMember step's request to treasury::withdraw
+// at all. The test below uses SendCoin's package-scoped permit to stand in for
+// a buggy SendCoin handler, and checks the step's permission bits still stop it.
+
+#[test, expected_failure(abort_code = proposal::EPermissionDenied)]
+/// The SendCoin step cannot use the composite's AddMember authority.
+fun composite_send_coin_step_cannot_add_member() {
+    with_add_member_and_send_coin_steps!(|dao, _, _add_ticket, send_ticket, _pipeline, _| {
+        dao.add_board_member_governance(
+            @0xBAD,
+            send_ticket.ticket_request(armature_proposals::send_coin::permit()),
+        );
+        abort 0
+    });
 }

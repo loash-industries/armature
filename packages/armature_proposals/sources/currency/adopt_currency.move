@@ -1,5 +1,7 @@
 module armature_proposals::adopt_currency;
 
+use std::internal::{Self, Permit};
+
 /// Take custody of a `TreasuryCap<T>` so the DAO can mint/burn `Coin<T>`.
 ///
 /// The cap is NOT named in the payload: it is passed by value into the
@@ -20,3 +22,9 @@ public struct AdoptCurrency<phantom T> has drop, store {}
 public fun new<T>(): AdoptCurrency<T> {
     AdoptCurrency {}
 }
+
+// === Handler authority ===
+
+/// `Permit<AdoptCurrency>` for this package's handler: the only way to spend or close
+/// an `ExecutionTicket<AdoptCurrency>` (see `proposal::ticket_request`).
+public(package) fun permit<T>(): Permit<AdoptCurrency<T>> { internal::permit() }

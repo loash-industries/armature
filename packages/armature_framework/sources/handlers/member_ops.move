@@ -1,11 +1,11 @@
-module armature_proposals::member_ops;
+module armature::member_ops;
 
-use armature::add_member::AddMember;
-use armature::batch_add_members::BatchAddMembers;
-use armature::batch_remove_members::BatchRemoveMembers;
+use armature::add_member::{Self, AddMember};
+use armature::batch_add_members::{Self, BatchAddMembers};
+use armature::batch_remove_members::{Self, BatchRemoveMembers};
 use armature::dao::DAO;
 use armature::proposal::{ExecutionRequest, ExecutionTicket};
-use armature::remove_member::RemoveMember;
+use armature::remove_member::{Self, RemoveMember};
 use sui::event;
 
 // === Errors ===
@@ -53,17 +53,17 @@ public struct MembersBatchRemoved has copy, drop {
 // === Handlers ===
 
 public fun execute_add_member(dao: &mut DAO, ticket: ExecutionTicket<AddMember>) {
-    add_member_impl(dao, ticket.ticket_payload(), ticket.ticket_request());
-    ticket.discharge();
+    add_member_impl(dao, ticket.ticket_payload(), ticket.ticket_request(add_member::permit()));
+    ticket.discharge(add_member::permit());
 }
 
 /// Execute a BatchAddMembers proposal: add many addresses to the DAO's board.
 ///
 /// Aborts on:
-///   - empty batch (`EEmptyBatch`)
-///   - batch larger than `MAX_BATCH_SIZE` (`EBatchTooLarge`)
-///   - the same address listed more than once within the batch
-///     (`governance::EDuplicateBoardMember`)
+/// - empty batch (`EEmptyBatch`)
+/// - batch larger than `MAX_BATCH_SIZE` (`EBatchTooLarge`)
+/// - the same address listed more than once within the batch
+/// (`governance::EDuplicateBoardMember`)
 ///
 /// Does NOT abort on addresses that are already on the board — those are
 /// silently skipped. The emitted `MembersBatchAdded` event reports both
@@ -79,7 +79,10 @@ public fun execute_batch_add_members(dao: &mut DAO, ticket: ExecutionTicket<Batc
     assert!(len > 0, EEmptyBatch);
     assert!(len <= MAX_BATCH_SIZE, EBatchTooLarge);
 
-    let (added, skipped) = dao.add_board_members_governance(*members, ticket.ticket_request());
+    let (added, skipped) = dao.add_board_members_governance(
+        *members,
+        ticket.ticket_request(batch_add_members::permit()),
+    );
 
     event::emit(MembersBatchAdded {
         dao_id: dao.id(),
@@ -87,17 +90,17 @@ public fun execute_batch_add_members(dao: &mut DAO, ticket: ExecutionTicket<Batc
         skipped,
     });
 
-    ticket.discharge();
+    ticket.discharge(batch_add_members::permit());
 }
 
 /// Execute a BatchRemoveMembers proposal: remove many addresses from the DAO's board.
 ///
 /// Aborts on:
-///   - empty batch (`EEmptyBatch`)
-///   - batch larger than `MAX_BATCH_SIZE` (`EBatchTooLarge`)
-///   - any address not on the board (`governance::ENotBoardMember`)
-///   - any duplicate address in the batch (`governance::EDuplicateBoardMember`)
-///   - removal would leave the board empty (`governance::EEmptyBoard`)
+/// - empty batch (`EEmptyBatch`)
+/// - batch larger than `MAX_BATCH_SIZE` (`EBatchTooLarge`)
+/// - any address not on the board (`governance::ENotBoardMember`)
+/// - any duplicate address in the batch (`governance::EDuplicateBoardMember`)
+/// - removal would leave the board empty (`governance::EEmptyBoard`)
 public fun execute_batch_remove_members(
     dao: &mut DAO,
     ticket: ExecutionTicket<BatchRemoveMembers>,
@@ -108,14 +111,21 @@ public fun execute_batch_remove_members(
     let len = members.length();
     assert!(len > 0, EEmptyBatch);
     assert!(len <= MAX_BATCH_SIZE, EBatchTooLarge);
-    let removed = dao.remove_board_members_governance(*members, ticket.ticket_request());
+    let removed = dao.remove_board_members_governance(
+        *members,
+        ticket.ticket_request(batch_remove_members::permit()),
+    );
     event::emit(MembersBatchRemoved { dao_id: dao.id(), removed });
-    ticket.discharge();
+    ticket.discharge(batch_remove_members::permit());
 }
 
 public fun execute_remove_member(dao: &mut DAO, ticket: ExecutionTicket<RemoveMember>) {
-    remove_member_impl(dao, ticket.ticket_payload(), ticket.ticket_request());
-    ticket.discharge();
+    remove_member_impl(
+        dao,
+        ticket.ticket_payload(),
+        ticket.ticket_request(remove_member::permit()),
+    );
+    ticket.discharge(remove_member::permit());
 }
 
 // === Internal ===

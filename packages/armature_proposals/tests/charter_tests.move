@@ -1,6 +1,7 @@
 #[test_only]
 module armature_proposals::charter_tests;
 
+use armature::admin_ops;
 use armature::board_voting;
 use armature::charter::Charter;
 use armature::dao::{Self, DAO};
@@ -8,7 +9,6 @@ use armature::emergency::EmergencyFreeze;
 use armature::governance;
 use armature::proposal::{Self, Proposal};
 use armature::update_metadata::{Self, UpdateMetadata};
-use armature_proposals::admin_ops;
 use std::string;
 use sui::clock;
 use sui::test_scenario;
@@ -158,7 +158,7 @@ fun charter_update_lifecycle() {
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = armature_proposals::admin_ops::ECharterDaoMismatch)]
+#[test, expected_failure(abort_code = armature::admin_ops::ECharterDaoMismatch)]
 /// UpdateMetadata rejects charter from a different DAO.
 fun charter_update_wrong_dao_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);

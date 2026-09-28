@@ -1,5 +1,6 @@
 module armature::emergency;
 
+use armature::permissions;
 use armature::proposal::ExecutionRequest;
 use armature::transfer_freeze_admin::TransferFreezeAdmin;
 use armature::unfreeze_proposal_type::UnfreezeProposalType;
@@ -156,8 +157,11 @@ public fun is_frozen_by_name(self: &EmergencyFreeze, name: &TypeName, clock: &Cl
     clock.timestamp_ms() < expiry_ms
 }
 
-/// Assert that proposal type `P` is not frozen. Aborts with EFrozen if it is.
-public fun assert_not_frozen<P>(self: &EmergencyFreeze, clock: &Clock) {
+/// Assert that this is `dao_id`'s freeze object (EDAOMismatch) and that
+/// proposal type `P` is not frozen on it (EFrozen). Checking the owner here
+/// means no execution path can be satisfied by another DAO's unfrozen object.
+public fun assert_not_frozen<P>(self: &EmergencyFreeze, dao_id: ID, clock: &Clock) {
+    assert!(self.dao_id == dao_id, EDAOMismatch);
     assert!(!self.is_frozen<P>(clock), EFrozen);
 }
 
@@ -214,29 +218,35 @@ public(package) fun set_max_freeze_duration_ms(self: &mut EmergencyFreeze, new_m
 // === Governance Mutators (ExecutionRequest-gated) ===
 
 /// Unfreeze a proposal type via governance. Authorized by ExecutionRequest.
+/// Requires FREEZE (`proposal::assert_permitted`).
 public fun governance_unfreeze_type<P>(
     self: &mut EmergencyFreeze,
     name: TypeName,
-    _req: &ExecutionRequest<P>,
+    req: &ExecutionRequest<P>,
 ) {
-    assert!(self.dao_id == _req.req_dao_id(), EDAOMismatch);
+    assert!(self.dao_id == req.req_dao_id(), EDAOMismatch);
+    req.assert_permitted(permissions::emergency_freeze());
     self.remove_frozen(name);
 }
 
 /// Update the max freeze duration via governance. Authorized by ExecutionRequest.
+/// Requires FREEZE (`proposal::assert_permitted`).
 public fun update_freeze_duration<P>(
     self: &mut EmergencyFreeze,
     new_max: u64,
-    _req: &ExecutionRequest<P>,
+    req: &ExecutionRequest<P>,
 ) {
-    assert!(self.dao_id == _req.req_dao_id(), EDAOMismatch);
+    assert!(self.dao_id == req.req_dao_id(), EDAOMismatch);
+    req.assert_permitted(permissions::emergency_freeze());
     self.max_freeze_duration_ms = new_max;
 }
 
 /// Unfreeze all currently frozen types. Authorized by ExecutionRequest.
 /// Used as a side effect during FreezeAdminCap transfer.
-public fun unfreeze_all<P>(self: &mut EmergencyFreeze, _req: &ExecutionRequest<P>) {
-    assert!(self.dao_id == _req.req_dao_id(), EDAOMismatch);
+/// Requires FREEZE (`proposal::assert_permitted`).
+public fun unfreeze_all<P>(self: &mut EmergencyFreeze, req: &ExecutionRequest<P>) {
+    assert!(self.dao_id == req.req_dao_id(), EDAOMismatch);
+    req.assert_permitted(permissions::emergency_freeze());
 
     let dao_id = self.dao_id;
     let names = self.frozen_types.keys();
@@ -250,24 +260,28 @@ public fun unfreeze_all<P>(self: &mut EmergencyFreeze, _req: &ExecutionRequest<P
 }
 
 /// Add a type to the freeze-exempt set via governance.
+/// Requires FREEZE (`proposal::assert_permitted`).
 public fun add_freeze_exempt_type<P>(
     self: &mut EmergencyFreeze,
     name: TypeName,
     req: &ExecutionRequest<P>,
 ) {
     assert!(self.dao_id == req.req_dao_id(), EDAOMismatch);
+    req.assert_permitted(permissions::emergency_freeze());
     self.freeze_exempt_types.insert(name);
     event::emit(FreezeExemptTypeAdded { dao_id: self.dao_id, type_name: name.into_string() });
 }
 
 /// Remove a type from the freeze-exempt set via governance.
 /// Cannot remove mandatory exempt types (TransferFreezeAdmin, UnfreezeProposalType).
+/// Requires FREEZE (`proposal::assert_permitted`).
 public fun remove_freeze_exempt_type<P>(
     self: &mut EmergencyFreeze,
     name: TypeName,
     req: &ExecutionRequest<P>,
 ) {
     assert!(self.dao_id == req.req_dao_id(), EDAOMismatch);
+    req.assert_permitted(permissions::emergency_freeze());
     assert!(!is_mandatory_exempt(&name), EMandatoryExemptType);
     self.freeze_exempt_types.remove(&name);
     event::emit(FreezeExemptTypeRemoved { dao_id: self.dao_id, type_name: name.into_string() });

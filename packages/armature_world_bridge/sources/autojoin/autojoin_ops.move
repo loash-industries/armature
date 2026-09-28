@@ -10,15 +10,13 @@
 ///      with `NewType = ConfigureAutojoin`, then `ConfigureAutojoin { add_tribe_ids: [N],
 /// set_enabled: some(true), .. }`
 ///      to populate the allowlist.
-///   3. Player calls `submit_autojoin(dao, vault, cap_id, character, freeze, clock, ctx)`.
+///   3. Player calls `autojoin(dao, vault, cap_id, character, freeze, clock, ctx)`.
 ///      The function verifies the character's wallet matches `ctx.sender()`,
 ///      the character's tribe is in the allowlist, the kill-switch is on,
-///      then hands off to `external_execution::ticket_from_cap<AutojoinDAO>`
-///      which mints the ticket after running all the standard cross-cutting
-///      checks (DAO active, type slot present, not frozen/paused,
-///      cooldown, record_execution).
-///   4. Same PTB, player calls `execute_autojoin_dao(dao, ticket)`
-///      which re-reads the allowlist (defense-in-depth) and adds the joiner.
+///      then mints the ticket through `external_execution::ticket_from_cap<AutojoinDAO>`
+///      (which runs the standard cross-cutting checks: DAO active, type slot
+///      present, not frozen/paused, cooldown, record_execution), adds the
+///      joiner, and discharges the ticket. The ticket never leaves this module.
 ///
 /// Threat model:
 ///   - World admin is the trust anchor for `character.tribe_id` and
@@ -30,25 +28,26 @@
 ///     asserts `vault.dao_id == dao.id()` so a wrong vault aborts at the source.
 ///   - `ticket_from_cap` re-asserts `cap.dao_id == dao.id()` and runs
 ///     the full cross-cutting check set. Two independent dao-id boundaries.
-///   - Allowlist re-read at execute time means a hypothetical PTB split
-///     (submit in tx A, execute in tx B) would still be safe: if the DAO
-///     reconfigures or disables between submit and execute, execute aborts.
+///   - The ticket's request (BOARD_ADD) is spent only here, on `ctx.sender()`:
+///     the caller never holds the ticket, and `Permit<AutojoinDAO>` can only be
+///     minted in this module, so nobody can add any other address with it.
 module armature_world_bridge::autojoin_ops;
 
 use armature::capability_vault::CapabilityVault;
 use armature::dao::DAO;
 use armature::emergency::EmergencyFreeze;
 use armature::external_execution;
-use armature::proposal::{Self, ExecutionRequest, ExecutionTicket};
+use armature::permissions;
 use armature_world_bridge::configure_autojoin::ConfigureAutojoin;
 use armature_world_bridge::tribe_allowlist::TribeIdAllowlist;
+use std::internal;
 use sui::clock::Clock;
 use sui::event;
 use world::character::Character;
 
 // === Errors ===
 
-const EDaoMismatch: u64 = 0;
+// 0 was EDaoMismatch: the joiner is added inside `autojoin`, on the DAO the ticket was minted for.
 const ESenderNotCharacterOwner: u64 = 1;
 const EAllowlistNotInitialized: u64 = 2;
 const EAutojoinDisabled: u64 = 3;
@@ -83,11 +82,14 @@ public fun tribe_id(self: &AutojoinDAO): u32 { self.tribe_id }
 
 public fun joining_address(self: &AutojoinDAO): address { self.joining_address }
 
-// === Submit ===
+/// The permission bits AutojoinDAO needs in the config its EnableBypassType
+/// carries: BOARD_ADD only (`execute_autojoin_dao` adds the joining member).
+/// ConfigureAutojoin needs none: it writes only its own type-state.
+public fun autojoin_permissions(): u64 { permissions::board_add() }
 
-/// Submit and pre-mint the AutojoinDAO execution request. The caller must
-/// pass the `cap_id` of the DAO's `ExternalExecutionCap<AutojoinDAO>` (the
-/// cap is in the CapabilityVault if the DAO has bypass-enabled this type).
+// === Autojoin ===
+
+/// Add `ctx.sender()` to the Members DAO's board without a vote.
 ///
 /// Aborts on:
 ///   - `character.character_address() != ctx.sender()` — joiner wallet must
@@ -97,10 +99,7 @@ public fun joining_address(self: &AutojoinDAO): address { self.joining_address }
 ///   - `character.tribe()` not in allowlist.
 ///   - Any check inside `ticket_from_cap` (DAO active, type slot present,
 ///     not paused/frozen, cooldown, etc).
-///
-/// The returned `ExecutionTicket<AutojoinDAO>` must be consumed in the
-/// same PTB by `execute_autojoin_dao`.
-public fun submit_autojoin(
+public fun autojoin(
     members_dao: &mut DAO,
     members_vault: &CapabilityVault,
     cap_id: ID,
@@ -108,7 +107,7 @@ public fun submit_autojoin(
     freeze: &EmergencyFreeze,
     clock: &Clock,
     ctx: &mut TxContext,
-): ExecutionTicket<AutojoinDAO> {
+) {
     let sender = ctx.sender();
 
     // 1. Authenticate the joiner against the character record. The world
@@ -133,54 +132,32 @@ public fun submit_autojoin(
     // 3. Borrow the cap. borrow_external_cap asserts vault.dao_id == members_dao.id().
     let cap = members_vault.borrow_external_cap<AutojoinDAO>(members_dao.id(), cap_id);
 
-    // 4. Hand off to the framework's cap-gated mint.
-    external_execution::ticket_from_cap<AutojoinDAO>(
+    // 4. Mint the ticket through the framework's cap-gated path.
+    let payload = AutojoinDAO {
+        character_id: object::id(character),
+        tribe_id,
+        joining_address: sender,
+    };
+    let ticket = external_execution::ticket_from_cap<AutojoinDAO>(
         cap,
         members_dao,
         freeze,
         option::none(),
-        AutojoinDAO {
-            character_id: object::id(character),
-            tribe_id,
-            joining_address: sender,
-        },
+        payload,
+        internal::permit(),
         clock,
         ctx,
-    )
-}
+    );
 
-// === Execute ===
-
-/// Consume the AutojoinDAO request and add the joiner to the board.
-///
-/// Re-reads the allowlist as defense-in-depth: if a future refactor ever
-/// allows the submit/execute steps to be in different PTBs, this read
-/// would catch a DAO that revoked the tribe between steps. Today they
-/// are always in the same PTB so this is belt-and-suspenders.
-///
-/// The payload `joining_address` is the address the cap-gated mint
-/// captured from `ctx.sender()` in `submit_autojoin`. We add THAT
-/// address rather than re-reading `character.character_address()`,
-/// because the payload is the recorded intent and is what indexers
-/// will see in the event.
-public fun execute_autojoin_dao(dao: &mut DAO, ticket: ExecutionTicket<AutojoinDAO>) {
-    assert!(dao.id() == ticket.ticket_dao_id(), EDaoMismatch);
-    let payload = ticket.ticket_payload();
-
-    // Defense-in-depth re-read.
-    assert!(dao.has_type_state<ConfigureAutojoin>(), EAllowlistNotInitialized);
-    let allowlist: &TribeIdAllowlist = dao.borrow_type_state<ConfigureAutojoin, TribeIdAllowlist>();
-    assert!(allowlist.is_enabled(), EAutojoinDisabled);
-    assert!(allowlist.contains(payload.tribe_id), ETribeIdNotAllowed);
-
-    dao.add_board_member_governance(payload.joining_address, ticket.ticket_request());
+    // 5. Spend the request on the joiner only, then close the ticket.
+    members_dao.add_board_member_governance(sender, ticket.ticket_request(internal::permit()));
 
     event::emit(MemberAutojoined {
-        dao_id: dao.id(),
-        member: payload.joining_address,
-        tribe_id: payload.tribe_id,
-        character_id: payload.character_id,
+        dao_id: members_dao.id(),
+        member: sender,
+        tribe_id,
+        character_id: object::id(character),
     });
 
-    ticket.discharge();
+    ticket.discharge(internal::permit());
 }

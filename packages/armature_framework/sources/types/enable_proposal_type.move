@@ -1,6 +1,7 @@
 module armature::enable_proposal_type;
 
 use armature::proposal::ProposalConfig;
+use std::internal::{Self, Permit};
 use std::type_name::TypeName;
 
 /// Enable a new proposal type on the DAO with mandatory config.
@@ -10,7 +11,7 @@ use std::type_name::TypeName;
 /// `NewType` matches it, so an executor cannot register a different payload
 /// type under the display key the board voted on.
 ///
-/// Handler enforces a 66% approval floor at execution time.
+/// Proposals of this type need an 80% approval threshold (dao floor).
 public struct EnableProposalType has drop, store {
     /// Human-readable label shown in events and the UI. Unique per DAO.
     type_key: std::ascii::String,
@@ -36,3 +37,9 @@ public fun type_key(self: &EnableProposalType): std::ascii::String { self.type_k
 public fun type_name(self: &EnableProposalType): TypeName { self.type_name }
 
 public fun config(self: &EnableProposalType): &ProposalConfig { &self.config }
+
+// === Handler authority ===
+
+/// `Permit<EnableProposalType>` for this package's handler: the only way to spend or close
+/// an `ExecutionTicket<EnableProposalType>` (see `proposal::ticket_request`).
+public(package) fun permit(): Permit<EnableProposalType> { internal::permit() }

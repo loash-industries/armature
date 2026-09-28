@@ -8,6 +8,7 @@ use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
 use armature::proposal::{Self, Proposal, ProposalCreated, ProposalExecuted, ProposalPayloadCreated};
+use std::internal;
 use std::string;
 use sui::clock;
 use sui::event;
@@ -69,9 +70,10 @@ fun privileged_submit_records_execution_in_events() {
         );
 
         let subdao_id = object::id(&subdao);
+        let control_id = object::id(&control);
         transfer::public_transfer(control, CREATOR);
         sui::test_utils::destroy(freeze_cap);
-        transfer::public_share_object(subdao);
+        dao::share_subdao(subdao, control_id);
         subdao_id
     };
 
@@ -183,7 +185,7 @@ fun privileged_consume_rejects_wrong_control() {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR]);
-        let (subdao, freeze_cap) = dao::create_subdao(
+        let (mut subdao, freeze_cap) = dao::create_subdao(
             &init,
             string::utf8(b"SubDAO"),
             string::utf8(b"https://example.com/sub.png"),
@@ -194,6 +196,7 @@ fun privileged_consume_rejects_wrong_control() {
             object::id(&subdao),
             scenario.ctx(),
         );
+        subdao.set_controller_for_testing(object::id(&correct_control));
         let wrong_control = capability_vault::new_subdao_control_for_testing(
             object::id_from_address(@0xDEAD),
             scenario.ctx(),
@@ -270,7 +273,7 @@ fun authorize_execution_blocks_when_controller_paused() {
     {
         let mut dao = scenario.take_shared<DAO>();
         // Simulate controller_paused by using set_controller_paused with a fake exec req
-        let req = proposal::new_execution_request<TestPayload>(
+        let req = proposal::new_privileged_request_for_testing<TestPayload>(
             dao.id(),
             object::id_from_address(@0xBEEF),
         );
@@ -294,7 +297,7 @@ fun authorize_execution_blocks_when_controller_paused() {
             scenario.ctx(),
         );
 
-        req.discharge();
+        req.discharge(internal::permit());
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(dao);
     };
@@ -328,9 +331,10 @@ fun privileged_submit_rejects_inactive_subdao() {
             object::id(&subdao),
             scenario.ctx(),
         );
+        subdao.set_controller_for_testing(object::id(&control));
 
         // Transition SubDAO to Migrating
-        let req = proposal::new_execution_request<TestPayload>(
+        let req = proposal::new_execution_request_for_testing<TestPayload>(
             object::id(&subdao),
             object::id_from_address(@0xBEEF),
         );

@@ -13,6 +13,7 @@ module armature_world_bridge::configure_autojoin;
 use armature::dao::DAO;
 use armature::proposal::{Self, ExecutionRequest, ExecutionTicket};
 use armature_world_bridge::tribe_allowlist::{Self, TribeIdAllowlist};
+use std::internal;
 use sui::event;
 
 // === Errors ===
@@ -78,7 +79,7 @@ public fun set_enabled(self: &ConfigureAutojoin): &Option<bool> { &self.set_enab
 public fun execute_configure_autojoin(dao: &mut DAO, ticket: ExecutionTicket<ConfigureAutojoin>) {
     assert!(dao.id() == ticket.ticket_dao_id(), EDaoMismatch);
     let payload = ticket.ticket_payload();
-    let req = ticket.ticket_request();
+    let req = ticket.ticket_request(internal::permit());
 
     assert!(payload.add_tribe_ids.length() <= MAX_OPS_PER_CALL, ETooManyAdds);
     assert!(payload.remove_tribe_ids.length() <= MAX_OPS_PER_CALL, ETooManyRemoves);
@@ -115,5 +116,5 @@ public fun execute_configure_autojoin(dao: &mut DAO, ticket: ExecutionTicket<Con
         enabled,
     });
 
-    ticket.discharge();
+    ticket.discharge(internal::permit());
 }

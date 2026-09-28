@@ -5,6 +5,7 @@ use armature::board_voting;
 use armature::dao::{Self, DAO};
 use armature::governance;
 use armature::proposal::{Self, Proposal};
+use std::internal;
 use std::string;
 use sui::clock::{Self, Clock};
 use sui::test_scenario;
@@ -74,7 +75,7 @@ fun create_test_proposal(scenario: &mut test_scenario::Scenario, clock: &Clock) 
 /// ExecutionRequest has no drop/copy/store — it's a hot potato.
 /// This test just verifies it can be created and consumed.
 fun test_execution_request_no_drop() {
-    let req = proposal::new_execution_request<TestPayload>(
+    let req = proposal::new_execution_request_for_testing<TestPayload>(
         object::id_from_address(@0x1),
         object::id_from_address(@0x2),
     );
@@ -175,6 +176,8 @@ fun test_execute_deletes_proposal() {
             dao.governance(),
             option::none(),
             false,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
@@ -414,6 +417,8 @@ fun test_execute_after_window_aborts() {
             dao.governance(),
             option::none(),
             false,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
@@ -486,6 +491,8 @@ fun test_execute_with_max_expiry_does_not_overflow() {
             dao.governance(),
             option::none(),
             false,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
@@ -620,6 +627,8 @@ fun test_non_board_member_cannot_execute_aborts() {
             dao.governance(),
             option::none(),
             false,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
@@ -662,6 +671,8 @@ fun test_board_member_can_execute() {
             dao.governance(),
             option::none(),
             false,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
@@ -706,6 +717,8 @@ fun test_passed_proposal_retryable_after_failure() {
             dao.governance(),
             option::none(),
             false,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
@@ -866,6 +879,8 @@ fun test_execute_delay_not_elapsed_aborts() {
             dao.governance(),
             option::none(),
             false,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
@@ -937,6 +952,8 @@ fun test_execute_delay_elapsed_succeeds() {
             dao.governance(),
             option::none(),
             false,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
@@ -1009,6 +1026,8 @@ fun test_execute_window_starts_after_delay() {
             dao.governance(),
             option::none(),
             false,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
@@ -1078,6 +1097,8 @@ fun test_execute_cooldown_active_aborts() {
             dao.governance(),
             option::some(999_500),
             false,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
@@ -1147,6 +1168,8 @@ fun test_execute_cooldown_elapsed_succeeds() {
             dao.governance(),
             option::some(10_000_000 - 7_200_000),
             false,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
@@ -1186,6 +1209,8 @@ fun test_execute_paused_aborts() {
             dao.governance(),
             option::none(),
             true,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
@@ -1206,7 +1231,7 @@ fun test_execute_paused_aborts() {
 fun consume_execution_request_destroys_hot_potato() {
     let dao_id = object::id_from_address(@0xDA0);
     let proposal_id = object::id_from_address(@0xBEEF);
-    let req = proposal::new_execution_request<TestPayload>(dao_id, proposal_id);
+    let req = proposal::new_execution_request_for_testing<TestPayload>(dao_id, proposal_id);
 
     assert!(req.req_dao_id() == dao_id);
     assert!(req.req_proposal_id() == proposal_id);
@@ -1241,6 +1266,8 @@ fun consume_execution_request_works_after_governance_execution() {
             dao.governance(),
             option::none(),
             false,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
@@ -1273,7 +1300,7 @@ fun test_ticket_is_standalone_true() {
     assert!(ticket.ticket_yes_weight() == 100);
     assert!(ticket.ticket_total_snapshot_weight() == 200);
     assert!(ticket.ticket_dao_id() == dao_id);
-    ticket.discharge();
+    ticket.discharge(internal::permit());
 }
 
 #[test, expected_failure(abort_code = armature::proposal::ENotStandaloneTicket)]
@@ -1288,7 +1315,7 @@ fun test_ticket_yes_weight_aborts_on_composite() {
     );
     // Composite ticket — this must abort
     let _w = ticket.ticket_yes_weight();
-    ticket.discharge();
+    ticket.discharge(internal::permit());
 }
 
 #[test, expected_failure(abort_code = armature::proposal::ENotStandaloneTicket)]
@@ -1303,7 +1330,7 @@ fun test_ticket_total_snapshot_weight_aborts_on_external() {
     );
     // External ticket — this must abort
     let _w = ticket.ticket_total_snapshot_weight();
-    ticket.discharge();
+    ticket.discharge(internal::permit());
 }
 
 #[test]
@@ -1317,7 +1344,7 @@ fun test_ticket_is_standalone_false_for_composite() {
         TestPayload { value: 1 },
     );
     assert!(!ticket.ticket_is_standalone());
-    ticket.discharge();
+    ticket.discharge(internal::permit());
 }
 
 #[test]
@@ -1331,7 +1358,7 @@ fun test_ticket_is_standalone_false_for_external() {
         TestPayload { value: 1 },
     );
     assert!(!ticket.ticket_is_standalone());
-    ticket.discharge();
+    ticket.discharge(internal::permit());
 }
 
 // =========================================================================
@@ -1355,7 +1382,7 @@ fun test_discharge_returning_payload() {
         100,
         200,
     );
-    let payload = proposal::discharge_returning_payload(ticket);
+    let payload = proposal::discharge_returning_payload(ticket, internal::permit());
     assert!(payload.value == 42);
     // Manually destructure since NonDropPayload has no drop
     let NonDropPayload { value: _ } = payload;
@@ -1538,6 +1565,8 @@ fun test_removed_member_cannot_execute() {
             dao.governance(),
             option::none(),
             false,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );

@@ -10,6 +10,7 @@ use armature::emergency::{Self, EmergencyFreeze, FreezeAdminCap};
 use armature::external_execution;
 use armature::governance;
 use armature::proposal::{Self, Proposal};
+use std::internal;
 use std::string;
 use sui::clock::{Self, Clock};
 use sui::test_scenario::{Self, Scenario};
@@ -72,7 +73,7 @@ fun run_atomic<T>(scenario: &mut Scenario, clock: &Clock) {
         clock,
         scenario.ctx(),
     );
-    ticket.discharge();
+    ticket.discharge(internal::permit());
     test_scenario::return_shared(freeze);
     test_scenario::return_shared(dao);
 }
@@ -88,10 +89,11 @@ fun run_bypass<T>(scenario: &mut Scenario, clock: &Clock) {
         &freeze,
         option::none(),
         Order<T> {},
+        internal::permit(),
         clock,
         scenario.ctx(),
     );
-    ticket.discharge();
+    ticket.discharge(internal::permit());
     proposal::destroy_external_execution_cap_for_testing(cap);
     test_scenario::return_shared(freeze);
     test_scenario::return_shared(dao);
@@ -121,7 +123,7 @@ fun run_two_ptb<T>(scenario: &mut Scenario, clock: &Clock) {
         let prop = scenario.take_shared<Proposal<Order<T>>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let ticket = board_voting::ticket_from_vote(&mut dao, prop, &freeze, clock, scenario.ctx());
-        ticket.discharge();
+        ticket.discharge(internal::permit());
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(dao);
     };

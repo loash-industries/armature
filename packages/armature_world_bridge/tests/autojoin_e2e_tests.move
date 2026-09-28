@@ -12,11 +12,14 @@ use armature::capability_vault::{Self, CapabilityVault};
 use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
-use armature::proposal::{Self, Proposal};
+use armature::permissions;
+use armature::proposal::{Self, ExecutionRequest, Proposal};
+use armature::treasury_vault::TreasuryVault;
 use armature_world_bridge::autojoin_ops::{Self, AutojoinDAO};
 use armature_world_bridge::configure_autojoin::{Self, ConfigureAutojoin};
 use std::string;
 use sui::clock;
+use sui::sui::SUI;
 use sui::test_scenario as ts;
 use world::access::{Self, AdminACL};
 use world::character::{Self, Character};
@@ -106,7 +109,10 @@ fun setup_dao_with_autojoin(scenario: &mut ts::Scenario): (ID, ID, ID) {
 
         // Enable both proposal types via test seams (slots are keyed by the Move type).
         let cfg = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type<AutojoinDAO>(b"AutojoinDAO".to_ascii_string(), cfg);
+        dao.test_enable_type<AutojoinDAO>(
+            b"AutojoinDAO".to_ascii_string(),
+            cfg.with_permissions(autojoin_ops::autojoin_permissions()),
+        );
         dao.test_enable_type<ConfigureAutojoin>(b"ConfigureAutojoin".to_ascii_string(), cfg);
 
         // Mint a synthetic cap for AutojoinDAO and deposit into the vault.
@@ -184,7 +190,7 @@ fun configure_allowlist(
     };
 }
 
-/// Run a complete submit_autojoin + execute_autojoin_dao for the given
+/// Run a complete autojoin for the given
 /// character. Production code runs both in the same PTB, and since
 /// ExecutionTicket is a hot potato we do both in a single test transaction.
 fun do_autojoin(
@@ -201,7 +207,7 @@ fun do_autojoin(
         let character = ts::take_shared_by_id<Character>(scenario, character_id);
         let freeze = ts::take_shared<EmergencyFreeze>(scenario);
 
-        let ticket = autojoin_ops::submit_autojoin(
+        autojoin_ops::autojoin(
             &mut dao,
             &vault,
             cap_id,
@@ -210,7 +216,6 @@ fun do_autojoin(
             clock,
             scenario.ctx(),
         );
-        autojoin_ops::execute_autojoin_dao(&mut dao, ticket);
 
         ts::return_shared(freeze);
         ts::return_shared(character);
@@ -368,6 +373,49 @@ fun configure_rejects_zero_tribe_id() {
     let _character_id = create_character(&mut scenario, 100, 42, PLAYER);
     let (_, _, _cap_id) = setup_dao_with_autojoin(&mut scenario);
     configure_allowlist(&mut scenario, &mut clock, vector[42, 0], true, 1000, 2000, 3000);
+
+    clock.destroy_for_testing();
+    ts::end(scenario);
+}
+
+// === Scope of the autojoin request ===
+//
+// Any allowlisted player can mint an AutojoinDAO ticket without a vote. Before
+// ROAD-39 its request reached every mutator; with permission bits alone it
+// still reached add_board_members_governance with any addresses, so one player
+// could add a board majority. The ticket now never leaves autojoin_ops: it is
+// minted, spent on ctx.sender() and discharged inside `autojoin`, and
+// Permit<AutojoinDAO> (needed for ticket_from_cap, ticket_request and
+// discharge) can only be minted in that module.
+
+#[test]
+/// A join adds exactly the sender and nobody else.
+fun autojoin_adds_only_the_sender() {
+    let mut scenario = ts::begin(GOVERNOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    setup_world(&mut scenario);
+    let character_id = create_character(&mut scenario, 100, 42, PLAYER);
+    let (_, _, cap_id) = setup_dao_with_autojoin(&mut scenario);
+    configure_allowlist(&mut scenario, &mut clock, vector[42], true, 1000, 2000, 3000);
+
+    ts::next_tx(&mut scenario, CREATOR);
+    let before = {
+        let dao = ts::take_shared<DAO>(&scenario);
+        let count = dao.governance().member_count();
+        ts::return_shared(dao);
+        count
+    };
+
+    clock.set_for_testing(4000);
+    do_autojoin(&mut scenario, &clock, cap_id, character_id, PLAYER);
+
+    ts::next_tx(&mut scenario, CREATOR);
+    {
+        let dao = ts::take_shared<DAO>(&scenario);
+        assert!(dao.governance().member_count() == before + 1);
+        assert!(dao.governance().is_board_member(PLAYER));
+        ts::return_shared(dao);
+    };
 
     clock.destroy_for_testing();
     ts::end(scenario);

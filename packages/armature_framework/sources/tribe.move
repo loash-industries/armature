@@ -4,6 +4,7 @@ use armature::capability_vault;
 use armature::dao::{Self, ProposalTypeInit};
 use armature::emergency;
 use armature::governance;
+use armature::permissions;
 use armature::proposal::ExecutionRequest;
 use std::string::String;
 
@@ -17,9 +18,10 @@ use std::string::String;
 /// inserted and enabled. Build entries with `dao::new_type_init<T>(display_key, config)`.
 /// Passing an empty vector produces the standard SubDAO defaults.
 ///
-/// Requires an `ExecutionRequest` from the parent DAO's governance, which ensures the
-/// caller is authorized to mutate `parent_vault`. Use `proposal::ticket_request` to
-/// obtain the request from a `board_voting::submit_vote_execute` or standard two-PTB
+/// Requires an `ExecutionRequest` from the parent DAO's governance carrying
+/// VAULT_STORE and VAULT_EXTRACT, the bits CreateSubDAO holds: it mints a
+/// SubDAOControl into `parent_vault`. Use `proposal::ticket_request` to obtain
+/// the request from a `board_voting::submit_vote_execute` or standard two-PTB
 /// execution ticket.
 ///
 /// Returns the new SubDAO's ID.
@@ -33,6 +35,7 @@ public fun create_wired_subdao<P>(
     config_overrides: vector<ProposalTypeInit>,
     ctx: &mut TxContext,
 ): ID {
+    req.assert_permitted(permissions::vault_store() | permissions::vault_extract());
     let gov = governance::init_board(board);
     let (subdao, freeze_cap) = dao::create_subdao_configured(
         &gov,
@@ -60,8 +63,8 @@ public fun create_wired_subdao<P>(
 /// Officer and member FreezeAdminCaps are transferred to the provided addresses.
 ///
 /// Control hierarchy:
-///   Tribe DAO CapabilityVault       → SubDAOControl for Officers SubDAO
-///   Officers SubDAO CapabilityVault → SubDAOControl for Members SubDAO
+/// Tribe DAO CapabilityVault       → SubDAOControl for Officers SubDAO
+/// Officers SubDAO CapabilityVault → SubDAOControl for Members SubDAO
 ///
 /// Returns (tribe_dao_id, officer_dao_id, member_dao_id).
 public fun create_tribe(
@@ -135,7 +138,7 @@ public fun create_tribe(
 /// construction time, before any DAO is shared. Each override is a `ProposalTypeInit`
 /// built with `dao::new_type_init<T>(display_key, config)`. For each entry:
 /// - If the type is already enabled by default, its config is replaced. The
-///   override's display key must match the default key (EDisplayKeyMismatch).
+/// override's display key must match the default key (EDisplayKeyMismatch).
 /// - If the type is not yet enabled, it is inserted and enabled.
 /// - If the type is blocked (hierarchy-altering or bypass-meta), the call aborts.
 /// The original `create_tribe` is unchanged and continues to use hardcoded defaults.

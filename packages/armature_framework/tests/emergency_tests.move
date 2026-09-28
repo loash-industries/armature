@@ -61,7 +61,7 @@ fun test_freeze__assert_not_frozen_aborts() {
     let (mut freeze, cap, clock) = setup();
 
     freeze.freeze_type<TreasuryWithdraw>(&cap, &clock);
-    freeze.assert_not_frozen<TreasuryWithdraw>(&clock);
+    freeze.assert_not_frozen<TreasuryWithdraw>(freeze.dao_id(), &clock);
 
     teardown(freeze, cap, clock);
 }
@@ -75,7 +75,7 @@ fun test_freeze__does_not_block_unfrozen_types() {
 
     assert!(freeze.is_frozen<TreasuryWithdraw>(&clock));
     assert!(!freeze.is_frozen<SetBoard>(&clock));
-    freeze.assert_not_frozen<SetBoard>(&clock);
+    freeze.assert_not_frozen<SetBoard>(freeze.dao_id(), &clock);
 
     teardown(freeze, cap, clock);
 }
@@ -89,7 +89,7 @@ fun test_freeze__generic_instantiations_are_independent() {
 
     assert!(freeze.is_frozen<PlaceOrder<CredA>>(&clock));
     assert!(!freeze.is_frozen<PlaceOrder<CredB>>(&clock));
-    freeze.assert_not_frozen<PlaceOrder<CredB>>(&clock);
+    freeze.assert_not_frozen<PlaceOrder<CredB>>(freeze.dao_id(), &clock);
 
     teardown(freeze, cap, clock);
 }
@@ -182,7 +182,7 @@ fun test_auto_expiry__expired_freeze_treated_as_inactive() {
 
     // Should no longer be frozen, and assert_not_frozen should not abort
     assert!(!freeze.is_frozen<TreasuryWithdraw>(&clock));
-    freeze.assert_not_frozen<TreasuryWithdraw>(&clock);
+    freeze.assert_not_frozen<TreasuryWithdraw>(freeze.dao_id(), &clock);
 
     teardown(freeze, cap, clock);
 }
