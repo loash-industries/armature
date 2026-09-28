@@ -1,99 +1,249 @@
 # Coverage Summary
 
-## Invariant Coverage
-
-Every invariant has at least one happy-path test and one abort/negative test.
-
-| Invariant | Happy Path | Abort/Negative | File |
-|-----------|------------|----------------|------|
-| Governance type immutable | `test_governance_type_immutable_after_creation` | (structural — no setter exists) | `03_governance` |
-| State mutations are `public(friend)` | `test_borrow_cap_requires_execution_request` | (structural — visibility enforced by compiler) | `03_governance` |
-| Create aborts if type not enabled | `test_create_proposal_with_enabled_type_succeeds` | `test_create_proposal_with_disabled_type_aborts` | `03_governance` |
-| Protected types cannot be disabled | `test_can_disable_send_coin` | `test_cannot_disable_enable_proposal_type_aborts` + 3 more | `03_governance` |
-| 80% floor for self-referential config | `test_update_config_self_referential_at_80_succeeds` | `test_update_config_self_referential_below_80_aborts` | `03_governance` |
-| 66% floor for EnableProposalType | `test_enable_type_at_66_threshold_succeeds` | `test_enable_type_below_66_threshold_aborts` | `03_governance` |
-| ProposalConfig validation bounds | `test_config_valid_boundaries_succeeds` | `test_config_quorum_zero_aborts` + 2 more | `03_governance` |
-| ExecutionRequest has no abilities | `test_execution_request_no_drop` | (structural — Move type system) | `04_proposals` |
-| CapLoan verified on return | `test_loan_and_return_restores_capability` | `test_return_cap_verifies_cap_id` | `04_proposals` |
-| Status transitions monotonic | `test_status_active_to_passed` + 2 more | `test_cannot_vote_on_passed_aborts` + 3 more | `04_proposals` |
-| Vote snapshot immutable | `test_vote_snapshot_immutable_after_creation` | `test_new_member_cannot_vote_on_old_proposal` | `04_proposals` |
-| Executor eligibility | `test_board_member_can_execute` | `test_non_board_member_cannot_execute_aborts` | `04_proposals` |
-| Failed execution retryable | `test_failed_execution_leaves_proposal_passed` | — | `04_proposals` |
-| Withdraw requires ExecutionRequest | `test_withdraw_with_valid_request_succeeds` | (structural — `public(friend)`) | `05_treasury` |
-| coin_types reflects balances | `test_deposit_first_coin_adds_to_registry` + 2 more | — | `05_treasury` |
-| Zero-balance cleanup | `test_partial_withdraw_preserves_field` | `test_withdraw_exact_balance_removes_field` | `05_treasury` |
-| Vault access requires ExecutionRequest | `test_borrow_cap_requires_execution_request` + 3 more | (structural) | `06_capability_vault` |
-| Registries reflect stored caps | `test_store_updates_cap_types_and_cap_ids` + 2 more | `test_extract_removes_from_cap_types_and_cap_ids` | `06_capability_vault` |
-| Loan preserves registries | `test_loan_does_not_update_registries` | — | `06_capability_vault` |
-| Privileged extract checks SubDAOControl | `test_privileged_extract_succeeds` | `test_privileged_extract_wrong_subdao_aborts` | `06_capability_vault` |
-| SubDAO blocklist | — | `test_subdao_cannot_enable_create_subdao_aborts` + 2 more | `13_subdao_ops` |
-| controller_cap_id lifecycle | `test_controller_cap_id_set_at_creation` | `test_controller_cap_id_cleared_at_spinout` | `13_subdao_ops` |
-| One SubDAOControl per SubDAO | `test_create_subdao__stores_control_in_parent_vault` | `test_only_one_control_per_subdao` | `13_subdao_ops` |
-| Pause via privileged_submit only | `test_pause_requires_privileged_submit` | — | `13_subdao_ops` |
-| Paused blocks all execution | — | `test_paused_subdao_cannot_execute_aborts` | `13_subdao_ops` |
-| SpinOut clears paused | `test_spinout_clears_paused_flag` | — | `13_subdao_ops` |
-| Acyclic graph | — | `test_acyclic_graph_enforced` | `13_subdao_ops` |
-| At most one controller | Same as one-control-per-subdao | Same as one-control-per-subdao | `13_subdao_ops` |
-| Charter version monotonic | `test_version_increments_on_amendment` | `test_version_cannot_decrease` | `07_charter` |
-| Amendment records both blob IDs | `test_amendment_records_previous_blob_id` + 2 more | — | `07_charter` |
-| Renew doesn't increment version | `test_renew_changes_blob_id_only` | `test_renew_does_not_add_amendment_record` | `07_charter` |
-| Status Active to Migrating only | `test_transition_active_to_migrating` | `test_migrating_cannot_revert_to_active_aborts` | `02_dao_lifecycle` |
-| Migrating blocks non-transfer types | `test_migrating_allows_transfer_assets` | `test_migrating_blocks_non_transfer_proposals_aborts` | `02_dao_lifecycle` |
-| Destroy requires Migrating + empty | `test_destroy_succeeds_when_migrating_and_empty` | `test_destroy_requires_migrating_aborts` + 2 more | `02_dao_lifecycle` |
-| In-flight proposals unexecutable | `test_inflight_proposal_unexecutable_after_destroy` | — | `02_dao_lifecycle` |
-
-## Proposal Type Coverage
-
-All 18 proposal types have at least one happy-path and one abort test.
-
-| # | Type | Happy | Abort | File |
-|---|------|-------|-------|------|
-| 1 | `UpdateProposalConfig` | `test_update_config__changes_config_for_target_type` | `test_update_config_self_referential_below_80_aborts` | `10_admin` |
-| 2 | `EnableProposalType` | `test_enable_type__sets_config_atomically` | `test_enable_type_below_66_threshold_aborts`, `test_enable_type__subdao_blocklist` | `10_admin` |
-| 3 | `DisableProposalType` | `test_disable_type__removes_from_enabled` | `test_cannot_disable_*` (x4) | `10_admin` |
-| 4 | `UpdateMetadata` | `test_update_metadata__changes_ipfs_cid` | — | `10_admin` |
-| 5 | `TransferFreezeAdmin` | `test_transfer_freeze_admin__transfers_cap` | — | `10_admin` |
-| 6 | `UnfreezeProposalType` | `test_unfreeze__removes_frozen_type` | — | `10_admin` |
-| 7 | `SendCoin<T>` | `test_send_coin__transfers_to_recipient` | `test_send_coin__insufficient_balance_aborts` | `11_treasury_ops` |
-| 8 | `SendCoinToDAO<T>` | `test_send_coin_to_dao__deposits_into_target_treasury` | — | `11_treasury_ops` |
-| 9 | `SetBoard` | `test_set_board__replaces_all_members` | `test_set_board__empty_board_aborts` | `12_board_ops` |
-| 10 | `CreateSubDAO` | `test_create_subdao__stores_control_in_parent_vault` | — | `13_subdao_ops` |
-| 11 | `SpinOutSubDAO` | `test_controller_cap_id_cleared_at_spinout` | — | `13_subdao_ops` |
-| 12 | `TransferCapToSubDAO` | `test_transfer_cap__moves_cap_to_subdao_vault` | — | `13_subdao_ops` |
-| 13 | `ReclaimCapFromSubDAO` | `test_reclaim_cap__returns_cap_to_parent` | — | `13_subdao_ops` |
-| 14 | `PauseSubDAOExecution` | `test_pause_requires_privileged_submit` | `test_paused_subdao_cannot_execute_aborts` | `13_subdao_ops` |
-| 15 | `UnpauseSubDAOExecution` | `test_spinout_clears_paused_flag` | — | `13_subdao_ops` |
-| 16 | `AmendCharter` | `test_amend__updates_blob_id_and_hash` | `test_amend__validates_charter_belongs_to_dao` | `14_charter_ops` |
-| 17 | `RenewCharterStorage` | `test_renew__updates_blob_id_only` | — | `14_charter_ops` |
-| 18 | `UpdateFreezeConfig` | `test_update_freeze_config__changes_max_duration` | — | `10_admin` |
-
-## Demo Flow Coverage
-
-All 21 demo steps are covered.
-
-| Flow | Steps | Tests | File |
-|------|-------|-------|------|
-| A — One Vision, One Tribe | 7 | 8 (7 steps + full sequence) | `16_integration_flows` |
-| B — The Gate Builders | 7 | 8 (7 steps + full sequence) | `16_integration_flows` |
-| C — Gate Network Franchise | 7 | 8 (7 steps + full sequence) | `16_integration_flows` |
+This summary is built from the Move test suites in the repository (committed code), not from the test plans. Test names are real unless marked (planned); a name alone is enough to find the test with `grep -rn 'fun <name>' packages/*/tests`. Run a package's suite with `sui move test --path packages/<package> --build-env testnet`. CI also runs `scripts/check_request_gates.py`, which fails if a framework `public fun` takes an `ExecutionRequest` without a gate check or if a gated function has no denial test in `gate_tests.move`.
 
 ## Test Count Summary
 
-| File | Section | Tests |
-|------|---------|-------|
-| `02_dao_lifecycle` | DAO Creation & Lifecycle | 13 |
-| `03_governance` | Governance Config | 18 |
-| `04_proposals` | Proposal Lifecycle | 25 |
-| `05_treasury` | Treasury Vault | 16 |
-| `06_capability_vault` | Capability Vault | 20 |
-| `07_charter` | Charter | 10 |
-| `08_emergency` | Emergency Freeze | 10 |
-| `09_board_voting` | Board Voting | 10 |
-| `10_admin_proposals` | Admin Proposals (6 types) | 16 |
-| `11_treasury_ops` | Treasury Ops | 7 |
-| `12_board_ops` | Board Ops | 6 |
-| `13_subdao_ops` | SubDAO Ops | 22 |
-| `14_charter_ops` | Charter Ops | 10 |
-| `15_privileged_submit` | Privileged Submit | 7 |
-| `16_integration_flows` | Integration Flows (A+B+C) | 24 |
-| **Total** | | **~214** |
+| Package | Suite | Tests |
+|---------|-------|------:|
+| `armature_framework` | `board_voting_tests` | 22 |
+| | `borrow_scope_tests` | 9 |
+| | `capability_vault_tests` | 23 |
+| | `composite_tests` | 2 |
+| | `controller_tests` | 5 |
+| | `cross_dao_auth_tests` | 17 |
+| | `dao_tests` | 20 |
+| | `emergency_tests` | 18 |
+| | `encrypted_entry_tests` | 39 |
+| | `external_execution_tests` | 22 |
+| | `freeze_ops_tests` | 5 |
+| | `freeze_path_tests` | 7 |
+| | `gate_tests` | 35 |
+| | `lifecycle_ops_tests` | 5 |
+| | `permissions_tests` | 35 |
+| | `proposal_tests` | 42 |
+| | `spend_guard_tests` | 9 |
+| | `submit_vote_execute_tests` | 26 |
+| | `treasury_vault_multicoin_tests` | 23 |
+| | `treasury_vault_tests` | 17 |
+| | `tribe_tests` | 30 |
+| | `sources/utils.move` (unit tests) | 8 |
+| | **framework total** | **419** |
+| `armature_proposals` | `admin_ops_tests` | 21 |
+| | `batch_multicoin_ops_tests` | 6 |
+| | `board_ops_tests` | 6 |
+| | `charter_tests` | 2 |
+| | `composite_tests` | 20 |
+| | `currency_ops_tests` | 12 |
+| | `emergency_freeze_tests` | 8 |
+| | `lifecycle_tests` | 2 |
+| | `member_ops_tests` | 15 |
+| | `migration_tests` | 4 |
+| | `subdao_ops_tests` | 16 |
+| | `treasury_ops_tests` | 9 |
+| | `upgrade_ops_tests` | 2 |
+| | **proposals total** | **123** |
+| `armature_world_bridge` | `autojoin_e2e_tests` | 8 |
+| | `tribe_allowlist_tests` | 12 |
+| | **world bridge total** | **20** |
+| `armature_external_type_tests` | `external_type_lifecycle_tests` | 11 |
+| **All packages** | | **573** |
+
+Several `armature_proposals` suites (`admin_ops_tests`, `board_ops_tests`, `member_ops_tests`, `charter_tests`, `migration_tests`, `emergency_freeze_tests`, `lifecycle_tests`) exercise framework handlers (`admin_ops`, `board_ops`, `member_ops`, `lifecycle_ops`, `freeze_ops`); they stayed in that package when the handlers moved into the framework. Setup commonly uses the test seams `dao.test_enable_type<T>`, `test_update_config<T>` and `test_disable_type<T>` (no vote, no floors) and the synthesized requests in `proposal` (`new_permitted_request_for_testing`, `new_privileged_request_for_testing`, `new_standalone_ticket_for_testing`, …).
+
+## Invariant Coverage
+
+Unless noted, each invariant has at least one happy-path and one negative test. "Structural" means the property is enforced by the Move type system or visibility and cannot be exercised by a test. Suites are named without their `_tests` suffix; (fw) and (pr) tell apart the same-named suites in `armature_framework` and `armature_proposals`, and `utils` is the unit tests in `sources/utils.move`.
+
+### Registry and configuration
+
+| Invariant | Happy path | Abort / negative | Suites |
+|-----------|------------|------------------|--------|
+| Proposal types are keyed by the payload's Move type; no string key is accepted | `submit_proposal_succeeds_with_enabled_type`, `submit_proposal_default_type_uses_its_payload_slot`, `add_step_records_slot_display_key` | `submit_proposal_aborts_for_type_without_slot`, `test_sve__disabled_type_aborts`, `ticket_from_vote__type_disabled_after_pass_aborts` (`board_voting::ETypeNotEnabled`), `external_executed_create_other_type_slot_does_not_enable_p` (`external_execution::ETypeNotEnabled`) | board_voting, submit_vote_execute, external_execution, composite (fw) |
+| Display keys are unique; a removed slot leaves nothing behind | `test_enable_then_disable_leaves_nothing_behind`, `execute_enable_proposal_type_display_key_reusable_after_disable`, `execute_enable_proposal_type_reenable_same_type_succeeds` | `test_duplicate_display_key_aborts`, `execute_enable_proposal_type_duplicate_display_key_aborts` (`dao::EDisplayKeyTaken`), `test_enable_twice_aborts` (`dao::ETypeAlreadyEnabled`), `test_config_of_unregistered_type_aborts` (`dao::ETypeNotEnabled`) | dao, admin_ops |
+| Default slots and display keys; SubDAOs omit the bypass meta-types | `test_default_proposal_types`, `test_subdao_default_types_omit_bypass_meta` | `create_tribe_configured_default_type_display_key_mismatch_aborts` (`dao::EDisplayKeyMismatch`) | dao, tribe |
+| The DAO root does not grow with enabled types or board size | `test_root_size_independent_of_enabled_types`, `test_root_size_independent_of_board_size` | — (size property) | dao |
+| `ProposalConfig` bounds (quorum 1–10000, threshold 5000–10000, expiry ≥ 1 h) | `test_config_valid_boundaries_succeeds` | `test_config_quorum_zero_aborts`, `test_config_quorum_above_max_aborts`, `test_config_threshold_below_min_aborts`, `test_config_expiry_below_min_aborts` (expected failure, code not pinned) | dao |
+| `EnableProposalType` / `EnableBypassType` pin the approved Move type | `execute_enable_proposal_type_adds_slot`, `execute_enable_bypass_type_e2e` | `execute_enable_proposal_type_wrong_new_type_aborts` (`admin_ops::ETypeMismatch`), `execute_enable_bypass_type_wrong_new_type_aborts`, `execute_disable_bypass_type_wrong_new_type_aborts` (`external_execution::ETypeMismatch`) | admin_ops, external_execution |
+| Undisableable types | — | `disable_core_type_enable_proposal_type_aborts`, `disable_core_type_unfreeze_proposal_type_aborts` (`admin_ops::EUndisableableType`) | admin_ops |
+| `cooldown_ms > 0` and `composable_allowed` are exclusive | `update_proposal_config_composable_allowed_updates_config` | `enable_proposal_type_composable_cooldown_conflict_aborts`, `update_proposal_config_composable_cooldown_conflict_aborts` (`admin_ops::EComposableCooldownConflict`), `enable_bypass_type_composable_cooldown_conflict_aborts` (`external_execution::EComposableCooldownConflict`) | admin_ops, external_execution |
+
+### Permission model
+
+| Invariant | Happy path | Abort / negative | Suites |
+|-----------|------------|------------------|--------|
+| Every stored config meets its type floor and the floor of its bits (80% for TYPE_ADMIN, MIGRATE, TREASURY_WITHDRAW, VAULT_BORROW, VAULT_EXTRACT) | `enable_proposal_type_submission_floor_allows_80_percent`, `update_proposal_config_self_submission_floor_allows_80_percent`, `framework_type_enabled_without_bits_gets_fixed_set`, `create_wired_subdao_enable_proposal_type_at_floor_passes`, `create_tribe_configured_update_config_at_floor_passes`, `permission_floor_values` | `update_config_below_floor_aborts`, `enable_type_with_sub_floor_config_aborts`, `enable_with_high_bits_under_floor_aborts`, `update_lowering_threshold_under_permission_floor_aborts`, `type_floor_holds_on_direct_update`, `framework_type_fixed_bits_need_their_floor`, four tribe tests ending `_below_floor` (`dao::EThresholdBelowMinimum`); `enable_proposal_type_submission_floor_rejects_below_80_percent`, `test_sve__enable_proposal_type_below_floor_aborts` (`board_voting::EFloorNotMet`); `update_proposal_config_self_submission_floor_rejects_below_80_percent` (`admin_ops::EFloorNotMet`) | admin_ops, permissions, tribe, submit_vote_execute |
+| Every gated mutator checks its bit; all but the package-only `capability_vault::receive_cap` (and the sending request of `receive_cap_authorized`) first check the request's DAO | `assert_permitted_passes_for_carried_bits`, `vote_path_request_carries_current_slot_bits` | 34 `gate_tests` (29 × `proposal::EPermissionDenied`, 3 × `proposal::EBorrowScopeDenied`, 2 × `dao::ENotPrivileged`); `assert_permitted_denies_request_without_bit`, `assert_permitted_denies_partial_grant`; `assert_permitted_rejects_cross_dao_request` (`dao::EDAOIdMismatch`) | gate, permissions |
+| Framework types hold fixed bits and a fixed borrow scope | `framework_type_enabled_without_bits_gets_fixed_set`, `freeze_governance_types_hold_fixed_freeze_bit`, `spin_out_subdao_scope_is_subdao_control`, `test_default_proposal_types` | `framework_type_enabled_with_other_bits_aborts`, `update_proposal_config_self_grant_aborts`, `composite_payload_cannot_hold_bits`, `framework_type_scope_cannot_be_changed` (`dao::EFixedPermissions`) | permissions, freeze_ops, borrow_scope, dao |
+| Only the three 80% meta-types or a privileged request may change a type's bits or scope | `enable_proposal_type_grants_low_bits`, `enable_proposal_type_grants_high_bits`, `enable_bypass_type_grants_high_bits`, `update_proposal_config_grants_and_revokes_high_bits`, `meta_type_may_change_scope`, `privileged_request_may_change_bits`, `enable_by_non_meta_type_without_bits_passes`, `update_without_bit_change_by_non_meta_type_passes`, `update_proposal_config_preserves_permissions` | `enable_by_non_meta_type_with_bits_aborts`, `update_bits_by_non_meta_type_aborts`, `scope_change_needs_meta_type`, `enable_with_scope_needs_meta_type` (`dao::EPermissionChangeNotAllowed`). `dao::EGrantFloorNotMet` has no test: unreachable while every meta-type sits at 80% | permissions, borrow_scope, admin_ops |
+| Grants are standalone-only | `composite_update_step_keeping_bits_composes`, `composite_enable_proposal_type_step_e2e` | `add_step_rejects_enable_proposal_type` (`composite::EUseTypedStep`), `composite_enable_step_with_bits_aborts`, `composite_update_step_changing_bits_aborts`, `composite_enable_step_with_scope_aborts`, `composite_update_step_changing_scope_aborts` (`composite::EGrantInComposite`) | permissions, composite (pr) |
+| Bits and scope are read from the slot when the request is minted | `vote_path_request_carries_current_slot_bits`, `meta_type_may_change_scope`, `request_carries_slot_scope_and_borrows_in_scope` | — | permissions, borrow_scope |
+| `VAULT_BORROW` reaches only cap types in the borrow scope | `request_carries_slot_scope_and_borrows_in_scope`, `privileged_request_ignores_scope` | `borrow_outside_scope_aborts`, `empty_scope_borrows_nothing`, `borrow_cap_scope_denied_with_all_bits`, `borrow_cap_mut_scope_denied_with_all_bits`, `loan_cap_scope_denied_with_all_bits` (`proposal::EBorrowScopeDenied`) | borrow_scope, gate |
+| A ticket authorizes only its own type's bits (composite steps do not pool; bypass and atomic tickets carry their slot's bits) | `composite_steps_perform_their_own_mutations` | `composite_send_coin_step_cannot_add_member`, `bypass_ticket_cannot_unfreeze_other_type`, `bypass_ticket_cannot_withdraw_from_treasury`, `bypass_ticket_cannot_add_board_member`, `atomic_ticket_cannot_migrate_dao`, `atomic_ticket_cannot_unfreeze_other_type` (`proposal::EPermissionDenied`) | composite (pr), external_type_lifecycle |
+| Only `P`'s defining module can spend or close an `ExecutionTicket<P>` or mint a bypass ticket for `P` (`Permit<P>`) | Structural. Handlers read arguments from the payload and check object arguments against it: `autojoin_adds_only_the_sender`, `transfer_assets_moves_listed_coin_to_target` | `transfer_assets_wrong_target_aborts` (`lifecycle_ops::ETargetTreasuryMismatch`), `mint_into_foreign_treasury_aborts` (`currency_ops::EVaultDAOMismatch`), `send_batch_to_dao_target_mismatch_aborts` (`treasury_ops::ETargetVaultMismatch`) | autojoin_e2e, lifecycle_ops, currency_ops, batch_multicoin_ops |
+| A bypass-enabled type never holds TYPE_ADMIN, MIGRATE, VAULT_EXTRACT or FREEZE | — | `execute_enable_bypass_type_forbidden_bits_aborts`, `ticket_from_cap_forbidden_bits_aborts` (`external_execution::EBypassForbiddenBits`) | external_execution |
+| A bypass type authenticates its caller in its own mint entry | `mint_allowance_bypass_allowed_minter_mints_within_cap`, `mint_allowance_bypass_cap_is_stored`, `autojoin_happy_path` | `mint_allowance_bypass_outsider_aborts` (`currency_ops::ENotAllowedMinter`), `mint_allowance_bypass_over_cap_aborts` (`EExceedsAllowance`), `mint_allowance_bypass_unconfigured_aborts` (`EAllowanceNotConfigured`), `mint_allowance_bypass_disabled_aborts` (`EAllowanceDisabled`); `autojoin_wrong_sender_aborts`, `autojoin_tribe_not_allowed_aborts`, `autojoin_kill_switch_off_aborts`, `autojoin_uninitialized_allowlist_aborts` | currency_ops, autojoin_e2e |
+| `EnableBypassType` needs 80% of the whole board and cannot bootstrap itself | `execute_enable_bypass_type_e2e` | `execute_enable_bypass_type_below_floor_aborts`, `execute_enable_bypass_type_zero_weight_aborts` (`external_execution::EApprovalFloorNotMet`), `execute_enable_bypass_type_self_bootstrap_denied` (`ESelfBootstrapDenied`) | external_execution |
+| Bypass mint guards (cap's DAO, enabled, not paused, cooldown) | `external_executed_create_happy_path`, `ticket_from_cap_readonly_happy_path` | `external_executed_create_cap_for_wrong_dao_aborts` (`proposal::ECapDAOMismatch`), `external_executed_create_type_not_enabled_aborts`, `external_executed_create_cooldown_enforced`, `external_executed_create_execution_paused_aborts`, `external_executed_create_controller_paused_aborts`, `ticket_from_cap_readonly_cooldown_type_aborts` | external_execution |
+| A privileged request passes every bit and scope check, confined to its SubDAO by the DAO checks; controller-only mutators accept nothing else | `assert_permitted_passes_privileged_request`, `only_controller_requests_are_privileged`, `privileged_request_ignores_scope` | `assert_permitted_privileged_request_is_dao_scoped` (`dao::EDAOIdMismatch`), `set_controller_paused_needs_privileged_request`, `clear_controller_needs_privileged_request` (`dao::ENotPrivileged`) | permissions, borrow_scope, gate |
+| Handlers bind target objects to the ticket's DAO or the payload | `receive_cap_authorized_succeeds_with_matching_recv_dao` | `create_subdao_vault_mismatch_aborts` (`lifecycle_ops::EVaultDAOMismatch`), `reclaim_cap_wrong_vault_aborts` (`subdao_ops::EVaultDAOMismatch`), `send_coin_to_dao_target_mismatch_aborts` (`treasury_ops::EVaultDAOMismatch`), `charter_update_wrong_dao_aborts` (`admin_ops::ECharterDaoMismatch`), `upgrade_vault_mismatch_aborts` (`upgrade_ops::EVaultDaoMismatch`), `receive_cap_authorized_aborts_on_recv_dao_mismatch` (`capability_vault::EDAOIdMismatch`) | subdao_ops, treasury_ops, charter, upgrade_ops, capability_vault |
+
+### Voting and the proposal lifecycle
+
+| Invariant | Happy path | Abort / negative | Suites |
+|-----------|------------|------------------|--------|
+| Pass rule: `total_voted > 0`, quorum over snapshot weight, threshold over votes cast, u128 cross-multiplication | `test_board__single_member_yes_passes`, `test_board__unanimous_3_member_passes`, `test_board__2_of_3_yes_passes_at_66`, `test_board__exact_quorum_boundary`, `test_board__threshold_boundary_50_percent`, `test_board__abstention_not_counted_in_threshold`, `test_board__large_board_10_members`, `gte_bps_exact_threshold`, `gte_bps_large_values_no_overflow` | `test_board__1_of_3_yes_fails_at_66`, `test_board__below_quorum_does_not_pass`, `test_board__no_votes_majority_fails` (stay Active) | board_voting, utils |
+| Propose threshold (member weight is 1) | `test_propose_threshold__zero_never_blocks`, `test_propose_threshold__at_board_weight_passes` | `test_propose_threshold__above_board_weight_aborts` (`board_voting::EProposeThresholdNotMet`) | board_voting |
+| Voters are the members at the proposal's `snapshot_version` | `test_vote_snapshot_immutable_after_creation`, `test_removed_member_keeps_vote_on_old_proposal`, `test_readded_member_keeps_vote_on_old_proposal`, `test_quorum_uses_total_weight_at_creation`, `test_roster_version_and_snapshot_version` | `test_new_member_cannot_vote_on_old_proposal`, `test_member_readded_after_creation_cannot_vote`, `test_vote_non_snapshot_member_aborts` (`proposal::ENotInSnapshot`) | proposal |
+| Votes: Active only, once, before the deadline, against the proposal's own DAO | `test_status_active_to_passed`, `test_vote_just_before_expiry`, `test_vote_no_vote_counted_correctly` | `test_cannot_vote_on_passed_aborts` (`ENotActive`), `test_vote_double_vote_aborts` (`EAlreadyVoted`), `test_vote_after_expiry_aborts` (`EVotingClosed`), `test_vote_with_other_dao_aborts` (`board_voting::EDAOIdMismatch`) | proposal |
+| The executor is a current member | `test_board_member_can_execute` | `test_non_board_member_cannot_execute_aborts`, `test_removed_member_cannot_execute` (`proposal::ENotEligible`) | proposal |
+| Execution timing: delay, window, cooldown, pause | `test_execute_delay_elapsed_succeeds`, `test_execute_window_starts_after_delay`, `test_execute_cooldown_elapsed_succeeds`, `test_execute_with_max_expiry_does_not_overflow` | `test_execute_delay_not_elapsed_aborts` (`EDelayNotElapsed`), `test_execute_after_window_aborts` (`EExecutionWindowClosed`), `test_execute_cooldown_active_aborts` (`ECooldownActive`), `test_execute_paused_aborts` (`EExecutionPaused`) | proposal |
+| Execution deletes the proposal (replay protection) and records the slot's last execution | `test_execute_deletes_proposal`, `ticket_from_vote__records_execution` | Structural: the object no longer exists | proposal, board_voting |
+| Anyone may delete an expired proposal; deadlines saturate | `test_delete_expired_active`, `test_delete_expired_passed_after_window`, `freeze_outlasting_window_allows_delete` | `test_delete_expired_active_too_early_aborts`, `test_delete_expired_passed_inside_window_aborts`, `test_delete_with_max_expiry_not_expired` (`proposal::ENotExpired`) | proposal, emergency_freeze |
+| A handler abort reverts the whole PTB, leaving the proposal Passed | `test_passed_proposal_retryable_after_failure` (executes a Passed proposal; the abort-and-retry case itself is not simulated) | — | proposal |
+| Ticket closeout by path; hot potatoes | `test_ticket_is_standalone_true`, `test_ticket_is_standalone_false_for_composite`, `test_ticket_is_standalone_false_for_external`, `test_discharge_returning_payload`, `test_execution_request_no_drop`, `consume_execution_request_destroys_hot_potato` | `test_ticket_yes_weight_aborts_on_composite`, `test_ticket_total_snapshot_weight_aborts_on_external` (`proposal::ENotStandaloneTicket`). `proposal::ERequestMismatch` has no test | proposal |
+| Read-only variants write nothing and refuse cooldown types | `ticket_from_vote_readonly__executes_without_recording`, `test_sve_readonly__returns_ticket_and_leaves_dao_untouched`, `test_sve_readonly__back_to_back`, `ticket_from_cap_readonly_happy_path` | `ticket_from_vote_readonly__slot_cooldown_aborts`, `ticket_from_vote_readonly__slot_only_cooldown_aborts`, `ticket_from_vote_readonly__snapshot_cooldown_aborts`, `test_sve_readonly__cooldown_type_aborts` (`board_voting::ECooldownRequiresMutableDAO`), `ticket_from_cap_readonly_cooldown_type_aborts` (`external_execution::ECooldownRequiresMutableDAO`) | board_voting, submit_vote_execute, external_execution |
+| Atomic single-vote path: delay 0, the single YES must pass, all execution guards apply | `test_sve__single_member_returns_ticket`, `test_sve__two_member_50_quorum_single_vote_passes`, `test_sve__mutable_variant_records_execution`, `test_sve__cooldown_elapsed_allows_second_call` | `test_sve__nonzero_delay_aborts` (`EDelayForbidsAtomicExecution`), `test_sve__quorum_not_met_aborts`, `test_sve__quorum_boundary_just_below_aborts` (`EInsufficientVotingWeight`), `test_sve__non_member_aborts`, `test_sve__frozen_type_aborts`, `test_sve__execution_paused_aborts`, `test_sve__controller_paused_aborts`, `test_sve__cooldown_active_aborts_second_call` | submit_vote_execute |
+| Single-PTB executions (atomic, bypass, controller) create no object; events are the record | `test_sve__creates_no_objects_and_emits_lifecycle_events`, `test_sve_readonly__creates_no_objects_and_ids_are_distinct`, `test_sve__same_tx_executions_get_distinct_ids`, `ticket_from_cap_creates_no_objects`, `ticket_from_cap_readonly_creates_no_objects`, `privileged_submit_records_execution_in_events` | — | submit_vote_execute, external_execution, controller |
+
+### Composite proposals
+
+| Invariant | Happy path | Abort / negative | Suites |
+|-----------|------------|------------------|--------|
+| Steps must be enabled and composable; no nesting; frame sealed at submission | `composite_frame_is_sealed_after_submit`, `add_step_records_slot_display_key` | `add_step_rejects_non_composable_type`, `add_step_rejects_governance_sensitive_type_by_default` (`composite::ENotComposable`), `add_step_rejects_composite_nesting` (`ECompositeNesting`), `composite_add_step_after_seal_aborts` (`EFrameAlreadySealed`), `submit_composite_empty_frame_aborts` (`EEmptyFrame`) | composite (fw, pr) |
+| Pipeline runs every step, in order, as its own typed ticket | `composite_two_add_member_steps_e2e`, `composite_add_then_remove_member_e2e`, `composite_send_coin_step_e2e`, `composite_send_coin_to_dao_step_e2e`, `composite_set_board_step_e2e`, `composite_update_metadata_step_e2e`, `composite_enable_proposal_type_step_e2e`, `composite_same_type_cooldown_snapshot_succeeds` (two steps of one type both execute) | `advance_step_wrong_type_aborts` (`EStepTypeMismatch`), `finalize_pipeline_incomplete_aborts` (`EPipelineIncomplete`), `composite_cooldown_type_not_composable_aborts` (`ECooldownTypeNotComposable`) | composite (pr) |
+| A pipeline runs only on its own DAO, while that DAO is unpaused and each step's type is enabled | `advance_step_on_own_dao_succeeds` | `begin_pipeline_with_foreign_dao_aborts`, `advance_step_with_foreign_dao_aborts` (`composite::EDAOIdMismatch`), `advance_step_after_execution_pause_aborts` (`EExecutionPaused`), `advance_step_after_controller_pause_aborts` (`EControllerPaused`), `advance_step_after_type_disabled_aborts` (`ETypeNotEnabled`) | cross_dao_auth |
+| Exhausted frames can be deleted by anyone | `composite_delete_exhausted_frame_succeeds` | `composite_delete_exhausted_frame_not_exhausted_aborts` (`EFrameNotExhausted`) | composite (pr) |
+
+The effective config of a composite (quorum, threshold, delay and cooldown as the maximum over the "Composite" slot and every step; propose threshold and expiry from the "Composite" slot) is not asserted directly by any test. `advance_step` checks each step's DAO, pause flags, enabled type and freeze, and records its execution; it does not check cooldowns (cooldown-bearing types cannot be composable, and the last-executed snapshot taken by `begin_pipeline` is not read). No test covers a frozen step type at `advance_step` (planned).
+
+### Treasury, capability vault and spend guard
+
+| Invariant | Happy path | Abort / negative | Suites |
+|-----------|------------|------------------|--------|
+| Deposits and claims are permissionless; `coin_types` lists exactly the non-zero balances | `test_deposit_first_coin_adds_to_registry`, `test_deposit_second_coin_type_adds_to_registry`, `test_deposit_same_type_joins_balance`, `test_deposit_permissionless`, `test_deposit_zero_amount`, `test_coin_types_reflects_non_zero_balances`, `test_claim_coin_recovers_direct_transfer`, `test_claim_coin_multiple_types` | — | treasury_vault |
+| Withdrawal needs TREASURY_WITHDRAW; an emptied balance is removed | `test_withdraw_with_valid_request_succeeds`, `test_partial_withdraw_preserves_field`, `test_withdraw_exact_balance_removes_field`, `test_withdraw_exact_balance_removes_dynamic_field` | `test_withdraw_insufficient_balance_aborts` (`treasury_vault::EInsufficientBalance`), `withdraw_needs_treasury_withdraw` (`proposal::EPermissionDenied`) | treasury_vault, gate |
+| Multicoin balances by collection and asset | 19 happy-path tests incl. `test_deposit_first_item_creates_collection`, `test_withdraw_last_asset_removes_collection`, `test_multi_withdraw_proposal_full_drain` | `test_withdraw_excess_aborts`, `test_withdraw_missing_collection_aborts`, `test_withdraw_missing_asset_in_collection_aborts` (`EInsufficientBalance`), `withdraw_multicoin_needs_treasury_withdraw` | treasury_vault_multicoin, gate |
+| A vault is destroyed only when empty | `test_destroy_empty_succeeds_on_empty_vault`, `test_is_empty_true_after_full_multicoin_withdrawal` | `test_destroy_empty_aborts_on_non_empty_vault`, `test_destroy_empty_aborts_with_multicoin_assets` (`treasury_vault::EVaultNotEmpty`) | treasury_vault, treasury_vault_multicoin |
+| `spend_guard` rolling-window cap | `new_spend_window_starts_empty`, `charge_within_limit_succeeds`, `charge_at_exact_limit_succeeds`, `charge_rolls_epoch_after_duration`, `charge_skips_multiple_epochs`, `set_max_updates_cap`, `accessors_return_correct_values` | `charge_exceeds_limit_aborts`, `charge_aborts_when_set_max_lowers_cap_below_existing_spend` (`spend_guard::EExceedsEpochLimit`) | spend_guard |
+| Vault registries reflect stored caps; loans keep the ID registered | `test_store_updates_cap_types_and_cap_ids`, `test_store_multiple_same_type_updates_ids`, `test_ids_for_type__returns_correct_list`, `test_contains__returns_true_for_stored_cap`, `test_contains__returns_false_for_missing_cap`, `test_loan_does_not_update_registries` | `test_extract_removes_from_cap_types_and_cap_ids`, `test_extract_last_of_type_removes_type` | capability_vault (fw) |
+| Loaned caps return to the same vault | `test_loan_and_return_restores_capability`, `test_borrow_cap__returns_immutable_reference` | `test_loan_cap_not_borrowable_during_loan` (expected failure, code not pinned) | capability_vault (fw) |
+| Vault mutators need a request with the right bit | `test_store_cap_requires_execution_request`, `test_borrow_cap_requires_execution_request`, `test_loan_cap_requires_execution_request`, `test_extract_cap_requires_execution_request`, `test_store_cap_init_only_during_dao_creation` | `store_cap_needs_vault_store`, `borrow_cap_needs_vault_borrow`, `borrow_cap_mut_needs_vault_borrow`, `loan_cap_needs_vault_borrow`, `extract_cap_needs_vault_extract`, `create_subdao_control_needs_vault_extract`, `destroy_subdao_control_needs_vault_extract` | capability_vault (fw), gate |
+| Cross-DAO cap moves: `receive_cap` is package-only; a controller pushes into its SubDAO with `receive_cap_from_controller`, anything else needs both DAOs' requests | `receive_cap_unguarded_accepts_any_req_dao_id`, `receive_cap_authorized_succeeds_with_matching_recv_dao`, `transfer_cap_to_subdao_e2e` | `unrelated_dao_cannot_deposit_into_subdao_vault`, `cannot_deposit_into_top_level_dao_vault` (`controller::ENotController`), `controller_vault_must_match_request` (`controller::EControlMismatch`), `receive_cap_needs_vault_extract_on_sender`, `receive_cap_authorized_needs_vault_extract_on_sender`, `receive_cap_authorized_needs_vault_store_on_receiver` (`proposal::EPermissionDenied`), `receive_cap_authorized_aborts_on_recv_dao_mismatch` | capability_vault (fw), cross_dao_auth, subdao_ops, gate |
+| `privileged_extract` needs the SubDAO's registered control | `test_privileged_extract_requires_subdao_control`, `test_privileged_extract_verifies_subdao_id`, `test_privileged_extract_succeeds`, `registered_control_privileged_extract_succeeds` | `test_privileged_extract_wrong_subdao_aborts` (`capability_vault::ENotController`), `unregistered_control_cannot_privileged_extract` (`controller::ENotController`) | capability_vault (fw), cross_dao_auth |
+| `privileged_submit` needs the SubDAO's registered control | `privileged_submit_records_execution_in_events` | `privileged_submit_rejects_wrong_control` (`controller::EControlMismatch`), `forged_control_cannot_privileged_submit`, `cleared_controller_rejects_old_control` (`controller::ENotController`) | controller, cross_dao_auth |
+
+### Emergency freeze
+
+| Invariant | Happy path | Abort / negative | Suites |
+|-----------|------------|------------------|--------|
+| Freezes are keyed by canonical `TypeName` and block the two-PTB, atomic and bypass paths; only the DAO's own freeze object is accepted | `test_freeze__blocks_execution_of_frozen_type`, `test_freeze__does_not_block_unfrozen_types`, `test_freeze__generic_instantiations_are_independent`, `two_ptb__other_instantiation_unaffected`, `atomic__other_instantiation_unaffected`, `bypass__other_instantiation_unaffected`, `freeze_leaves_other_instantiation_executable` | `test_freeze__assert_not_frozen_aborts`, `two_ptb__frozen_instantiation_aborts`, `atomic__frozen_instantiation_aborts`, `bypass__frozen_instantiation_aborts`, `test_sve__frozen_type_aborts`, `frozen_type_blocks_execution`, `frozen_type_blocks_two_ptb`, `frozen_type_blocks_atomic`, `frozen_type_blocks_bypass` (`emergency::EFrozen`); `foreign_freeze__ticket_from_vote_aborts`, `foreign_freeze__submit_vote_execute_aborts`, `foreign_freeze__ticket_from_cap_aborts`, `foreign_freeze__advance_step_aborts` (`emergency::EDAOMismatch`) | emergency, freeze_path, submit_vote_execute, emergency_freeze, external_type_lifecycle, cross_dao_auth |
+| Admin freezes need the DAO's `FreezeAdminCap` and expire | `test_freeze__sets_expiry`, `test_unfreeze__cap_holder_can_unfreeze`, `test_auto_expiry__expired_freeze_treated_as_inactive`, `unfreeze_allows_execution`, `auto_expiry_allows_execution`, `two_ptb__executes_after_unfreeze` | `test_freeze__requires_freeze_admin_cap` (`emergency::EDAOMismatch`), `test_unfreeze__not_frozen_aborts` (`emergency::ENotFrozen`) | emergency, emergency_freeze, freeze_path |
+| Governance freeze controls need FREEZE | `test_unfreeze__governance_can_unfreeze`, `governance_unfreeze_via_proposal`, `governance_unfreeze_restores_execution`, `update_freeze_config_e2e`, `add_freeze_exempt_type_e2e`, `remove_freeze_exempt_type_e2e` | `governance_unfreeze_type_needs_freeze`, `update_freeze_duration_needs_freeze`, `unfreeze_all_needs_freeze`, `add_freeze_exempt_type_needs_freeze`, `remove_freeze_exempt_type_needs_freeze`, `bypass_ticket_cannot_unfreeze_other_type`, `atomic_ticket_cannot_unfreeze_other_type` (`proposal::EPermissionDenied`) | emergency, emergency_freeze, freeze_ops, gate, external_type_lifecycle |
+| Exempt types cannot be frozen; the two mandatory exemptions are matched by framework Move type and cannot be removed | `test_exempt__default_types_include_mandatory`, `test_protected__lookalike_type_is_not_exempt`, `test_exempt__removed_type_can_be_frozen` | `test_protected__transfer_freeze_admin_cannot_be_frozen`, `test_protected__unfreeze_proposal_type_cannot_be_frozen`, `test_exempt__custom_exempt_type_cannot_be_frozen`, `cannot_freeze_transfer_freeze_admin`, `cannot_freeze_unfreeze_proposal_type` (`emergency::EProtectedType`); `test_exempt__mandatory_type_cannot_be_removed`, `test_exempt__mandatory_unfreeze_type_cannot_be_removed`, `remove_mandatory_exempt_type_aborts` (`emergency::EMandatoryExemptType`) | emergency, emergency_freeze, freeze_ops |
+| A freeze can outlast a passed proposal's window (accepted) | `freeze_outlasting_window_allows_delete` | `freeze_outlasting_window_blocks_execution` (`proposal::EExecutionWindowClosed`) | emergency_freeze |
+
+### Board, roster and encrypted entries
+
+| Invariant | Happy path | Abort / negative | Suites |
+|-----------|------------|------------------|--------|
+| The board is never empty; no duplicate or phantom members | `test_set_board_e2e`, `test_full_board_replacement`, `test_shrink_board_to_single_member`, `test_grow_board_from_single`, `test_sequential_board_changes`, `test_add_member_e2e`, `test_remove_member_e2e`, `test_batch_add_members_e2e`, `test_batch_add_members_existing_member_skipped`, `test_batch_remove_members_e2e` | `test_set_board_empty_members_aborts`, `test_remove_last_member_aborts`, `test_batch_remove_members_would_empty_aborts`, `create_tribe_aborts_on_empty_tribe_board` (+2) (`governance::EEmptyBoard`); `test_add_member_duplicate_aborts`, `test_batch_add_members_internal_duplicate_aborts`, `test_batch_remove_members_internal_duplicate_aborts`, `autojoin_double_join_aborts` (`governance::EDuplicateBoardMember`); `test_remove_nonmember_aborts`, `test_batch_remove_members_nonmember_aborts` (`governance::ENotBoardMember`); `test_setboard_empty_change_aborts` (`governance::ENoBoardChange`) | board_ops, member_ops, tribe, autojoin_e2e, encrypted_entry |
+| Batch size limits | — | `test_batch_add_members_empty_aborts`, `test_batch_remove_members_empty_aborts` (`member_ops::EEmptyBatch`), `test_batch_add_members_oversize_aborts` (`member_ops::EBatchTooLarge`) | member_ops |
+| Board membership mutators need their bits | — | `set_board_governance_needs_board_set`, `add_board_member_governance_needs_board_add`, `add_board_members_governance_needs_board_add`, `remove_board_member_governance_needs_board_remove`, `remove_board_members_governance_needs_board_remove` | gate |
+| Removals rotate the encryption epoch; Seal access follows current membership | `test_setboard_member_removal_auto_rotates_epoch`, `test_setboard_member_addition_does_not_rotate_epoch`, `test_setboard_full_replacement_rotates_epoch`, `test_setboard_multiple_removals_each_rotate_epoch`, `test_setboard_removal_makes_existing_entries_stale`, `test_seal_approve_valid_member_and_id` | `test_seal_approve_removed_member_aborts`, `test_seal_approve_non_member_aborts` (`encrypted_entry::ENotMember`), `test_seal_approve_id_too_short_aborts` (`EIdTooShort`), `test_seal_approve_wrong_prefix_aborts` (`EDaoMismatch`) | encrypted_entry |
+| Encrypted entries are member-gated and capped at 32 | 23 happy-path tests in `encrypted_entry_tests` | `test_publish_entry_cap_at_32_aborts` (`encrypted_entry::EEntriesCapReached`), `test_update_entry_not_stale_aborts` (`EEntryNotStale`), the five entry-operation `*_non_member_aborts` tests (`ENotMember`), three `*_wrong_dao_aborts` (`EDaoMismatch`), `test_destroy_with_entries_aborts` (`dao::EEntriesNotEmpty`) | encrypted_entry |
+
+### DAO lifecycle, SubDAOs and migration
+
+| Invariant | Happy path | Abort / negative | Suites |
+|-----------|------------|------------------|--------|
+| Creation shares the DAO and its four companions and routes the `FreezeAdminCap` | `test_create_dao`, `test_dao_created_event`, `test_create_returning_vault_ids_are_consistent`, `test_create_returning_vault_vault_starts_empty`, `test_create_returning_vault_other_companions_are_shared`, `create_tribe_freeze_caps_routed_correctly`, `create_tribe_all_companion_objects_are_shared`, `create_wired_subdao_freeze_cap_routed_to_admin` | `create_tribe_aborts_on_empty_tribe_board` (+2) | dao, tribe |
+| Governance is Board and stays Board | `test_governance_type_immutable_after_creation`, `test_board_governance_persists_across_proposals` | Structural: no mutator changes the model | dao |
+| A controlled SubDAO cannot enable hierarchy or bypass meta-types | `enable_non_blocked_type_succeeds_for_subdao_with_controller`, `enable_blocked_type_succeeds_for_independent_dao`, `create_tribe_configured_parent_can_override_subdao_blocked_type` | `enable_blocked_type_aborts_for_subdao_with_controller` (`admin_ops::ESubDAOBlockedType`), `create_wired_subdao_aborts_on_blocked_type`, `create_tribe_configured_subdao_still_rejects_blocked_type` (`dao::EBlockedProposalType`) | admin_ops, tribe |
+| CreateSubDAO: child controlled, control and freeze cap in the parent vault | `create_subdao_e2e`, `create_multi_member_subdao`, `create_subdao_and_spin_out_e2e`, `create_wired_subdao_subdao_is_controlled`, `create_wired_subdao_wires_control_into_parent_vault`, `create_tribe_control_hierarchy_is_tribe_officers_members` | `create_subdao_vault_mismatch_aborts` (`lifecycle_ops::EVaultDAOMismatch`) | subdao_ops, migration, tribe |
+| Controller pause blocks the SubDAO's execution paths; only a privileged request sets it | `pause_and_unpause_subdao_e2e` | `paused_subdao_blocks_execution`, `authorize_execution_blocks_when_controller_paused`, `test_sve__controller_paused_aborts` (`board_voting::EControllerPaused`), `external_executed_create_controller_paused_aborts` (`external_execution::EControllerPaused`), `set_controller_paused_needs_privileged_request` (`dao::ENotPrivileged`) | subdao_ops, controller, submit_vote_execute, external_execution, gate |
+| `privileged_submit` / `privileged_consume` check the control's SubDAO | `privileged_submit_records_execution_in_events`, `controller_set_board_via_privileged_submit` | `privileged_submit_rejects_wrong_control`, `privileged_consume_rejects_wrong_control` (`controller::EControlMismatch`), `privileged_submit_rejects_inactive_subdao` (`controller::EDAONotActive`) | controller, migration |
+| Controller-side types act on the SubDAO without its vote | `transfer_cap_to_subdao_e2e`, `reclaim_cap_from_subdao_e2e`, `controller_batch_add_members_e2e`, `controller_batch_add_members_existing_skipped`, `controller_batch_remove_members_e2e` | `reclaim_cap_wrong_vault_aborts`, `controller_batch_remove_members_nonmember_aborts`, `controller_batch_add_members_empty_aborts`, `controller_batch_remove_members_empty_aborts` (`subdao_ops::EEmptyBatch`), `controller_batch_add_members_oversize_aborts`, `controller_batch_remove_members_oversize_aborts` (`subdao_ops::EBatchTooLarge`) | subdao_ops |
+| Spin-out: controller cleared, hierarchy types enabled, freeze cap moved, control destroyed | `create_subdao_and_spin_out_e2e` | — | migration |
+| `Active → Migrating` only; while Migrating only `TransferAssets`; destroy needs Migrating and empty vaults and entries | `spawn_dao_and_destroy_origin_e2e`, `migration_with_transfer_assets_e2e` | `set_migrating_needs_migrate` (`proposal::EPermissionDenied`), `test_destroy_with_entries_aborts` (`dao::EEntriesNotEmpty`), `privileged_submit_rejects_inactive_subdao` | migration, gate, encrypted_entry, controller |
+| `TransferAssets` moves exactly the listed assets to the payload's targets | `transfer_assets_moves_listed_coin_to_target`, `migration_with_transfer_assets_e2e` | `transfer_assets_finish_with_unmoved_asset_aborts` (`lifecycle_ops::EAssetsRemaining`), `transfer_assets_unlisted_coin_aborts`, `transfer_assets_same_coin_twice_aborts` (`lifecycle_ops::EAssetNotListed`), `transfer_assets_wrong_target_aborts` (`lifecycle_ops::ETargetTreasuryMismatch`) | lifecycle_ops, migration |
+| Tribe allowlist (world bridge type-state) | `empty_starts_disabled_and_empty`, `apply_adds_new_ids`, `apply_silently_skips_existing_adds`, `apply_silently_skips_nonexistent_removes`, `apply_simultaneous_add_and_remove_same_id_ends_present`, `apply_handles_internal_duplicates_in_inputs`, `apply_at_max_boundary_succeeds`, `apply_remove_then_add_at_boundary`, `set_enabled_flips_flag`, `max_size_is_8` | `apply_overflow_aborts`, `apply_remove_then_add_overflow_aborts` (`tribe_allowlist::EAllowlistFull`) | tribe_allowlist |
+
+### Arithmetic
+
+| Invariant | Happy path | Abort / negative | Suites |
+|-----------|------------|------------------|--------|
+| Basis-point math in u128; deadlines saturate at `u64::MAX` | `mul_bps_basic`, `mul_bps_zero`, `mul_bps_large_value_no_overflow`, `mul_bps_precision`, `gte_bps_exact_threshold`, `gte_bps_edge_cases`, `gte_bps_large_values_no_overflow`, `saturating_add_caps_at_max`, `test_execute_with_max_expiry_does_not_overflow` | `test_delete_with_max_expiry_not_expired` (`proposal::ENotExpired`, not an overflow) | utils, proposal |
+
+## Proposal Type Coverage
+
+41 payload types across four packages (40 shipped plus the test fixture's `Rebalance<T>`). "—" means no test of that kind exists.
+
+| # | Type | Package | Happy path | Abort | Suites |
+|---|------|---------|-----------|-------|--------|
+| 1 | `SetBoard` | framework | `test_set_board_e2e`, `test_full_board_replacement`, `composite_set_board_step_e2e` | `test_set_board_empty_members_aborts`, `test_setboard_empty_change_aborts` | board_ops, composite (pr), encrypted_entry |
+| 2 | `AddMember` | framework | `test_add_member_e2e`, `composite_two_add_member_steps_e2e` | `test_add_member_duplicate_aborts` | member_ops, composite (pr) |
+| 3 | `RemoveMember` | framework | `test_remove_member_e2e`, `composite_add_then_remove_member_e2e` | `test_remove_nonmember_aborts`, `test_remove_last_member_aborts` | member_ops, composite (pr) |
+| 4 | `BatchAddMembers` | framework | `test_batch_add_members_e2e`, `test_batch_add_members_existing_member_skipped` | `test_batch_add_members_internal_duplicate_aborts`, `test_batch_add_members_empty_aborts`, `test_batch_add_members_oversize_aborts` | member_ops |
+| 5 | `BatchRemoveMembers` | framework | `test_batch_remove_members_e2e` | `test_batch_remove_members_nonmember_aborts`, `test_batch_remove_members_internal_duplicate_aborts`, `test_batch_remove_members_would_empty_aborts`, `test_batch_remove_members_empty_aborts` | member_ops |
+| 6 | `UpdateMetadata` | framework | `charter_update_lifecycle`, `composite_update_metadata_step_e2e` | `charter_update_wrong_dao_aborts`, `update_metadata_needs_metadata` | charter, composite (pr), gate |
+| 7 | `EnableProposalType` | framework | `execute_enable_proposal_type_adds_slot`, `execute_enable_proposal_type_reenable_same_type_succeeds`, `composite_enable_proposal_type_step_e2e` | `execute_enable_proposal_type_wrong_new_type_aborts`, `execute_enable_proposal_type_duplicate_display_key_aborts`, `enable_blocked_type_aborts_for_subdao_with_controller`, `enable_proposal_type_submission_floor_rejects_below_80_percent`, `enable_type_with_sub_floor_config_aborts`, `enable_proposal_type_composable_cooldown_conflict_aborts` | admin_ops, composite (pr) |
+| 8 | `DisableProposalType` | framework | — (registry level: `test_enable_then_disable_leaves_nothing_behind`) | `disable_core_type_enable_proposal_type_aborts`, `disable_core_type_unfreeze_proposal_type_aborts` | admin_ops, dao |
+| 9 | `UpdateProposalConfig` | framework | `update_proposal_config_non_self_target_succeeds`, `update_proposal_config_composable_allowed_updates_config`, `update_proposal_config_preserves_permissions`, `update_proposal_config_grants_and_revokes_high_bits`, `meta_type_may_change_scope` | `update_config_below_floor_aborts`, `update_proposal_config_self_submission_floor_rejects_below_80_percent`, `update_proposal_config_composable_cooldown_conflict_aborts`, `update_proposal_config_self_grant_aborts` | admin_ops, permissions, borrow_scope |
+| 10 | `EnableBypassType` | framework | `execute_enable_bypass_type_e2e`, `enable_bypass_type_grants_high_bits` | `execute_enable_bypass_type_below_floor_aborts`, `execute_enable_bypass_type_zero_weight_aborts`, `execute_enable_bypass_type_self_bootstrap_denied`, `execute_enable_bypass_type_wrong_new_type_aborts`, `enable_bypass_type_composable_cooldown_conflict_aborts`, `execute_enable_bypass_type_forbidden_bits_aborts` | external_execution, permissions |
+| 11 | `DisableBypassType` | framework | `execute_disable_bypass_type_e2e` | `execute_disable_bypass_type_wrong_new_type_aborts`, `execute_disable_bypass_type_wrong_cap_id_aborts` | external_execution |
+| 12 | `TransferFreezeAdmin` | framework | — (no test calls `freeze_ops::execute_transfer_freeze_admin`) | `test_protected__transfer_freeze_admin_cannot_be_frozen`, `cannot_freeze_transfer_freeze_admin` (exemption only) | emergency, emergency_freeze |
+| 13 | `UnfreezeProposalType` | framework | `governance_unfreeze_via_proposal`, `governance_unfreeze_restores_execution`, `medium_enterprise_lifecycle` | `test_protected__unfreeze_proposal_type_cannot_be_frozen`, `cannot_freeze_unfreeze_proposal_type` (exemption only) | emergency_freeze, external_type_lifecycle, lifecycle, emergency |
+| 14 | `UpdateFreezeConfig` | framework | `update_freeze_config_e2e`, `freeze_governance_types_hold_fixed_freeze_bit` | — | freeze_ops |
+| 15 | `UpdateFreezeExemptTypes` | framework | `add_freeze_exempt_type_e2e`, `remove_freeze_exempt_type_e2e` | `remove_mandatory_exempt_type_aborts` | freeze_ops |
+| 16 | `SpawnDAO` | framework | `spawn_dao_and_destroy_origin_e2e`, `migration_with_transfer_assets_e2e`, `enable_blocked_type_succeeds_for_independent_dao` | `enable_blocked_type_aborts_for_subdao_with_controller`, `framework_type_fixed_bits_need_their_floor`, `create_wired_subdao_aborts_on_blocked_type` | migration, admin_ops, permissions, tribe |
+| 17 | `CreateSubDAO` | framework | `create_subdao_e2e`, `create_multi_member_subdao`, `create_subdao_and_spin_out_e2e` | `create_subdao_vault_mismatch_aborts`, `create_tribe_configured_subdao_still_rejects_blocked_type` | subdao_ops, migration, tribe |
+| 18 | `SpinOutSubDAO` | framework | `create_subdao_and_spin_out_e2e`, `spin_out_subdao_scope_is_subdao_control` | — | migration, borrow_scope |
+| 19 | `TransferAssets` | framework | `transfer_assets_moves_listed_coin_to_target`, `migration_with_transfer_assets_e2e` | `transfer_assets_finish_with_unmoved_asset_aborts`, `transfer_assets_unlisted_coin_aborts`, `transfer_assets_same_coin_twice_aborts`, `transfer_assets_wrong_target_aborts` | lifecycle_ops, migration |
+| 20 | `CompositePayload` | framework | 7 `composite_*_e2e` tests, `composite_frame_is_sealed_after_submit` | 9 composite abort tests (see Composite proposals) | composite (fw, pr) |
+| 21 | `SendCoin<T>` | proposals | `send_coin_e2e`, `composite_send_coin_step_e2e`, `medium_enterprise_lifecycle` | `send_coin_insufficient_balance_aborts`, `composite_send_coin_step_cannot_add_member` | treasury_ops, composite (pr), lifecycle |
+| 22 | `SendCoinToDAO<T>` | proposals | `send_coin_to_dao_e2e`, `composite_send_coin_to_dao_step_e2e` | `send_coin_to_dao_target_mismatch_aborts` | treasury_ops, composite (pr) |
+| 23 | `SendSmallPayment<T>` | proposals | `basic_payment_within_cap_succeeds`, `epoch_rollover_resets_spend_tracking`, `multiple_coin_types_independent_state`, `small_startup_lifecycle` | `payment_exceeding_cap_aborts` | treasury_ops, lifecycle |
+| 24 | `SendBatchMulticoinToAddress` | proposals | `send_batch_to_address_e2e`, `send_batch_to_address_partial_withdraw` | `send_batch_to_address_insufficient_balance_aborts` | batch_multicoin_ops |
+| 25 | `SendBatchMulticoinToDAO` | proposals | `send_batch_to_dao_e2e`, `send_batch_to_dao_accumulates_in_target` | `send_batch_to_dao_target_mismatch_aborts` | batch_multicoin_ops |
+| 26 | `AdoptCurrency<T>` | proposals | every currency test (the `adopt_glyph` setup votes an `AdoptCurrency<GLYPH>`) | — | currency_ops |
+| 27 | `MintCoin<T>` | proposals | `mint_into_treasury`, `mint_to_recipient` | `mint_into_foreign_treasury_aborts`, `mint_with_unknown_cap_aborts` (`currency_ops::ECapNotInVault`) | currency_ops |
+| 28 | `MintAllowance<T>` | proposals | `mint_allowance_bypass_allowed_minter_mints_within_cap`, `mint_allowance_bypass_cap_is_stored` | `mint_allowance_bypass_outsider_aborts`, `mint_allowance_bypass_over_cap_aborts`, `mint_allowance_bypass_unconfigured_aborts`, `mint_allowance_bypass_disabled_aborts` | currency_ops |
+| 29 | `ConfigureMintAllowance<T>` | proposals | the `configure_allowance` setup of the `mint_allowance_bypass_*` tests (atomic path) | — | currency_ops |
+| 30 | `BurnCoin<T>` | proposals | `burn_from_treasury` | — | currency_ops |
+| 31 | `ReturnCurrencyCap<T>` | proposals | `return_cap_relinquishes_custody` | — | currency_ops |
+| 32 | `TransferCapToSubDAO` | proposals | `transfer_cap_to_subdao_e2e` | — | subdao_ops |
+| 33 | `ReclaimCapFromSubDAO` | proposals | `reclaim_cap_from_subdao_e2e` | `reclaim_cap_wrong_vault_aborts` | subdao_ops |
+| 34 | `PauseSubDAOExecution` | proposals | `pause_and_unpause_subdao_e2e` | `paused_subdao_blocks_execution` (effect of the pause) | subdao_ops |
+| 35 | `UnpauseSubDAOExecution` | proposals | `pause_and_unpause_subdao_e2e` | — | subdao_ops |
+| 36 | `ControllerBatchAddMembers` | proposals | `controller_batch_add_members_e2e`, `controller_batch_add_members_existing_skipped` | `controller_batch_add_members_empty_aborts`, `controller_batch_add_members_oversize_aborts` | subdao_ops |
+| 37 | `ControllerBatchRemoveMembers` | proposals | `controller_batch_remove_members_e2e` | `controller_batch_remove_members_nonmember_aborts`, `controller_batch_remove_members_empty_aborts`, `controller_batch_remove_members_oversize_aborts` | subdao_ops |
+| 38 | `ProposeUpgrade` | proposals | `upgrade_e2e` | `upgrade_vault_mismatch_aborts` | upgrade_ops |
+| 39 | `AutojoinDAO` | world bridge | `autojoin_happy_path`, `autojoin_adds_only_the_sender` | `autojoin_double_join_aborts`, `autojoin_wrong_sender_aborts`, `autojoin_tribe_not_allowed_aborts`, `autojoin_kill_switch_off_aborts`, `autojoin_uninitialized_allowlist_aborts` | autojoin_e2e |
+| 40 | `ConfigureAutojoin` | world bridge | the `configure_allowlist` setup of every autojoin test; `tribe_allowlist_tests` | `configure_rejects_zero_tribe_id` (`configure_autojoin::EZeroTribeIdNotAllowed`), `apply_overflow_aborts` | autojoin_e2e, tribe_allowlist |
+| 41 | `Rebalance<T>` (fixture) | external type tests | `enabled_type_executes_on_every_path`, `freeze_leaves_other_instantiation_executable`, `governance_unfreeze_restores_execution` | `frozen_type_blocks_two_ptb`, `frozen_type_blocks_atomic`, `frozen_type_blocks_bypass`, five `*_ticket_cannot_*` tests (`proposal::EPermissionDenied`) | external_type_lifecycle |
+
+## Demo Flow Coverage
+
+No `test_flow_*` suite exists; `16_integration_flows.md` maps each demo step to the tests above.
+
+| Flow | Steps | Covered by real tests | Remaining |
+|------|------:|-----------------------|-----------|
+| A — One Vision, One Tribe | 7 | All seven steps, as separate component and scenario tests (`lifecycle_tests`, `migration_tests`, `subdao_ops_tests`, `board_ops_tests`, `treasury_ops_tests`, `dao_tests`) | One full-sequence test (planned) |
+| B — The Gate Builders | 7 | B-1, B-2, B-6 (transfer), B-7 (SubDAO-side `UpdateMetadata`); B-4 and B-5 as patterns only | Gate integration type (B-3 to B-5); parent charter override (planned); `RevenuePolicy` and `AmendCharter` (not implemented) |
+| C — Gate Network Franchise | 7 | C-5 (reads), C-6 (delegate and reclaim); the shipped world integration is autojoin (`autojoin_e2e_tests`) | Gate and SSU integration types (C-1 to C-4, C-7) |
+
+## Known Gaps
+
+Behaviour with no test in committed code. Items named in the test plans are marked (planned) there.
+
+- **Handlers without a happy-path test:** `freeze_ops::execute_transfer_freeze_admin` (TransferFreezeAdmin); `admin_ops::execute_disable_proposal_type` (only the undisableable aborts are tested).
+- **Handler events:** no test asserts a handler's own event (`BoardUpdated`, `MemberAdded`, `MembersBatchAdded`, `MetadataUpdated`, `ProposalTypeEnabled`, `ProposalTypeDisabled`, `ProposalConfigUpdated`, `BypassEnabled`, `BypassDisabled`, `FreezeAdminTransferred`, `SubDAOCreated`, `SubDAOSpunOut`, `CoinSent`, …). Only the proposal lifecycle events are asserted.
+- **Migration:** submitting a non-`TransferAssets` type on a Migrating DAO (`board_voting::EDAONotActive`); `dao::destroy` on an Active DAO (`dao::ENotMigrating`) or with mismatched companions.
+- **Vote paths:** `ticket_from_vote` against another DAO (`board_voting::EDAOIdMismatch`); an atomic `EnableBypassType` on a multi-member board, which passes the vote and fails the handler floor (`external_execution::EApprovalFloorNotMet`).
+- **Composites:** a step type frozen mid-pipeline (`emergency::EFrozen` from `advance_step`); the effective-config computation.
+- **SubDAOs:** spin-out of a paused SubDAO; `SpinOutSubDAO` payload configs below 80% (`dao::EThresholdBelowMinimum`); `TransferCapToSubDAO` with the wrong target vault (`subdao_ops::ESubDAOVaultMismatch`); controller types given a control for another SubDAO (`controller::EControlMismatch`); `TransferCapToSubDAO` to a DAO the sender does not control, end to end (`controller::ENotController`; covered at the `receive_cap_from_controller` level).
+- **Freeze:** `UnfreezeProposalType` for a type that is not frozen (`emergency::ENotFrozen`).
+- **Treasury:** `SendSmallPayment` on a zero balance (`treasury_ops::EExceedsDailyCap`); `zero_balance_blocks_payments` submits and votes but never executes.
+- **Unreachable by construction, untested:** `dao::EGrantFloorNotMet` (every meta-type sits at 80%), `proposal::ERequestMismatch` (a Standalone ticket's request always carries its own proposal ID).
+- **Not implemented:** gate and SSU integration types, `RevenuePolicy`, `AmendCharter` / `RenewCharterStorage`, Direct and Weighted governance, formal verification.

@@ -2,20 +2,34 @@
 
 ## Purpose
 
-This document defines how the frontend reads on-chain state and reacts to changes. It specifies the querying approach for every screen in the UI spec (`docs/ui/`), identifies what the Sui RPC can handle natively vs what needs client-side work, and draws a clear line between hackathon scope and stretch goals.
+This document defines how the frontend reads on-chain state and reacts to changes. It covers each screen of the dashboard UI: what the Sui RPC can read directly, what must be reconstructed from events, and which part of that work the indexer does.
 
 ---
 
-## Decision: No Custom Indexer
+## Decision: Event-Sourced History, Direct Reads for Live State
 
-For hackathon scope, **we do not build or deploy a custom indexer**. The entire data layer runs on:
+The hackathon plan was to run the UI on JSON-RPC alone, with no indexer. That decision is **superseded**. The production pipeline is:
 
-1. **`SuiClient` (JSON-RPC)** — direct object reads, dynamic field queries, event queries, owned-object queries
-2. **Client-side cache** — React Query (TanStack Query) for deduplication, staleness, and background refresh
-3. **Event polling** — periodic `suix_queryEvents` calls to detect state changes (WebSocket subscriptions are deprecated)
-4. **Client-side computation** — vote tallies, eligibility checks, countdowns computed from fetched objects
+```
+Move contracts (Sui)  →  armature-indexer (Rust, separate repo)  →  PostgreSQL  →  UI
+```
 
-This covers 100% of the demo flows. No derived tables, no background workers, no database.
+Changes to the framework since the hackathon made events the only complete record:
+
+1. **Proposals are deleted when they leave the chain.** Execution deletes the `Proposal` (`ProposalExecuted`), and anyone can delete an expired one (`ProposalExpired`). An executed or expired proposal cannot be read as an object; its payload survives only in `ProposalPayloadCreated.payload_bcs`.
+2. **Single-PTB executions never create an object.** `submit_vote_execute`, bypass executions (`ticket_from_cap`) and controller overrides (`privileged_submit`) exist only as event sequences under a freshly minted proposal ID.
+3. **The board roster is a `Table`.** It cannot be read as a vector from the DAO object; entries are dynamic fields of the table, and former members' entries remain (with closed tenures).
+4. **The type registry is dynamic fields.** Enabled types and their configs are `TypeSlot` fields on the DAO's `UID`, mixed with display-key index fields and type-state.
+
+The split is therefore:
+
+| Concern | Source |
+|---|---|
+| History: proposals (open, executed, expired, single-PTB), votes, board membership over time, registry changes, freezes, treasury movements | Indexer, from events |
+| Live state: DAO flags, open proposals' tallies, treasury balances, vault contents, freeze state, owned caps | Direct RPC reads (and the indexer, where it mirrors them) |
+| Derived: vote eligibility, execute eligibility, countdowns | Client-side computation from the above |
+
+Direct RPC alone still works for a single-DAO demo against localnet, with the limitations listed at the end.
 
 ---
 
@@ -23,14 +37,12 @@ This covers 100% of the demo flows. No derived tables, no background workers, no
 
 | Method | Purpose | Pagination |
 |--------|---------|------------|
-| `sui_getObject(id, options)` | Read any single object (DAO, Proposal, Charter, etc.) | N/A |
+| `sui_getObject(id, options)` | Read any single object (DAO, open Proposal, Charter, vaults, freeze) | N/A |
 | `sui_multiGetObjects(ids, options)` | Batch-read up to ~50 objects | N/A |
-| `suix_getOwnedObjects(address, filter, options)` | Find objects owned by wallet (FreezeAdminCap, user's DAOs) | Cursor, ~50/page |
-| `suix_queryEvents(filter, cursor, limit, descending)` | Discover proposals, SubDAOs, vote history, tx history | Cursor, max 1000/page |
-| `suix_getDynamicFields(parent_id, cursor, limit)` | Enumerate dynamic fields (treasury coin types, cap types) | Cursor, ~50/page |
-| `suix_getDynamicFieldObject(parent_id, name)` | Read a specific dynamic field value (balance for a coin type) | N/A |
-
-All methods available on devnet, testnet, and mainnet. Public rate limit: 100 req/30s — sufficient for single-user demo.
+| `suix_getOwnedObjects(address, filter, options)` | Find objects owned by an address: a wallet's `FreezeAdminCap`, or coins sent directly to a treasury vault's address (claimable with `claim_coin`) | Cursor, ~50/page |
+| `suix_queryEvents(filter, cursor, limit, descending)` | Discover proposals, executions, votes, SubDAOs, registry and membership changes | Cursor, max 1000/page |
+| `suix_getDynamicFields(parent_id, cursor, limit)` | Enumerate dynamic fields: type slots on the DAO, roster entries on the members table, treasury balances, vault caps | Cursor, ~50/page |
+| `suix_getDynamicFieldObject(parent_id, name)` | Read one dynamic field (a type slot, a member's tenures, a coin balance) | N/A |
 
 ---
 
@@ -38,116 +50,119 @@ All methods available on devnet, testnet, and mainnet. Public rate limit: 100 re
 
 ### Legend
 
-- **Direct** — single `sui_getObject` or field extraction, < 50ms
-- **Batch** — `sui_multiGetObjects` or parallel calls, < 200ms
-- **Discovery** — `suix_queryEvents` to find object IDs, then batch-fetch, < 500ms
-- **Dynamic** — `suix_getDynamicFields` enumeration + value reads, < 300ms
-- **Computed** — client-side math/logic on fetched data, ~0ms after fetch
-- **External** — off-chain fetch (Walrus), 1–3s
+- **Direct** — single `sui_getObject` or field extraction
+- **Batch** — `sui_multiGetObjects` or parallel calls
+- **Discovery** — `suix_queryEvents` to find object IDs, then batch-fetch
+- **Dynamic** — `suix_getDynamicFields` enumeration + value reads
+- **Indexed** — served by the indexer from events
+- **Computed** — client-side math/logic on fetched data
+- **External** — off-chain fetch (the metadata document at `metadata_uri`)
 
 ### DAO Dashboard
 
 | Data | Pattern | Query |
 |------|---------|-------|
-| DAO object (status, metadata, governance, controller) | Direct | `sui_getObject(dao_id)` |
-| Treasury total balance | Dynamic | Enumerate `coin_types` from TreasuryVault, read each `Balance<T>` dynamic field |
-| Board member count | Direct | Extract from `dao.governance.members.length` |
-| Charter version | Direct | `sui_getObject(charter_id)` → `version` |
-| Active proposal count | Discovery + Computed | Query `ProposalCreated` events → batch-fetch proposal objects → count where status = Active/Passed |
-| Active proposals list | Discovery + Batch | Same as above, return first N |
-| SubDAO list (compact) | Dynamic + Batch | Query parent's CapabilityVault for `SubDAOControl` dynamic object fields → `sui_multiGetObjects` on child DAO IDs |
-| Recent activity | Discovery | `suix_queryEvents(MoveModule: {package, module: "dao"}, descending: true, limit: 10)` |
+| DAO object (status, `execution_paused`, `controller_paused`, `controller_cap_id`, companion IDs) | Direct | `sui_getObject(dao_id)` |
+| Board member count | Direct | `dao.governance.member_count` |
+| Name and metadata URI | Direct | `sui_getObject(charter_id)` → `name`, `metadata_uri` |
+| Treasury total balance | Dynamic | `coin_types` from the TreasuryVault, then each coin type's `Balance<T>` field |
+| Open proposals (Active / Passed) | Indexed, or Discovery + Batch | `ProposalCreated` events for the DAO → `multiGetObjects`; IDs that no longer exist were executed or expired (or never had an object) |
+| SubDAO list (compact) | Direct + Batch | Parent vault's `ids_by_type` for `SubDAOControl` → read each control's `subdao_id` → `multiGetObjects` |
+| Recent activity | Indexed | Event feed for the DAO |
 
 ### Treasury
 
 | Data | Pattern | Query |
 |------|---------|-------|
-| Coin types | Direct | `sui_getObject(treasury_id)` → `coin_types` VecSet |
-| Balance per type | Dynamic | For each type: `suix_getDynamicFieldObject(treasury_id, {type: "TypeName", value: T})` |
-| Unclaimed coins | Dynamic | `suix_getDynamicFields(treasury_id)` — coins not yet consolidated |
-| Wallet balances | Direct | `suix_getOwnedObjects(wallet, {StructType: "0x2::coin::Coin<T>"})` per type |
-| Transaction history | Discovery | `suix_queryEvents` filtered by `CoinClaimed` + treasury-related `ProposalExecuted` events |
+| Coin types | Direct | `sui_getObject(treasury_id)` → `coin_types` (type-name strings) |
+| Balance per type | Dynamic | `suix_getDynamicFieldObject(treasury_id, { type: "0x1::ascii::String", value: <coin type name> })` |
+| Multicoin balances | Dynamic | `CollectionKey { collection_id }` fields on the vault → `AssetKey { asset_id }` fields on each `CollectionRecord` |
+| Claimable coins | Direct | `suix_getOwnedObjects(treasury_id, …)`: coin objects transferred to the vault's address and not yet claimed |
+| Transaction history | Indexed | `CoinDeposited`, `CoinWithdrawn`, `CoinClaimed`, `MultiCoin*`, and the treasury handlers' events (`CoinSent`, `CoinSentToDAO`, `SmallPaymentSent`, …) |
 
 ### Capability Vault
 
 | Data | Pattern | Query |
 |------|---------|-------|
-| Cap types | Direct | `sui_getObject(cap_vault_id)` → `cap_types` VecSet |
-| Cap IDs per type | Dynamic | `suix_getDynamicFields(cap_vault_id)` to list stored caps |
+| Cap types and IDs per type | Direct | `sui_getObject(cap_vault_id)` → `cap_types`, `ids_by_type` |
 | Cap object details | Batch | `sui_multiGetObjects(cap_ids)` |
-| SubDAOControl objects | Dynamic + Batch | Filter caps by type = `SubDAOControl`, read each → `child_dao_id` |
+| SubDAOControl objects | Direct + Batch | `ids_by_type` entry for `SubDAOControl` → read each → `subdao_id` |
+| Bypass opt-ins | Direct | `ids_by_type` entries for `ExternalExecutionCap<P>`; history from `BypassEnabled` / `BypassDisabled` |
 
 ### Proposals List
 
 | Data | Pattern | Query |
 |------|---------|-------|
-| All proposal IDs | Discovery | `suix_queryEvents({MoveEventType: "ProposalCreated"}, ...)` filtered by `dao_id` field |
-| Proposal objects | Batch | `sui_multiGetObjects(proposal_ids)` — extract status, votes, type, creator |
-| Filter/sort | Computed | Client-side filter by status/type, sort by created/votes/expiry |
+| All proposals, any path, any status | Indexed | `ProposalCreated` joined with `ProposalPassed`, `ProposalExecuted`, `ProposalExpired`, `ExternalExecutionCreated`, `CompositeSubmitted` |
+| Live tallies of open proposals | Batch | `sui_multiGetObjects(open_proposal_ids)` → `yes_weight`, `no_weight`, `status` |
+| Filter/sort | Computed | Client-side filter by status/type/path, sort by created/votes/expiry |
+
+Status for display: `Active` / `Passed` from the object; **Executed** if a `ProposalExecuted` exists for the ID; **Expired** if a `ProposalExpired` exists, or if the object is still live but past its deadline (anyone may delete it). An Active proposal whose voting deadline has passed can no longer be voted on.
 
 ### Proposal Detail
 
 | Data | Pattern | Query |
 |------|---------|-------|
-| Proposal object | Direct | `sui_getObject(proposal_id)` — payload, vote_snapshot, status, timestamps |
-| ProposalConfig | Direct | Already in DAO object → `proposal_configs` table |
-| Freeze status | Direct | `sui_getObject(freeze_id)` → check `frozen_types` for this proposal's type |
-| Pause status | Direct | Already in DAO object → `controller_paused` |
-| Board members (for quorum calc) | Direct | Already in DAO object → `governance.members` |
-| Vote eligibility | Computed | Check wallet in members, not in vote_snapshot |
-| Execute eligibility | Computed | Check: status=Passed, delay elapsed, not frozen, not paused, wallet in members |
-| Timers | Computed | `passed_at_ms + delay`, `created_at_ms + expiry_ms`, freeze expiry — all client-side countdown |
+| Open proposal | Direct | `sui_getObject(proposal_id)` — payload, `snapshot_version`, `total_snapshot_weight`, `votes_cast`, `config`, timestamps, `status` |
+| Closed or single-PTB proposal | Indexed | Its events: `ProposalCreated`, `ProposalPayloadCreated` (BCS payload, decoded by type), `VoteCast`, `ProposalPassed`, `ProposalExecuted` / `ProposalExpired` |
+| Config | Direct | The proposal's own `config` (snapshot at creation). The slot's current config comes from the DAO's `TypeSlot` field; its bits apply at execution |
+| Freeze status | Direct | `sui_getObject(freeze_id)` → `frozen_types` entry for the payload's full type name, compared with the clock |
+| Pause status | Direct | DAO object → `execution_paused`, `controller_paused` |
+| Vote eligibility | Dynamic + Computed | Wallet's roster entry (`suix_getDynamicFieldObject(members_table_id, wallet)`) → member at `snapshot_version`? not already in `votes_cast`? before `created_at_ms + expiry_ms`? |
+| Execute eligibility | Computed | `status == Passed`, delay elapsed, window open (`passed_at_ms + execution_delay_ms + expiry_ms`), not frozen, not paused, cooldown elapsed, wallet a current member |
+| Timers | Computed | Voting deadline, execution-delay end, execution-window end, freeze expiry — all client-side countdowns |
 
 ### Board Members
 
 | Data | Pattern | Query |
 |------|---------|-------|
-| Members + seat count | Direct | `sui_getObject(dao_id)` → `governance.members`, `governance.seat_count` |
+| Current members | Indexed, or Dynamic | Indexer applies the membership events (see [`docs/indexing_board_events.md`](../docs/indexing_board_events.md)); or enumerate the members table's fields and keep entries whose last tenure is open |
+| Member count, roster version | Direct | `dao.governance.member_count`, `roster_version` |
 
 ### Charter
 
 | Data | Pattern | Query |
 |------|---------|-------|
-| Charter metadata | Direct | `sui_getObject(charter_id)` → blob_id, content_hash, version, amendment_history |
-| Charter content | External | Walrus HTTP fetch by `current_blob_id` |
-| Integrity check | Computed | `SHA-256(fetched_content) === charter.content_hash` — computed in browser (Web Crypto API) |
-| Historical versions | External | Walrus fetch for `previous_blob_id` / `new_blob_id` from amendment records |
+| Name and metadata URI | Direct | `sui_getObject(charter_id)` → `name`, `metadata_uri` |
+| Metadata document | External | Fetch the document at `metadata_uri` (IPFS gateway); the CID is content-addressed |
+| History | Indexed | `MetadataUpdated { dao_id, new_ipfs_cid }` events |
 
 ### Governance Config
 
 | Data | Pattern | Query |
 |------|---------|-------|
-| Enabled types + configs | Direct | `sui_getObject(dao_id)` → `enabled_proposals`, `proposal_configs` |
-| Protected types | Computed | Hardcoded set: EnableProposalType, DisableProposalType, TransferFreezeAdmin, UnfreezeProposalType |
+| Enabled types + configs (incl. `permissions` and `borrow_scope`) | Indexed, or Dynamic | `TypeSlotAdded` / `TypeSlotConfigUpdated` / `TypeSlotRemoved` carry the full config; or enumerate the DAO's `TypeSlot` fields → `ProposalType { display_key, config, last_executed_ms }` |
+| Protected types | Computed | Undisableable: EnableProposalType, DisableProposalType, EnableBypassType, DisableBypassType, TransferFreezeAdmin, UnfreezeProposalType. SubDAO-blocked: SpawnDAO, SpinOutSubDAO, CreateSubDAO, EnableBypassType, DisableBypassType. Framework types have fixed bits |
 
 ### Emergency Freeze
 
 | Data | Pattern | Query |
 |------|---------|-------|
-| Frozen types + expiries | Direct | `sui_getObject(freeze_id)` → `frozen_types` map |
-| FreezeAdminCap holder | Discovery | `suix_getOwnedObjects` across known addresses, or derive from events |
-| Expiry countdowns | Computed | Client-side timer from `freeze_expiry_ms` |
+| Frozen types + expiries, exempt set, max duration | Direct | `sui_getObject(freeze_id)` → `frozen_types` (type name → expiry), `freeze_exempt_types`, `max_freeze_duration_ms` |
+| FreezeAdminCap holder | Indexed + Direct | For a top-level DAO, the creator (`DAOCreated.creator`), then each `FreezeAdminTransferred.new_admin`; confirm with `suix_getOwnedObjects(address, FreezeAdminCap filter)` matched on `dao_id`. Tribe and wired SubDAOs send it to an address named at creation (not in any event; find it in the creating transaction's effects). SubDAOs created by `CreateSubDAO` hold it in the parent's vault |
+| Expiry countdowns | Computed | Client-side timer from each entry's expiry |
 
 ### SubDAO List
 
 | Data | Pattern | Query |
 |------|---------|-------|
-| SubDAOControl objects | Dynamic | Query parent's CapabilityVault for `SubDAOControl` type caps |
-| Child DAO objects | Batch | `sui_multiGetObjects(child_dao_ids)` |
+| SubDAOControl objects | Direct | Parent vault's `ids_by_type` for `SubDAOControl` |
+| Child DAO objects | Batch | `sui_multiGetObjects(subdao_ids)` |
 | Child treasury balances | Dynamic (per child) | Same pattern as Treasury page, for each child |
-| Child board + pause | Direct (per child) | Extracted from child DAO objects already fetched |
+| Child board + pause | Direct (per child) | `member_count`, `controller_paused` from the child DAO objects |
 
 ---
 
 ## Event Polling
 
-WebSocket subscriptions (`suix_subscribeEvent`) are deprecated. We use **polling** instead.
+WebSocket subscriptions (`suix_subscribeEvent`) are deprecated. Without the indexer's push channel, the UI polls.
 
 ### Implementation
 
 ```
 Poll loop (React Query `refetchInterval`):
   1. suix_queryEvents({MoveModule: {package, module}}, cursor=lastSeen, limit=50, descending=false)
+     for each framework and extension package
   2. For each new event:
      - Match event type → invalidate relevant React Query cache keys
      - Update lastSeen cursor
@@ -158,17 +173,23 @@ Poll loop (React Query `refetchInterval`):
 
 | Event | Invalidate |
 |-------|-----------|
-| `ProposalCreated` | proposals list, dashboard active count |
+| `ProposalCreated` / `ProposalPayloadCreated` | proposals list, dashboard counts |
 | `VoteCast` | proposal detail (specific ID), proposals list (vote bars) |
 | `ProposalPassed` | proposal detail, proposals list |
-| `ProposalExecuted` | proposal detail, proposals list, dashboard, treasury (if SendCoin), cap vault (if TransferCap), board (if SetBoard) |
-| `ProposalExpired` | proposal detail, proposals list |
-| `SubDAOCreated` | SubDAO list, dashboard |
-| `SubDAOSpunOut` | SubDAO list |
-| `CharterAmended` | charter page |
-| `CoinClaimed` | treasury balances |
-| `TypeFrozen` / `TypeUnfrozen` | emergency page, proposal detail (execution eligibility) |
-| `CapabilityTransferred` / `CapabilityReclaimed` | cap vault (both parent and child) |
+| `ProposalExecuted` | proposal detail (drop the object; it no longer exists), proposals list, dashboard, and the resources the payload type touches (treasury, vault, board, registry, freeze) |
+| `ProposalExpired` | proposal detail (object deleted), proposals list |
+| `ExternalExecutionCreated` | proposals list (bypass execution) |
+| `CompositeSubmitted` | proposals list (joins the frame to its proposal) |
+| `TypeSlotAdded` / `TypeSlotConfigUpdated` / `TypeSlotRemoved` | governance config, proposal forms |
+| `BypassEnabled` / `BypassDisabled` | governance config, cap vault |
+| `DAOBoardInitialized`, `BoardUpdated`, `MemberAdded`, `MemberRemoved`, `MembersBatchAdded`, `MembersBatchRemoved`, `MemberAutojoined`, `ControllerMembersBatchAdded/Removed` (keyed by `subdao_id`) | board, dashboard |
+| `SubDAOCreated` / `SubDAOSpunOut` | SubDAO list, dashboard, cap vault |
+| `SuccessorDAOSpawned` / `AssetsTransferInitiated` / `DAODestroyed` | dashboard (status), treasury, cap vault |
+| `MetadataUpdated` | charter page, dashboard |
+| `CoinDeposited` / `CoinWithdrawn` / `CoinClaimed` / `MultiCoinDeposited` / `MultiCoinWithdrawn` | treasury balances |
+| `TypeFrozen` / `TypeUnfrozen` / `FreezeExemptTypeAdded` / `FreezeExemptTypeRemoved` / `FreezeAdminTransferred` / `FreezeConfigUpdated` | emergency page, proposal detail (execution eligibility) |
+| `CapTransferredToSubDAO` / `CapReclaimedFromSubDAO` | cap vault (both parent and child) |
+| `SubDAOExecutionPaused` / `SubDAOExecutionUnpaused` | SubDAO list, child dashboard |
 
 ### Polling Intervals
 
@@ -187,14 +208,16 @@ Poll loop (React Query `refetchInterval`):
 
 ```
 ["dao", dao_id]                        — DAO object
+["registry", dao_id]                   — enabled types and configs
+["roster", dao_id]                     — current board members
 ["treasury", treasury_id]             — TreasuryVault object
 ["treasury-balance", treasury_id, T]  — Balance for coin type T
 ["cap-vault", cap_vault_id]           — CapabilityVault object
-["charter", charter_id]               — Charter object (on-chain metadata)
-["charter-content", blob_id]          — Charter content (from Walrus)
+["charter", charter_id]               — Charter object (name, metadata_uri)
+["charter-content", metadata_uri]     — Metadata document (content-addressed)
 ["freeze", freeze_id]                 — EmergencyFreeze object
-["proposals", dao_id]                 — Proposal ID list (from events)
-["proposal", proposal_id]             — Single proposal object
+["proposals", dao_id]                 — Proposal list (from events / indexer)
+["proposal", proposal_id]             — Single open proposal object, or its event record
 ["subdaos", dao_id]                   — SubDAO list for a parent
 ["events", dao_id, cursor]            — Event polling state
 ```
@@ -203,11 +226,12 @@ Poll loop (React Query `refetchInterval`):
 
 | Data | `staleTime` | `cacheTime` | Rationale |
 |------|-------------|-------------|-----------|
-| DAO object | 10s | 5min | Governance config changes rarely, but pause/status can change |
+| DAO object | 10s | 5min | Flags and status can change |
+| Registry | 30s | 5min | Type changes need an 80% vote |
 | Proposal object | 3s | 5min | Votes update frequently during active voting |
 | Treasury balance | 10s | 5min | Changes on deposit/withdraw |
-| Charter content (Walrus) | 1hr | 24hr | Content doesn't change until amendment |
-| Charter metadata | 30s | 5min | Version/blob_id change on amendment |
+| Metadata document | 1hr | 24hr | Content-addressed; changes only via `UpdateMetadata` (new URI) |
+| Charter object | 30s | 5min | `metadata_uri` changes on `UpdateMetadata` |
 | EmergencyFreeze | 5s | 5min | Freeze/unfreeze can happen any time |
 | SubDAO list | 30s | 5min | Creation/spinout are infrequent |
 
@@ -215,61 +239,58 @@ Poll loop (React Query `refetchInterval`):
 
 | Action | Optimistic Mutation |
 |--------|-------------------|
-| Cast vote | Add vote to `vote_snapshot`, increment `yes_weight` or `no_weight` |
+| Cast vote | Add the wallet to `votes_cast`, increment `yes_weight` or `no_weight` |
 | Deposit to treasury | Increment displayed balance |
 
-Rollback on transaction failure. All other actions wait for confirmation before updating cache.
+Rollback on transaction failure. All other actions wait for confirmation before updating cache. An executed proposal is removed from the open list only on confirmation, since a handler abort reverts the deletion.
 
 ---
 
 ## Request Budget Analysis
 
-Worst-case page load request counts (assuming cold cache):
+Worst-case page load request counts in direct-RPC mode (assuming cold cache):
 
 | Page | RPC Calls | Breakdown |
 |------|-----------|-----------|
-| Dashboard | 5–10 | 1 DAO + 1 treasury + N coin balances + 1 event query + M SubDAO reads |
-| Treasury | 3–8 | 1 treasury + N balance reads + 1 event query |
-| Cap Vault | 3–10 | 1 vault + 1 dynamic fields + M cap reads |
-| Proposals List | 2–4 | 1 event query + 1 multiGetObjects batch |
-| Proposal Detail | 3 | 1 proposal + 1 DAO (configs) + 1 freeze |
-| Board | 1 | 1 DAO |
-| Charter | 2 + Walrus | 1 charter + 1 Walrus fetch |
-| Gov Config | 1 | 1 DAO |
+| Dashboard | 5–10 | 1 DAO + 1 charter + 1 treasury + N coin balances + 1 event query + M SubDAO reads |
+| Treasury | 3–8 | 1 treasury + N balance reads + 1 owned-objects query + 1 event query |
+| Cap Vault | 2–10 | 1 vault + M cap reads |
+| Proposals List | 2–4 | 1–2 event queries + 1 multiGetObjects batch |
+| Proposal Detail | 4 | 1 proposal (or events) + 1 DAO + 1 freeze + 1 roster entry |
+| Board | 1–3 | members-table field pages, or 1 indexer query |
+| Charter | 1 + External | 1 charter + 1 document fetch |
+| Gov Config | 1–3 | DAO dynamic-field pages, or 1 indexer query |
 | Emergency | 2 | 1 freeze + 1 owned-objects query |
-| SubDAO List | 2–6 | 1 vault dynamic fields + M child DAO reads |
+| SubDAO List | 2–6 | 1 vault + M control reads + M child DAO reads |
 
-**Total for full navigation**: ~25–50 RPC calls. Well within the 100 req/30s public rate limit for a single-user demo. With React Query caching, repeat visits hit cache — real load is ~5–10 calls/page after warmup.
+With the indexer, history, lists, rosters and registries are one query each.
 
 ---
 
-## Hackathon Scope vs Stretch
+## Scope
 
-### Hackathon Scope (Ship This)
+### Implemented Architecture
 
 | Component | Approach |
 |-----------|----------|
-| **Object reads** | `SuiClient` from `@mysten/sui` — `getObject`, `multiGetObjects` |
-| **Dynamic fields** | `getDynamicFields`, `getDynamicFieldObject` for treasury balances, cap vault contents |
-| **Event discovery** | `queryEvents` with `MoveEventType` filter for proposals, SubDAOs, history |
-| **Real-time updates** | Polling `queryEvents` every 3–5s with cursor tracking |
+| **Indexer** | `armature-indexer` (Rust, separate repo) ingests framework and extension events into PostgreSQL. Executed/expired status, single-PTB executions, rosters and registry history come from events |
+| **Object reads** | `SuiClient` from `@mysten/sui` — `getObject`, `multiGetObjects` for live state |
+| **Dynamic fields** | Type slots, roster entries, treasury balances, vault caps |
+| **Real-time updates** | Event polling with cursor tracking where the indexer does not push |
 | **Caching** | React Query with per-key stale times, event-driven invalidation |
-| **Computation** | Vote tallies, eligibility checks, countdowns — all client-side from fetched objects |
-| **Charter content** | Direct Walrus HTTP fetch + browser-side SHA-256 verification |
-| **SubDAO hierarchy** | One level deep — query parent's vault for SubDAOControls, batch-fetch children |
+| **Computation** | Eligibility checks, countdowns — client-side |
+| **Metadata document** | Fetched from `metadata_uri` |
 | **Wallet integration** | `@mysten/dapp-kit` for connected wallet, owned object queries |
 
-### Stretch Goals (If Time Permits)
+### Options Not Taken Yet
 
-| Component | What It Adds | Why Stretch |
-|-----------|-------------|-------------|
-| **Sui GraphQL API** | Replace multi-call sequences with single GraphQL queries (e.g., fetch DAO + treasury + proposals in one request). Consistent checkpoint-based reads. | Beta API; JSON-RPC works fine for demo; adds SDK dependency (`SuiGraphQLClient`) |
-| **Multi-level SubDAO tree** | Recursive hierarchy traversal beyond one level. Full DAG visualization. | Unbounded recursion, many RPC calls for deep trees. Hackathon DAOs will be 1–2 levels deep. |
-| **Cross-DAO proposal aggregation** | "All proposals across all my DAOs" unified view. | Requires querying events across all DAOs the user belongs to, then deduplicating. Not needed for single-DAO demo flow. |
-| **Treasury aggregate across hierarchy** | Sum parent + all SubDAO treasury balances. | N+1 queries per level of depth. Nice dashboard metric but not in demo script. |
-| **Persistent event cache** | IndexedDB or localStorage cache of seen events to avoid re-querying on page reload. | Saves RPC calls but adds complexity. React Query's in-memory cache is sufficient for a demo session. |
-| **Third-party RPC provider** | Higher rate limits (QuickNode, Shinami, BlockEden). | Only needed if public rate limit becomes a bottleneck during demo; unlikely for single user. |
-| **Custom indexer** | Derived tables for proposal history, voting analytics, participation metrics. | Full backend service (Rust `sui-indexer-alt-framework` or TypeScript Subsquid). Only justified for multi-user production. |
+| Component | What It Adds |
+|-----------|-------------|
+| **Sui GraphQL API** | Replace multi-call sequences with single queries; checkpoint-consistent reads |
+| **Multi-level SubDAO tree** | Recursive hierarchy traversal and full DAG visualization |
+| **Cross-DAO proposal aggregation** | "All proposals across all my DAOs" view |
+| **Treasury aggregate across hierarchy** | Sum parent + all SubDAO treasury balances |
+| **Third-party RPC provider** | Higher rate limits than the public fullnode |
 
 ---
 
@@ -283,72 +304,62 @@ Worst-case page load request counts (assuming cold cache):
 │  │  Page         │   │  React Query │   │  Event       │ │
 │  │  Components   │◄──│  Cache       │◄──│  Poller      │ │
 │  │              │   │              │   │  (3-5s)      │ │
-│  └──────────────┘   └──────┬───────┘   └──────┬───────┘ │
-│                            │                   │         │
-└────────────────────────────┼───────────────────┼─────────┘
-                             │                   │
-                    ┌────────▼───────────────────▼────────┐
-                    │         SuiClient (JSON-RPC)        │
-                    │                                      │
-                    │  getObject / multiGetObjects         │
-                    │  getDynamicFields / getDynamicField   │
-                    │  queryEvents (cursor-based)           │
-                    │  getOwnedObjects                     │
-                    └────────────────┬─────────────────────┘
-                                     │
-                    ┌────────────────▼─────────────────────┐
-                    │      Sui Fullnode (Public RPC)        │
-                    │      testnet / devnet / localnet      │
-                    └──────────────────────────────────────┘
+│  └──────────────┘   └──┬────────┬──┘   └──────┬───────┘ │
+│                        │        │              │         │
+└────────────────────────┼────────┼──────────────┼─────────┘
+                         │        │              │
+        ┌────────────────▼──┐  ┌──▼──────────────▼───────────┐
+        │  armature-indexer  │  │   SuiClient (JSON-RPC)      │
+        │  API / PostgreSQL  │  │   getObject / multiGet      │
+        │  (history, lists,  │  │   getDynamicField(s)        │
+        │   rosters, registry)│  │   queryEvents / getOwned    │
+        └────────▲───────────┘  └──────────────┬──────────────┘
+                 │ events                       │
+        ┌────────┴──────────────────────────────▼──────────────┐
+        │              Sui Fullnode / checkpoints               │
+        └───────────────────────────────────────────────────────┘
 
-                    ┌──────────────────────────────────────┐
-                    │      Walrus (Charter Content)         │
-                    │      HTTP fetch by blob ID            │
-                    └──────────────────────────────────────┘
+        ┌──────────────────────────────────────┐
+        │  Metadata documents (IPFS gateway)    │
+        └──────────────────────────────────────┘
 ```
 
 ### Request Flow for Key Operations
 
 **Load Proposal Detail:**
 ```
-1. getObject(proposal_id)          → proposal object (payload, votes, status)
-2. getObject(dao_id)               → governance.members (quorum calc), proposal_configs
-3. getObject(freeze_id)            → check if proposal type is frozen
-   ── all 3 in parallel ──
-4. Client computes: vote bars, eligibility, timers
+1. getObject(proposal_id)          → open proposal (payload, votes, status, snapshot_version)
+   └─ not found → load its events (indexer): executed, expired, or single-PTB
+2. getObject(dao_id)               → pause flags, members table ID
+3. getObject(freeze_id)            → is the payload's type frozen?
+4. getDynamicFieldObject(members_table_id, wallet) → tenures (vote eligibility)
+   ── all in parallel ──
+5. Client computes: vote bars, eligibility, timers
 ```
 
 **Load Dashboard:**
 ```
-1. getObject(dao_id)               → status, metadata, governance, companion IDs
+1. getObject(dao_id)               → status, flags, member_count, companion IDs
    ── then in parallel ──
 2a. getObject(treasury_id)         → coin_types
-2b. getObject(charter_id)          → version
-2c. queryEvents(ProposalCreated)   → proposal IDs
-2d. getDynamicFields(cap_vault_id) → SubDAOControl objects
+2b. getObject(charter_id)          → name, metadata_uri
+2c. open proposals (indexer, or ProposalCreated events + multiGet)
+2d. getObject(cap_vault_id)        → SubDAOControl IDs
    ── then ──
-3a. multiGetObjects(proposal_ids)  → active proposals with status
-3b. multiGetObjects(subdao_ids)    → SubDAO summaries
-3c. getDynamicFieldObject × N      → treasury balances per coin type
-```
-
-**Poll for Updates:**
-```
-Every 3-5s:
-  queryEvents(package, cursor=last, limit=50, descending=false)
-  → new events? → invalidate affected React Query keys → components re-render
+3a. multiGetObjects(subdao_ids)    → SubDAO summaries
+3b. getDynamicFieldObject × N      → treasury balances per coin type
 ```
 
 ---
 
-## Known Limitations (Hackathon Accepted)
+## Known Limitations (Direct-RPC Mode)
 
 | Limitation | Impact | Mitigation |
 |-----------|--------|-----------|
-| No real-time push (WebSocket deprecated) | 3–5s delay before UI reflects on-chain changes | Optimistic updates for votes/deposits; polling is fast enough for demo |
-| Public RPC rate limit (100 req/30s) | Could hit limit if navigating rapidly across many DAOs | React Query deduplication + stale times prevent redundant calls; single-user demo won't hit this |
-| No cross-DAO aggregation | Can't show "all my DAOs" dashboard efficiently | User selects a DAO first; per-DAO views are efficient |
-| Event cursor not persisted | On page reload, must re-query recent events | In-flight polling quickly catches up; React Query cache survives soft navigation |
-| Dynamic field enumeration is O(N) | Large treasuries (many coin types) or vaults (many caps) require many reads | Hackathon DAOs will have < 10 coin types and < 20 caps; batch reads handle this fine |
+| Executed and expired proposals are deleted | Their details exist only in events | Decode `ProposalPayloadCreated.payload_bcs`; use the indexer |
+| Single-PTB executions have no object | Invisible to object reads | Query `ProposalCreated` / `ProposalExecuted` / `ExternalExecutionCreated` events |
+| Roster table enumeration includes former members | Must filter on open tenures; O(all members ever) | Use the indexer's roster |
+| Type slots share the DAO's dynamic fields with display-key index and type-state fields | Must filter on the `TypeSlot` key type | Use `TypeSlot*` events or the indexer |
+| No real-time push (WebSocket deprecated) | 3–5s delay before UI reflects on-chain changes | Optimistic updates for votes/deposits |
+| Public RPC rate limit | Could hit limit when navigating across many DAOs | React Query deduplication + stale times; indexer queries |
 | No historical state queries | Can't show "treasury balance at time of proposal creation" | Show current balance with note: "Balance may have changed since proposal was created" |
-| FreezeAdminCap discovery is imprecise | Must search owned objects to find who holds it | For demo, the cap holder is known; query their owned objects with StructType filter |
