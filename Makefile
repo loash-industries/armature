@@ -10,6 +10,7 @@ WORLD_REF   = main
 .PHONY: dev dev-up dev-down dev-reset dev-logs dev-ps \
         dev-deps \
         deploy-world deploy-armature \
+        coverage \
         clean help
 
 # ── Full-Stack Dev Environment ────────────────────────────────────────────────
@@ -71,6 +72,12 @@ deploy-world:
 ## Re-run armature deployment only
 deploy-armature:
 	$(COMPOSE_DEV) up armature-deploy
+
+# ── Tests ─────────────────────────────────────────────────────────────────────
+
+## Move test coverage for armature_framework + armature_proposals (report in coverage/)
+coverage:
+	python3 scripts/move_coverage.py $(ARGS)
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
 

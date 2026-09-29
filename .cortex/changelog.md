@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-29 — Move coverage harness; tests for uncovered freeze-admin and disable paths
+
+- Added `scripts/move_coverage.py` (`make coverage`): runs both packages' tests with `--coverage --trace` in a scratch copy of `packages/` and reports per-file line, function, branch and bytecode coverage, from each package's own tests and combined (proposals tests drive most framework `handlers/` and `types/`). Writes LCOV and `summary.json` to `coverage/` (gitignored); `--min` fails below a combined line threshold. Needs a Sui CLI built with the `tracing` feature (suiup release builds have it).
+- Filled the two gaps it found that no test covered. `freeze_ops_tests`: `TransferFreezeAdmin` executes while types are frozen, unfreezes every frozen type and hands the `FreezeAdminCap` to the new admin, who can freeze with it; a cap or `EmergencyFreeze` from another OU aborts (`ECapOuMismatch` / `EFreezeOuMismatch`). `admin_ops_tests`: `DisableProposalType` success path removes the target type's slot and display key. No source changes.
+
 ## 2026-09-29 — registry invariants enforced in `ou` for every caller (ARMATURE-19)
 
 - `ou::disable_proposal_type` now refuses the undisableable types (`EnableProposalType`, `DisableProposalType`, `EnableBypassType`, `DisableBypassType`, `TransferFreezeAdmin`, `UnfreezeProposalType`) with the new `ou::EUndisableableType` (28), and `ou::enable_proposal_type` refuses SubOU-blocked types on an OU with a controller with the existing `ou::EBlockedProposalType` (11). Before, only the `admin_ops` and `external_execution` handlers checked these rules, so a non-framework type granted `TYPE_ADMIN` or a controller's privileged request could call `ou` directly to disable governance meta-types or enable `SpawnOU` / `CreateSubOU` on a controlled SubOU. The handlers still check first, so their abort codes are unchanged; `SpinOutSubOU` clears the controller before enabling the hierarchy types, so it is unaffected.

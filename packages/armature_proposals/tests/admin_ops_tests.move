@@ -351,6 +351,72 @@ fun disable_core_type_unfreeze_proposal_type_aborts() {
     scenario.end();
 }
 
+// --- DisableProposalType removes a disableable type ---
+
+#[test]
+/// E2E: DisableProposalType on a disableable type (AddMember) removes its
+/// slot and its display key; other types stay enabled.
+fun disable_proposal_type_removes_type() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+
+    create_ou(&mut scenario);
+
+    scenario.next_tx(CREATOR);
+    {
+        let ou = scenario.take_shared<OU>();
+        assert!(ou.is_type_enabled<AddMember>());
+        clock.set_for_testing(1000);
+        let payload = disable_proposal_type::new(b"AddMember".to_ascii_string());
+        board_voting::submit_proposal(
+            &ou,
+            option::some(string::utf8(b"Disable AddMember")),
+            payload,
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(ou);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut proposal = scenario.take_shared<Proposal<DisableProposalType>>();
+        clock.set_for_testing(2000);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
+        test_scenario::return_shared(proposal);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut ou = scenario.take_shared<OU>();
+        let proposal = scenario.take_shared<Proposal<DisableProposalType>>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        clock.set_for_testing(3000);
+
+        let ticket = board_voting::ticket_from_vote(
+            &mut ou,
+            proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        admin_ops::execute_disable_proposal_type(&mut ou, ticket);
+
+        assert!(!ou.is_type_enabled<AddMember>());
+        assert!(ou.type_for_display_key(&b"AddMember".to_ascii_string()).is_none());
+        assert!(ou.is_type_enabled<SetBoard>());
+        assert!(ou.is_type_enabled<DisableProposalType>());
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(ou);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
 // --- EnableProposalType 80% approval floor ---
 
 const MEMBER_B: address = @0xB;
