@@ -4,7 +4,7 @@
 
 - Replaced the DAO terminology with OU across the Move packages, scripts and docs: module `armature::dao` is now `armature::ou`, `DAO` is `OU`, `DAOCreated` is `OUCreated`, and `SubDAO*` types, functions and error constants are `SubOU*`; the top-level OU is called the "org". Test-only top-level names use `org` (`org_id`, `cannot_deposit_into_org_vault`).
 - Breaking and not upgrade-compatible (module rename): a fresh deploy is required, and `armature-indexer` must match the new module and event names. Deploy scripts now call `::ou::create` and match `::ou::OUCreated`. No behaviour change.
-- Docs follow everywhere, including `specs/stretch/*`, `whitepaper/releases/` and the earlier entries in this changelog, which now use the new names; `specs/04_subdao_hierarchy.md` is now `specs/04_subou_hierarchy.md`. The text inside the `OU Primitive.pdf` figure still says DAO.
+- Docs follow, including `specs/stretch/*` and the earlier entries in this changelog, which now use the new names; `specs/04_subdao_hierarchy.md` is now `specs/04_subou_hierarchy.md`. The whitepaper (`whitepaper/`) is left unchanged and still says DAO.
 
 ## 2026-09-27 — remove dead proposal_id check from discharge (ARMATURE-42)
 
