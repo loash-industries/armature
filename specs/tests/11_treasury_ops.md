@@ -7,18 +7,18 @@
 | Type | Handler | Event |
 |------|---------|-------|
 | `SendCoin<T> { recipient, amount }` | `execute_send_coin<T>(vault, ticket, ctx)` | `CoinSent` |
-| `SendCoinToDAO<T> { recipient_treasury, amount }` | `execute_send_coin_to_dao<T>(source_vault, target_vault, ticket, ctx)` | `CoinSentToDAO` |
-| `SendSmallPayment<T> { recipient, amount }` | `execute_send_small_payment<T>(dao, vault, ticket, clock, ctx)` | `SmallPaymentSent` |
+| `SendCoinToOU<T> { recipient_treasury, amount }` | `execute_send_coin_to_ou<T>(source_vault, target_vault, ticket, ctx)` | `CoinSentToOU` |
+| `SendSmallPayment<T> { recipient, amount }` | `execute_send_small_payment<T>(ou, vault, ticket, clock, ctx)` | `SmallPaymentSent` |
 | `SendBatchMulticoinToAddress { recipient, items }` | `execute_send_batch_multicoin_to_player(vault, ticket, ctx)` | `BatchMulticoinSentToAddress` |
-| `SendBatchMulticoinToDAO { recipient_treasury, items }` | `execute_send_batch_multicoin_to_dao(source_vault, target_vault, ticket, ctx)` | `BatchMulticoinSentToDAO` |
+| `SendBatchMulticoinToOU { recipient_treasury, items }` | `execute_send_batch_multicoin_to_ou(source_vault, target_vault, ticket, ctx)` | `BatchMulticoinSentToOU` |
 
-None is a default type. Each needs `TREASURY_WITHDRAW` (`type_permissions::treasury_spend()`), so every config enabling it must have `approval_threshold >= 8000` (`dao::permission_floor`); a type enabled without the bit aborts `proposal::EPermissionDenied` when its handler withdraws. Generic types get one slot per instantiation: `SendCoin<SUI>` and `SendCoin<USDC>` are enabled, configured and frozen separately.
+None is a default type. Each needs `TREASURY_WITHDRAW` (`type_permissions::treasury_spend()`), so every config enabling it must have `approval_threshold >= 8000` (`ou::permission_floor`); a type enabled without the bit aborts `proposal::EPermissionDenied` when its handler withdraws. Generic types get one slot per instantiation: `SendCoin<SUI>` and `SendCoin<USDC>` are enabled, configured and frozen separately.
 
-Every handler checks that the source vault belongs to the ticket's DAO (`treasury_ops::EVaultDAOMismatch`); the DAO-to-DAO handlers also check that the target vault is the payload's `recipient_treasury` (`treasury_ops::ETargetVaultMismatch`). Withdrawals go through `treasury_vault::withdraw` / `withdraw_multicoin`, which check the vault's DAO (`treasury_vault::EDAOIdMismatch`), the bit and the balance (`treasury_vault::EInsufficientBalance`), and emit `CoinWithdrawn` / `MultiCoinWithdrawn`. Deposits into a target vault are permissionless.
+Every handler checks that the source vault belongs to the ticket's OU (`treasury_ops::EVaultOUMismatch`); the OU-to-OU handlers also check that the target vault is the payload's `recipient_treasury` (`treasury_ops::ETargetVaultMismatch`). Withdrawals go through `treasury_vault::withdraw` / `withdraw_multicoin`, which check the vault's OU (`treasury_vault::EOUIdMismatch`), the bit and the balance (`treasury_vault::EInsufficientBalance`), and emit `CoinWithdrawn` / `MultiCoinWithdrawn`. Deposits into a target vault are permissionless.
 
 `TREASURY_WITHDRAW` covers every coin at any amount; the amount is bounded by the handler (the payload's `amount`, and `SendSmallPayment`'s epoch cap). Only `treasury_ops` can spend these tickets (`Permit<P>`), so the recipient and amount always come from the approved payload.
 
-The real tests enable types with the `dao.test_enable_type` seam, which skips the vote and the floors; on a live DAO they are enabled by an 80% `EnableProposalType` vote or a creation-time `ProposalTypeInit`. Real suites: `packages/armature_proposals/tests/treasury_ops_tests.move` (9) and `batch_multicoin_ops_tests.move` (6). Currency types that mint into or burn from the treasury (`MintCoin`, `BurnCoin`, …) are in `currency_ops_tests.move` and listed in `17_coverage_summary.md`; the `TreasuryVault` module itself is in `05_treasury.md`.
+The real tests enable types with the `ou.test_enable_type` seam, which skips the vote and the floors; on a live OU they are enabled by an 80% `EnableProposalType` vote or a creation-time `ProposalTypeInit`. Real suites: `packages/armature_proposals/tests/treasury_ops_tests.move` (9) and `batch_multicoin_ops_tests.move` (6). Currency types that mint into or burn from the treasury (`MintCoin`, `BurnCoin`, …) are in `currency_ops_tests.move` and listed in `17_coverage_summary.md`; the `TreasuryVault` module itself is in `05_treasury.md`.
 
 ## Test Matrix
 
@@ -26,17 +26,17 @@ The real tests enable types with the `dao.test_enable_type` seam, which skips th
 |------|------|----------|
 | SendCoin | `send_coin_e2e` | Treasury 1,000,000 → 800,000; recipient receives a 200,000 coin |
 | SendCoin | `send_coin_insufficient_balance_aborts` | Balance 100, amount 500: Abort `treasury_vault::EInsufficientBalance` |
-| SendCoin | `lifecycle_tests::medium_enterprise_lifecycle` (step 10) | `SendCoin<USDC>` on a SubDAO pays 100,000; generic coin type works |
+| SendCoin | `lifecycle_tests::medium_enterprise_lifecycle` (step 10) | `SendCoin<USDC>` on a SubOU pays 100,000; generic coin type works |
 | SendCoin | `composite_tests::composite_send_coin_step_e2e` | SendCoin runs as a composite step |
 | SendCoin | `composite_tests::composite_send_coin_step_cannot_add_member` | A SendCoin step's request cannot add a member: Abort `proposal::EPermissionDenied` |
-| SendCoin | `test_send_coin__foreign_vault_aborts` (planned) | Another DAO's vault: Abort `treasury_ops::EVaultDAOMismatch` |
+| SendCoin | `test_send_coin__foreign_vault_aborts` (planned) | Another OU's vault: Abort `treasury_ops::EVaultOUMismatch` |
 | SendCoin | `test_send_coin__without_treasury_withdraw_aborts` (planned) | Slot enabled without the bit: Abort `proposal::EPermissionDenied` (mutator level: `gate_tests::withdraw_needs_treasury_withdraw`) |
-| SendCoin | `test_send_coin__emits_coin_sent` (planned) | `CoinSent { dao_id, coin_type, amount, recipient }` and `treasury_vault::CoinWithdrawn` |
-| SendCoinToDAO | `send_coin_to_dao_e2e` | Source 1,000,000 → 700,000; target 0 → 300,000 |
-| SendCoinToDAO | `send_coin_to_dao_target_mismatch_aborts` | Source and target vaults swapped: Abort `treasury_ops::EVaultDAOMismatch` |
-| SendCoinToDAO | `lifecycle_tests::medium_enterprise_lifecycle` (step 9) | Parent sends 500,000 USDC to a SubDAO treasury |
-| SendCoinToDAO | `composite_tests::composite_send_coin_to_dao_step_e2e` | Runs as a composite step |
-| SendCoinToDAO | `test_send_coin_to_dao__wrong_target_treasury_aborts` (planned) | Target vault ≠ `recipient_treasury`: Abort `treasury_ops::ETargetVaultMismatch` |
+| SendCoin | `test_send_coin__emits_coin_sent` (planned) | `CoinSent { ou_id, coin_type, amount, recipient }` and `treasury_vault::CoinWithdrawn` |
+| SendCoinToOU | `send_coin_to_ou_e2e` | Source 1,000,000 → 700,000; target 0 → 300,000 |
+| SendCoinToOU | `send_coin_to_ou_target_mismatch_aborts` | Source and target vaults swapped: Abort `treasury_ops::EVaultOUMismatch` |
+| SendCoinToOU | `lifecycle_tests::medium_enterprise_lifecycle` (step 9) | Parent sends 500,000 USDC to a SubOU treasury |
+| SendCoinToOU | `composite_tests::composite_send_coin_to_ou_step_e2e` | Runs as a composite step |
+| SendCoinToOU | `test_send_coin_to_ou__wrong_target_treasury_aborts` (planned) | Target vault ≠ `recipient_treasury`: Abort `treasury_ops::ETargetVaultMismatch` |
 | SendSmallPayment | `basic_payment_within_cap_succeeds` | 5,000 of a 10,000 cap (1% of 1,000,000); state lazily created with `epoch_spend` 5,000 |
 | SendSmallPayment | `payment_exceeding_cap_aborts` | 8,000 then 5,000 in one epoch: Abort `treasury_ops::EExceedsDailyCap` |
 | SendSmallPayment | `epoch_rollover_resets_spend_tracking` | After 24 h: `epoch_spend` = 5,000, cap recomputed from the balance at rollover (9,910) |
@@ -47,11 +47,11 @@ The real tests enable types with the `dao.test_enable_type` seam, which skips th
 | SendBatchMulticoinToAddress | `send_batch_to_address_e2e` | Three items withdrawn; recipient receives all three balances |
 | SendBatchMulticoinToAddress | `send_batch_to_address_partial_withdraw` | Two of three items; the third stays in the vault |
 | SendBatchMulticoinToAddress | `send_batch_to_address_insufficient_balance_aborts` | One item over balance: whole batch aborts `treasury_vault::EInsufficientBalance` |
-| SendBatchMulticoinToDAO | `send_batch_to_dao_e2e` | Source debited, target credited with every item |
-| SendBatchMulticoinToDAO | `send_batch_to_dao_accumulates_in_target` | Target already holding the asset accumulates |
-| SendBatchMulticoinToDAO | `send_batch_to_dao_target_mismatch_aborts` | Target vault ≠ `recipient_treasury`: Abort `treasury_ops::ETargetVaultMismatch` |
+| SendBatchMulticoinToOU | `send_batch_to_ou_e2e` | Source debited, target credited with every item |
+| SendBatchMulticoinToOU | `send_batch_to_ou_accumulates_in_target` | Target already holding the asset accumulates |
+| SendBatchMulticoinToOU | `send_batch_to_ou_target_mismatch_aborts` | Target vault ≠ `recipient_treasury`: Abort `treasury_ops::ETargetVaultMismatch` |
 
-Unqualified names are in `treasury_ops_tests.move` (SendCoin, SendCoinToDAO, SendSmallPayment) or `batch_multicoin_ops_tests.move` (batch types).
+Unqualified names are in `treasury_ops_tests.move` (SendCoin, SendCoinToOU, SendSmallPayment) or `batch_multicoin_ops_tests.move` (batch types).
 
 ## Tests
 
@@ -64,20 +64,20 @@ Unqualified names are in `treasury_ops_tests.move` (SendCoin, SendCoinToDAO, Sen
 ```move
 // send_coin_e2e (condensed)
 {
-    let mut dao = scenario.take_shared<DAO>();
+    let mut ou = scenario.take_shared<OU>();
     let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-    // Test seam: no vote, no floors. A live DAO needs threshold >= 8000 for this bit.
-    dao.test_enable_type<SendCoin<SUI>>(
+    // Test seam: no vote, no floors. A live OU needs threshold >= 8000 for this bit.
+    ou.test_enable_type<SendCoin<SUI>>(
         b"SendCoin".to_ascii_string(),
         config.with_permissions(type_permissions::treasury_spend()),
     );
-    test_scenario::return_shared(dao);
+    test_scenario::return_shared(ou);
 };
 // fund: vault.deposit(coin::mint_for_testing<SUI>(1_000_000, ctx), ctx)
-// submit: board_voting::submit_proposal(&dao, option::some(..), send_coin::new<SUI>(RECIPIENT, 200_000), &clock, ctx)
-// vote:   board_voting::vote(&mut proposal, &dao, true, &clock, ctx)
+// submit: board_voting::submit_proposal(&ou, option::some(..), send_coin::new<SUI>(RECIPIENT, 200_000), &clock, ctx)
+// vote:   board_voting::vote(&mut proposal, &ou, true, &clock, ctx)
 {
-    let ticket = board_voting::ticket_from_vote(&mut dao, proposal, &freeze, &clock, scenario.ctx());
+    let ticket = board_voting::ticket_from_vote(&mut ou, proposal, &freeze, &clock, scenario.ctx());
     treasury_ops::execute_send_coin<SUI>(&mut vault, ticket, scenario.ctx());
     assert!(vault.balance<SUI>() == 800_000);
 };
@@ -103,18 +103,18 @@ scenario.next_tx(RECIPIENT);
 
 **Why it matters:** The treasury is multi-coin. `SendCoin<T>` must work for any `T`, and each instantiation is its own type with its own slot.
 
-`lifecycle_tests::medium_enterprise_lifecycle` enables `SendCoin<USDC>` on the Finance SubDAO (step 10) and pays an employee 100,000 USDC; the Finance treasury drops from 500,000 to 400,000. `multiple_coin_types_independent_state` shows the per-instantiation separation for `SendSmallPayment`.
+`lifecycle_tests::medium_enterprise_lifecycle` enables `SendCoin<USDC>` on the Finance SubOU (step 10) and pays an employee 100,000 USDC; the Finance treasury drops from 500,000 to 400,000. `multiple_coin_types_independent_state` shows the per-instantiation separation for `SendSmallPayment`.
 
 ---
 
-### SendCoinToDAO: deposits into the target DAO treasury
+### SendCoinToOU: deposits into the target OU treasury
 
-**Why it matters:** This funds SubDAOs and pays other DAOs. The coin must land in the target's `TreasuryVault`, not as a loose object, and only in the treasury the board approved.
+**Why it matters:** This funds SubOUs and pays other OUs. The coin must land in the target's `TreasuryVault`, not as a loose object, and only in the treasury the board approved.
 
 ```move
-// send_coin_to_dao_e2e (execution step)
-let ticket = board_voting::ticket_from_vote(&mut source_dao, proposal, &freeze, &clock, scenario.ctx());
-treasury_ops::execute_send_coin_to_dao<SUI>(
+// send_coin_to_ou_e2e (execution step)
+let ticket = board_voting::ticket_from_vote(&mut source_ou, proposal, &freeze, &clock, scenario.ctx());
+treasury_ops::execute_send_coin_to_ou<SUI>(
     &mut source_vault,
     &mut target_vault, // must be the payload's recipient_treasury
     ticket,
@@ -124,19 +124,19 @@ assert!(source_vault.balance<SUI>() == 700_000);
 assert!(target_vault.balance<SUI>() == 300_000);
 ```
 
-The payload was `send_coin_to_dao::new<SUI>(target_treasury_id, 300_000)`. `send_coin_to_dao_target_mismatch_aborts` passes the vaults swapped and expects `treasury_ops::EVaultDAOMismatch`; a wrong target alone would abort `treasury_ops::ETargetVaultMismatch` (planned for this type, tested for the batch type).
+The payload was `send_coin_to_ou::new<SUI>(target_treasury_id, 300_000)`. `send_coin_to_ou_target_mismatch_aborts` passes the vaults swapped and expects `treasury_ops::EVaultOUMismatch`; a wrong target alone would abort `treasury_ops::ETargetVaultMismatch` (planned for this type, tested for the batch type).
 
 ---
 
 ### SendSmallPayment: rolling epoch cap
 
-**Requirement:** `execute_send_small_payment<T>` keeps a `SmallPaymentState` in the DAO's type-state keyed by `SendSmallPayment<T>`. The first execution creates it with a 24 h epoch and a cap of 1% of the current `T` balance (`utils::mul_bps(balance, 100)`). When `now >= epoch_start + epoch_duration` the epoch restarts at `now`, the spend resets to 0 and the cap is recomputed from the current balance. A payment that would take `epoch_spend + amount` above the cap aborts with `treasury_ops::EExceedsDailyCap`.
+**Requirement:** `execute_send_small_payment<T>` keeps a `SmallPaymentState` in the OU's type-state keyed by `SendSmallPayment<T>`. The first execution creates it with a 24 h epoch and a cap of 1% of the current `T` balance (`utils::mul_bps(balance, 100)`). When `now >= epoch_start + epoch_duration` the epoch restarts at `now`, the spend resets to 0 and the cap is recomputed from the current balance. A payment that would take `epoch_spend + amount` above the cap aborts with `treasury_ops::EExceedsDailyCap`.
 
 **Why it matters:** Recurring small payments still need a vote each, but the handler bounds how much a run of them can take within an epoch. The bound lives in the extension's handler, so it is only as strong as that package's code and upgrade key (`docs/package-boundaries.md`, rule 4).
 
 ```move
 // basic_payment_within_cap_succeeds: after one 5,000 payment on a 1,000,000 treasury
-let state: &send_small_payment::SmallPaymentState = dao.borrow_type_state<
+let state: &send_small_payment::SmallPaymentState = ou.borrow_type_state<
     SendSmallPayment<SUI>,
     send_small_payment::SmallPaymentState,
 >();
@@ -152,7 +152,7 @@ assert!(state.max_epoch_spend() == 10_000);
 
 ### Batch multicoin transfers
 
-**Requirement:** Each `MultiCoinItem { collection_id, asset_id, amount }` (`multicoin_item::new`) is withdrawn with `treasury_vault::withdraw_multicoin` (TREASURY_WITHDRAW). `SendBatchMulticoinToAddress` transfers each withdrawn balance to `recipient`; `SendBatchMulticoinToDAO` deposits each into the target vault, which must be `recipient_treasury`.
+**Requirement:** Each `MultiCoinItem { collection_id, asset_id, amount }` (`multicoin_item::new`) is withdrawn with `treasury_vault::withdraw_multicoin` (TREASURY_WITHDRAW). `SendBatchMulticoinToAddress` transfers each withdrawn balance to `recipient`; `SendBatchMulticoinToOU` deposits each into the target vault, which must be `recipient_treasury`.
 
 **Why it matters:** One vote moves many game assets. The batch is atomic: one item over balance aborts the whole PTB.
 

@@ -3,10 +3,10 @@ module armature_proposals::mint_allowance;
 use std::internal::{Self, Permit};
 
 /// Operational minting twin of `MintCoin`. Structurally identical, but kept as
-/// a distinct type so a DAO can `EnableBypassType` on it (80% floor) to allow
+/// a distinct type so an OU can `EnableBypassType` on it (80% floor) to allow
 /// minting *without a fresh vote each time*, while plain `MintCoin` stays
 /// fully vote-gated. The bypass path is `currency_ops::mint_allowance_bypass`:
-/// only an address on the DAO's `ConfigureMintAllowance<T>` allowlist may mint,
+/// only an address on the OU's `ConfigureMintAllowance<T>` allowlist may mint,
 /// up to the configured per-call cap, throttled by the type's `cooldown_ms`.
 /// `ticket_from_cap` takes `Permit<MintAllowance<T>>`, so that function is the
 /// only place a bypass ticket for this type can be minted (ARMATURE-31).

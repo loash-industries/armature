@@ -3,8 +3,8 @@ P# Tribe Configuration: Proposals Config
 This document covers how to pre-configure proposal types for a standard tribe and which types should use the single-vote-execute path for each role.
 
 **Role terminology:**
-- **Owners** = the Tribe DAO board. Responsible for administering officers, cold-storage of treasury/packages, and all coin creation/mint/burn.
-- **Officers** = the Officers SubDAO board. Responsible for adding/removing players from the Members role and creating buy/sell orders from the officer treasury.
+- **Owners** = the Tribe OU board. Responsible for administering officers, cold-storage of treasury/packages, and all coin creation/mint/burn.
+- **Officers** = the Officers SubOU board. Responsible for adding/removing players from the Members role and creating buy/sell orders from the officer treasury.
 
 ---
 
@@ -65,19 +65,19 @@ proposal::new_config(
 
 ## 2. Organizational hierarchy
 
-`create_tribe_configured` wires up three DAOs in a fixed parent-controls-child chain:
+`create_tribe_configured` wires up three OUs in a fixed parent-controls-child chain:
 
 ```
-Tribe DAO  (Owners board — governs officers, holds treasury/package cold storage)
-└── Officers SubDAO  (Officers board — manages members, runs trading)
-    └── Members SubDAO  (Members board — the player roster)
+Tribe OU  (Owners board — governs officers, holds treasury/package cold storage)
+└── Officers SubOU  (Officers board — manages members, runs trading)
+    └── Members SubOU  (Members board — the player roster)
 ```
 
-- The **Tribe DAO (Owners)** board governs the Tribe DAO and can add/remove officers via
+- The **Tribe OU (Owners)** board governs the Tribe OU and can add/remove officers via
   `ControllerBatchAddMembers` / `ControllerBatchRemoveMembers`.
-- The **Officers SubDAO** board governs the Officers SubDAO and can add/remove
+- The **Officers SubOU** board governs the Officers SubOU and can add/remove
   members via `ControllerBatchAddMembers` / `ControllerBatchRemoveMembers`.
-- `ControllerBatch*` on the Officers DAO targets the Members SubDAO by
+- `ControllerBatch*` on the Officers OU targets the Members SubOU by
   presenting the MemberControl cap stored in the Officers vault.
 
 ---
@@ -113,9 +113,9 @@ public fun deploy_tribe(
         b"Tribe".to_string(),
         b"Officers".to_string(),
         b"Members".to_string(),
-        b"Top-level tribe DAO".to_string(),
-        b"Officer sub-DAO".to_string(),
-        b"Member sub-DAO".to_string(),
+        b"Top-level tribe OU".to_string(),
+        b"Officer sub-OU".to_string(),
+        b"Member sub-OU".to_string(),
         b"".to_string(),  // tribe_image_url
         b"".to_string(),  // officer_image_url
         b"".to_string(),  // member_image_url
@@ -129,7 +129,7 @@ public fun deploy_tribe(
 }
 ```
 
-### 3a. Tribe DAO (Owners) config overrides
+### 3a. Tribe OU (Owners) config overrides
 
 Owners hold governance over officers, coin issuance, package upgrades, and cold treasury. Most actions require owner consensus — single-vote is reserved for low-stakes operational items only.
 
@@ -148,25 +148,25 @@ fun tribe_config_overrides(): VecMap<String, ProposalConfig> {
         b"ControllerBatchRemoveMembers".to_ascii_string(),
         single_vote_config());
 
-    // ── Emergency: pause / unpause the Officers SubDAO ────────────────────
-    // PauseSubDAOExecution: single-vote — fast emergency response should not
+    // ── Emergency: pause / unpause the Officers SubOU ────────────────────
+    // PauseSubOUExecution: single-vote — fast emergency response should not
     // require quorum. Any one owner can halt officers immediately.
     vec_map::insert(&mut m,
-        b"PauseSubDAOExecution".to_ascii_string(),
+        b"PauseSubOUExecution".to_ascii_string(),
         single_vote_config());
 
-    // UnpauseSubDAOExecution: requires owner consensus — inherits default quorum.
+    // UnpauseSubOUExecution: requires owner consensus — inherits default quorum.
     // A single owner must not be able to unilaterally reverse an emergency pause
     // (same rationale as UnfreezeProposalType requiring consensus). If any owner
     // could unilaterally unpause, a colluding owner defeats the emergency measure
     // the moment it is applied. Omit from map so it uses default 50/50 quorum.
 
-    // ── SubDAO capability delegation ──────────────────────────────────────
+    // ── SubOU capability delegation ──────────────────────────────────────
     // Moving caps to/from the officer vault — requires owner consensus.
     // Not single-vote (omit from map; inherits default quorum).
     // Include here only if you want an explicit non-default config:
-    // vec_map::insert(&mut m, b"TransferCapToSubDAO".to_ascii_string(), ...);
-    // vec_map::insert(&mut m, b"ReclaimCapFromSubDAO".to_ascii_string(), ...);
+    // vec_map::insert(&mut m, b"TransferCapToSubOU".to_ascii_string(), ...);
+    // vec_map::insert(&mut m, b"ReclaimCapFromSubOU".to_ascii_string(), ...);
 
     // ── Treasury seeding (owners → officers) ─────────────────────────────
     // Coin type keys registered separately in §4.
@@ -224,10 +224,10 @@ fun tribe_config_overrides(): VecMap<String, ProposalConfig> {
 | `AdoptCurrency<T>` | Takes custody of TreasuryCap — one-time, irreversible direction |
 | `ReturnCurrencyCap<T>` | Relinquishes mint/burn authority |
 | `ProposeUpgrade` | Package upgrade — high stakes |
-| `SendCoin<T>` / `SendCoinToDAO<T>` | Large treasury transfers (seeding officers) |
+| `SendCoin<T>` / `SendCoinToOU<T>` | Large treasury transfers (seeding officers) |
 | `UpdateFreezeConfig` | Controls emergency freeze duration |
 | `UpdateFreezeExemptTypes` | Controls which types survive a freeze |
-| `TransferCapToSubDAO` / `ReclaimCapFromSubDAO` | Capability delegation |
+| `TransferCapToSubOU` / `ReclaimCapFromSubOU` | Capability delegation |
 | `TransferAssets` | Bulk asset movement |
 | `SetBoard` | Full board replacement |
 | `UnfreezeProposalType` | Reverses out-of-band emergency freeze — must not be unilateral |
@@ -235,7 +235,7 @@ fun tribe_config_overrides(): VecMap<String, ProposalConfig> {
 
 ---
 
-### 3b. Officers SubDAO config overrides
+### 3b. Officers SubOU config overrides
 
 Officers are an operational hot-path. Single-vote-execute applies to all trading operations (market conditions don't wait for quorum) and routine member management.
 
@@ -243,8 +243,8 @@ Officers are an operational hot-path. Single-vote-execute applies to all trading
 fun officer_config_overrides(): VecMap<String, ProposalConfig> {
     let mut m = vec_map::empty();
 
-    // ── Members SubDAO management (single-vote-execute) ───────────────────
-    // ControllerBatch* targets the Members SubDAO via the MemberControl cap
+    // ── Members SubOU management (single-vote-execute) ───────────────────
+    // ControllerBatch* targets the Members SubOU via the MemberControl cap
     // stored in the Officers vault — this is the role officers are responsible
     // for managing, so single-vote is appropriate.
     // AddMember / RemoveMember / BatchAdd* / BatchRemove* target the Officers
@@ -257,13 +257,13 @@ fun officer_config_overrides(): VecMap<String, ProposalConfig> {
         b"ControllerBatchRemoveMembers".to_ascii_string(),
         single_vote_config());
 
-    // ── Emergency: pause / unpause the Members SubDAO ─────────────────────
-    // PauseSubDAOExecution: single-vote — fast emergency response.
+    // ── Emergency: pause / unpause the Members SubOU ─────────────────────
+    // PauseSubOUExecution: single-vote — fast emergency response.
     vec_map::insert(&mut m,
-        b"PauseSubDAOExecution".to_ascii_string(),
+        b"PauseSubOUExecution".to_ascii_string(),
         single_vote_config());
 
-    // UnpauseSubDAOExecution: requires officer consensus — inherits default quorum.
+    // UnpauseSubOUExecution: requires officer consensus — inherits default quorum.
     // A single officer must not be able to unilaterally reverse an emergency pause
     // (same rationale as UnfreezeProposalType requiring consensus). Omit from map.
 
@@ -295,15 +295,15 @@ fun officer_config_overrides(): VecMap<String, ProposalConfig> {
 | `BatchAddMembers` / `BatchRemoveMembers` | Same: bulk changes to the Officers board require officer consensus |
 | `SetupTradingAccount` | One-time infrastructure setup — should be deliberate |
 | `CreateMulticoinPool` | Creates persistent on-chain pool |
-| `SendCoin<T>` / `SendCoinToDAO<T>` | Non-trivial treasury transfers |
-| `SendBatchMulticoinToAddress` / `SendBatchMulticoinToDAO` | Bulk asset movement |
+| `SendCoin<T>` / `SendCoinToOU<T>` | Non-trivial treasury transfers |
+| `SendBatchMulticoinToAddress` / `SendBatchMulticoinToOU` | Bulk asset movement |
 | `SetBoard` | Full board replacement — higher threshold recommended |
 | `UnfreezeProposalType` | Reverses an emergency freeze — must not be unilateral |
 | `UpdateProposalConfig` | Can reclassify proposal governance — single-vote allows downgrading consensus-required types |
 
 ---
 
-### 3c. Members SubDAO config overrides
+### 3c. Members SubOU config overrides
 
 Members manage their own board via standard majority — no single-vote.
 
@@ -325,7 +325,7 @@ variant must be registered as a separate proposal type via `EnableProposalType`
 or included as a config override.  The type key is the full Move type name
 string: `<pkg_id>::send_coin::SendCoin<<coin_pkg>::<module>::<COIN>`.
 
-For the Officers SubDAO treasury, insert each required coin key into
+For the Officers SubOU treasury, insert each required coin key into
 `officer_config_overrides()`:
 
 ```move
@@ -354,32 +354,32 @@ vec_map::insert(&mut m,
 > | Type | Generic? | Key pattern | Single-vote? |
 > |------|----------|-------------|---|
 > | `SendCoin<T>` | yes — per coin | `<pkg>::send_coin::SendCoin<<coin_pkg>::<mod>::<COIN>` | No — officer consensus |
-> | `SendCoinToDAO<T>` | yes — per coin | `<pkg>::send_coin_to_dao::SendCoinToDAO<...>` | No — officer consensus |
+> | `SendCoinToOU<T>` | yes — per coin | `<pkg>::send_coin_to_ou::SendCoinToOU<...>` | No — officer consensus |
 > | `SendSmallPayment<T>` | yes — per coin | `<pkg>::send_small_payment::SendSmallPayment<...>` | Yes — rate-limited |
 > | `SendBatchMulticoinToAddress` | no | `<pkg>::send_batch_multicoin_to_address::SendBatchMulticoinToAddress` | No — officer consensus |
-> | `SendBatchMulticoinToDAO` | no | `<pkg>::send_batch_multicoin_to_dao::SendBatchMulticoinToDAO` | No — officer consensus |
+> | `SendBatchMulticoinToOU` | no | `<pkg>::send_batch_multicoin_to_ou::SendBatchMulticoinToOU` | No — officer consensus |
 
 ---
 
-## 5. Emergency freeze config (Members SubDAO)
+## 5. Emergency freeze config (Members SubOU)
 
-Two complementary mechanisms protect the Members SubDAO:
+Two complementary mechanisms protect the Members SubOU:
 
-### 5a. PauseSubDAOExecution (recommended for day-to-day emergencies)
+### 5a. PauseSubOUExecution (recommended for day-to-day emergencies)
 
 Added to `officer_config_overrides()` in §3b.  A single officer can pause all
-execution on the Members SubDAO in one transaction.  Unpausing requires a
+execution on the Members SubOU in one transaction.  Unpausing requires a
 separate call.  The `PauseControl` cap must be in the Officers vault.
 
 ### 5b. Type-level freezing via FreezeAdminCap
 
 The `member_freeze_admin` address passed to `create_tribe_configured` receives
-the `FreezeAdminCap` for the Members SubDAO.  The freeze admin can call
+the `FreezeAdminCap` for the Members SubOU.  The freeze admin can call
 `emergency::freeze_proposal_type` off-chain to freeze individual proposal types
 without a vote.
 
 To **transfer** that freeze admin cap via governance (e.g., to a multisig or
-different officer), configure `TransferFreezeAdmin` on the Officers SubDAO:
+different officer), configure `TransferFreezeAdmin` on the Officers SubOU:
 
 ```move
 vec_map::insert(&mut m,
@@ -400,7 +400,7 @@ need that control:
 // UpdateFreezeConfig must NOT be single-vote. The framework enforces no
 // minimum on max_freeze_duration_ms — a value of 0 is accepted, which makes
 // every subsequent freeze expire instantly and silently disables the
-// FreezeAdminCap circuit breaker for the Officers SubDAO. A single
+// FreezeAdminCap circuit breaker for the Officers SubOU. A single
 // compromised officer could execute this in one PTB, stripping all future
 // freeze protection before anyone can react. Omit from this map so it
 // inherits default quorum (officer consensus required).
@@ -410,11 +410,11 @@ need that control:
 
 ## 6. Trading proposals (armature-trading)
 
-All armature-trading proposal types should be registered on the **Officers SubDAO** — trading is an officer responsibility, not an owner one. Types must be enabled via `EnableProposalType` before `submit_vote_execute` can use them.
+All armature-trading proposal types should be registered on the **Officers SubOU** — trading is an officer responsibility, not an owner one. Types must be enabled via `EnableProposalType` before `submit_vote_execute` can use them.
 
 ### 6a. Single-vote trading types (all market operations)
 
-All order placement, cancellation, deposit, and sweep operations are single-vote on the Officers SubDAO. Market conditions don't wait for quorum.
+All order placement, cancellation, deposit, and sweep operations are single-vote on the Officers SubOU. Market conditions don't wait for quorum.
 
 ```move
 // Replace <trading_pkg> with the actual armature-trading package address.
@@ -496,11 +496,11 @@ These create persistent on-chain state and should not be single-vote:
 | `AdoptCurrency<T>` / `ReturnCurrencyCap<T>` | TreasuryCap custody is owners-only |
 | `MintAllowance<T>` | Delegated mint authority is owners-only |
 | `ProposeUpgrade` | Package upgrade authority is owners-only |
-| `SpawnDAO` | Hierarchy-altering; blocked for SubDAOs anyway |
-| `SpinOutSubDAO` | Makes Officers independent; removes tribe oversight |
-| `CreateSubDAO` | Blocked for SubDAOs |
-| `EnableBypassType` | Blocked for SubDAOs; bypass authorisation is governance-sensitive |
-| `DisableBypassType` | Blocked for SubDAOs |
+| `SpawnOU` | Hierarchy-altering; blocked for SubOUs anyway |
+| `SpinOutSubOU` | Makes Officers independent; removes tribe oversight |
+| `CreateSubOU` | Blocked for SubOUs |
+| `EnableBypassType` | Blocked for SubOUs; bypass authorisation is governance-sensitive |
+| `DisableBypassType` | Blocked for SubOUs |
 | `TransferAssets` | Migration primitive; should require full tribe vote |
 
 ---
@@ -513,8 +513,8 @@ These create persistent on-chain state and should not be single-vote:
 | `MintAllowance<T>` | n/a: bypass type, gated by `ConfigureMintAllowance<T>` (consensus) | No (owners only) |
 | `ControllerBatchAddMembers` | Yes | Yes |
 | `ControllerBatchRemoveMembers` | Yes | Yes |
-| `PauseSubDAOExecution` | Yes | Yes |
-| `UnpauseSubDAOExecution` | No — consensus | No — consensus |
+| `PauseSubOUExecution` | Yes | Yes |
+| `UnpauseSubOUExecution` | No — consensus | No — consensus |
 | `TransferFreezeAdmin` | Yes (6600) | Yes (6600) |
 | `UnfreezeProposalType` | No — consensus | No — consensus |
 | `EnableProposalType` | Yes (6600) | Yes (6600) |
@@ -543,17 +543,17 @@ BatchAddMembers             BatchRemoveMembers
 EnableProposalType          DisableProposalType         UpdateProposalConfig
 TransferFreezeAdmin         UnfreezeProposalType        UpdateMetadata
 ControllerBatchAddMembers   ControllerBatchRemoveMembers
-PauseSubDAOExecution        UnpauseSubDAOExecution
-TransferCapToSubDAO         ReclaimCapFromSubDAO
-CreateSubDAO                SpawnDAO                    SpinOutSubDAO
+PauseSubOUExecution        UnpauseSubOUExecution
+TransferCapToSubOU         ReclaimCapFromSubOU
+CreateSubOU                SpawnOU                    SpinOutSubOU
 TransferAssets
 
 // Full qualified keys (external packages — use actual pkg address):
 <armature_proposals_pkg>::send_coin::SendCoin<...>
-<armature_proposals_pkg>::send_coin_to_dao::SendCoinToDAO<...>
+<armature_proposals_pkg>::send_coin_to_ou::SendCoinToOU<...>
 <armature_proposals_pkg>::send_small_payment::SendSmallPayment<...>
 <armature_proposals_pkg>::send_batch_multicoin_to_address::SendBatchMulticoinToAddress
-<armature_proposals_pkg>::send_batch_multicoin_to_dao::SendBatchMulticoinToDAO
+<armature_proposals_pkg>::send_batch_multicoin_to_ou::SendBatchMulticoinToOU
 <armature_proposals_pkg>::mint_coin::MintCoin<...>
 <armature_proposals_pkg>::mint_allowance::MintAllowance<...>
 <armature_proposals_pkg>::configure_mint_allowance::ConfigureMintAllowance<...>

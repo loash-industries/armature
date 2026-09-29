@@ -3,10 +3,10 @@ module armature_proposals::emergency_freeze_tests;
 
 use armature::board_ops;
 use armature::board_voting;
-use armature::dao::{Self, DAO};
 use armature::emergency::{Self, EmergencyFreeze, FreezeAdminCap};
 use armature::freeze_ops;
 use armature::governance;
+use armature::ou::{Self, OU};
 use armature::proposal::{Self, Proposal};
 use armature::set_board::{Self, SetBoard};
 use armature::transfer_freeze_admin::TransferFreezeAdmin;
@@ -22,12 +22,12 @@ const MEMBER_C: address = @0xC;
 
 // === Helpers ===
 
-fun create_dao(scenario: &mut test_scenario::Scenario): ID {
+fun create_ou(scenario: &mut test_scenario::Scenario): ID {
     scenario.next_tx(CREATOR);
     let init = governance::init_board(vector[CREATOR, MEMBER_B]);
-    dao::create(
+    ou::create(
         &init,
-        string::utf8(b"Test DAO"),
+        string::utf8(b"Test OU"),
         string::utf8(b"https://example.com/logo.png"),
         scenario.ctx(),
     )
@@ -40,16 +40,16 @@ fun submit_set_board(
 ) {
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let payload = set_board::new(to_add, vector[]);
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::some(string::utf8(b"Board change")),
             payload,
             clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 }
 
@@ -57,9 +57,9 @@ fun vote_yes_set_board(scenario: &mut test_scenario::Scenario, clock: &clock::Cl
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<SetBoard>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 }
@@ -74,7 +74,7 @@ fun frozen_type_blocks_execution() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
 
     // Submit + pass a SetBoard proposal
     clock.set_for_testing(1000);
@@ -97,22 +97,22 @@ fun frozen_type_blocks_execution() {
     // Attempt execute — should abort with EFrozen
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<SetBoard>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(4000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
 
-        board_ops::execute_set_board(&mut dao, ticket);
+        board_ops::execute_set_board(&mut ou, ticket);
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -125,7 +125,7 @@ fun unfreeze_allows_execution() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
 
     // Submit + pass a SetBoard proposal
     clock.set_for_testing(1000);
@@ -153,23 +153,23 @@ fun unfreeze_allows_execution() {
     // Execute — should succeed now
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<SetBoard>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(4000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
 
-        board_ops::execute_set_board(&mut dao, ticket);
+        board_ops::execute_set_board(&mut ou, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -186,7 +186,7 @@ fun auto_expiry_allows_execution() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
 
     // Submit a SetBoard proposal
     clock.set_for_testing(1000);
@@ -219,7 +219,7 @@ fun auto_expiry_allows_execution() {
     // Execute after expiry — should succeed without unfreezing
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<SetBoard>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(after_expiry);
@@ -228,17 +228,17 @@ fun auto_expiry_allows_execution() {
         assert!(!freeze.is_frozen<SetBoard>(&clock));
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
 
-        board_ops::execute_set_board(&mut dao, ticket);
+        board_ops::execute_set_board(&mut ou, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -253,7 +253,7 @@ fun auto_expiry_allows_execution() {
 /// default 7-day expiry_ms and 7-day freeze, the execution window closes at
 /// t=604_802_000, before the freeze lifts at t=604_803_000.
 fun pass_then_freeze(scenario: &mut test_scenario::Scenario, clock: &mut clock::Clock) {
-    create_dao(scenario);
+    create_ou(scenario);
     clock.set_for_testing(1000);
     submit_set_board(scenario, clock, vector[MEMBER_C]);
     clock.set_for_testing(2000);
@@ -282,19 +282,19 @@ fun freeze_outlasting_window_blocks_execution() {
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let proposal = scenario.take_shared<Proposal<SetBoard>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        board_ops::execute_set_board(&mut dao, ticket);
+        board_ops::execute_set_board(&mut ou, ticket);
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -331,7 +331,7 @@ fun governance_unfreeze_via_proposal() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
 
     // Freeze the SetBoard type
     scenario.next_tx(CREATOR);
@@ -347,39 +347,39 @@ fun governance_unfreeze_via_proposal() {
     // Submit + vote UnfreezeProposalType proposal
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(2000);
         let payload = unfreeze_proposal_type::new<SetBoard>();
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::some(string::utf8(b"Unfreeze SetBoard")),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<UnfreezeProposalType>>();
         clock.set_for_testing(3000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     // Execute UnfreezeProposalType — UnfreezeProposalType is itself exempt from freezing
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<UnfreezeProposalType>>();
         let mut freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(4000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
@@ -392,7 +392,7 @@ fun governance_unfreeze_via_proposal() {
         assert!(!freeze.is_frozen<SetBoard>(&clock));
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -409,7 +409,7 @@ fun cannot_freeze_transfer_freeze_admin() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -431,7 +431,7 @@ fun cannot_freeze_unfreeze_proposal_type() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {

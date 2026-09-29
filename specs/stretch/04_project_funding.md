@@ -2,7 +2,7 @@
 
 > Part of the [stretch features index](00_index.md). Not in hackathon scope.
 
-A project is a SubDAO with Kickstarter-style lifecycle.
+A project is a SubOU with Kickstarter-style lifecycle.
 
 ---
 
@@ -10,7 +10,7 @@ A project is a SubDAO with Kickstarter-style lifecycle.
 
 | Primitive | Role in Project |
 |---|---|
-| **SubDAO** | Project entity, controlled by parent tribe |
+| **SubOU** | Project entity, controlled by parent tribe |
 | **Board governance** | PO + backers form the board |
 | **Charter** | Defines scope, funding target, milestones, revenue splits |
 | **TreasuryVault** | Holds project funds, receives revenue |
@@ -52,9 +52,9 @@ Token deployment via browser-based bytecode templating (`@mysten/move-bytecode-t
 
 ## 4. Project Funding Threats
 
-- **PO Rug Pull:** Mitigated by `SubDAOControl` (parent can pause/replace board/reclaim funds), board expansion as backers join, `execution_delay_ms`.
+- **PO Rug Pull:** Mitigated by `SubOUControl` (parent can pause/replace board/reclaim funds), board expansion as backers join, `execution_delay_ms`.
 - **Token Manipulation:** `TreasuryCap` in `CapabilityVault` — minting requires governance proposal.
 
 ---
 
-**See also:** [SubDAO Hierarchy](../04_subdao_hierarchy.md) for the control mechanisms that protect backers.
+**See also:** [SubOU Hierarchy](../04_subou_hierarchy.md) for the control mechanisms that protect backers.

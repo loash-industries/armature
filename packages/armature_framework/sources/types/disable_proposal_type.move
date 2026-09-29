@@ -2,7 +2,7 @@ module armature::disable_proposal_type;
 
 use std::internal::{Self, Permit};
 
-/// Disable a proposal type on the DAO.
+/// Disable a proposal type on the OU.
 /// Handler asserts the target type is not undisableable.
 public struct DisableProposalType has drop, store {
     type_key: std::ascii::String,

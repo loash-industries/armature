@@ -23,7 +23,7 @@ GATES = ("assert_permitted(", "assert_controller(")
 
 # (module, function) -> why it needs no gate.
 ALLOWED = {
-    ("proposal", "req_dao_id"): "accessor",
+    ("proposal", "req_ou_id"): "accessor",
     ("proposal", "req_proposal_id"): "accessor",
     ("proposal", "req_is_privileged"): "accessor",
     ("proposal", "req_permissions"): "accessor",
@@ -34,12 +34,12 @@ ALLOWED = {
     ("proposal", "assert_may_borrow"): "the check itself",
     ("proposal", "with_borrow_scope_for_testing"): "test only",
     ("proposal", "consume_execution_request_for_testing"): "test only",
-    ("dao", "is_permitted"): "the check itself",
-    ("dao", "assert_permitted"): "the check itself",
-    ("dao", "assert_controller"): "the check itself",
-    ("dao", "init_type_state"): "type-state keyed by the request's own type P",
-    ("dao", "borrow_type_state_mut"): "type-state keyed by the request's own type P",
-    ("dao", "remove_type_state"): "type-state keyed by the request's own type P",
+    ("ou", "is_permitted"): "the check itself",
+    ("ou", "assert_permitted"): "the check itself",
+    ("ou", "assert_controller"): "the check itself",
+    ("ou", "init_type_state"): "type-state keyed by the request's own type P",
+    ("ou", "borrow_type_state_mut"): "type-state keyed by the request's own type P",
+    ("ou", "remove_type_state"): "type-state keyed by the request's own type P",
     ("controller", "privileged_consume"): "consumes the request",
 }
 

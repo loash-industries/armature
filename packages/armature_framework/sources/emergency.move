@@ -12,7 +12,7 @@ use sui::vec_set::{Self, VecSet};
 
 // === Errors ===
 
-const EDAOMismatch: u64 = 0;
+const EOUMismatch: u64 = 0;
 const EProtectedType: u64 = 1;
 const EFrozen: u64 = 2;
 const ENotFrozen: u64 = 3;
@@ -25,58 +25,58 @@ const DEFAULT_MAX_FREEZE_DURATION_MS: u64 = 604_800_000; // 7 days
 // === Structs ===
 
 /// Tracks frozen proposal types and their expiry times.
-/// Created as a shared object during DAO creation.
+/// Created as a shared object during OU creation.
 ///
 /// Both collections are keyed by the payload's canonical `TypeName`
-/// (`type_name::with_defining_ids`), the same key as the DAO's type slots, so
+/// (`type_name::with_defining_ids`), the same key as the OU's type slots, so
 /// freezing `PlaceLimitOrder<CRED>` affects only that instantiation.
 public struct EmergencyFreeze has key, store {
     id: UID,
-    dao_id: ID,
+    ou_id: ID,
     frozen_types: VecMap<TypeName, u64>,
     max_freeze_duration_ms: u64,
     freeze_exempt_types: VecSet<TypeName>,
 }
 
 /// Admin capability for triggering emergency freezes.
-/// Transferred to the DAO creator at creation time.
+/// Transferred to the OU creator at creation time.
 public struct FreezeAdminCap has key, store {
     id: UID,
-    dao_id: ID,
+    ou_id: ID,
 }
 
 // === Events ===
 
-// `type_name` is the canonical Move type as a string, matching `dao::TypeSlotAdded`.
+// `type_name` is the canonical Move type as a string, matching `ou::TypeSlotAdded`.
 
 public struct TypeFrozen has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     type_name: std::ascii::String,
     expiry_ms: u64,
 }
 
 public struct TypeUnfrozen has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     type_name: std::ascii::String,
 }
 
 public struct FreezeExemptTypeAdded has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     type_name: std::ascii::String,
 }
 
 public struct FreezeExemptTypeRemoved has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     type_name: std::ascii::String,
 }
 
 // === Constructor ===
 
 /// Create a new EmergencyFreeze. Only callable within the framework package.
-public(package) fun new(dao_id: ID, ctx: &mut TxContext): EmergencyFreeze {
+public(package) fun new(ou_id: ID, ctx: &mut TxContext): EmergencyFreeze {
     EmergencyFreeze {
         id: object::new(ctx),
-        dao_id,
+        ou_id,
         frozen_types: vec_map::empty(),
         max_freeze_duration_ms: DEFAULT_MAX_FREEZE_DURATION_MS,
         freeze_exempt_types: default_exempt_types(),
@@ -84,10 +84,10 @@ public(package) fun new(dao_id: ID, ctx: &mut TxContext): EmergencyFreeze {
 }
 
 /// Create the FreezeAdminCap. Only callable within the framework package.
-public(package) fun new_admin_cap(dao_id: ID, ctx: &mut TxContext): FreezeAdminCap {
+public(package) fun new_admin_cap(ou_id: ID, ctx: &mut TxContext): FreezeAdminCap {
     FreezeAdminCap {
         id: object::new(ctx),
-        dao_id,
+        ou_id,
     }
 }
 
@@ -105,14 +105,14 @@ public(package) fun transfer_admin_cap(cap: FreezeAdminCap, recipient: address) 
 
 // === Accessors ===
 
-/// Returns the DAO ID this freeze tracker belongs to.
-public fun dao_id(self: &EmergencyFreeze): ID { self.dao_id }
+/// Returns the OU ID this freeze tracker belongs to.
+public fun ou_id(self: &EmergencyFreeze): ID { self.ou_id }
 
 /// Returns the max freeze duration in milliseconds.
 public fun max_freeze_duration_ms(self: &EmergencyFreeze): u64 { self.max_freeze_duration_ms }
 
-/// Returns the DAO ID the admin cap is bound to.
-public fun admin_cap_dao_id(self: &FreezeAdminCap): ID { self.dao_id }
+/// Returns the OU ID the admin cap is bound to.
+public fun admin_cap_ou_id(self: &FreezeAdminCap): ID { self.ou_id }
 
 /// Returns the frozen types map (type name → expiry_ms).
 public fun frozen_types(self: &EmergencyFreeze): &VecMap<TypeName, u64> {
@@ -133,7 +133,7 @@ public fun freeze_exempt_types(self: &EmergencyFreeze): &VecSet<TypeName> {
 public(package) fun destroy(freeze: EmergencyFreeze) {
     let EmergencyFreeze {
         id,
-        dao_id: _,
+        ou_id: _,
         frozen_types,
         max_freeze_duration_ms: _,
         freeze_exempt_types: _,
@@ -157,11 +157,11 @@ public fun is_frozen_by_name(self: &EmergencyFreeze, name: &TypeName, clock: &Cl
     clock.timestamp_ms() < expiry_ms
 }
 
-/// Assert that this is `dao_id`'s freeze object (EDAOMismatch) and that
+/// Assert that this is `ou_id`'s freeze object (EOUMismatch) and that
 /// proposal type `P` is not frozen on it (EFrozen). Checking the owner here
-/// means no execution path can be satisfied by another DAO's unfrozen object.
-public fun assert_not_frozen<P>(self: &EmergencyFreeze, dao_id: ID, clock: &Clock) {
-    assert!(self.dao_id == dao_id, EDAOMismatch);
+/// means no execution path can be satisfied by another OU's unfrozen object.
+public fun assert_not_frozen<P>(self: &EmergencyFreeze, ou_id: ID, clock: &Clock) {
+    assert!(self.ou_id == ou_id, EOUMismatch);
     assert!(!self.is_frozen<P>(clock), EFrozen);
 }
 
@@ -176,7 +176,7 @@ public fun is_exempt_by_name(self: &EmergencyFreeze, name: &TypeName): bool {
 /// The freeze expires at `now + max_freeze_duration_ms`.
 /// Cannot freeze exempt types (always including TransferFreezeAdmin and UnfreezeProposalType).
 public fun freeze_type<P>(self: &mut EmergencyFreeze, cap: &FreezeAdminCap, clock: &Clock) {
-    assert!(cap.dao_id == self.dao_id, EDAOMismatch);
+    assert!(cap.ou_id == self.ou_id, EOUMismatch);
     let name = type_name::with_defining_ids<P>();
     assert!(!self.freeze_exempt_types.contains(&name), EProtectedType);
 
@@ -190,7 +190,7 @@ public fun freeze_type<P>(self: &mut EmergencyFreeze, cap: &FreezeAdminCap, cloc
     };
 
     event::emit(TypeFrozen {
-        dao_id: self.dao_id,
+        ou_id: self.ou_id,
         type_name: name.into_string(),
         expiry_ms,
     });
@@ -200,7 +200,7 @@ public fun freeze_type<P>(self: &mut EmergencyFreeze, cap: &FreezeAdminCap, cloc
 
 /// Unfreeze proposal type `P` using the FreezeAdminCap.
 public fun unfreeze_type<P>(self: &mut EmergencyFreeze, cap: &FreezeAdminCap) {
-    assert!(cap.dao_id == self.dao_id, EDAOMismatch);
+    assert!(cap.ou_id == self.ou_id, EOUMismatch);
     self.remove_frozen(type_name::with_defining_ids<P>());
 }
 
@@ -224,7 +224,7 @@ public fun governance_unfreeze_type<P>(
     name: TypeName,
     req: &ExecutionRequest<P>,
 ) {
-    assert!(self.dao_id == req.req_dao_id(), EDAOMismatch);
+    assert!(self.ou_id == req.req_ou_id(), EOUMismatch);
     req.assert_permitted(permissions::emergency_freeze());
     self.remove_frozen(name);
 }
@@ -236,7 +236,7 @@ public fun update_freeze_duration<P>(
     new_max: u64,
     req: &ExecutionRequest<P>,
 ) {
-    assert!(self.dao_id == req.req_dao_id(), EDAOMismatch);
+    assert!(self.ou_id == req.req_ou_id(), EOUMismatch);
     req.assert_permitted(permissions::emergency_freeze());
     self.max_freeze_duration_ms = new_max;
 }
@@ -245,16 +245,16 @@ public fun update_freeze_duration<P>(
 /// Used as a side effect during FreezeAdminCap transfer.
 /// Requires FREEZE (`proposal::assert_permitted`).
 public fun unfreeze_all<P>(self: &mut EmergencyFreeze, req: &ExecutionRequest<P>) {
-    assert!(self.dao_id == req.req_dao_id(), EDAOMismatch);
+    assert!(self.ou_id == req.req_ou_id(), EOUMismatch);
     req.assert_permitted(permissions::emergency_freeze());
 
-    let dao_id = self.dao_id;
+    let ou_id = self.ou_id;
     let names = self.frozen_types.keys();
     let mut i = 0;
     while (i < names.length()) {
         let name = names[i];
         self.frozen_types.remove(&name);
-        event::emit(TypeUnfrozen { dao_id, type_name: name.into_string() });
+        event::emit(TypeUnfrozen { ou_id, type_name: name.into_string() });
         i = i + 1;
     };
 }
@@ -266,10 +266,10 @@ public fun add_freeze_exempt_type<P>(
     name: TypeName,
     req: &ExecutionRequest<P>,
 ) {
-    assert!(self.dao_id == req.req_dao_id(), EDAOMismatch);
+    assert!(self.ou_id == req.req_ou_id(), EOUMismatch);
     req.assert_permitted(permissions::emergency_freeze());
     self.freeze_exempt_types.insert(name);
-    event::emit(FreezeExemptTypeAdded { dao_id: self.dao_id, type_name: name.into_string() });
+    event::emit(FreezeExemptTypeAdded { ou_id: self.ou_id, type_name: name.into_string() });
 }
 
 /// Remove a type from the freeze-exempt set via governance.
@@ -280,11 +280,11 @@ public fun remove_freeze_exempt_type<P>(
     name: TypeName,
     req: &ExecutionRequest<P>,
 ) {
-    assert!(self.dao_id == req.req_dao_id(), EDAOMismatch);
+    assert!(self.ou_id == req.req_ou_id(), EOUMismatch);
     req.assert_permitted(permissions::emergency_freeze());
     assert!(!is_mandatory_exempt(&name), EMandatoryExemptType);
     self.freeze_exempt_types.remove(&name);
-    event::emit(FreezeExemptTypeRemoved { dao_id: self.dao_id, type_name: name.into_string() });
+    event::emit(FreezeExemptTypeRemoved { ou_id: self.ou_id, type_name: name.into_string() });
 }
 
 // === Mandatory Exemptions ===
@@ -304,7 +304,7 @@ public fun is_mandatory_exempt(name: &TypeName): bool {
 fun remove_frozen(self: &mut EmergencyFreeze, name: TypeName) {
     assert!(self.frozen_types.contains(&name), ENotFrozen);
     self.frozen_types.remove(&name);
-    event::emit(TypeUnfrozen { dao_id: self.dao_id, type_name: name.into_string() });
+    event::emit(TypeUnfrozen { ou_id: self.ou_id, type_name: name.into_string() });
 }
 
 /// Build the default set of freeze-exempt types: the mandatory exemptions.
@@ -318,13 +318,13 @@ fun default_exempt_types(): VecSet<TypeName> {
 // === Test Helpers ===
 
 #[test_only]
-public fun new_for_testing(dao_id: ID, ctx: &mut TxContext): EmergencyFreeze {
-    new(dao_id, ctx)
+public fun new_for_testing(ou_id: ID, ctx: &mut TxContext): EmergencyFreeze {
+    new(ou_id, ctx)
 }
 
 #[test_only]
-public fun new_admin_cap_for_testing(dao_id: ID, ctx: &mut TxContext): FreezeAdminCap {
-    new_admin_cap(dao_id, ctx)
+public fun new_admin_cap_for_testing(ou_id: ID, ctx: &mut TxContext): FreezeAdminCap {
+    new_admin_cap(ou_id, ctx)
 }
 
 #[test_only]

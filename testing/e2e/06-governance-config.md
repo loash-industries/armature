@@ -2,11 +2,11 @@
 
 > **Tool:** Playwright (Chromium)
 > **Network:** Sui localnet
-> **Route:** `/dao/$daoId/governance`, `/dao/$daoId/proposals/new`
+> **Route:** `/ou/$ouId/governance`, `/ou/$ouId/proposals/new`
 
 ## Prerequisites
 
-- DAO with board members [A, B, C]
+- OU with board members [A, B, C]
 - Default 7 proposal types enabled
 - Governance config page accessible
 
@@ -19,7 +19,7 @@
 ### 6.1 — Enable a new proposal type
 
 1. Connect as wallet A
-2. Navigate to `/dao/$daoId/governance`
+2. Navigate to `/ou/$ouId/governance`
 3. Verify TreasuryWithdraw shows as "Disabled"
 4. Click "Propose Enable" on TreasuryWithdraw (or navigate to `/proposals/new?type=EnableProposalType`)
 5. Fill form:
@@ -57,14 +57,14 @@
 - Approval is 1/2 = 50% < 66% → aborts
 - Need at least 2 yes out of 2 voters, or 2 yes out of 3 total
 
-### 6.3 — Negative: SubDAO cannot enable hierarchy-altering types
+### 6.3 — Negative: SubOU cannot enable hierarchy-altering types
 
-1. On a SubDAO (with controller)
-2. Attempt to enable SpawnDAO, SpinOutSubDAO, or CreateSubDAO
+1. On a SubOU (with controller)
+2. Attempt to enable SpawnOU, SpinOutSubOU, or CreateSubOU
 
 **Expected:**
 
-- Transaction fails — SubDAOs cannot enable these types while controller exists
+- Transaction fails — SubOUs cannot enable these types while controller exists
 
 ---
 

@@ -1,16 +1,16 @@
 /// Board-voted configuration for `MintAllowance<T>` bypass minting: which
 /// addresses may mint without a vote, the most they may mint per call, and a
-/// kill-switch. Stored as DAO type-state keyed by `ConfigureMintAllowance<T>`,
+/// kill-switch. Stored as OU type-state keyed by `ConfigureMintAllowance<T>`,
 /// the only type that writes it; `currency_ops::mint_allowance_bypass` reads
 /// it before minting a bypass ticket.
 ///
 /// This is the authorization half of a bypass type (see
 /// `docs/package-boundaries.md`): the `ExternalExecutionCap<MintAllowance<T>>`
-/// in the vault is the DAO's opt-in, and this allowlist says who may use it.
+/// in the vault is the OU's opt-in, and this allowlist says who may use it.
 /// Mirrors `armature_world_bridge::configure_autojoin`.
 module armature_proposals::configure_mint_allowance;
 
-use armature::dao::DAO;
+use armature::ou::OU;
 use armature::proposal::ExecutionTicket;
 use std::internal;
 use sui::event;
@@ -18,7 +18,7 @@ use sui::vec_set::{Self, VecSet};
 
 // === Errors ===
 
-const EDaoMismatch: u64 = 0;
+const EOuMismatch: u64 = 0;
 const ETooManyOps: u64 = 1;
 const ETooManyMinters: u64 = 2;
 
@@ -51,7 +51,7 @@ public struct MintAllowanceConfig has drop, store {
 // === Events ===
 
 public struct MintAllowanceConfigured has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     coin_type: std::ascii::String,
     added: vector<address>,
     removed: vector<address>,
@@ -102,25 +102,25 @@ public fun max_minters(): u64 { MAX_MINTERS }
 /// (disabled, empty, cap 0) on first call, then applies removals, additions,
 /// the cap and the kill-switch, in that order.
 public fun execute_configure_mint_allowance<T>(
-    dao: &mut DAO,
+    ou: &mut OU,
     ticket: ExecutionTicket<ConfigureMintAllowance<T>>,
 ) {
-    let dao_id = dao.id();
-    assert!(dao_id == ticket.ticket_dao_id(), EDaoMismatch);
+    let ou_id = ou.id();
+    assert!(ou_id == ticket.ticket_ou_id(), EOuMismatch);
     let payload = ticket.ticket_payload();
     let req = ticket.ticket_request(internal::permit());
 
     assert!(payload.add_minters.length() <= MAX_OPS_PER_CALL, ETooManyOps);
     assert!(payload.remove_minters.length() <= MAX_OPS_PER_CALL, ETooManyOps);
 
-    if (!dao.has_type_state<ConfigureMintAllowance<T>>()) {
-        dao.init_type_state<ConfigureMintAllowance<T>, MintAllowanceConfig>(
+    if (!ou.has_type_state<ConfigureMintAllowance<T>>()) {
+        ou.init_type_state<ConfigureMintAllowance<T>, MintAllowanceConfig>(
             MintAllowanceConfig { enabled: false, minters: vec_set::empty(), max_per_call: 0 },
             req,
         );
     };
 
-    let config: &mut MintAllowanceConfig = dao.borrow_type_state_mut<
+    let config: &mut MintAllowanceConfig = ou.borrow_type_state_mut<
         ConfigureMintAllowance<T>,
         MintAllowanceConfig,
     >(req);
@@ -138,7 +138,7 @@ public fun execute_configure_mint_allowance<T>(
     let (max_per_call, enabled) = (config.max_per_call, config.enabled);
 
     event::emit(MintAllowanceConfigured {
-        dao_id,
+        ou_id,
         coin_type: std::type_name::with_original_ids<T>().into_string(),
         added: payload.add_minters,
         removed: payload.remove_minters,

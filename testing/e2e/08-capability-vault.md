@@ -2,30 +2,30 @@
 
 > **Tool:** Playwright (Chromium)
 > **Network:** Sui localnet
-> **Route:** `/dao/$daoId/vault`, `/dao/$daoId/proposals/new`
+> **Route:** `/ou/$ouId/vault`, `/ou/$ouId/proposals/new`
 
 ## Prerequisites
 
-- Parent DAO with board members [A, B, C]
-- TransferCapToSubDAO and ReclaimCapFromSubDAO proposal types enabled
-- At least one SubDAO created (SubDAOControl + child's FreezeAdminCap stored in parent vault)
+- Parent OU with board members [A, B, C]
+- TransferCapToSubOU and ReclaimCapFromSubOU proposal types enabled
+- At least one SubOU created (SubOUControl + child's FreezeAdminCap stored in parent vault)
 
 ## Scenarios
 
 ### 8.1 — View capability vault
 
-1. Navigate to `/dao/$daoId/vault`
+1. Navigate to `/ou/$ouId/vault`
 
 **Expected:**
 
 - Page shows all stored capabilities as cards
 - Each card displays: object ID (truncated), type name
-- SubDAOControl entries show "Controller" badge and linked SubDAO ID
+- SubOUControl entries show "Controller" badge and linked SubOU ID
 - FreezeAdminCap entries (if stored) show type name
 
 ### 8.2 — Type filter pills
 
-1. Vault contains multiple capability types (e.g., SubDAOControl + FreezeAdminCap)
+1. Vault contains multiple capability types (e.g., SubOUControl + FreezeAdminCap)
 2. Navigate to vault page
 
 **Expected:**
@@ -34,37 +34,37 @@
 - Clicking a pill filters to only capabilities of that type
 - "All" pill shows everything
 
-### 8.3 — Transfer capability to SubDAO
+### 8.3 — Transfer capability to SubOU
 
-1. Parent vault contains a capability (e.g., a stored FreezeAdminCap from a child SubDAO)
-2. Submit TransferCapToSubDAO proposal:
+1. Parent vault contains a capability (e.g., a stored FreezeAdminCap from a child SubOU)
+2. Submit TransferCapToSubOU proposal:
    - cap_id: the capability's object ID
-   - target_subdao: SubDAO's vault ID
+   - target_subou: SubOU's vault ID
 3. Vote + execute
 
 **Expected:**
 
 - Capability removed from parent vault
-- Capability appears in SubDAO's vault
-- `CapTransferredToSubDAO` event emitted
+- Capability appears in SubOU's vault
+- `CapTransferredToSubOU` event emitted
 - Parent vault page no longer shows the capability
-- SubDAO vault page shows the received capability
+- SubOU vault page shows the received capability
 
-### 8.4 — Reclaim capability from SubDAO
+### 8.4 — Reclaim capability from SubOU
 
-1. SubDAO vault contains a capability (transferred in 8.3)
-2. On the parent DAO, submit ReclaimCapFromSubDAO proposal:
-   - subdao_id: SubDAO's ID
-   - cap_id: the capability's object ID in SubDAO vault
-   - control_id: SubDAOControl object ID in parent vault
-3. Vote + execute on parent DAO
+1. SubOU vault contains a capability (transferred in 8.3)
+2. On the parent OU, submit ReclaimCapFromSubOU proposal:
+   - subou_id: SubOU's ID
+   - cap_id: the capability's object ID in SubOU vault
+   - control_id: SubOUControl object ID in parent vault
+3. Vote + execute on parent OU
 
 **Expected:**
 
-- Capability removed from SubDAO vault (via `privileged_extract`)
+- Capability removed from SubOU vault (via `privileged_extract`)
 - Capability appears in parent vault
-- `CapReclaimedFromSubDAO` event emitted
-- No governance action needed on SubDAO side (parent uses SubDAOControl authority)
+- `CapReclaimedFromSubOU` event emitted
+- No governance action needed on SubOU side (parent uses SubOUControl authority)
 
 ### 8.5 — Vault actions dropdown — Transfer Freeze Admin
 
@@ -74,7 +74,7 @@
 
 **Expected:**
 
-- Navigates to `/dao/$daoId/proposals/new?type=TransferFreezeAdmin`
+- Navigates to `/ou/$ouId/proposals/new?type=TransferFreezeAdmin`
 - Form pre-populated if applicable
 
 ### 8.6 — Vault is empty after all capabilities extracted
@@ -89,18 +89,18 @@
 
 ### 8.7 — Negative: Transfer non-existent capability
 
-1. Submit TransferCapToSubDAO with a cap_id that doesn't exist in vault
+1. Submit TransferCapToSubOU with a cap_id that doesn't exist in vault
 2. Vote + execute
 
 **Expected:**
 
 - Execution fails — capability not found in vault
 
-### 8.8 — Negative: Reclaim from uncontrolled DAO
+### 8.8 — Negative: Reclaim from uncontrolled OU
 
-1. Attempt ReclaimCapFromSubDAO targeting a DAO that is NOT controlled by this parent
+1. Attempt ReclaimCapFromSubOU targeting an OU that is NOT controlled by this parent
 2. Vote + execute
 
 **Expected:**
 
-- Execution fails — SubDAOControl doesn't match target DAO
+- Execution fails — SubOUControl doesn't match target OU

@@ -1,18 +1,18 @@
-/// Tribe-ID allowlist used by AutojoinDAO. Stored as DAO type-state keyed
+/// Tribe-ID allowlist used by AutojoinOU. Stored as OU type-state keyed
 /// by `ConfigureAutojoin` (the only proposal type that mutates it). Reads
 /// from `submit_autojoin` use the explicit-type `borrow_type_state<P, S>`
 /// accessor which does not require an `ExecutionRequest`.
 ///
 /// Threat model notes:
-///   - The allowlist itself is the DAO's declaration of which in-game
-///     tribes are synonymous with this DAO. Trust in the contents is
-///     trust in the DAO board's `ConfigureAutojoin` vote.
-///   - The `enabled` flag is a fast kill-switch: the DAO can pass a
+///   - The allowlist itself is the OU's declaration of which in-game
+///     tribes are synonymous with this OU. Trust in the contents is
+///     trust in the OU board's `ConfigureAutojoin` vote.
+///   - The `enabled` flag is a fast kill-switch: the OU can pass a
 ///     ConfigureAutojoin with `set_enabled: some(false)` to stop all
 ///     self-joins in a single proposal without disabling the
 ///     proposal type entirely (which would require DisableProposalType).
 ///   - Bounded size: MAX_TRIBE_IDS keeps the type-state cheap to read on
-///     every `submit_autojoin` and bounds gas. A tribe DAO declaring
+///     every `submit_autojoin` and bounds gas. A tribe OU declaring
 ///     more than 8 synonymous in-game tribes is unusual; raise later
 ///     if a real use case appears.
 module armature_world_bridge::tribe_allowlist;
@@ -25,12 +25,12 @@ const EAllowlistFull: u64 = 0;
 
 // === Constants ===
 
-/// Maximum number of tribe IDs in a single DAO's allowlist.
+/// Maximum number of tribe IDs in a single OU's allowlist.
 const MAX_TRIBE_IDS: u64 = 8;
 
 // === Structs ===
 
-/// Per-DAO autojoin allowlist. The DAO's `ConfigureAutojoin` handler is the
+/// Per-OU autojoin allowlist. The OU's `ConfigureAutojoin` handler is the
 /// only writer; `submit_autojoin` is the only on-path reader.
 public struct TribeIdAllowlist has store {
     enabled: bool,
@@ -39,7 +39,7 @@ public struct TribeIdAllowlist has store {
 
 // === Constructor ===
 
-/// Create an empty allowlist with `enabled = false`. The DAO must run
+/// Create an empty allowlist with `enabled = false`. The OU must run
 /// `ConfigureAutojoin { set_enabled: some(true), .. }` to activate it.
 public(package) fun empty(): TribeIdAllowlist {
     TribeIdAllowlist {

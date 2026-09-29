@@ -14,9 +14,9 @@ Three sovereign tribes form a federation. Each passes `FormFederation`/`JoinFede
 
 ## Story: The Spinout
 
-A successful project SubDAO is spun out to independence via `SpinOutSubDAO`. The `SubDAOControl` is destroyed, the SubDAO becomes fully independent, and it can now join federations (which managed SubDAOs cannot do per invariant F-1).
+A successful project SubOU is spun out to independence via `SpinOutSubOU`. The `SubOUControl` is destroyed, the SubOU becomes fully independent, and it can now join federations (which managed SubOUs cannot do per invariant F-1).
 
-**Features exercised:** [SubDAO Hierarchy](../04_subdao_hierarchy.md), [Federation System](01_federation.md), [Project Funding](04_project_funding.md)
+**Features exercised:** [SubOU Hierarchy](../04_subou_hierarchy.md), [Federation System](01_federation.md), [Project Funding](04_project_funding.md)
 
 ---
 

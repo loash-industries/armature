@@ -1,8 +1,8 @@
 #[test_only]
 module armature::treasury_vault_multicoin_tests;
 
-use armature::dao;
 use armature::governance;
+use armature::ou;
 use armature::proposal;
 use armature::treasury_vault::{Self, TreasuryVault};
 use multicoin::multicoin;
@@ -30,13 +30,13 @@ public struct TestProposal {}
 
 // === Helpers ===
 
-fun setup_dao(scenario: &mut test_scenario::Scenario) {
+fun setup_ou(scenario: &mut test_scenario::Scenario) {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b""),
             scenario.ctx(),
         );
@@ -45,7 +45,7 @@ fun setup_dao(scenario: &mut test_scenario::Scenario) {
 
 fun make_req(vault: &TreasuryVault): proposal::ExecutionRequest<TestProposal> {
     proposal::new_execution_request_for_testing<TestProposal>(
-        vault.dao_id(),
+        vault.ou_id(),
         object::id_from_address(@0xFFF),
     )
 }
@@ -58,7 +58,7 @@ fun coll(addr: address): ID { object::id_from_address(addr) }
 /// First deposit for a collection creates the CollectionRecord and increments collection count.
 fun test_deposit_first_item_creates_collection() {
     let mut scenario = test_scenario::begin(CREATOR);
-    setup_dao(&mut scenario);
+    setup_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -85,7 +85,7 @@ fun test_deposit_first_item_creates_collection() {
 /// Depositing the same (collection, asset) again joins the balance; item_count unchanged.
 fun test_deposit_same_asset_joins_balance() {
     let mut scenario = test_scenario::begin(CREATOR);
-    setup_dao(&mut scenario);
+    setup_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -122,7 +122,7 @@ fun test_deposit_same_asset_joins_balance() {
 /// collection.
 fun test_deposit_second_asset_same_collection() {
     let mut scenario = test_scenario::begin(CREATOR);
-    setup_dao(&mut scenario);
+    setup_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -159,7 +159,7 @@ fun test_deposit_second_asset_same_collection() {
 /// A deposit from a different collection creates a second CollectionRecord.
 fun test_deposit_second_collection_tracked_separately() {
     let mut scenario = test_scenario::begin(CREATOR);
-    setup_dao(&mut scenario);
+    setup_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -197,7 +197,7 @@ fun test_deposit_second_collection_tracked_separately() {
 /// Zero-value deposit is a no-op — collection count and balances unchanged.
 fun test_deposit_zero_is_noop() {
     let mut scenario = test_scenario::begin(CREATOR);
-    setup_dao(&mut scenario);
+    setup_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -223,7 +223,7 @@ fun test_deposit_zero_is_noop() {
 /// Multicoin deposit is permissionless — non-member can deposit.
 fun test_deposit_permissionless() {
     let mut scenario = test_scenario::begin(CREATOR);
-    setup_dao(&mut scenario);
+    setup_ou(&mut scenario);
 
     scenario.next_tx(NON_MEMBER);
     {
@@ -250,7 +250,7 @@ fun test_deposit_permissionless() {
 /// Partial withdrawal reduces balance; asset DOF and CollectionRecord are preserved.
 fun test_withdraw_partial_preserves_dofs() {
     let mut scenario = test_scenario::begin(CREATOR);
-    setup_dao(&mut scenario);
+    setup_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -289,7 +289,7 @@ fun test_withdraw_partial_preserves_dofs() {
 /// Withdrawing the exact asset balance removes the asset DOF and decrements item_count.
 fun test_withdraw_exact_removes_asset_dof() {
     let mut scenario = test_scenario::begin(CREATOR);
-    setup_dao(&mut scenario);
+    setup_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -339,7 +339,7 @@ fun test_withdraw_exact_removes_asset_dof() {
 /// collection count.
 fun test_withdraw_last_asset_removes_collection() {
     let mut scenario = test_scenario::begin(CREATOR);
-    setup_dao(&mut scenario);
+    setup_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -377,7 +377,7 @@ fun test_withdraw_last_asset_removes_collection() {
 /// Removing last asset from one collection does not affect sibling collection.
 fun test_withdraw_last_asset_leaves_sibling_collection_intact() {
     let mut scenario = test_scenario::begin(CREATOR);
-    setup_dao(&mut scenario);
+    setup_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -426,7 +426,7 @@ fun test_withdraw_last_asset_leaves_sibling_collection_intact() {
 /// Withdrawing more than the available balance aborts.
 fun test_withdraw_excess_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
-    setup_dao(&mut scenario);
+    setup_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -460,7 +460,7 @@ fun test_withdraw_excess_aborts() {
 /// Withdrawing from a collection not in the vault aborts.
 fun test_withdraw_missing_collection_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
-    setup_dao(&mut scenario);
+    setup_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -487,7 +487,7 @@ fun test_withdraw_missing_collection_aborts() {
 /// Withdrawing an asset_id not present in an existing collection aborts.
 fun test_withdraw_missing_asset_in_collection_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
-    setup_dao(&mut scenario);
+    setup_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -525,7 +525,7 @@ fun test_withdraw_missing_asset_in_collection_aborts() {
 /// multicoin_balance returns 0 for a collection that was never deposited.
 fun test_multicoin_balance_missing_collection_returns_zero() {
     let mut scenario = test_scenario::begin(CREATOR);
-    setup_dao(&mut scenario);
+    setup_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -541,7 +541,7 @@ fun test_multicoin_balance_missing_collection_returns_zero() {
 /// multicoin_balance returns 0 for an asset_id not present in an existing collection.
 fun test_multicoin_balance_missing_asset_returns_zero() {
     let mut scenario = test_scenario::begin(CREATOR);
-    setup_dao(&mut scenario);
+    setup_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -566,7 +566,7 @@ fun test_multicoin_balance_missing_asset_returns_zero() {
 /// collection_item_count returns 0 for a collection not in the vault.
 fun test_collection_item_count_missing_returns_zero() {
     let mut scenario = test_scenario::begin(CREATOR);
-    setup_dao(&mut scenario);
+    setup_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -584,7 +584,7 @@ fun test_collection_item_count_missing_returns_zero() {
 /// is_empty returns false when vault holds only multicoin assets (no coins).
 fun test_is_empty_false_with_only_multicoin() {
     let mut scenario = test_scenario::begin(CREATOR);
-    setup_dao(&mut scenario);
+    setup_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -609,7 +609,7 @@ fun test_is_empty_false_with_only_multicoin() {
 /// is_empty returns true after all multicoin assets are fully withdrawn.
 fun test_is_empty_true_after_full_multicoin_withdrawal() {
     let mut scenario = test_scenario::begin(CREATOR);
-    setup_dao(&mut scenario);
+    setup_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -647,8 +647,8 @@ fun test_destroy_empty_aborts_with_multicoin_assets() {
     let mut scenario = test_scenario::begin(CREATOR);
     scenario.next_tx(CREATOR);
     {
-        let dao_id = object::id_from_address(@0xDA0);
-        let mut vault = treasury_vault::new(dao_id, scenario.ctx());
+        let ou_id = object::id_from_address(@0xDA0);
+        let mut vault = treasury_vault::new(ou_id, scenario.ctx());
         let bal = multicoin::create_balance_for_testing(
             coll(COLL_A),
             ASSET_SWORD,
@@ -665,10 +665,10 @@ fun test_destroy_empty_aborts_with_multicoin_assets() {
 
 #[test]
 /// Proposal execution deposits warehouse receipts from multiple collections in one transaction.
-/// Simulates a DAO receiving items after winning a batch auction.
+/// Simulates an OU receiving items after winning a batch auction.
 fun test_multi_deposit_proposal() {
     let mut scenario = test_scenario::begin(CREATOR);
-    setup_dao(&mut scenario);
+    setup_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -717,7 +717,7 @@ fun test_multi_deposit_proposal() {
 /// Depositing the same items again in a second proposal execution accumulates balances correctly.
 fun test_multi_deposit_proposal_accumulates_on_repeat() {
     let mut scenario = test_scenario::begin(CREATOR);
-    setup_dao(&mut scenario);
+    setup_ou(&mut scenario);
 
     // First deposit round
     scenario.next_tx(CREATOR);
@@ -782,7 +782,7 @@ fun test_multi_deposit_proposal_accumulates_on_repeat() {
 /// using a single ExecutionRequest. Simulates sending a bundle of items to a player.
 fun test_multi_withdraw_proposal() {
     let mut scenario = test_scenario::begin(CREATOR);
-    setup_dao(&mut scenario);
+    setup_ou(&mut scenario);
 
     // Seed the vault
     scenario.next_tx(CREATOR);
@@ -864,7 +864,7 @@ fun test_multi_withdraw_proposal() {
 /// leaving the vault empty.
 fun test_multi_withdraw_proposal_full_drain() {
     let mut scenario = test_scenario::begin(CREATOR);
-    setup_dao(&mut scenario);
+    setup_ou(&mut scenario);
 
     // Seed
     scenario.next_tx(CREATOR);

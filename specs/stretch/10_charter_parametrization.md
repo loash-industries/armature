@@ -6,7 +6,7 @@
 
 Extend the `Charter` object with **dynamic fields encoding machine-readable governance parameters** that proposal handlers read and enforce at execution time. The Charter becomes a dual-layer object: a human-readable constitution on Walrus *and* an on-chain programmable policy engine that directly shapes proposal behavior.
 
-This makes the "Charter parametrizes Proposals" arrow in the DAO Atom model (see [01 Vision](../01_vision.md) — The DAO Atom) a real on-chain data dependency.
+This makes the "Charter parametrizes Proposals" arrow in the OU Atom model (see [01 Vision](../01_vision.md) — The OU Atom) a real on-chain data dependency.
 
 ---
 
@@ -41,7 +41,7 @@ Framework-enforced params are checked in `proposal::execute` (or `proposal::crea
 "max_single_treasury_spend"    -> 10000    // per-proposal spend cap in SUI (handler-enforced)
 "min_board_size"               -> 3        // SetBoard floor (handler-enforced)
 "max_board_size"               -> 9        // SetBoard ceiling (handler-enforced)
-"max_subdao_depth"             -> 3        // CreateSubDAO depth limit (handler-enforced)
+"max_subou_depth"             -> 3        // CreateSubOU depth limit (handler-enforced)
 ```
 
 ## Amendment Flow
@@ -56,7 +56,7 @@ struct AmendCharterParam has store {
 }
 ```
 
-Handler validates `new_value` is within the param's immutable `floor..ceiling` bounds. Floor/ceiling are set at parameter creation and cannot be amended — changing bounds requires `SpawnDAO` migration (see [Migration](03_migration.md)). This avoids infinite meta-governance recursion.
+Handler validates `new_value` is within the param's immutable `floor..ceiling` bounds. Floor/ceiling are set at parameter creation and cannot be amended — changing bounds requires `SpawnOU` migration (see [Migration](03_migration.md)). This avoids infinite meta-governance recursion.
 
 ## Template Proposals (Extension)
 
@@ -74,7 +74,7 @@ A `SendCoin` is classified at creation time based on its amount against charter-
 
 | | Constitution (Charter Params) | Statutes (ProposalConfig) |
 |---|---|---|
-| **Lives on** | `Charter` dynamic fields | `DAO.proposal_configs` table |
+| **Lives on** | `Charter` dynamic fields | `OU.proposal_configs` table |
 | **Amend via** | `AmendCharterParam` (~80% threshold) | `UpdateProposalConfig` (lower threshold) |
 | **Enforces** | Floors, ceilings, hard limits | Operational settings within bounds |
 | **Bounds** | Immutable floor/ceiling per param | Bounded by charter params |
@@ -85,7 +85,7 @@ A `SendCoin` is classified at creation time based on its amount against charter-
 - Sui DFs are cheap — 10-30 `u64` params are negligible gas/storage
 - Charter is already a separate shared object — no new architectural primitives
 - `get_param_or_default` pattern — `dynamic_field::exists_` + `borrow`, standard Sui
-- Backward compatible — DAOs without charter params get permissive defaults
+- Backward compatible — OUs without charter params get permissive defaults
 
 **Known limitations:**
 1. **Handler-enforced params are opt-in.** Third-party types are not bound unless their handler checks. Mirrors real constitutions.

@@ -8,7 +8,7 @@ use sui::package::{Self, UpgradeCap, UpgradeTicket, UpgradeReceipt};
 
 // === Errors ===
 
-const EVaultDaoMismatch: u64 = 0;
+const EVaultOuMismatch: u64 = 0;
 
 // === Structs ===
 
@@ -24,7 +24,7 @@ public struct PendingUpgrade {
 // === Events ===
 
 public struct UpgradeAuthorized has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     cap_id: ID,
     package_id: ID,
     policy: u8,
@@ -41,7 +41,7 @@ public fun execute_propose_upgrade(
     vault: &mut CapabilityVault,
     ticket: ExecutionTicket<ProposeUpgrade>,
 ): (UpgradeTicket, PendingUpgrade) {
-    assert!(vault.dao_id() == ticket.ticket_dao_id(), EVaultDaoMismatch);
+    assert!(vault.ou_id() == ticket.ticket_ou_id(), EVaultOuMismatch);
 
     let payload = ticket.ticket_payload();
 
@@ -57,7 +57,7 @@ public fun execute_propose_upgrade(
     );
 
     event::emit(UpgradeAuthorized {
-        dao_id: vault.dao_id(),
+        ou_id: vault.ou_id(),
         cap_id: payload.cap_id(),
         package_id: payload.package_id(),
         policy: payload.policy(),

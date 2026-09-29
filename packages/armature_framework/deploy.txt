@@ -4,7 +4,7 @@
 │  │ PackageID: 0x6f993d7a6fe02bcc2ae077d2a8f71d62613e84900fc130c47232514cb5374ab4                                             │
 │  │ Version: 1                                                                                                                │
 │  │ Digest: D6fu7PX3q5U6UUtMeKqRGRCqf9ZKZPFBM2nSKMBEEAUW                                                                      │
-│  │ Modules: board_voting, capability_vault, charter, controller, dao, emergency, governance, proposal, treasury_vault, utils │
+│  │ Modules: board_voting, capability_vault, charter, controller, ou, emergency, governance, proposal, treasury_vault, utils │
 │  └──                                                                                                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭───────────────────────────────────────────────────────────────────────────────────────────────────╮

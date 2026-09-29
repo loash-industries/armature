@@ -3,12 +3,12 @@ module armature::external_execution_tests;
 
 use armature::board_voting;
 use armature::capability_vault::CapabilityVault;
-use armature::dao::{Self, DAO};
 use armature::disable_bypass_type::DisableBypassType;
 use armature::emergency::EmergencyFreeze;
 use armature::enable_bypass_type::EnableBypassType;
 use armature::external_execution;
 use armature::governance;
+use armature::ou::{Self, OU};
 use armature::permissions;
 use armature::proposal::{
     Self,
@@ -16,7 +16,7 @@ use armature::proposal::{
     Proposal,
     ProposalCreated,
     ProposalExecuted,
-    ProposalPayloadCreated,
+    ProposalPayloadCreated
 };
 use std::internal;
 use std::string;
@@ -33,28 +33,28 @@ public struct DummyBypass has drop, store { x: u64 }
 /// Second payload type for verifying type-slot mismatches.
 public struct OtherBypass has drop, store {}
 
-fun create_test_dao(scenario: &mut test_scenario::Scenario) {
+fun create_test_ou(scenario: &mut test_scenario::Scenario) {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
     };
 }
 
-/// Enable a custom proposal type on the DAO without going through governance.
+/// Enable a custom proposal type on the OU without going through governance.
 /// Gives `DummyBypass` a slot so ticket_from_cap recognizes it.
 fun enable_dummy_type(scenario: &mut test_scenario::Scenario) {
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type<DummyBypass>(b"DummyBypass".to_ascii_string(), config);
-        test_scenario::return_shared(dao);
+        ou.test_enable_type<DummyBypass>(b"DummyBypass".to_ascii_string(), config);
+        test_scenario::return_shared(ou);
     };
 }
 
@@ -71,7 +71,7 @@ fun run_enable_bypass<NewType: store>(
     clock.set_for_testing(ts_submit);
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let config = proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0);
         let payload = external_execution::new_enable_bypass_type(
             type_key.to_ascii_string(),
@@ -79,22 +79,22 @@ fun run_enable_bypass<NewType: store>(
             config,
         );
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::none(),
             payload,
             clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.set_for_testing(ts_vote);
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
@@ -102,20 +102,20 @@ fun run_enable_bypass<NewType: store>(
     let mut cap_id_opt = option::none<ID>();
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut vault = scenario.take_shared<CapabilityVault>();
         let proposal = scenario.take_shared<Proposal<EnableBypassType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             clock,
             scenario.ctx(),
         );
         external_execution::execute_enable_bypass_type<NewType>(
-            &mut dao,
+            &mut ou,
             &mut vault,
             ticket,
             scenario.ctx(),
@@ -126,35 +126,35 @@ fun run_enable_bypass<NewType: store>(
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     cap_id_opt.destroy_some()
 }
 
 #[test]
-/// Happy path: a valid cap mints an ExecutionRequest<DummyBypass> for the same DAO.
+/// Happy path: a valid cap mints an ExecutionRequest<DummyBypass> for the same OU.
 fun external_executed_create_happy_path() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     enable_dummy_type(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(1000);
 
         let cap = proposal::new_external_execution_cap_for_testing<DummyBypass>(
-            dao.id(),
+            ou.id(),
             scenario.ctx(),
         );
 
         let ticket = external_execution::ticket_from_cap<DummyBypass>(
             &cap,
-            &mut dao,
+            &mut ou,
             &freeze,
             option::none(),
             DummyBypass { x: 42 },
@@ -163,47 +163,47 @@ fun external_executed_create_happy_path() {
             scenario.ctx(),
         );
 
-        // Request is for this DAO
-        assert!(ticket.ticket_dao_id() == dao.id());
+        // Request is for this OU
+        assert!(ticket.ticket_ou_id() == ou.id());
         // record_execution updated
-        assert!(dao.last_executed_ms<DummyBypass>().is_some());
+        assert!(ou.last_executed_ms<DummyBypass>().is_some());
 
         ticket.discharge(internal::permit());
         proposal::destroy_external_execution_cap_for_testing(cap);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = armature::proposal::ECapDAOMismatch)]
-/// A cap minted for a different DAO must not authorize execution.
-fun external_executed_create_cap_for_wrong_dao_aborts() {
+#[test, expected_failure(abort_code = armature::proposal::ECapOUMismatch)]
+/// A cap minted for a different OU must not authorize execution.
+fun external_executed_create_cap_for_wrong_ou_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     enable_dummy_type(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(1000);
 
-        // Construct a cap pointing at a fabricated, unrelated DAO ID.
-        let fake_dao_id = object::id_from_address(@0xDEAD);
+        // Construct a cap pointing at a fabricated, unrelated OU ID.
+        let fake_ou_id = object::id_from_address(@0xDEAD);
         let cap = proposal::new_external_execution_cap_for_testing<DummyBypass>(
-            fake_dao_id,
+            fake_ou_id,
             scenario.ctx(),
         );
 
         let ticket = external_execution::ticket_from_cap<DummyBypass>(
             &cap,
-            &mut dao,
+            &mut ou,
             &freeze,
             option::none(),
             DummyBypass { x: 0 },
@@ -215,7 +215,7 @@ fun external_executed_create_cap_for_wrong_dao_aborts() {
         ticket.discharge(internal::permit());
         proposal::destroy_external_execution_cap_for_testing(cap);
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -223,28 +223,28 @@ fun external_executed_create_cap_for_wrong_dao_aborts() {
 }
 
 #[test, expected_failure(abort_code = armature::external_execution::ETypeNotEnabled)]
-/// A cap for a valid DAO cannot mint a request for a type that isn't enabled there.
+/// A cap for a valid OU cannot mint a request for a type that isn't enabled there.
 fun external_executed_create_type_not_enabled_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     // NOTE: deliberately skipping enable_dummy_type — DummyBypass is not enabled.
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(1000);
 
         let cap = proposal::new_external_execution_cap_for_testing<DummyBypass>(
-            dao.id(),
+            ou.id(),
             scenario.ctx(),
         );
 
         let ticket = external_execution::ticket_from_cap<DummyBypass>(
             &cap,
-            &mut dao,
+            &mut ou,
             &freeze,
             option::none(),
             DummyBypass { x: 0 },
@@ -256,7 +256,7 @@ fun external_executed_create_type_not_enabled_aborts() {
         ticket.discharge(internal::permit());
         proposal::destroy_external_execution_cap_for_testing(cap);
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -269,32 +269,32 @@ fun external_executed_create_cooldown_enforced() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     // Enable DummyBypass with a non-zero cooldown.
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 60_000); // 60s cooldown
-        dao.test_enable_type<DummyBypass>(b"DummyBypass".to_ascii_string(), config);
-        test_scenario::return_shared(dao);
+        ou.test_enable_type<DummyBypass>(b"DummyBypass".to_ascii_string(), config);
+        test_scenario::return_shared(ou);
     };
 
     // First call at t=1000 — should succeed.
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(1000);
 
         let cap = proposal::new_external_execution_cap_for_testing<DummyBypass>(
-            dao.id(),
+            ou.id(),
             scenario.ctx(),
         );
 
         let ticket = external_execution::ticket_from_cap<DummyBypass>(
             &cap,
-            &mut dao,
+            &mut ou,
             &freeze,
             option::none(),
             DummyBypass { x: 1 },
@@ -306,24 +306,24 @@ fun external_executed_create_cooldown_enforced() {
         proposal::destroy_external_execution_cap_for_testing(cap);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // Second call at t=2000 (< 1000 + 60_000) — should abort with ECooldownActive.
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(2000);
 
         let cap = proposal::new_external_execution_cap_for_testing<DummyBypass>(
-            dao.id(),
+            ou.id(),
             scenario.ctx(),
         );
 
         let ticket = external_execution::ticket_from_cap<DummyBypass>(
             &cap,
-            &mut dao,
+            &mut ou,
             &freeze,
             option::none(),
             DummyBypass { x: 2 },
@@ -335,7 +335,7 @@ fun external_executed_create_cooldown_enforced() {
         proposal::destroy_external_execution_cap_for_testing(cap);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -349,32 +349,32 @@ fun external_executed_create_other_type_slot_does_not_enable_p() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     // Give OtherBypass a slot whose display key is "DummyBypass".
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type<OtherBypass>(b"DummyBypass".to_ascii_string(), config);
-        test_scenario::return_shared(dao);
+        ou.test_enable_type<OtherBypass>(b"DummyBypass".to_ascii_string(), config);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(1000);
 
         let cap = proposal::new_external_execution_cap_for_testing<DummyBypass>(
-            dao.id(),
+            ou.id(),
             scenario.ctx(),
         );
 
         // P = DummyBypass has no slot of its own → not enabled.
         let ticket = external_execution::ticket_from_cap<DummyBypass>(
             &cap,
-            &mut dao,
+            &mut ou,
             &freeze,
             option::none(),
             DummyBypass { x: 0 },
@@ -386,7 +386,7 @@ fun external_executed_create_other_type_slot_does_not_enable_p() {
         proposal::destroy_external_execution_cap_for_testing(cap);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -406,13 +406,13 @@ fun execute_enable_bypass_type_e2e() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     // Submit.
     clock.set_for_testing(1000);
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let config = proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0);
         let payload = external_execution::new_enable_bypass_type(
             b"DummyBypass".to_ascii_string(),
@@ -420,13 +420,13 @@ fun execute_enable_bypass_type_e2e() {
             config,
         );
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::none(),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // Vote.
@@ -434,9 +434,9 @@ fun execute_enable_bypass_type_e2e() {
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
@@ -445,27 +445,27 @@ fun execute_enable_bypass_type_e2e() {
     clock.set_for_testing(3000);
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut vault = scenario.take_shared<CapabilityVault>();
         let proposal = scenario.take_shared<Proposal<EnableBypassType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
         external_execution::execute_enable_bypass_type<DummyBypass>(
-            &mut dao,
+            &mut ou,
             &mut vault,
             ticket,
             scenario.ctx(),
         );
 
-        assert!(dao.is_type_enabled<DummyBypass>());
-        assert!(dao.type_display_key<DummyBypass>() == b"DummyBypass".to_ascii_string());
+        assert!(ou.is_type_enabled<DummyBypass>());
+        assert!(ou.type_display_key<DummyBypass>() == b"DummyBypass".to_ascii_string());
 
         let ids = vault.ids_for_type<ExternalExecutionCap<DummyBypass>>();
         assert!(ids.length() == 1);
@@ -473,22 +473,22 @@ fun execute_enable_bypass_type_e2e() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // Use the deposited cap end-to-end via borrow_external_cap (no ExecutionRequest).
     clock.set_for_testing(4000);
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let vault = scenario.take_shared<CapabilityVault>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
         let cap_id = cap_id_opt.destroy_some();
-        let cap: &ExternalExecutionCap<DummyBypass> = vault.borrow_external_cap(dao.id(), cap_id);
+        let cap: &ExternalExecutionCap<DummyBypass> = vault.borrow_external_cap(ou.id(), cap_id);
         let ticket = external_execution::ticket_from_cap<DummyBypass>(
             cap,
-            &mut dao,
+            &mut ou,
             &freeze,
             option::none(),
             DummyBypass { x: 7 },
@@ -500,7 +500,7 @@ fun execute_enable_bypass_type_e2e() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -517,27 +517,27 @@ fun execute_enable_bypass_type_below_floor_aborts() {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR, member_b]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
     };
 
-    // Relax on-DAO config so vote can "pass" at 50%; floor still 80% at execute.
+    // Relax on-OU config so vote can "pass" at 50%; floor still 80% at execute.
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let weak = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_update_config<EnableBypassType>(weak);
-        test_scenario::return_shared(dao);
+        ou.test_update_config<EnableBypassType>(weak);
+        test_scenario::return_shared(ou);
     };
 
     clock.set_for_testing(1000);
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let config = proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0);
         let payload = external_execution::new_enable_bypass_type(
             b"MyBypass".to_ascii_string(),
@@ -545,42 +545,42 @@ fun execute_enable_bypass_type_below_floor_aborts() {
             config,
         );
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::none(),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.set_for_testing(2000);
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     clock.set_for_testing(3000);
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut vault = scenario.take_shared<CapabilityVault>();
         let proposal = scenario.take_shared<Proposal<EnableBypassType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
         external_execution::execute_enable_bypass_type<DummyBypass>(
-            &mut dao,
+            &mut ou,
             &mut vault,
             ticket,
             scenario.ctx(),
@@ -588,7 +588,7 @@ fun execute_enable_bypass_type_below_floor_aborts() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -604,12 +604,12 @@ fun execute_enable_bypass_type_self_bootstrap_denied() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     clock.set_for_testing(1000);
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let config = proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0);
         let payload = external_execution::new_enable_bypass_type(
             b"SelfBootstrap".to_ascii_string(),
@@ -617,35 +617,35 @@ fun execute_enable_bypass_type_self_bootstrap_denied() {
             config,
         );
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::none(),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.set_for_testing(2000);
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     clock.set_for_testing(3000);
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut vault = scenario.take_shared<CapabilityVault>();
         let proposal = scenario.take_shared<Proposal<EnableBypassType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
@@ -653,7 +653,7 @@ fun execute_enable_bypass_type_self_bootstrap_denied() {
         );
         // NewType = EnableBypassType — must abort.
         external_execution::execute_enable_bypass_type<EnableBypassType>(
-            &mut dao,
+            &mut ou,
             &mut vault,
             ticket,
             scenario.ctx(),
@@ -661,7 +661,7 @@ fun execute_enable_bypass_type_self_bootstrap_denied() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -677,13 +677,13 @@ fun execute_enable_bypass_type_zero_weight_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     // Mint a zero-weight Proposal<EnableBypassType> via privileged_create.
     clock.set_for_testing(1000);
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut vault = scenario.take_shared<CapabilityVault>();
         let config = proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0);
         let payload = external_execution::new_enable_bypass_type(
@@ -695,7 +695,7 @@ fun execute_enable_bypass_type_zero_weight_aborts() {
         // yes_weight == 0 and total_snapshot_weight == 0 — the floor check should
         // reject gte_bps(0, 0, 8000) because total == 0 (vacuous).
         let ticket = proposal::privileged_create_for_testing<EnableBypassType>(
-            dao.id(),
+            ou.id(),
             b"EnableBypassType".to_ascii_string(),
             CREATOR,
             option::none(),
@@ -705,13 +705,13 @@ fun execute_enable_bypass_type_zero_weight_aborts() {
 
         // Pass the zero-weight ticket to the handler — must abort at floor check.
         external_execution::execute_enable_bypass_type<DummyBypass>(
-            &mut dao,
+            &mut ou,
             &mut vault,
             ticket,
             scenario.ctx(),
         );
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -719,40 +719,40 @@ fun execute_enable_bypass_type_zero_weight_aborts() {
 }
 
 #[test, expected_failure(abort_code = armature::external_execution::EExecutionPaused)]
-/// external_executed_create must refuse when DAO execution is paused.
+/// external_executed_create must refuse when OU execution is paused.
 fun external_executed_create_execution_paused_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     enable_dummy_type(&mut scenario);
 
     // Flip execution_paused via a manually-minted request (same-package test seam).
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let req = proposal::new_execution_request_for_testing<DummyBypass>(
-            dao.id(),
+            ou.id(),
             object::id_from_address(@0xBEEF),
         );
-        dao.set_execution_paused(true, &req);
+        ou.set_execution_paused(true, &req);
         proposal::consume_execution_request_for_testing(req);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(1000);
 
         let cap = proposal::new_external_execution_cap_for_testing<DummyBypass>(
-            dao.id(),
+            ou.id(),
             scenario.ctx(),
         );
         let ticket = external_execution::ticket_from_cap<DummyBypass>(
             &cap,
-            &mut dao,
+            &mut ou,
             &freeze,
             option::none(),
             DummyBypass { x: 0 },
@@ -764,7 +764,7 @@ fun external_executed_create_execution_paused_aborts() {
         proposal::destroy_external_execution_cap_for_testing(cap);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -772,39 +772,39 @@ fun external_executed_create_execution_paused_aborts() {
 }
 
 #[test, expected_failure(abort_code = armature::external_execution::EControllerPaused)]
-/// external_executed_create must refuse when a SubDAO controller has paused execution.
+/// external_executed_create must refuse when a SubOU controller has paused execution.
 fun external_executed_create_controller_paused_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     enable_dummy_type(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let req = proposal::new_privileged_request_for_testing<DummyBypass>(
-            dao.id(),
+            ou.id(),
             object::id_from_address(@0xBEEF),
         );
-        dao.set_controller_paused(true, &req);
+        ou.set_controller_paused(true, &req);
         proposal::consume_execution_request_for_testing(req);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(1000);
 
         let cap = proposal::new_external_execution_cap_for_testing<DummyBypass>(
-            dao.id(),
+            ou.id(),
             scenario.ctx(),
         );
         let ticket = external_execution::ticket_from_cap<DummyBypass>(
             &cap,
-            &mut dao,
+            &mut ou,
             &freeze,
             option::none(),
             DummyBypass { x: 0 },
@@ -816,7 +816,7 @@ fun external_executed_create_controller_paused_aborts() {
         proposal::destroy_external_execution_cap_for_testing(cap);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -835,7 +835,7 @@ fun execute_disable_bypass_type_e2e() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     let cap_id = run_enable_bypass<DummyBypass>(
         &mut scenario,
         &mut clock,
@@ -849,62 +849,62 @@ fun execute_disable_bypass_type_e2e() {
     clock.set_for_testing(4000);
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let payload = external_execution::new_disable_bypass_type(
             b"DummyBypass".to_ascii_string(),
             cap_id,
         );
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::none(),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.set_for_testing(5000);
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<DisableBypassType>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     clock.set_for_testing(6000);
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut vault = scenario.take_shared<CapabilityVault>();
         let proposal = scenario.take_shared<Proposal<DisableBypassType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
         external_execution::execute_disable_bypass_type<DummyBypass>(
-            &mut dao,
+            &mut ou,
             &mut vault,
             ticket,
         );
 
         // Slot removed, display key released.
-        assert!(!dao.is_type_enabled<DummyBypass>());
-        assert!(dao.type_for_display_key(&b"DummyBypass".to_ascii_string()).is_none());
+        assert!(!ou.is_type_enabled<DummyBypass>());
+        assert!(ou.type_for_display_key(&b"DummyBypass".to_ascii_string()).is_none());
         // Cap no longer in vault.
         let remaining = vault.ids_for_type<ExternalExecutionCap<DummyBypass>>();
         assert!(remaining.is_empty());
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -920,7 +920,7 @@ fun execute_disable_bypass_type_wrong_new_type_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     let cap_id = run_enable_bypass<DummyBypass>(
         &mut scenario,
         &mut clock,
@@ -933,28 +933,28 @@ fun execute_disable_bypass_type_wrong_new_type_aborts() {
     clock.set_for_testing(4000);
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let payload = external_execution::new_disable_bypass_type(
             b"DummyBypass".to_ascii_string(),
             cap_id,
         );
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::none(),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.set_for_testing(5000);
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<DisableBypassType>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
@@ -962,22 +962,22 @@ fun execute_disable_bypass_type_wrong_new_type_aborts() {
     // display-key check, not the slot-existence check, is what fires.
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type<OtherBypass>(b"OtherBypass".to_ascii_string(), config);
-        test_scenario::return_shared(dao);
+        ou.test_enable_type<OtherBypass>(b"OtherBypass".to_ascii_string(), config);
+        test_scenario::return_shared(ou);
     };
 
     clock.set_for_testing(6000);
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut vault = scenario.take_shared<CapabilityVault>();
         let proposal = scenario.take_shared<Proposal<DisableBypassType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
@@ -985,14 +985,14 @@ fun execute_disable_bypass_type_wrong_new_type_aborts() {
         );
         // The payload's display key is "DummyBypass", but NewType = OtherBypass.
         external_execution::execute_disable_bypass_type<OtherBypass>(
-            &mut dao,
+            &mut ou,
             &mut vault,
             ticket,
         );
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -1006,7 +1006,7 @@ fun execute_disable_bypass_type_wrong_cap_id_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     let _real_cap_id = run_enable_bypass<DummyBypass>(
         &mut scenario,
         &mut clock,
@@ -1021,55 +1021,55 @@ fun execute_disable_bypass_type_wrong_cap_id_aborts() {
     clock.set_for_testing(4000);
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let payload = external_execution::new_disable_bypass_type(
             b"DummyBypass".to_ascii_string(),
             bogus_cap_id,
         );
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::none(),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.set_for_testing(5000);
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<DisableBypassType>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     clock.set_for_testing(6000);
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut vault = scenario.take_shared<CapabilityVault>();
         let proposal = scenario.take_shared<Proposal<DisableBypassType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
         external_execution::execute_disable_bypass_type<DummyBypass>(
-            &mut dao,
+            &mut ou,
             &mut vault,
             ticket,
         );
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -1088,12 +1088,12 @@ fun execute_enable_bypass_type_wrong_new_type_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     clock.set_for_testing(1000);
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let config = proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0);
         // Board approves DummyBypass under the display key "DummyBypass".
         let payload = external_execution::new_enable_bypass_type(
@@ -1102,35 +1102,35 @@ fun execute_enable_bypass_type_wrong_new_type_aborts() {
             config,
         );
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::none(),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.set_for_testing(2000);
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     clock.set_for_testing(3000);
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut vault = scenario.take_shared<CapabilityVault>();
         let proposal = scenario.take_shared<Proposal<EnableBypassType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
@@ -1138,7 +1138,7 @@ fun execute_enable_bypass_type_wrong_new_type_aborts() {
         );
         // Executor tries to register OtherBypass instead — must abort.
         external_execution::execute_enable_bypass_type<OtherBypass>(
-            &mut dao,
+            &mut ou,
             &mut vault,
             ticket,
             scenario.ctx(),
@@ -1146,7 +1146,7 @@ fun execute_enable_bypass_type_wrong_new_type_aborts() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -1163,14 +1163,14 @@ fun enable_bypass_type_composable_cooldown_conflict_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     // Submit EnableBypassType with a config that sets cooldown_ms > 0 and composable_allowed =
     // true.
     clock.set_for_testing(1000);
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         // Config with cooldown + composable_allowed — should be rejected
         let bad_config = proposal::new_config(
             5_000,
@@ -1186,13 +1186,13 @@ fun enable_bypass_type_composable_cooldown_conflict_aborts() {
             bad_config,
         );
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::none(),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // Vote
@@ -1200,9 +1200,9 @@ fun enable_bypass_type_composable_cooldown_conflict_aborts() {
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
@@ -1210,13 +1210,13 @@ fun enable_bypass_type_composable_cooldown_conflict_aborts() {
     clock.set_for_testing(3000);
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut vault = scenario.take_shared<CapabilityVault>();
         let proposal = scenario.take_shared<Proposal<EnableBypassType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
@@ -1224,7 +1224,7 @@ fun enable_bypass_type_composable_cooldown_conflict_aborts() {
         );
 
         external_execution::execute_enable_bypass_type<DummyBypass>(
-            &mut dao,
+            &mut ou,
             &mut vault,
             ticket,
             scenario.ctx(),
@@ -1232,7 +1232,7 @@ fun enable_bypass_type_composable_cooldown_conflict_aborts() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -1241,20 +1241,20 @@ fun enable_bypass_type_composable_cooldown_conflict_aborts() {
 
 // === ticket_from_cap_readonly ===
 
-/// Mint a cap for DummyBypass and call ticket_from_cap_readonly with an immutable DAO.
+/// Mint a cap for DummyBypass and call ticket_from_cap_readonly with an immutable OU.
 fun cap_readonly_and_discharge(scenario: &mut test_scenario::Scenario, clock: &clock::Clock) {
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let cap = proposal::new_external_execution_cap_for_testing<DummyBypass>(
-            dao.id(),
+            ou.id(),
             scenario.ctx(),
         );
 
         let ticket = external_execution::ticket_from_cap_readonly<DummyBypass>(
             &cap,
-            &dao,
+            &ou,
             &freeze,
             option::none(),
             DummyBypass { x: 42 },
@@ -1263,25 +1263,25 @@ fun cap_readonly_and_discharge(scenario: &mut test_scenario::Scenario, clock: &c
             scenario.ctx(),
         );
 
-        assert!(ticket.ticket_dao_id() == dao.id());
-        assert!(dao.last_executed_ms<DummyBypass>().is_none());
+        assert!(ticket.ticket_ou_id() == ou.id());
+        assert!(ou.last_executed_ms<DummyBypass>().is_none());
 
         ticket.discharge(internal::permit());
         proposal::destroy_external_execution_cap_for_testing(cap);
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 }
 
 #[test]
-/// Read-only bypass mints the ticket without recording anything on the DAO,
+/// Read-only bypass mints the ticket without recording anything on the OU,
 /// and can run back-to-back for a cooldown-free type.
 fun ticket_from_cap_readonly_happy_path() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1000);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     enable_dummy_type(&mut scenario);
     cap_readonly_and_discharge(&mut scenario, &clock);
     cap_readonly_and_discharge(&mut scenario, &clock);
@@ -1290,20 +1290,20 @@ fun ticket_from_cap_readonly_happy_path() {
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = armature::external_execution::ECooldownRequiresMutableDAO)]
+#[test, expected_failure(abort_code = armature::external_execution::ECooldownRequiresMutableOU)]
 /// A type with a cooldown must use ticket_from_cap so the timestamp is recorded.
 fun ticket_from_cap_readonly_cooldown_type_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1000);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 60_000);
-        dao.test_enable_type<DummyBypass>(b"DummyBypass".to_ascii_string(), config);
-        test_scenario::return_shared(dao);
+        ou.test_enable_type<DummyBypass>(b"DummyBypass".to_ascii_string(), config);
+        test_scenario::return_shared(ou);
     };
     cap_readonly_and_discharge(&mut scenario, &clock);
 
@@ -1321,25 +1321,25 @@ fun cap_execution_creates_no_objects(readonly: bool) {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1000);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     enable_dummy_type(&mut scenario);
 
     // Mint the cap in its own transaction so the execution's effects only
     // reflect what ticket_from_cap does.
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let cap = proposal::new_external_execution_cap_for_testing<DummyBypass>(
-            dao.id(),
+            ou.id(),
             scenario.ctx(),
         );
         transfer::public_transfer(cap, CREATOR);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let cap = scenario.take_from_sender<ExternalExecutionCap<DummyBypass>>();
         let metadata = option::some(string::utf8(b"QmBypass"));
@@ -1347,7 +1347,7 @@ fun cap_execution_creates_no_objects(readonly: bool) {
         let ticket = if (readonly) {
             external_execution::ticket_from_cap_readonly<DummyBypass>(
                 &cap,
-                &dao,
+                &ou,
                 &freeze,
                 metadata,
                 DummyBypass { x: 7 },
@@ -1358,7 +1358,7 @@ fun cap_execution_creates_no_objects(readonly: bool) {
         } else {
             external_execution::ticket_from_cap<DummyBypass>(
                 &cap,
-                &mut dao,
+                &mut ou,
                 &freeze,
                 metadata,
                 DummyBypass { x: 7 },
@@ -1386,7 +1386,7 @@ fun cap_execution_creates_no_objects(readonly: bool) {
         ticket.discharge(internal::permit());
         scenario.return_to_sender(cap);
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     let effects = scenario.next_tx(CREATOR);
@@ -1416,12 +1416,12 @@ fun ticket_from_cap_readonly_creates_no_objects() {
 fun execute_enable_bypass_type_forbidden_bits_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     clock.set_for_testing(1000);
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let config = proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0).with_permissions(
             permissions::type_admin(),
         );
@@ -1430,41 +1430,41 @@ fun execute_enable_bypass_type_forbidden_bits_aborts() {
             type_name::with_defining_ids<DummyBypass>(),
             config,
         );
-        board_voting::submit_proposal(&dao, option::none(), payload, &clock, scenario.ctx());
-        test_scenario::return_shared(dao);
+        board_voting::submit_proposal(&ou, option::none(), payload, &clock, scenario.ctx());
+        test_scenario::return_shared(ou);
     };
     clock.set_for_testing(2000);
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
     clock.set_for_testing(3000);
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut vault = scenario.take_shared<CapabilityVault>();
         let proposal = scenario.take_shared<Proposal<EnableBypassType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
         external_execution::execute_enable_bypass_type<DummyBypass>(
-            &mut dao,
+            &mut ou,
             &mut vault,
             ticket,
             scenario.ctx(),
         );
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -1477,30 +1477,30 @@ fun execute_enable_bypass_type_forbidden_bits_aborts() {
 fun ticket_from_cap_forbidden_bits_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let config = proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0).with_permissions(
             permissions::vault_extract(),
         );
-        dao.test_enable_type<DummyBypass>(b"DummyBypass".to_ascii_string(), config);
-        test_scenario::return_shared(dao);
+        ou.test_enable_type<DummyBypass>(b"DummyBypass".to_ascii_string(), config);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(1000);
         let cap = proposal::new_external_execution_cap_for_testing<DummyBypass>(
-            dao.id(),
+            ou.id(),
             scenario.ctx(),
         );
         let ticket = external_execution::ticket_from_cap<DummyBypass>(
             &cap,
-            &mut dao,
+            &mut ou,
             &freeze,
             option::none(),
             DummyBypass { x: 1 },
@@ -1511,7 +1511,7 @@ fun ticket_from_cap_forbidden_bits_aborts() {
         ticket.discharge(internal::permit());
         proposal::destroy_external_execution_cap_for_testing(cap);
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();

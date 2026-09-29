@@ -2,13 +2,13 @@
 module armature_proposals::batch_multicoin_ops_tests;
 
 use armature::board_voting;
-use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
+use armature::ou::{Self, OU};
 use armature::proposal::{Self, Proposal};
 use armature::treasury_vault::TreasuryVault;
 use armature_proposals::multicoin_item;
-use armature_proposals::send_batch_multicoin_to_dao::{Self, SendBatchMulticoinToDAO};
+use armature_proposals::send_batch_multicoin_to_ou::{Self, SendBatchMulticoinToOU};
 use armature_proposals::send_batch_multicoin_to_player::{Self, SendBatchMulticoinToAddress};
 use armature_proposals::treasury_ops;
 use armature_proposals::type_permissions;
@@ -33,10 +33,10 @@ const ASSET_POTION: u64 = 3;
 
 fun coll(addr: address): ID { object::id_from_address(addr) }
 
-fun create_named_dao(scenario: &mut test_scenario::Scenario, name: vector<u8>): ID {
+fun create_named_ou(scenario: &mut test_scenario::Scenario, name: vector<u8>): ID {
     scenario.next_tx(CREATOR);
     let init = governance::init_board(vector[CREATOR]);
-    dao::create(
+    ou::create(
         &init,
         string::utf8(name),
         string::utf8(b""),
@@ -44,14 +44,14 @@ fun create_named_dao(scenario: &mut test_scenario::Scenario, name: vector<u8>): 
     )
 }
 
-fun enable_type<T>(scenario: &mut test_scenario::Scenario, dao_id: ID, display_key: vector<u8>) {
+fun enable_type<T>(scenario: &mut test_scenario::Scenario, ou_id: ID, display_key: vector<u8>) {
     scenario.next_tx(CREATOR);
-    let mut dao = scenario.take_shared_by_id<DAO>(dao_id);
+    let mut ou = scenario.take_shared_by_id<OU>(ou_id);
     let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0).with_permissions(
         type_permissions::treasury_spend(),
     );
-    dao.test_enable_type<T>(display_key.to_ascii_string(), config);
-    test_scenario::return_shared(dao);
+    ou.test_enable_type<T>(display_key.to_ascii_string(), config);
+    test_scenario::return_shared(ou);
 }
 
 fun fund_vault(scenario: &mut test_scenario::Scenario, vault_id: ID) {
@@ -92,15 +92,15 @@ fun send_batch_to_address_e2e() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    let dao_id = create_named_dao(&mut scenario, b"Test DAO");
-    enable_type<SendBatchMulticoinToAddress>(&mut scenario, dao_id, b"SendBatchMulticoinToAddress");
+    let ou_id = create_named_ou(&mut scenario, b"Test OU");
+    enable_type<SendBatchMulticoinToAddress>(&mut scenario, ou_id, b"SendBatchMulticoinToAddress");
 
     let vault_id;
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared_by_id<DAO>(dao_id);
-        vault_id = dao.treasury_id();
-        test_scenario::return_shared(dao);
+        let ou = scenario.take_shared_by_id<OU>(ou_id);
+        vault_id = ou.treasury_id();
+        test_scenario::return_shared(ou);
     };
 
     fund_vault(&mut scenario, vault_id);
@@ -108,7 +108,7 @@ fun send_batch_to_address_e2e() {
     // Submit proposal: send sword(4) + shield(6) + potion(8) to PLAYER
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared_by_id<DAO>(dao_id);
+        let ou = scenario.take_shared_by_id<OU>(ou_id);
         let items = vector[
             multicoin_item::new(coll(COLL_A), ASSET_SWORD, 4),
             multicoin_item::new(coll(COLL_A), ASSET_SHIELD, 6),
@@ -117,13 +117,13 @@ fun send_batch_to_address_e2e() {
         let payload = send_batch_multicoin_to_player::new(PLAYER, items);
         clock.set_for_testing(1000);
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::some(string::utf8(b"Send batch to address")),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // Vote yes
@@ -131,23 +131,23 @@ fun send_batch_to_address_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<SendBatchMulticoinToAddress>>();
         clock.set_for_testing(2000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     // Execute
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared_by_id<DAO>(dao_id);
+        let mut ou = scenario.take_shared_by_id<OU>(ou_id);
         let mut vault = scenario.take_shared_by_id<TreasuryVault>(vault_id);
         let mut proposal = scenario.take_shared<Proposal<SendBatchMulticoinToAddress>>();
-        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(dao.emergency_freeze_id());
+        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(ou.emergency_freeze_id());
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
@@ -165,7 +165,7 @@ fun send_batch_to_address_e2e() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -178,15 +178,15 @@ fun send_batch_to_address_partial_withdraw() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    let dao_id = create_named_dao(&mut scenario, b"Test DAO");
-    enable_type<SendBatchMulticoinToAddress>(&mut scenario, dao_id, b"SendBatchMulticoinToAddress");
+    let ou_id = create_named_ou(&mut scenario, b"Test OU");
+    enable_type<SendBatchMulticoinToAddress>(&mut scenario, ou_id, b"SendBatchMulticoinToAddress");
 
     let vault_id;
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared_by_id<DAO>(dao_id);
-        vault_id = dao.treasury_id();
-        test_scenario::return_shared(dao);
+        let ou = scenario.take_shared_by_id<OU>(ou_id);
+        vault_id = ou.treasury_id();
+        test_scenario::return_shared(ou);
     };
 
     fund_vault(&mut scenario, vault_id);
@@ -194,7 +194,7 @@ fun send_batch_to_address_partial_withdraw() {
     // Submit proposal: send sword(3) + potion(5) only; shield stays
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared_by_id<DAO>(dao_id);
+        let ou = scenario.take_shared_by_id<OU>(ou_id);
         let items = vector[
             multicoin_item::new(coll(COLL_A), ASSET_SWORD, 3),
             multicoin_item::new(coll(COLL_B), ASSET_POTION, 5),
@@ -202,35 +202,35 @@ fun send_batch_to_address_partial_withdraw() {
         let payload = send_batch_multicoin_to_player::new(PLAYER, items);
         clock.set_for_testing(1000);
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::none(),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<SendBatchMulticoinToAddress>>();
         clock.set_for_testing(2000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared_by_id<DAO>(dao_id);
+        let mut ou = scenario.take_shared_by_id<OU>(ou_id);
         let mut vault = scenario.take_shared_by_id<TreasuryVault>(vault_id);
         let mut proposal = scenario.take_shared<Proposal<SendBatchMulticoinToAddress>>();
-        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(dao.emergency_freeze_id());
+        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(ou.emergency_freeze_id());
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
@@ -247,7 +247,7 @@ fun send_batch_to_address_partial_withdraw() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -260,57 +260,57 @@ fun send_batch_to_address_insufficient_balance_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    let dao_id = create_named_dao(&mut scenario, b"Test DAO");
-    enable_type<SendBatchMulticoinToAddress>(&mut scenario, dao_id, b"SendBatchMulticoinToAddress");
+    let ou_id = create_named_ou(&mut scenario, b"Test OU");
+    enable_type<SendBatchMulticoinToAddress>(&mut scenario, ou_id, b"SendBatchMulticoinToAddress");
 
     let vault_id;
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared_by_id<DAO>(dao_id);
-        vault_id = dao.treasury_id();
-        test_scenario::return_shared(dao);
+        let ou = scenario.take_shared_by_id<OU>(ou_id);
+        vault_id = ou.treasury_id();
+        test_scenario::return_shared(ou);
     };
 
     fund_vault(&mut scenario, vault_id); // vault has sword=10
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared_by_id<DAO>(dao_id);
+        let ou = scenario.take_shared_by_id<OU>(ou_id);
         let items = vector[
             multicoin_item::new(coll(COLL_A), ASSET_SWORD, 999), // exceeds vault balance of 10
         ];
         let payload = send_batch_multicoin_to_player::new(PLAYER, items);
         clock.set_for_testing(1000);
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::none(),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<SendBatchMulticoinToAddress>>();
         clock.set_for_testing(2000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared_by_id<DAO>(dao_id);
+        let mut ou = scenario.take_shared_by_id<OU>(ou_id);
         let mut vault = scenario.take_shared_by_id<TreasuryVault>(vault_id);
         let mut proposal = scenario.take_shared<Proposal<SendBatchMulticoinToAddress>>();
-        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(dao.emergency_freeze_id());
+        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(ou.emergency_freeze_id());
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
@@ -320,7 +320,7 @@ fun send_batch_to_address_insufficient_balance_aborts() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -328,10 +328,10 @@ fun send_batch_to_address_insufficient_balance_aborts() {
 }
 
 // =========================================================================
-// SendBatchMulticoinToDAO tests
+// SendBatchMulticoinToOU tests
 // =========================================================================
 
-/// Seed a vault with a single sword balance (lean helper for 2-DAO tests).
+/// Seed a vault with a single sword balance (lean helper for 2-OU tests).
 fun fund_vault_single(scenario: &mut test_scenario::Scenario, vault_id: ID, amount: u64) {
     scenario.next_tx(CREATOR);
     let mut vault = scenario.take_shared_by_id<TreasuryVault>(vault_id);
@@ -346,75 +346,75 @@ fun fund_vault_single(scenario: &mut test_scenario::Scenario, vault_id: ID, amou
 }
 
 #[test]
-/// E2E: Two DAOs — fund source vault, propose batch transfer, vote, execute
+/// E2E: Two OUs — fund source vault, propose batch transfer, vote, execute
 /// → source vault debited, target vault credited with all items.
-fun send_batch_to_dao_e2e() {
+fun send_batch_to_ou_e2e() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    let source_dao_id = create_named_dao(&mut scenario, b"Source DAO");
-    let target_dao_id = create_named_dao(&mut scenario, b"Target DAO");
+    let source_ou_id = create_named_ou(&mut scenario, b"Source OU");
+    let target_ou_id = create_named_ou(&mut scenario, b"Target OU");
 
-    enable_type<SendBatchMulticoinToDAO>(&mut scenario, source_dao_id, b"SendBatchMulticoinToDAO");
+    enable_type<SendBatchMulticoinToOU>(&mut scenario, source_ou_id, b"SendBatchMulticoinToOU");
 
     let source_vault_id;
     let target_vault_id;
     scenario.next_tx(CREATOR);
     {
-        let source_dao = scenario.take_shared_by_id<DAO>(source_dao_id);
-        let target_dao = scenario.take_shared_by_id<DAO>(target_dao_id);
-        source_vault_id = source_dao.treasury_id();
-        target_vault_id = target_dao.treasury_id();
-        test_scenario::return_shared(target_dao);
-        test_scenario::return_shared(source_dao);
+        let source_ou = scenario.take_shared_by_id<OU>(source_ou_id);
+        let target_ou = scenario.take_shared_by_id<OU>(target_ou_id);
+        source_vault_id = source_ou.treasury_id();
+        target_vault_id = target_ou.treasury_id();
+        test_scenario::return_shared(target_ou);
+        test_scenario::return_shared(source_ou);
     };
 
     fund_vault_single(&mut scenario, source_vault_id, 10);
 
-    // Submit proposal: send sword(4) to target DAO
+    // Submit proposal: send sword(4) to target OU
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared_by_id<DAO>(source_dao_id);
+        let ou = scenario.take_shared_by_id<OU>(source_ou_id);
         let items = vector[multicoin_item::new(coll(COLL_A), ASSET_SWORD, 4)];
-        let payload = send_batch_multicoin_to_dao::new(target_vault_id, items);
+        let payload = send_batch_multicoin_to_ou::new(target_vault_id, items);
         clock.set_for_testing(1000);
         board_voting::submit_proposal(
-            &dao,
-            option::some(string::utf8(b"Send batch to target DAO")),
+            &ou,
+            option::some(string::utf8(b"Send batch to target OU")),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut proposal = scenario.take_shared<Proposal<SendBatchMulticoinToDAO>>();
+        let mut proposal = scenario.take_shared<Proposal<SendBatchMulticoinToOU>>();
         clock.set_for_testing(2000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut source_dao = scenario.take_shared_by_id<DAO>(source_dao_id);
+        let mut source_ou = scenario.take_shared_by_id<OU>(source_ou_id);
         let mut source_vault = scenario.take_shared_by_id<TreasuryVault>(source_vault_id);
         let mut target_vault = scenario.take_shared_by_id<TreasuryVault>(target_vault_id);
-        let mut proposal = scenario.take_shared<Proposal<SendBatchMulticoinToDAO>>();
-        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(source_dao.emergency_freeze_id());
+        let mut proposal = scenario.take_shared<Proposal<SendBatchMulticoinToOU>>();
+        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(source_ou.emergency_freeze_id());
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut source_dao,
+            &mut source_ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        treasury_ops::execute_send_batch_multicoin_to_dao(
+        treasury_ops::execute_send_batch_multicoin_to_ou(
             &mut source_vault,
             &mut target_vault,
             ticket,
@@ -431,7 +431,7 @@ fun send_batch_to_dao_e2e() {
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(target_vault);
         test_scenario::return_shared(source_vault);
-        test_scenario::return_shared(source_dao);
+        test_scenario::return_shared(source_ou);
     };
 
     clock.destroy_for_testing();
@@ -439,26 +439,26 @@ fun send_batch_to_dao_e2e() {
 }
 
 #[test]
-/// Sending to a DAO that already holds the same asset accumulates the balance.
-fun send_batch_to_dao_accumulates_in_target() {
+/// Sending to an OU that already holds the same asset accumulates the balance.
+fun send_batch_to_ou_accumulates_in_target() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    let source_dao_id = create_named_dao(&mut scenario, b"Source DAO");
-    let target_dao_id = create_named_dao(&mut scenario, b"Target DAO");
+    let source_ou_id = create_named_ou(&mut scenario, b"Source OU");
+    let target_ou_id = create_named_ou(&mut scenario, b"Target OU");
 
-    enable_type<SendBatchMulticoinToDAO>(&mut scenario, source_dao_id, b"SendBatchMulticoinToDAO");
+    enable_type<SendBatchMulticoinToOU>(&mut scenario, source_ou_id, b"SendBatchMulticoinToOU");
 
     let source_vault_id;
     let target_vault_id;
     scenario.next_tx(CREATOR);
     {
-        let source_dao = scenario.take_shared_by_id<DAO>(source_dao_id);
-        let target_dao = scenario.take_shared_by_id<DAO>(target_dao_id);
-        source_vault_id = source_dao.treasury_id();
-        target_vault_id = target_dao.treasury_id();
-        test_scenario::return_shared(target_dao);
-        test_scenario::return_shared(source_dao);
+        let source_ou = scenario.take_shared_by_id<OU>(source_ou_id);
+        let target_ou = scenario.take_shared_by_id<OU>(target_ou_id);
+        source_vault_id = source_ou.treasury_id();
+        target_vault_id = target_ou.treasury_id();
+        test_scenario::return_shared(target_ou);
+        test_scenario::return_shared(source_ou);
     };
 
     fund_vault_single(&mut scenario, source_vault_id, 10);
@@ -466,47 +466,47 @@ fun send_batch_to_dao_accumulates_in_target() {
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared_by_id<DAO>(source_dao_id);
+        let ou = scenario.take_shared_by_id<OU>(source_ou_id);
         let items = vector[multicoin_item::new(coll(COLL_A), ASSET_SWORD, 5)];
-        let payload = send_batch_multicoin_to_dao::new(target_vault_id, items);
+        let payload = send_batch_multicoin_to_ou::new(target_vault_id, items);
         clock.set_for_testing(1000);
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::none(),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut proposal = scenario.take_shared<Proposal<SendBatchMulticoinToDAO>>();
+        let mut proposal = scenario.take_shared<Proposal<SendBatchMulticoinToOU>>();
         clock.set_for_testing(2000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut source_dao = scenario.take_shared_by_id<DAO>(source_dao_id);
+        let mut source_ou = scenario.take_shared_by_id<OU>(source_ou_id);
         let mut source_vault = scenario.take_shared_by_id<TreasuryVault>(source_vault_id);
         let mut target_vault = scenario.take_shared_by_id<TreasuryVault>(target_vault_id);
-        let mut proposal = scenario.take_shared<Proposal<SendBatchMulticoinToDAO>>();
-        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(source_dao.emergency_freeze_id());
+        let mut proposal = scenario.take_shared<Proposal<SendBatchMulticoinToOU>>();
+        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(source_ou.emergency_freeze_id());
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut source_dao,
+            &mut source_ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        treasury_ops::execute_send_batch_multicoin_to_dao(
+        treasury_ops::execute_send_batch_multicoin_to_ou(
             &mut source_vault,
             &mut target_vault,
             ticket,
@@ -519,7 +519,7 @@ fun send_batch_to_dao_accumulates_in_target() {
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(target_vault);
         test_scenario::return_shared(source_vault);
-        test_scenario::return_shared(source_dao);
+        test_scenario::return_shared(source_ou);
     };
 
     clock.destroy_for_testing();
@@ -528,25 +528,25 @@ fun send_batch_to_dao_accumulates_in_target() {
 
 #[test, expected_failure(abort_code = treasury_ops::ETargetVaultMismatch)]
 /// Passing a vault whose object ID does not match the proposal's `recipient_treasury` aborts.
-fun send_batch_to_dao_target_mismatch_aborts() {
+fun send_batch_to_ou_target_mismatch_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    let source_dao_id = create_named_dao(&mut scenario, b"Source DAO");
-    let target_dao_id = create_named_dao(&mut scenario, b"Target DAO");
+    let source_ou_id = create_named_ou(&mut scenario, b"Source OU");
+    let target_ou_id = create_named_ou(&mut scenario, b"Target OU");
 
-    enable_type<SendBatchMulticoinToDAO>(&mut scenario, source_dao_id, b"SendBatchMulticoinToDAO");
+    enable_type<SendBatchMulticoinToOU>(&mut scenario, source_ou_id, b"SendBatchMulticoinToOU");
 
     let source_vault_id;
     let target_vault_id;
     scenario.next_tx(CREATOR);
     {
-        let source_dao = scenario.take_shared_by_id<DAO>(source_dao_id);
-        let target_dao = scenario.take_shared_by_id<DAO>(target_dao_id);
-        source_vault_id = source_dao.treasury_id();
-        target_vault_id = target_dao.treasury_id();
-        test_scenario::return_shared(target_dao);
-        test_scenario::return_shared(source_dao);
+        let source_ou = scenario.take_shared_by_id<OU>(source_ou_id);
+        let target_ou = scenario.take_shared_by_id<OU>(target_ou_id);
+        source_vault_id = source_ou.treasury_id();
+        target_vault_id = target_ou.treasury_id();
+        test_scenario::return_shared(target_ou);
+        test_scenario::return_shared(source_ou);
     };
 
     fund_vault(&mut scenario, source_vault_id);
@@ -554,49 +554,49 @@ fun send_batch_to_dao_target_mismatch_aborts() {
     // Payload names source_vault_id as recipient — target_vault has a different ID
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared_by_id<DAO>(source_dao_id);
+        let ou = scenario.take_shared_by_id<OU>(source_ou_id);
         let items = vector[multicoin_item::new(coll(COLL_A), ASSET_SWORD, 2)];
         // Intentionally wrong: recipient_treasury = source_vault_id instead of target_vault_id
-        let payload = send_batch_multicoin_to_dao::new(source_vault_id, items);
+        let payload = send_batch_multicoin_to_ou::new(source_vault_id, items);
         clock.set_for_testing(1000);
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::none(),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut proposal = scenario.take_shared<Proposal<SendBatchMulticoinToDAO>>();
+        let mut proposal = scenario.take_shared<Proposal<SendBatchMulticoinToOU>>();
         clock.set_for_testing(2000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     // Execute — target_vault's object ID ≠ source_vault_id in payload → ETargetVaultMismatch
     scenario.next_tx(CREATOR);
     {
-        let mut source_dao = scenario.take_shared_by_id<DAO>(source_dao_id);
+        let mut source_ou = scenario.take_shared_by_id<OU>(source_ou_id);
         let mut source_vault = scenario.take_shared_by_id<TreasuryVault>(source_vault_id);
         let mut target_vault = scenario.take_shared_by_id<TreasuryVault>(target_vault_id);
-        let mut proposal = scenario.take_shared<Proposal<SendBatchMulticoinToDAO>>();
-        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(source_dao.emergency_freeze_id());
+        let mut proposal = scenario.take_shared<Proposal<SendBatchMulticoinToOU>>();
+        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(source_ou.emergency_freeze_id());
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut source_dao,
+            &mut source_ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        treasury_ops::execute_send_batch_multicoin_to_dao(
+        treasury_ops::execute_send_batch_multicoin_to_ou(
             &mut source_vault,
             &mut target_vault, // object::id(target_vault) != source_vault_id → ETargetVaultMismatch
             ticket,
@@ -606,7 +606,7 @@ fun send_batch_to_dao_target_mismatch_aborts() {
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(target_vault);
         test_scenario::return_shared(source_vault);
-        test_scenario::return_shared(source_dao);
+        test_scenario::return_shared(source_ou);
     };
 
     clock.destroy_for_testing();

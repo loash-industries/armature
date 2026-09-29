@@ -2,12 +2,12 @@
 
 > **Tool:** Playwright (Chromium)
 > **Network:** Sui localnet
-> **Route:** `/dao/$daoId/emergency`
+> **Route:** `/ou/$ouId/emergency`
 
 ## Prerequisites
 
-- DAO with board members [A, B, C]
-- Wallet A holds the FreezeAdminCap for this DAO
+- OU with board members [A, B, C]
+- Wallet A holds the FreezeAdminCap for this OU
 - Multiple proposal types enabled (for freeze testing)
 - TransferFreezeAdmin, UnfreezeProposalType enabled (defaults)
 
@@ -20,7 +20,7 @@
 ### 7.1 — Freeze a proposal type
 
 1. Connect as wallet A (FreezeAdminCap holder)
-2. Navigate to `/dao/$daoId/emergency`
+2. Navigate to `/ou/$ouId/emergency`
 3. Verify admin controls visible (freeze/unfreeze dropdowns)
 4. Select "SetBoard" from freeze dropdown
 5. Click "Freeze"

@@ -6,7 +6,7 @@ use std::type_name::TypeName;
 /// Update one or more ProposalConfig fields for a given proposal type.
 /// Fields set to none are left unchanged. `permissions` and `borrow_scope` are
 /// set with `with_permissions` / `with_borrow_scope`; changing either is
-/// subject to the grant rules in `dao::update_proposal_config`.
+/// subject to the grant rules in `ou::update_proposal_config`.
 /// When targeting UpdateProposalConfig itself, the handler enforces
 /// an 80% super-majority approval floor at execution time.
 public struct UpdateProposalConfig has drop, store {

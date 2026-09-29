@@ -1,5 +1,5 @@
 #[test_only]
-module armature::dao_tests;
+module armature::ou_tests;
 
 use armature::add_member::AddMember;
 use armature::batch_add_members::BatchAddMembers;
@@ -7,13 +7,13 @@ use armature::batch_remove_members::BatchRemoveMembers;
 use armature::capability_vault::{Self, CapabilityVault};
 use armature::charter::Charter;
 use armature::composite_payload::CompositePayload;
-use armature::dao::{Self, DAO};
 use armature::disable_bypass_type::DisableBypassType;
 use armature::disable_proposal_type::DisableProposalType;
 use armature::emergency::{EmergencyFreeze, FreezeAdminCap};
 use armature::enable_bypass_type::EnableBypassType;
 use armature::enable_proposal_type::EnableProposalType;
 use armature::governance;
+use armature::ou::{Self, OU};
 use armature::permissions;
 use armature::proposal;
 use armature::remove_member::RemoveMember;
@@ -29,13 +29,13 @@ use sui::test_scenario;
 const CREATOR: address = @0xA;
 const MEMBER_B: address = @0xB;
 
-fun create_test_dao(scenario: &mut test_scenario::Scenario) {
+fun create_test_ou(scenario: &mut test_scenario::Scenario) {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR, MEMBER_B]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/metadata.json"),
             scenario.ctx(),
         );
@@ -43,24 +43,24 @@ fun create_test_dao(scenario: &mut test_scenario::Scenario) {
 }
 
 #[test]
-/// Creates a DAO and asserts all companion objects exist and governance = Board
+/// Creates an OU and asserts all companion objects exist and governance = Board
 /// with creator as a member.
-fun test_create_dao() {
+fun test_create_ou() {
     let mut scenario = test_scenario::begin(CREATOR);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
-    // Verify DAO shared object exists
+    // Verify OU shared object exists
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         // Verify governance is Board type with creator as member
-        let gov = dao.governance();
+        let gov = ou.governance();
         assert!(gov.is_board_member(CREATOR));
         assert!(gov.is_board_member(MEMBER_B));
         // Verify status is Active
-        assert!(dao.status().is_active());
-        test_scenario::return_shared(dao);
+        assert!(ou.status().is_active());
+        test_scenario::return_shared(ou);
     };
 
     // Verify TreasuryVault exists
@@ -81,7 +81,7 @@ fun test_create_dao() {
     scenario.next_tx(CREATOR);
     {
         let charter = scenario.take_shared<Charter>();
-        assert!(charter.name() == &string::utf8(b"Test DAO"));
+        assert!(charter.name() == &string::utf8(b"Test OU"));
         test_scenario::return_shared(charter);
     };
 
@@ -103,30 +103,30 @@ fun test_create_dao() {
 }
 
 #[test]
-/// Verifies DAOCreated event is emitted with correct fields.
-fun test_dao_created_event() {
+/// Verifies OUCreated event is emitted with correct fields.
+fun test_ou_created_event() {
     let mut scenario = test_scenario::begin(CREATOR);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     // After the transaction, check events
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
-        let dao_id = dao.id();
-        let treasury_id = dao.treasury_id();
-        let capability_vault_id = dao.capability_vault_id();
-        let charter_id = dao.charter_id();
-        let emergency_freeze_id = dao.emergency_freeze_id();
+        let ou = scenario.take_shared<OU>();
+        let ou_id = ou.id();
+        let treasury_id = ou.treasury_id();
+        let capability_vault_id = ou.capability_vault_id();
+        let charter_id = ou.charter_id();
+        let emergency_freeze_id = ou.emergency_freeze_id();
 
         // Verify IDs are all distinct
-        assert!(dao_id != treasury_id);
-        assert!(dao_id != capability_vault_id);
-        assert!(dao_id != charter_id);
-        assert!(dao_id != emergency_freeze_id);
+        assert!(ou_id != treasury_id);
+        assert!(ou_id != capability_vault_id);
+        assert!(ou_id != charter_id);
+        assert!(ou_id != emergency_freeze_id);
         assert!(treasury_id != capability_vault_id);
 
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.end();
@@ -147,53 +147,51 @@ public struct Marker<phantom T> has drop, store {}
 fun test_default_proposal_types() {
     let mut scenario = test_scenario::begin(CREATOR);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
 
         // All 14 default types are enabled under their display keys.
-        assert!(dao.type_display_key<SetBoard>() == b"SetBoard".to_ascii_string());
-        assert!(dao.type_display_key<AddMember>() == b"AddMember".to_ascii_string());
-        assert!(dao.type_display_key<RemoveMember>() == b"RemoveMember".to_ascii_string());
-        assert!(dao.type_display_key<BatchAddMembers>() == b"BatchAddMembers".to_ascii_string());
+        assert!(ou.type_display_key<SetBoard>() == b"SetBoard".to_ascii_string());
+        assert!(ou.type_display_key<AddMember>() == b"AddMember".to_ascii_string());
+        assert!(ou.type_display_key<RemoveMember>() == b"RemoveMember".to_ascii_string());
+        assert!(ou.type_display_key<BatchAddMembers>() == b"BatchAddMembers".to_ascii_string());
         assert!(
-            dao.type_display_key<BatchRemoveMembers>() == b"BatchRemoveMembers".to_ascii_string(),
+            ou.type_display_key<BatchRemoveMembers>() == b"BatchRemoveMembers".to_ascii_string(),
         );
-        assert!(dao.type_display_key<UpdateMetadata>() == b"CharterUpdate".to_ascii_string());
+        assert!(ou.type_display_key<UpdateMetadata>() == b"CharterUpdate".to_ascii_string());
         assert!(
-            dao.type_display_key<EnableProposalType>() == b"EnableProposalType".to_ascii_string(),
+            ou.type_display_key<EnableProposalType>() == b"EnableProposalType".to_ascii_string(),
         );
-        assert!(dao.type_display_key<EnableBypassType>() == b"EnableBypassType".to_ascii_string());
+        assert!(ou.type_display_key<EnableBypassType>() == b"EnableBypassType".to_ascii_string());
+        assert!(ou.type_display_key<DisableBypassType>() == b"DisableBypassType".to_ascii_string());
         assert!(
-            dao.type_display_key<DisableBypassType>() == b"DisableBypassType".to_ascii_string(),
-        );
-        assert!(
-            dao.type_display_key<DisableProposalType>() == b"DisableProposalType".to_ascii_string(),
+            ou.type_display_key<DisableProposalType>() == b"DisableProposalType".to_ascii_string(),
         );
         assert!(
-            dao.type_display_key<UpdateProposalConfig>() == b"UpdateProposalConfig".to_ascii_string(),
+            ou.type_display_key<UpdateProposalConfig>() == b"UpdateProposalConfig".to_ascii_string(),
         );
         assert!(
-            dao.type_display_key<TransferFreezeAdmin>() == b"TransferFreezeAdmin".to_ascii_string(),
+            ou.type_display_key<TransferFreezeAdmin>() == b"TransferFreezeAdmin".to_ascii_string(),
         );
         assert!(
-            dao.type_display_key<UnfreezeProposalType>() == b"UnfreezeProposalType".to_ascii_string(),
+            ou.type_display_key<UnfreezeProposalType>() == b"UnfreezeProposalType".to_ascii_string(),
         );
-        assert!(dao.type_display_key<CompositePayload>() == b"Composite".to_ascii_string());
+        assert!(ou.type_display_key<CompositePayload>() == b"Composite".to_ascii_string());
 
         // Display keys resolve back to their types.
-        let resolved = dao.type_for_display_key(&b"Composite".to_ascii_string());
+        let resolved = ou.type_for_display_key(&b"Composite".to_ascii_string());
         assert!(resolved.is_some());
-        assert!(resolved.destroy_some() == dao::type_name_of<CompositePayload>());
-        assert!(dao.type_for_display_key(&b"NotAType".to_ascii_string()).is_none());
+        assert!(resolved.destroy_some() == ou::type_name_of<CompositePayload>());
+        assert!(ou.type_for_display_key(&b"NotAType".to_ascii_string()).is_none());
 
         // Unregistered types have no slot.
-        assert!(!dao.is_type_enabled<CustomA>());
+        assert!(!ou.is_type_enabled<CustomA>());
 
         // Default config values.
-        let config = dao.type_config<SetBoard>();
+        let config = ou.type_config<SetBoard>();
         assert!(config.quorum() == 5_000);
         assert!(config.approval_threshold() == 5_000);
         assert!(config.propose_threshold() == 0);
@@ -203,59 +201,59 @@ fun test_default_proposal_types() {
         assert!(config.composable_allowed());
 
         // Floor-gated types start at their floor; batch types are not composable.
-        assert!(dao.type_config<EnableProposalType>().approval_threshold() == 8_000);
+        assert!(ou.type_config<EnableProposalType>().approval_threshold() == 8_000);
         // TYPE_ADMIN holders start at the 80% permission floor.
-        assert!(dao.type_config<DisableProposalType>().approval_threshold() == 8_000);
-        assert!(dao.type_config<DisableBypassType>().approval_threshold() == 8_000);
+        assert!(ou.type_config<DisableProposalType>().approval_threshold() == 8_000);
+        assert!(ou.type_config<DisableBypassType>().approval_threshold() == 8_000);
 
         // Framework types start with their fixed permission bits.
-        assert!(dao.type_config<SetBoard>().permissions() == permissions::board_set());
-        assert!(dao.type_config<AddMember>().permissions() == permissions::board_add());
-        assert!(dao.type_config<RemoveMember>().permissions() == permissions::board_remove());
+        assert!(ou.type_config<SetBoard>().permissions() == permissions::board_set());
+        assert!(ou.type_config<AddMember>().permissions() == permissions::board_add());
+        assert!(ou.type_config<RemoveMember>().permissions() == permissions::board_remove());
         assert!(
-            dao.type_config<EnableBypassType>().permissions()
+            ou.type_config<EnableBypassType>().permissions()
                 == permissions::type_admin() | permissions::vault_store(),
         );
         assert!(
-            dao.type_config<UnfreezeProposalType>().permissions()
+            ou.type_config<UnfreezeProposalType>().permissions()
                 == permissions::emergency_freeze(),
         );
-        assert!(dao.type_config<CompositePayload>().permissions() == 0);
-        assert!(dao.type_config<UpdateProposalConfig>().approval_threshold() == 8_000);
-        assert!(dao.type_config<EnableBypassType>().approval_threshold() == 8_000);
-        assert!(!dao.type_config<BatchAddMembers>().composable_allowed());
+        assert!(ou.type_config<CompositePayload>().permissions() == 0);
+        assert!(ou.type_config<UpdateProposalConfig>().approval_threshold() == 8_000);
+        assert!(ou.type_config<EnableBypassType>().approval_threshold() == 8_000);
+        assert!(!ou.type_config<BatchAddMembers>().composable_allowed());
 
         // Nothing has executed yet.
-        assert!(dao.last_executed_ms<SetBoard>().is_none());
+        assert!(ou.last_executed_ms<SetBoard>().is_none());
 
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.end();
 }
 
 #[test]
-/// SubDAOs omit the bypass meta-types from their default slots.
-fun test_subdao_default_types_omit_bypass_meta() {
+/// SubOUs omit the bypass meta-types from their default slots.
+fun test_subou_default_types_omit_bypass_meta() {
     let mut scenario = test_scenario::begin(CREATOR);
 
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR]);
-        let (subdao, freeze_cap) = dao::create_subdao(
+        let (subou, freeze_cap) = ou::create_subou(
             &init,
-            string::utf8(b"SubDAO"),
+            string::utf8(b"SubOU"),
             string::utf8(b"https://example.com/sub.png"),
             scenario.ctx(),
         );
-        assert!(subdao.is_type_enabled<SetBoard>());
-        assert!(subdao.is_type_enabled<CompositePayload>());
-        assert!(!subdao.is_type_enabled<EnableBypassType>());
-        assert!(!subdao.is_type_enabled<DisableBypassType>());
-        assert!(subdao.type_for_display_key(&b"EnableBypassType".to_ascii_string()).is_none());
+        assert!(subou.is_type_enabled<SetBoard>());
+        assert!(subou.is_type_enabled<CompositePayload>());
+        assert!(!subou.is_type_enabled<EnableBypassType>());
+        assert!(!subou.is_type_enabled<DisableBypassType>());
+        assert!(subou.type_for_display_key(&b"EnableBypassType".to_ascii_string()).is_none());
 
         sui::test_utils::destroy(freeze_cap);
-        transfer::public_share_object(subdao);
+        transfer::public_share_object(subou);
     };
 
     scenario.end();
@@ -267,26 +265,26 @@ fun test_subdao_default_types_omit_bypass_meta() {
 fun test_enable_then_disable_leaves_nothing_behind() {
     let mut scenario = test_scenario::begin(CREATOR);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let config = proposal::new_config(5_000, 5_000, 0, 3_600_000, 0, 0);
-        dao.test_enable_type<CustomA>(b"Custom".to_ascii_string(), config);
-        assert!(dao.is_type_enabled<CustomA>());
-        assert!(dao.type_for_display_key(&b"Custom".to_ascii_string()).is_some());
+        ou.test_enable_type<CustomA>(b"Custom".to_ascii_string(), config);
+        assert!(ou.is_type_enabled<CustomA>());
+        assert!(ou.type_for_display_key(&b"Custom".to_ascii_string()).is_some());
 
-        dao.test_disable_type<CustomA>();
-        assert!(!dao.is_type_enabled<CustomA>());
-        assert!(dao.type_for_display_key(&b"Custom".to_ascii_string()).is_none());
+        ou.test_disable_type<CustomA>();
+        assert!(!ou.is_type_enabled<CustomA>());
+        assert!(ou.type_for_display_key(&b"Custom".to_ascii_string()).is_none());
 
         // The display key is free again, for a different type.
-        dao.test_enable_type<CustomB>(b"Custom".to_ascii_string(), config);
-        assert!(dao.is_type_enabled<CustomB>());
-        assert!(!dao.is_type_enabled<CustomA>());
+        ou.test_enable_type<CustomB>(b"Custom".to_ascii_string(), config);
+        assert!(ou.is_type_enabled<CustomB>());
+        assert!(!ou.is_type_enabled<CustomA>());
 
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.end();
@@ -300,38 +298,38 @@ fun test_enable_then_disable_leaves_nothing_behind() {
 fun test_root_size_independent_of_enabled_types() {
     let mut scenario = test_scenario::begin(CREATOR);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
-        let size_with_defaults = std::bcs::to_bytes(&dao).length();
+        let mut ou = scenario.take_shared<OU>();
+        let size_with_defaults = std::bcs::to_bytes(&ou).length();
         assert!(size_with_defaults < 1_024);
 
         let config = proposal::new_config(5_000, 5_000, 0, 3_600_000, 0, 0);
-        dao.test_enable_type<Marker<u8>>(b"T01".to_ascii_string(), config);
-        dao.test_enable_type<Marker<u16>>(b"T02".to_ascii_string(), config);
-        dao.test_enable_type<Marker<u32>>(b"T03".to_ascii_string(), config);
-        dao.test_enable_type<Marker<u64>>(b"T04".to_ascii_string(), config);
-        dao.test_enable_type<Marker<u128>>(b"T05".to_ascii_string(), config);
-        dao.test_enable_type<Marker<u256>>(b"T06".to_ascii_string(), config);
-        dao.test_enable_type<Marker<bool>>(b"T07".to_ascii_string(), config);
-        dao.test_enable_type<Marker<address>>(b"T08".to_ascii_string(), config);
-        dao.test_enable_type<Marker<CustomA>>(b"T09".to_ascii_string(), config);
-        dao.test_enable_type<Marker<CustomB>>(b"T10".to_ascii_string(), config);
-        dao.test_enable_type<Marker<Marker<u8>>>(b"T11".to_ascii_string(), config);
-        dao.test_enable_type<Marker<Marker<u16>>>(b"T12".to_ascii_string(), config);
-        dao.test_enable_type<Marker<Marker<u32>>>(b"T13".to_ascii_string(), config);
-        dao.test_enable_type<Marker<Marker<u64>>>(b"T14".to_ascii_string(), config);
-        dao.test_enable_type<Marker<Marker<u128>>>(b"T15".to_ascii_string(), config);
-        dao.test_enable_type<Marker<Marker<u256>>>(b"T16".to_ascii_string(), config);
-        dao.test_enable_type<Marker<Marker<bool>>>(b"T17".to_ascii_string(), config);
-        dao.test_enable_type<Marker<Marker<address>>>(b"T18".to_ascii_string(), config);
-        dao.test_enable_type<Marker<Marker<CustomA>>>(b"T19".to_ascii_string(), config);
-        dao.test_enable_type<Marker<Marker<CustomB>>>(b"T20".to_ascii_string(), config);
+        ou.test_enable_type<Marker<u8>>(b"T01".to_ascii_string(), config);
+        ou.test_enable_type<Marker<u16>>(b"T02".to_ascii_string(), config);
+        ou.test_enable_type<Marker<u32>>(b"T03".to_ascii_string(), config);
+        ou.test_enable_type<Marker<u64>>(b"T04".to_ascii_string(), config);
+        ou.test_enable_type<Marker<u128>>(b"T05".to_ascii_string(), config);
+        ou.test_enable_type<Marker<u256>>(b"T06".to_ascii_string(), config);
+        ou.test_enable_type<Marker<bool>>(b"T07".to_ascii_string(), config);
+        ou.test_enable_type<Marker<address>>(b"T08".to_ascii_string(), config);
+        ou.test_enable_type<Marker<CustomA>>(b"T09".to_ascii_string(), config);
+        ou.test_enable_type<Marker<CustomB>>(b"T10".to_ascii_string(), config);
+        ou.test_enable_type<Marker<Marker<u8>>>(b"T11".to_ascii_string(), config);
+        ou.test_enable_type<Marker<Marker<u16>>>(b"T12".to_ascii_string(), config);
+        ou.test_enable_type<Marker<Marker<u32>>>(b"T13".to_ascii_string(), config);
+        ou.test_enable_type<Marker<Marker<u64>>>(b"T14".to_ascii_string(), config);
+        ou.test_enable_type<Marker<Marker<u128>>>(b"T15".to_ascii_string(), config);
+        ou.test_enable_type<Marker<Marker<u256>>>(b"T16".to_ascii_string(), config);
+        ou.test_enable_type<Marker<Marker<bool>>>(b"T17".to_ascii_string(), config);
+        ou.test_enable_type<Marker<Marker<address>>>(b"T18".to_ascii_string(), config);
+        ou.test_enable_type<Marker<Marker<CustomA>>>(b"T19".to_ascii_string(), config);
+        ou.test_enable_type<Marker<Marker<CustomB>>>(b"T20".to_ascii_string(), config);
 
-        assert!(std::bcs::to_bytes(&dao).length() == size_with_defaults);
-        test_scenario::return_shared(dao);
+        assert!(std::bcs::to_bytes(&ou).length() == size_with_defaults);
+        test_scenario::return_shared(ou);
     };
 
     scenario.end();
@@ -351,79 +349,79 @@ const ROOT_SIZE_BATCH: u64 = 20;
 fun test_root_size_independent_of_board_size() {
     let mut scenario = test_scenario::begin(CREATOR);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
-        let size_before = std::bcs::to_bytes(&dao).length();
+        let mut ou = scenario.take_shared<OU>();
+        let size_before = std::bcs::to_bytes(&ou).length();
 
         let mut batch = vector[];
         ROOT_SIZE_BATCH.do!(|i| batch.push_back(sui::address::from_u256((i as u256) + 0x1000)));
-        let (added, skipped) = dao.governance_mut().add_board_members(batch);
+        let (added, skipped) = ou.governance_mut().add_board_members(batch);
         assert!(added.length() == ROOT_SIZE_BATCH && skipped.is_empty());
-        assert!(dao.governance().member_count() == ROOT_SIZE_BATCH + 2);
-        assert!(std::bcs::to_bytes(&dao).length() == size_before);
+        assert!(ou.governance().member_count() == ROOT_SIZE_BATCH + 2);
+        assert!(std::bcs::to_bytes(&ou).length() == size_before);
 
-        dao.governance_mut().remove_board_members(added);
-        assert!(dao.governance().member_count() == 2);
-        assert!(std::bcs::to_bytes(&dao).length() == size_before);
-        test_scenario::return_shared(dao);
+        ou.governance_mut().remove_board_members(added);
+        assert!(ou.governance().member_count() == 2);
+        assert!(std::bcs::to_bytes(&ou).length() == size_before);
+        test_scenario::return_shared(ou);
     };
 
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = armature::dao::EDisplayKeyTaken)]
+#[test, expected_failure(abort_code = armature::ou::EDisplayKeyTaken)]
 /// Two enabled types cannot share a display key.
 fun test_duplicate_display_key_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let config = proposal::new_config(5_000, 5_000, 0, 3_600_000, 0, 0);
-        dao.test_enable_type<CustomA>(b"Custom".to_ascii_string(), config);
-        dao.test_enable_type<CustomB>(b"Custom".to_ascii_string(), config);
-        test_scenario::return_shared(dao);
+        ou.test_enable_type<CustomA>(b"Custom".to_ascii_string(), config);
+        ou.test_enable_type<CustomB>(b"Custom".to_ascii_string(), config);
+        test_scenario::return_shared(ou);
     };
 
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = armature::dao::ETypeAlreadyEnabled)]
+#[test, expected_failure(abort_code = armature::ou::ETypeAlreadyEnabled)]
 /// A type cannot be enabled twice, even under a different display key.
 fun test_enable_twice_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let config = proposal::new_config(5_000, 5_000, 0, 3_600_000, 0, 0);
-        dao.test_enable_type<CustomA>(b"CustomA".to_ascii_string(), config);
-        dao.test_enable_type<CustomA>(b"CustomA2".to_ascii_string(), config);
-        test_scenario::return_shared(dao);
+        ou.test_enable_type<CustomA>(b"CustomA".to_ascii_string(), config);
+        ou.test_enable_type<CustomA>(b"CustomA2".to_ascii_string(), config);
+        test_scenario::return_shared(ou);
     };
 
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = armature::dao::ETypeNotEnabled)]
+#[test, expected_failure(abort_code = armature::ou::ETypeNotEnabled)]
 /// Reading the config of a type without a slot aborts.
 fun test_config_of_unregistered_type_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
-        let _ = dao.type_config<CustomA>();
-        test_scenario::return_shared(dao);
+        let ou = scenario.take_shared<OU>();
+        let _ = ou.type_config<CustomA>();
+        test_scenario::return_shared(ou);
     };
 
     scenario.end();
@@ -436,19 +434,19 @@ fun test_config_of_unregistered_type_aborts() {
 fun test_governance_type_immutable_after_creation() {
     let mut scenario = test_scenario::begin(CREATOR);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
-        let gov = dao.governance();
+        let ou = scenario.take_shared<OU>();
+        let gov = ou.governance();
 
         // Governance is Board after creation
         assert!(gov.is_board_member(CREATOR));
 
         // Board is the only governance model; set_board changes members only
         // is enforced by the type system (no public function to change variant)
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.end();
@@ -459,24 +457,24 @@ fun test_governance_type_immutable_after_creation() {
 fun test_board_governance_persists_across_proposals() {
     let mut scenario = test_scenario::begin(CREATOR);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
 
         // Simulate a SetBoard proposal execution by mutating governance
-        let gov = dao.governance_mut();
+        let gov = ou.governance_mut();
         let new_member: address = @0xC;
         gov.set_board(vector[new_member], vector[]);
 
         // Verify still Board governance with updated members
-        let gov = dao.governance();
+        let gov = ou.governance();
         assert!(gov.is_board_member(CREATOR));
         assert!(gov.is_board_member(MEMBER_B));
         assert!(gov.is_board_member(new_member));
 
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.end();
@@ -533,8 +531,8 @@ fun test_config_expiry_below_min_aborts() {
 // === create_returning_vault tests ===
 
 #[test]
-/// create_returning_vault returns a vault whose dao_id matches the returned
-/// dao_id, and whose object ID matches the DAO's capability_vault_id field.
+/// create_returning_vault returns a vault whose ou_id matches the returned
+/// ou_id, and whose object ID matches the OU's capability_vault_id field.
 fun test_create_returning_vault_ids_are_consistent() {
     let mut scenario = test_scenario::begin(CREATOR);
 
@@ -542,22 +540,22 @@ fun test_create_returning_vault_ids_are_consistent() {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR]);
-        let (dao_id, vault) = dao::create_returning_vault(
+        let (ou_id, vault) = ou::create_returning_vault(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
-        assert!(vault.dao_id() == dao_id);
+        assert!(vault.ou_id() == ou_id);
         vault_id = object::id(&vault);
         capability_vault::share(vault);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
-        assert!(dao.capability_vault_id() == vault_id);
-        test_scenario::return_shared(dao);
+        let ou = scenario.take_shared<OU>();
+        assert!(ou.capability_vault_id() == vault_id);
+        test_scenario::return_shared(ou);
     };
 
     scenario.end();
@@ -571,9 +569,9 @@ fun test_create_returning_vault_vault_starts_empty() {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR]);
-        let (_, vault) = dao::create_returning_vault(
+        let (_, vault) = ou::create_returning_vault(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -586,7 +584,7 @@ fun test_create_returning_vault_vault_starts_empty() {
 }
 
 #[test]
-/// create_returning_vault shares the DAO, treasury, charter, and emergency freeze,
+/// create_returning_vault shares the OU, treasury, charter, and emergency freeze,
 /// and transfers the FreezeAdminCap to the creator — identical to create().
 fun test_create_returning_vault_other_companions_are_shared() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -594,9 +592,9 @@ fun test_create_returning_vault_other_companions_are_shared() {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR, MEMBER_B]);
-        let (_, vault) = dao::create_returning_vault(
+        let (_, vault) = ou::create_returning_vault(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -605,17 +603,17 @@ fun test_create_returning_vault_other_companions_are_shared() {
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
-        assert!(dao.status().is_active());
-        assert!(dao.governance().is_board_member(CREATOR));
-        assert!(dao.governance().is_board_member(MEMBER_B));
-        test_scenario::return_shared(dao);
+        let ou = scenario.take_shared<OU>();
+        assert!(ou.status().is_active());
+        assert!(ou.governance().is_board_member(CREATOR));
+        assert!(ou.governance().is_board_member(MEMBER_B));
+        test_scenario::return_shared(ou);
 
         let treasury = scenario.take_shared<TreasuryVault>();
         test_scenario::return_shared(treasury);
 
         let charter = scenario.take_shared<Charter>();
-        assert!(charter.name() == &string::utf8(b"Test DAO"));
+        assert!(charter.name() == &string::utf8(b"Test OU"));
         test_scenario::return_shared(charter);
 
         let freeze = scenario.take_shared<EmergencyFreeze>();

@@ -24,8 +24,8 @@ Counts are from `sui move test` on the working tree on top of commit `6ed2b77` (
 | `capability_vault_tests` | 23 | store / borrow / loan / extract, registries, `privileged_extract`, `receive_cap(_authorized)` (package-level) |
 | `composite_tests` | 2 | composite nesting refused, per-step display key |
 | `controller_tests` | 5 | `privileged_submit` / `privileged_consume`, controller pause |
-| `cross_dao_auth_tests` | 17 | registered `SubDAOControl`, the DAO's own freeze object, `receive_cap_from_controller`, composites bound to their DAO |
-| `dao_tests` | 20 | creation, default slots, type registry, root size, `ProposalConfig` bounds, `create_returning_vault` |
+| `cross_ou_auth_tests` | 17 | registered `SubOUControl`, the OU's own freeze object, `receive_cap_from_controller`, composites bound to their OU |
+| `ou_tests` | 20 | creation, default slots, type registry, root size, `ProposalConfig` bounds, `create_returning_vault` |
 | `emergency_tests` | 18 | freeze / unfreeze / expiry / exemptions on a standalone `EmergencyFreeze` |
 | `encrypted_entry_tests` | 39 | Seal-encrypted entries, epoch rotation, `destroy` with entries |
 | `external_execution_tests` | 22 | `EnableBypassType` / `DisableBypassType`, `ticket_from_cap(_readonly)` |
@@ -39,10 +39,10 @@ Counts are from `sui move test` on the working tree on top of commit `6ed2b77` (
 | `submit_vote_execute_tests` | 26 | atomic single-vote path and its read-only variant |
 | `treasury_vault_tests` | 17 | coin deposit / withdraw / claim, registry, `destroy_empty` |
 | `treasury_vault_multicoin_tests` | 23 | multicoin balances |
-| `tribe_tests` | 30 | tribe constructors, `create_wired_subdao`, creation-time overrides |
+| `tribe_tests` | 30 | tribe constructors, `create_wired_subou`, creation-time overrides |
 | `utils` (in `sources/`) | 8 | bps math, `saturating_add` |
 
-**`armature_proposals` test modules**: `admin_ops_tests` (21), `batch_multicoin_ops_tests` (6), `board_ops_tests` (6), `charter_tests` (2), `composite_tests` (20), `currency_ops_tests` (12), `emergency_freeze_tests` (8), `lifecycle_tests` (2), `member_ops_tests` (15), `migration_tests` (4), `subdao_ops_tests` (16), `treasury_ops_tests` (9), `upgrade_ops_tests` (2). Several of them drive framework handlers (`admin_ops`, `board_ops`, `member_ops`, `freeze_ops`, `lifecycle_ops`) end to end.
+**`armature_proposals` test modules**: `admin_ops_tests` (21), `batch_multicoin_ops_tests` (6), `board_ops_tests` (6), `charter_tests` (2), `composite_tests` (20), `currency_ops_tests` (12), `emergency_freeze_tests` (8), `lifecycle_tests` (2), `member_ops_tests` (15), `migration_tests` (4), `subou_ops_tests` (16), `treasury_ops_tests` (9), `upgrade_ops_tests` (2). Several of them drive framework handlers (`admin_ops`, `board_ops`, `member_ops`, `freeze_ops`, `lifecycle_ops`) end to end.
 
 ## Citing Tests in These Specs
 
@@ -60,7 +60,7 @@ Names are snake_case and describe the behaviour. Patterns in use:
 |---|---|
 | `test_<subject>__<behaviour>` (double underscore) | `test_freeze__sets_expiry`, `test_board__threshold_boundary_50_percent`, `test_sve__nonzero_delay_aborts` |
 | `test_<behaviour>` | `test_execute_deletes_proposal`, `test_delete_expired_passed_after_window` |
-| `<behaviour>` without a prefix (newer modules) | `borrow_outside_scope_aborts`, `receive_cap_authorized_aborts_on_recv_dao_mismatch` |
+| `<behaviour>` without a prefix (newer modules) | `borrow_outside_scope_aborts`, `receive_cap_authorized_aborts_on_recv_ou_mismatch` |
 | `<path>__<behaviour>` | `two_ptb__frozen_instantiation_aborts`, `ticket_from_vote_readonly__slot_cooldown_aborts` |
 | `<mutator>_needs_<bit>` (required in `gate_tests`) | `withdraw_needs_treasury_withdraw`, `set_controller_paused_needs_privileged_request` |
 | `_aborts` suffix for expected failures | `test_vote_after_expiry_aborts` |
@@ -71,7 +71,7 @@ Names are snake_case and describe the behaviour. Patterns in use:
 There are no shared address constants. Each module declares its own; the common ones are:
 
 ```move
-const CREATOR: address = @0xA;   // DAO creator and first board member (29 modules)
+const CREATOR: address = @0xA;   // OU creator and first board member (29 modules)
 const MEMBER_B: address = @0xB;
 const MEMBER_C: address = @0xC;
 const NON_MEMBER: address = @0xD; // varies by module: @0xC, @0xD or @0xFF
@@ -91,11 +91,11 @@ const EVotingClosed: u64 = 20;
 const EPermissionDenied: u64 = 21;
 ```
 
-- Codes are unique only within a module. `EDAOIdMismatch` is 2 in `dao` and `board_voting`, 1 in `treasury_vault`, 3 in `capability_vault` and 6 in `external_execution` and `composite`. Always cite `module::EName`.
-- Retired codes are left unused rather than reassigned, so modules have gaps (`dao`: 1, 10, 18, 20, 22; `proposal`: 14, 18; `admin_ops`: 3, 5).
-- Tests name the constant: `#[test, expected_failure(abort_code = proposal::EVotingClosed)]`, with the module in a `use`, or fully qualified (`abort_code = armature::board_voting::EInsufficientVotingWeight`). Two older tests use a number and a location (`abort_code = 6, location = armature::board_voting` and `abort_code = 15, location = armature::dao` in `armature_proposals::admin_ops_tests`); new tests use the named form.
-- A permission denial aborts with `proposal::EPermissionDenied` whichever module the mutator lives in. `dao` mutators first abort with `dao::EDAOIdMismatch` for another DAO's request; the vault, charter and emergency modules use their own DAO-mismatch codes.
-- Checks without a named code use a bare `#[expected_failure]`: `capability_vault::destroy_empty` and `emergency::destroy` assert without a code, and a missing dynamic field aborts inside Sui's `dynamic_field`. The four `ProposalConfig` bound tests in `dao_tests` also use a bare `expected_failure`, though `proposal::EInvalidQuorum`, `EInvalidApprovalThreshold` and `EInvalidExpiryMs` exist.
+- Codes are unique only within a module. `EOUIdMismatch` is 2 in `ou` and `board_voting`, 1 in `treasury_vault`, 3 in `capability_vault` and 6 in `external_execution` and `composite`. Always cite `module::EName`.
+- Retired codes are left unused rather than reassigned, so modules have gaps (`ou`: 1, 10, 18, 20, 22; `proposal`: 14, 18; `admin_ops`: 3, 5).
+- Tests name the constant: `#[test, expected_failure(abort_code = proposal::EVotingClosed)]`, with the module in a `use`, or fully qualified (`abort_code = armature::board_voting::EInsufficientVotingWeight`). Two older tests use a number and a location (`abort_code = 6, location = armature::board_voting` and `abort_code = 15, location = armature::ou` in `armature_proposals::admin_ops_tests`); new tests use the named form.
+- A permission denial aborts with `proposal::EPermissionDenied` whichever module the mutator lives in. `ou` mutators first abort with `ou::EOUIdMismatch` for another OU's request; the vault, charter and emergency modules use their own OU-mismatch codes.
+- Checks without a named code use a bare `#[expected_failure]`: `capability_vault::destroy_empty` and `emergency::destroy` assert without a code, and a missing dynamic field aborts inside Sui's `dynamic_field`. The four `ProposalConfig` bound tests in `ou_tests` also use a bare `expected_failure`, though `proposal::EInvalidQuorum`, `EInvalidApprovalThreshold` and `EInvalidExpiryMs` exist.
 - When the aborting call leaves hot potatoes or shared objects in scope, the test ends with `abort 0` to satisfy the type checker. The expected abort fires first. `gate_tests` and `permissions_tests` use this pattern.
 
 ## Scenario and Clock
@@ -121,7 +121,7 @@ Locally, `--build-env testnet` is needed: the packages declare only testnet-styl
 1. `prettier-move -c` on `armature_framework` and `armature_proposals` (formatting check).
 2. `python3 scripts/check_request_gates.py` (below).
 3. `sui move build --path <pkg>` for every package.
-4. `sui move test --path <pkg> -i 100000000 --force` for every package. The instruction limit is why `dao_tests::test_root_size_independent_of_board_size` adds 20 members, not 100.
+4. `sui move test --path <pkg> -i 100000000 --force` for every package. The instruction limit is why `ou_tests::test_root_size_independent_of_board_size` adds 20 members, not 100.
 
 ### CI Gate Check
 
@@ -131,4 +131,4 @@ Locally, `--build-env testnet` is needed: the packages declare only testnet-styl
 - a gated function has no test in `packages/armature_framework/tests/gate_tests.move` whose name starts with `<function>_` (so every new gated mutator needs a denial test there);
 - `proposal::ticket_request`, `discharge`, `discharge_returning_payload` or `external_execution::ticket_from_cap(_readonly)` stops taking `Permit<P>`.
 
-At `6ed2b77` it reports `30 gated functions, 18 allowed without a gate, 5 Permit-gated ticket entry points`. Each `gate_tests` test builds a request with every bit except the one the mutator needs (`permissions::all() ^ missing`) and expects `proposal::EPermissionDenied` (`dao::ENotPrivileged` for the controller-only `set_controller_paused` and `clear_controller`); three more expect `proposal::EBorrowScopeDenied` from a request holding every bit and an empty borrow scope.
+At `6ed2b77` it reports `30 gated functions, 18 allowed without a gate, 5 Permit-gated ticket entry points`. Each `gate_tests` test builds a request with every bit except the one the mutator needs (`permissions::all() ^ missing`) and expects `proposal::EPermissionDenied` (`ou::ENotPrivileged` for the controller-only `set_controller_paused` and `clear_controller`); three more expect `proposal::EBorrowScopeDenied` from a request holding every bit and an empty borrow scope.

@@ -1,20 +1,20 @@
 /// End-to-end lifecycle of a proposal type defined outside the armature
 /// packages: enabled by a board vote through the production handlers, executed
 /// on the two-PTB, atomic and bypass paths, frozen by `TypeName`, and unfrozen
-/// by an `UnfreezeProposalType` vote. No test seams touch the DAO's registry.
+/// by an `UnfreezeProposalType` vote. No test seams touch the OU's registry.
 #[test_only]
 module armature_external_type_tests::external_type_lifecycle_tests;
 
 use armature::admin_ops;
 use armature::board_voting;
 use armature::capability_vault::CapabilityVault;
-use armature::dao::{Self, DAO};
 use armature::emergency::{Self, EmergencyFreeze, FreezeAdminCap};
 use armature::enable_bypass_type::EnableBypassType;
 use armature::enable_proposal_type::{Self, EnableProposalType};
 use armature::external_execution;
 use armature::freeze_ops;
 use armature::governance;
+use armature::ou::{Self, OU};
 use armature::proposal::{Self, ExecutionRequest, ExternalExecutionCap, Proposal};
 use armature::treasury_vault::TreasuryVault;
 use armature::unfreeze_proposal_type::{Self, UnfreezeProposalType};
@@ -34,12 +34,12 @@ public struct CredB {}
 // === Setup ===
 
 /// Single-member board, so every proposal passes on the creator's vote.
-fun create_dao(scenario: &mut Scenario) {
+fun create_ou(scenario: &mut Scenario) {
     scenario.next_tx(CREATOR);
     let init = governance::init_board(vector[CREATOR]);
-    dao::create(
+    ou::create(
         &init,
-        string::utf8(b"Test DAO"),
+        string::utf8(b"Test OU"),
         string::utf8(b"https://example.com/logo.png"),
         scenario.ctx(),
     );
@@ -59,18 +59,18 @@ fun submit_and_pass<P: store + drop>(scenario: &mut Scenario, clock: &mut Clock,
     tick(clock);
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
-        board_voting::submit_proposal(&dao, option::none(), payload, clock, scenario.ctx());
-        ts::return_shared(dao);
+        let ou = scenario.take_shared<OU>();
+        board_voting::submit_proposal(&ou, option::none(), payload, clock, scenario.ctx());
+        ts::return_shared(ou);
     };
 
     tick(clock);
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<P>>();
-        let dao = scenario.take_shared<DAO>();
-        board_voting::vote(&mut prop, &dao, true, clock, scenario.ctx());
-        ts::return_shared(dao);
+        let ou = scenario.take_shared<OU>();
+        board_voting::vote(&mut prop, &ou, true, clock, scenario.ctx());
+        ts::return_shared(ou);
         ts::return_shared(prop);
     };
 }
@@ -90,13 +90,13 @@ fun enable_via_vote<T>(scenario: &mut Scenario, clock: &mut Clock, key: vector<u
     tick(clock);
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let prop = scenario.take_shared<Proposal<EnableProposalType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
-        let ticket = board_voting::ticket_from_vote(&mut dao, prop, &freeze, clock, scenario.ctx());
-        admin_ops::execute_enable_proposal_type<Rebalance<T>>(&mut dao, ticket);
+        let ticket = board_voting::ticket_from_vote(&mut ou, prop, &freeze, clock, scenario.ctx());
+        admin_ops::execute_enable_proposal_type<Rebalance<T>>(&mut ou, ticket);
         ts::return_shared(freeze);
-        ts::return_shared(dao);
+        ts::return_shared(ou);
     };
 }
 
@@ -114,13 +114,13 @@ fun enable_bypass_via_vote<T>(scenario: &mut Scenario, clock: &mut Clock, key: v
     scenario.next_tx(CREATOR);
     let cap_id;
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut vault = scenario.take_shared<CapabilityVault>();
         let prop = scenario.take_shared<Proposal<EnableBypassType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
-        let ticket = board_voting::ticket_from_vote(&mut dao, prop, &freeze, clock, scenario.ctx());
+        let ticket = board_voting::ticket_from_vote(&mut ou, prop, &freeze, clock, scenario.ctx());
         external_execution::execute_enable_bypass_type<Rebalance<T>>(
-            &mut dao,
+            &mut ou,
             &mut vault,
             ticket,
             scenario.ctx(),
@@ -128,7 +128,7 @@ fun enable_bypass_via_vote<T>(scenario: &mut Scenario, clock: &mut Clock, key: v
         cap_id = vault.ids_for_type<ExternalExecutionCap<Rebalance<T>>>()[0];
         ts::return_shared(freeze);
         ts::return_shared(vault);
-        ts::return_shared(dao);
+        ts::return_shared(ou);
     };
     cap_id
 }
@@ -141,13 +141,13 @@ fun unfreeze_via_vote<T>(scenario: &mut Scenario, clock: &mut Clock) {
     tick(clock);
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let prop = scenario.take_shared<Proposal<UnfreezeProposalType>>();
         let mut freeze = scenario.take_shared<EmergencyFreeze>();
-        let ticket = board_voting::ticket_from_vote(&mut dao, prop, &freeze, clock, scenario.ctx());
+        let ticket = board_voting::ticket_from_vote(&mut ou, prop, &freeze, clock, scenario.ctx());
         freeze_ops::execute_unfreeze_proposal_type(&mut freeze, ticket);
         ts::return_shared(freeze);
-        ts::return_shared(dao);
+        ts::return_shared(ou);
     };
 }
 
@@ -162,65 +162,65 @@ fun admin_freeze<T>(scenario: &mut Scenario, clock: &mut Clock) {
     ts::return_shared(freeze);
 }
 
-// === Execution paths (read-only DAO, as on the trading path) ===
+// === Execution paths (read-only OU, as on the trading path) ===
 
 fun execute_two_ptb<T>(scenario: &mut Scenario, clock: &mut Clock) {
     submit_and_pass(scenario, clock, rebalance::new<T>(10));
 
     tick(clock);
     scenario.next_tx(CREATOR);
-    let dao = scenario.take_shared<DAO>();
+    let ou = scenario.take_shared<OU>();
     let prop = scenario.take_shared<Proposal<Rebalance<T>>>();
     let freeze = scenario.take_shared<EmergencyFreeze>();
     let ticket = board_voting::ticket_from_vote_readonly(
-        &dao,
+        &ou,
         prop,
         &freeze,
         clock,
         scenario.ctx(),
     );
-    rebalance::execute_rebalance(&dao, ticket);
+    rebalance::execute_rebalance(&ou, ticket);
     ts::return_shared(freeze);
-    ts::return_shared(dao);
+    ts::return_shared(ou);
 }
 
 fun execute_atomic<T>(scenario: &mut Scenario, clock: &mut Clock) {
     tick(clock);
     scenario.next_tx(CREATOR);
-    let dao = scenario.take_shared<DAO>();
+    let ou = scenario.take_shared<OU>();
     let freeze = scenario.take_shared<EmergencyFreeze>();
     let ticket = board_voting::submit_vote_execute_readonly(
-        &dao,
+        &ou,
         option::none(),
         rebalance::new<T>(20),
         &freeze,
         clock,
         scenario.ctx(),
     );
-    rebalance::execute_rebalance(&dao, ticket);
+    rebalance::execute_rebalance(&ou, ticket);
     ts::return_shared(freeze);
-    ts::return_shared(dao);
+    ts::return_shared(ou);
 }
 
 fun execute_bypass<T>(scenario: &mut Scenario, clock: &mut Clock, cap_id: ID) {
     tick(clock);
     scenario.next_tx(CREATOR);
-    let dao = scenario.take_shared<DAO>();
+    let ou = scenario.take_shared<OU>();
     let vault = scenario.take_shared<CapabilityVault>();
     let freeze = scenario.take_shared<EmergencyFreeze>();
-    let cap: &ExternalExecutionCap<Rebalance<T>> = vault.borrow_external_cap(dao.id(), cap_id);
-    let ticket = rebalance::submit_bypass<T>(cap, &dao, &freeze, 30, clock, scenario.ctx());
-    rebalance::execute_rebalance(&dao, ticket);
+    let cap: &ExternalExecutionCap<Rebalance<T>> = vault.borrow_external_cap(ou.id(), cap_id);
+    let ticket = rebalance::submit_bypass<T>(cap, &ou, &freeze, 30, clock, scenario.ctx());
+    rebalance::execute_rebalance(&ou, ticket);
     ts::return_shared(freeze);
     ts::return_shared(vault);
-    ts::return_shared(dao);
+    ts::return_shared(ou);
 }
 
 fun begin(): (Scenario, Clock) {
     let mut scenario = ts::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000);
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
     (scenario, clock)
 }
 
@@ -241,10 +241,10 @@ fun enabled_type_executes_on_every_path() {
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
-        assert!(dao.is_type_enabled<Rebalance<CredA>>());
-        assert!(dao.is_type_enabled<Rebalance<CredB>>());
-        ts::return_shared(dao);
+        let ou = scenario.take_shared<OU>();
+        assert!(ou.is_type_enabled<Rebalance<CredA>>());
+        assert!(ou.is_type_enabled<Rebalance<CredB>>());
+        ts::return_shared(ou);
     };
 
     execute_two_ptb<CredA>(&mut scenario, &mut clock);
@@ -317,7 +317,7 @@ fun governance_unfreeze_restores_execution() {
 // === Permission denials (ROAD-39, ARMATURE-32) ===
 //
 // A ticket for Rebalance<CredB>, a type granted no bits, must not reach any
-// DAO-wide mutator. Before ROAD-39 its request could lift an admin freeze on
+// OU-wide mutator. Before ROAD-39 its request could lift an admin freeze on
 // Rebalance<CredA>, drain the treasury or add a board member mid-PTB.
 //
 // A ticket holder can no longer reach the request at all: ticket_request needs
@@ -330,7 +330,7 @@ fun governance_unfreeze_restores_execution() {
 macro fun with_rebalance_request(
     $bypass: bool,
     $f: |
-        &mut DAO,
+        &mut OU,
         &mut EmergencyFreeze,
         &mut TreasuryVault,
         &ExecutionRequest<Rebalance<CredB>>,
@@ -348,19 +348,19 @@ macro fun with_rebalance_request(
 
     tick(&mut clock);
     scenario.next_tx(CREATOR);
-    let mut dao = scenario.take_shared<DAO>();
+    let mut ou = scenario.take_shared<OU>();
     let vault = scenario.take_shared<CapabilityVault>();
     let mut freeze = scenario.take_shared<EmergencyFreeze>();
     let mut treasury = scenario.take_shared<TreasuryVault>();
     let ticket = if ($bypass) {
         let cap: &ExternalExecutionCap<Rebalance<CredB>> = vault.borrow_external_cap(
-            dao.id(),
+            ou.id(),
             cap_id,
         );
-        rebalance::submit_bypass<CredB>(cap, &dao, &freeze, 1, &clock, scenario.ctx())
+        rebalance::submit_bypass<CredB>(cap, &ou, &freeze, 1, &clock, scenario.ctx())
     } else {
         board_voting::submit_vote_execute_readonly(
-            &dao,
+            &ou,
             option::none(),
             rebalance::new<CredB>(1),
             &freeze,
@@ -369,7 +369,7 @@ macro fun with_rebalance_request(
         )
     };
     $f(
-        &mut dao,
+        &mut ou,
         &mut freeze,
         &mut treasury,
         rebalance::request_for_testing(&ticket),
@@ -397,17 +397,17 @@ fun bypass_ticket_cannot_withdraw_from_treasury() {
 
 #[test, expected_failure(abort_code = proposal::EPermissionDenied)]
 fun bypass_ticket_cannot_add_board_member() {
-    with_rebalance_request!(true, |dao, _, _, req, _| {
-        dao.add_board_member_governance(@0xBAD, req);
+    with_rebalance_request!(true, |ou, _, _, req, _| {
+        ou.add_board_member_governance(@0xBAD, req);
     });
 }
 
 #[test, expected_failure(abort_code = proposal::EPermissionDenied)]
 /// A single member's atomic vote on a low-threshold type carries no authority
 /// beyond its own type either.
-fun atomic_ticket_cannot_migrate_dao() {
-    with_rebalance_request!(false, |dao, _, _, req, _| {
-        dao.set_migrating(object::id_from_address(@0x2), req);
+fun atomic_ticket_cannot_migrate_ou() {
+    with_rebalance_request!(false, |ou, _, _, req, _| {
+        ou.set_migrating(object::id_from_address(@0x2), req);
     });
 }
 

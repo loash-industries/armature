@@ -1,9 +1,9 @@
 module armature_proposals::currency_ops;
 
 use armature::capability_vault::CapabilityVault;
-use armature::dao::DAO;
 use armature::emergency::EmergencyFreeze;
 use armature::external_execution;
+use armature::ou::OU;
 use armature::proposal::{ExecutionRequest, ExecutionTicket};
 use armature::treasury_vault::TreasuryVault;
 use armature_proposals::adopt_currency::{Self, AdoptCurrency};
@@ -18,10 +18,10 @@ use sui::event;
 
 // === Errors ===
 
-const EVaultDAOMismatch: u64 = 0;
+const EVaultOUMismatch: u64 = 0;
 const ECapNotInVault: u64 = 1;
 const ECapTypeMismatch: u64 = 2;
-/// No `ConfigureMintAllowance<T>` has run on this DAO.
+/// No `ConfigureMintAllowance<T>` has run on this OU.
 const EAllowanceNotConfigured: u64 = 3;
 /// The allowance kill-switch is off.
 const EAllowanceDisabled: u64 = 4;
@@ -33,27 +33,27 @@ const EExceedsAllowance: u64 = 6;
 // === Events ===
 
 public struct CurrencyAdopted has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     coin_type: std::ascii::String,
     treasury_cap_id: ID,
 }
 
 public struct CoinMinted has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     coin_type: std::ascii::String,
     amount: u64,
-    /// `none` => minted into the DAO treasury, `some` => issued directly.
+    /// `none` => minted into the OU treasury, `some` => issued directly.
     recipient: Option<address>,
 }
 
 public struct CoinBurned has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     coin_type: std::ascii::String,
     amount: u64,
 }
 
 public struct CurrencyCapReturned has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     coin_type: std::ascii::String,
     treasury_cap_id: ID,
     recipient: address,
@@ -68,13 +68,13 @@ public fun execute_adopt_currency<T>(
     cap: TreasuryCap<T>,
     ticket: ExecutionTicket<AdoptCurrency<T>>,
 ) {
-    assert!(vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
+    assert!(vault.ou_id() == ticket.ticket_ou_id(), EVaultOUMismatch);
 
     let cap_id = object::id(&cap);
     vault.store_cap(cap, ticket.ticket_request(adopt_currency::permit<T>()));
 
     event::emit(CurrencyAdopted {
-        dao_id: vault.dao_id(),
+        ou_id: vault.ou_id(),
         coin_type: std::type_name::with_original_ids<T>().into_string(),
         treasury_cap_id: cap_id,
     });
@@ -124,21 +124,21 @@ public fun execute_mint_allowance<T>(
     ticket.discharge(mint_allowance::permit<T>());
 }
 
-/// Mint `amount` of `Coin<T>` without a vote under the DAO's
-/// `MintAllowance<T>` bypass. The DAO opts in twice: `EnableBypassType` for
+/// Mint `amount` of `Coin<T>` without a vote under the OU's
+/// `MintAllowance<T>` bypass. The OU opts in twice: `EnableBypassType` for
 /// `MintAllowance<T>` (80%, deposits the `ExternalExecutionCap` in the vault)
 /// and a `ConfigureMintAllowance<T>` vote naming the minters, the per-call cap
 /// and the kill-switch. This function is the authorization point for the
 /// bypass: it checks `ctx.sender()` against that allowlist before minting the
 /// ticket through `external_execution::ticket_from_cap`, which runs every
-/// cross-cutting check (DAO active, slot present, not paused or frozen,
+/// cross-cutting check (OU active, slot present, not paused or frozen,
 /// cooldown). The ticket never leaves this function.
 ///
 /// Aborts unless the allowance is configured (EAllowanceNotConfigured) and
 /// enabled (EAllowanceDisabled), the sender is a minter (ENotAllowedMinter)
 /// and `amount <= max_per_call` (EExceedsAllowance).
 public fun mint_allowance_bypass<T>(
-    dao: &mut DAO,
+    ou: &mut OU,
     cap_vault: &mut CapabilityVault,
     treasury_vault: &mut TreasuryVault,
     freeze: &EmergencyFreeze,
@@ -151,9 +151,9 @@ public fun mint_allowance_bypass<T>(
 ) {
     let sender = ctx.sender();
 
-    // 1. Authorize the caller against the DAO's allowlist.
-    assert!(dao.has_type_state<ConfigureMintAllowance<T>>(), EAllowanceNotConfigured);
-    let config: &MintAllowanceConfig = dao.borrow_type_state<
+    // 1. Authorize the caller against the OU's allowlist.
+    assert!(ou.has_type_state<ConfigureMintAllowance<T>>(), EAllowanceNotConfigured);
+    let config: &MintAllowanceConfig = ou.borrow_type_state<
         ConfigureMintAllowance<T>,
         MintAllowanceConfig,
     >();
@@ -162,11 +162,11 @@ public fun mint_allowance_bypass<T>(
     assert!(amount <= config.config_max_per_call(), EExceedsAllowance);
 
     // 2. Mint the ticket through the framework's cap-gated path. borrow_external_cap
-    // asserts the vault belongs to `dao`; ticket_from_cap re-asserts the cap does.
-    let bypass_cap = cap_vault.borrow_external_cap<MintAllowance<T>>(dao.id(), bypass_cap_id);
+    // asserts the vault belongs to `ou`; ticket_from_cap re-asserts the cap does.
+    let bypass_cap = cap_vault.borrow_external_cap<MintAllowance<T>>(ou.id(), bypass_cap_id);
     let ticket = external_execution::ticket_from_cap<MintAllowance<T>>(
         bypass_cap,
-        dao,
+        ou,
         freeze,
         option::none(),
         mint_allowance::new<T>(treasury_cap_id, amount, recipient),
@@ -187,8 +187,8 @@ public fun execute_burn_coin<T>(
     ctx: &mut TxContext,
 ) {
     use armature_proposals::burn_coin;
-    assert!(cap_vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
-    assert!(treasury_vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
+    assert!(cap_vault.ou_id() == ticket.ticket_ou_id(), EVaultOUMismatch);
+    assert!(treasury_vault.ou_id() == ticket.ticket_ou_id(), EVaultOUMismatch);
 
     let payload = ticket.ticket_payload();
     let cap_id = burn_coin::treasury_cap_id(payload);
@@ -207,7 +207,7 @@ public fun execute_burn_coin<T>(
     coin::burn(cap, coin);
 
     event::emit(CoinBurned {
-        dao_id: cap_vault.dao_id(),
+        ou_id: cap_vault.ou_id(),
         coin_type: std::type_name::with_original_ids<T>().into_string(),
         amount,
     });
@@ -221,7 +221,7 @@ public fun execute_return_currency_cap<T>(
     ticket: ExecutionTicket<ReturnCurrencyCap<T>>,
 ) {
     use armature_proposals::return_currency_cap;
-    assert!(vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
+    assert!(vault.ou_id() == ticket.ticket_ou_id(), EVaultOUMismatch);
 
     let payload = ticket.ticket_payload();
     let cap_id = return_currency_cap::treasury_cap_id(payload);
@@ -234,7 +234,7 @@ public fun execute_return_currency_cap<T>(
     );
 
     event::emit(CurrencyCapReturned {
-        dao_id: vault.dao_id(),
+        ou_id: vault.ou_id(),
         coin_type: std::type_name::with_original_ids<T>().into_string(),
         treasury_cap_id: cap_id,
         recipient,
@@ -259,17 +259,17 @@ fun mint<T, P>(
     request: &ExecutionRequest<P>,
     ctx: &mut TxContext,
 ) {
-    assert!(cap_vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
+    assert!(cap_vault.ou_id() == request.req_ou_id(), EVaultOUMismatch);
     // The minted coin lands in `treasury_vault` when `recipient` is none, so it
-    // must be this DAO's treasury, not one the executor picked.
-    assert!(treasury_vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
+    // must be this OU's treasury, not one the executor picked.
+    assert!(treasury_vault.ou_id() == request.req_ou_id(), EVaultOUMismatch);
     assert_cap_in_vault<TreasuryCap<T>>(cap_vault, cap_id);
 
     let cap: &mut TreasuryCap<T> = cap_vault.borrow_cap_mut(cap_id, request);
     let minted = coin::mint(cap, amount, ctx);
 
     event::emit(CoinMinted {
-        dao_id: cap_vault.dao_id(),
+        ou_id: cap_vault.ou_id(),
         coin_type: std::type_name::with_original_ids<T>().into_string(),
         amount,
         recipient,
@@ -288,7 +288,7 @@ fun assert_cap_in_vault<Cap: key + store>(vault: &CapabilityVault, cap_id: ID) {
     assert!(vault.ids_for_type<Cap>().contains(&cap_id), ECapTypeMismatch);
 }
 
-/// Route a freshly minted coin either into the DAO treasury (`none`) or to a
+/// Route a freshly minted coin either into the OU treasury (`none`) or to a
 /// direct recipient (`some`).
 fun deposit_or_transfer<T>(
     coin: sui::coin::Coin<T>,

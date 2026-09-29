@@ -6,7 +6,7 @@
 
 ## Prerequisites
 
-- DAO with board members [A, B, C]
+- OU with board members [A, B, C]
 - Non-board wallet X funded
 - Various proposal types enabled
 
@@ -19,7 +19,7 @@
 ### 12.1 — Non-board-member cannot submit proposals
 
 1. Connect as wallet X (not a board member)
-2. Navigate to `/dao/$daoId/proposals/new?type=SetBoard`
+2. Navigate to `/ou/$ouId/proposals/new?type=SetBoard`
 3. Fill form and submit
 
 **Expected:**
@@ -131,24 +131,24 @@
 
 ---
 
-## Paused DAO Interactions
+## Paused OU Interactions
 
-### 12.11 — Controller-paused SubDAO blocks all execution
+### 12.11 — Controller-paused SubOU blocks all execution
 
-1. Parent DAO pauses SubDAO execution
-2. On SubDAO, submit and pass a proposal
+1. Parent OU pauses SubOU execution
+2. On SubOU, submit and pass a proposal
 3. Attempt to execute
 
 **Expected:**
 
 - Execution fails — `is_controller_paused` returns true
-- Error indicates DAO is paused by controller
+- Error indicates OU is paused by controller
 
-### 12.12 — Execution-paused DAO (via SetExecutionPaused)
+### 12.12 — Execution-paused OU (via SetExecutionPaused)
 
 > **Note:** This is a contract-level mechanism. Verify if UI exposes it.
 
-1. If `set_execution_paused` is available, pause the DAO
+1. If `set_execution_paused` is available, pause the OU
 2. Attempt to execute any proposal
 
 **Expected:**
@@ -171,9 +171,9 @@
 - Execution fails — insufficient balance
 - Treasury unchanged
 
-### 12.14 — SendCoinToDAO to self
+### 12.14 — SendCoinToOU to self
 
-1. Submit SendCoinToDAO with recipient_treasury = own treasury
+1. Submit SendCoinToOU with recipient_treasury = own treasury
 2. Vote + execute
 
 **Expected:**
@@ -257,9 +257,9 @@
 - Transaction either succeeds (if within Sui limits) or fails gracefully
 - No UI crash
 
-### 12.21 — Special characters in DAO name/description
+### 12.21 — Special characters in OU name/description
 
-1. Create a DAO with special characters: `"Test <DAO> & 'Alpha'"`
+1. Create an OU with special characters: `"Test <OU> & 'Alpha'"`
 2. Navigate to charter page
 
 **Expected:**

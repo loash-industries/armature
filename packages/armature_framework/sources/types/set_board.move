@@ -3,7 +3,7 @@ module armature::set_board;
 use std::internal::{Self, Permit};
 
 /// Change the board in one step: add `to_add` and remove `to_remove`.
-/// Used by the board itself or by a controller DAO via SubDAOControl bypass.
+/// Used by the board itself or by a controller OU via SubOUControl bypass.
 ///
 /// The change is expressed as a diff rather than a full replacement list
 /// because the roster is a Table, which cannot be enumerated on-chain.

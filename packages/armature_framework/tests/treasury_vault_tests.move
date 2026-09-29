@@ -1,8 +1,8 @@
 #[test_only]
 module armature::treasury_vault_tests;
 
-use armature::dao;
 use armature::governance;
+use armature::ou;
 use armature::proposal;
 use armature::treasury_vault::{Self, TreasuryVault};
 use std::string;
@@ -16,14 +16,14 @@ const NON_MEMBER: address = @0xC;
 // A second coin type for testing multi-type deposits
 public struct USDC has drop {}
 
-/// Helper: create a DAO (which creates and shares a TreasuryVault)
-fun create_test_dao(scenario: &mut test_scenario::Scenario) {
+/// Helper: create an OU (which creates and shares a TreasuryVault)
+fun create_test_ou(scenario: &mut test_scenario::Scenario) {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b""),
             scenario.ctx(),
         );
@@ -34,9 +34,9 @@ fun create_test_dao(scenario: &mut test_scenario::Scenario) {
 /// Uses a test-only function to bypass the proposal lifecycle.
 /// We create it via the package-internal constructor.
 fun create_test_execution_request<P>(vault: &TreasuryVault): proposal::ExecutionRequest<P> {
-    let dao_id = vault.dao_id();
+    let ou_id = vault.ou_id();
     let proposal_id = object::id_from_address(@0x2);
-    proposal::new_execution_request_for_testing<P>(dao_id, proposal_id)
+    proposal::new_execution_request_for_testing<P>(ou_id, proposal_id)
 }
 
 // A phantom type to parameterize ExecutionRequest in tests
@@ -46,7 +46,7 @@ public struct TestProposal {}
 /// Deposit first coin adds to registry.
 fun test_deposit_first_coin_adds_to_registry() {
     let mut scenario = test_scenario::begin(CREATOR);
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -69,7 +69,7 @@ fun test_deposit_first_coin_adds_to_registry() {
 /// Deposit second coin type adds to registry.
 fun test_deposit_second_coin_type_adds_to_registry() {
     let mut scenario = test_scenario::begin(CREATOR);
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -100,7 +100,7 @@ fun test_deposit_second_coin_type_adds_to_registry() {
 /// Deposit same type joins balance.
 fun test_deposit_same_type_joins_balance() {
     let mut scenario = test_scenario::begin(CREATOR);
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -126,7 +126,7 @@ fun test_deposit_same_type_joins_balance() {
 /// Non-member can deposit — permissionless.
 fun test_deposit_permissionless() {
     let mut scenario = test_scenario::begin(CREATOR);
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     scenario.next_tx(NON_MEMBER);
     {
@@ -146,7 +146,7 @@ fun test_deposit_permissionless() {
 /// Zero-value deposit is a no-op.
 fun test_deposit_zero_amount() {
     let mut scenario = test_scenario::begin(CREATOR);
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -168,7 +168,7 @@ fun test_deposit_zero_amount() {
 /// Withdraw with valid request succeeds.
 fun test_withdraw_with_valid_request_succeeds() {
     let mut scenario = test_scenario::begin(CREATOR);
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -195,7 +195,7 @@ fun test_withdraw_with_valid_request_succeeds() {
 /// Partial withdraw preserves field and registry entry.
 fun test_partial_withdraw_preserves_field() {
     let mut scenario = test_scenario::begin(CREATOR);
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -224,7 +224,7 @@ fun test_partial_withdraw_preserves_field() {
 /// After partial withdraw, type still in registry (coin_types reflects non-zero balances).
 fun test_coin_types_reflects_non_zero_balances() {
     let mut scenario = test_scenario::begin(CREATOR);
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -253,7 +253,7 @@ fun test_coin_types_reflects_non_zero_balances() {
 /// Withdraw exact balance removes dynamic field and registry entry.
 fun test_withdraw_exact_balance_removes_field() {
     let mut scenario = test_scenario::begin(CREATOR);
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -282,7 +282,7 @@ fun test_withdraw_exact_balance_removes_field() {
 /// Withdraw exact balance removes dynamic field — balance query returns 0.
 fun test_withdraw_exact_balance_removes_dynamic_field() {
     let mut scenario = test_scenario::begin(CREATOR);
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -308,7 +308,7 @@ fun test_withdraw_exact_balance_removes_dynamic_field() {
 /// Withdraw insufficient balance aborts.
 fun test_withdraw_insufficient_balance_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -332,7 +332,7 @@ fun test_withdraw_insufficient_balance_aborts() {
 /// Empty vault returns zero balance.
 fun test_balance_empty_vault_returns_zero() {
     let mut scenario = test_scenario::begin(CREATOR);
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -348,7 +348,7 @@ fun test_balance_empty_vault_returns_zero() {
 /// Balance after deposit returns correct amount.
 fun test_balance_after_deposit_returns_correct() {
     let mut scenario = test_scenario::begin(CREATOR);
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
@@ -368,7 +368,7 @@ fun test_balance_after_deposit_returns_correct() {
 /// claim_coin recovers a coin that was directly transferred to the vault address.
 fun test_claim_coin_recovers_direct_transfer() {
     let mut scenario = test_scenario::begin(CREATOR);
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     // Get vault's object ID (used as the "owner" address for direct transfers)
     let vault_id;
@@ -409,7 +409,7 @@ fun test_claim_coin_recovers_direct_transfer() {
 /// claim_coin works for multiple coin types and sequential claims.
 fun test_claim_coin_multiple_types() {
     let mut scenario = test_scenario::begin(CREATOR);
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     let vault_id;
     scenario.next_tx(CREATOR);
@@ -471,8 +471,8 @@ fun test_destroy_empty_succeeds_on_empty_vault() {
     let mut scenario = test_scenario::begin(CREATOR);
     scenario.next_tx(CREATOR);
     {
-        let dao_id = object::id_from_address(@0xDA0);
-        let vault = treasury_vault::new(dao_id, scenario.ctx());
+        let ou_id = object::id_from_address(@0xDA0);
+        let vault = treasury_vault::new(ou_id, scenario.ctx());
         treasury_vault::destroy_empty(vault);
     };
     scenario.end();
@@ -486,8 +486,8 @@ fun test_destroy_empty_aborts_on_non_empty_vault() {
     let mut scenario = test_scenario::begin(CREATOR);
     scenario.next_tx(CREATOR);
     {
-        let dao_id = object::id_from_address(@0xDA0);
-        let mut vault = treasury_vault::new(dao_id, scenario.ctx());
+        let ou_id = object::id_from_address(@0xDA0);
+        let mut vault = treasury_vault::new(ou_id, scenario.ctx());
         let coin = coin::mint_for_testing<SUI>(100, scenario.ctx());
         vault.deposit(coin, scenario.ctx());
         treasury_vault::destroy_empty(vault);

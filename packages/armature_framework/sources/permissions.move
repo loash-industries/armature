@@ -1,11 +1,11 @@
 /// Permission bits a proposal type may hold in `ProposalConfig.permissions`.
 ///
-/// Each framework mutator that changes DAO-wide state names the bit it
-/// requires and checks it with `proposal::assert_permitted(req, bit)` (dao
-/// mutators via `dao::assert_permitted`). A request carries the bits its type
+/// Each framework mutator that changes OU-wide state names the bit it
+/// requires and checks it with `proposal::assert_permitted(req, bit)` (ou
+/// mutators via `ou::assert_permitted`). A request carries the bits its type
 /// `P` held in its slot when the request was minted; a privileged request (a
 /// controller override) passes every check. Deny-by-default: a type holds no
-/// bits unless they are seeded at DAO creation or granted by a type-admin vote.
+/// bits unless they are seeded at OU creation or granted by a type-admin vote.
 ///
 /// Mutators scoped to the caller's own type-state (keyed by `P`) need no bit.
 module armature::permissions;
@@ -27,20 +27,20 @@ const BOARD_SET: u64 = 1 << 2;
 const TYPE_ADMIN: u64 = 1 << 3;
 /// Pause or resume proposal execution.
 const PAUSE: u64 = 1 << 4;
-/// Move the DAO into the Migrating state.
+/// Move the OU into the Migrating state.
 const MIGRATE: u64 = 1 << 5;
-/// Update the DAO's charter metadata.
+/// Update the OU's charter metadata.
 const METADATA: u64 = 1 << 6;
-/// Withdraw from the DAO's TreasuryVault.
+/// Withdraw from the OU's TreasuryVault.
 const TREASURY_WITHDRAW: u64 = 1 << 7;
-/// Store a capability in the DAO's CapabilityVault.
+/// Store a capability in the OU's CapabilityVault.
 const VAULT_STORE: u64 = 1 << 8;
 /// Borrow or loan a capability from the CapabilityVault. High-impact: a
-/// mutable borrow of a TreasuryCap mints, and a loaned SubDAOControl gives
-/// full control of the SubDAO.
+/// mutable borrow of a TreasuryCap mints, and a loaned SubOUControl gives
+/// full control of the SubOU.
 const VAULT_BORROW: u64 = 1 << 9;
 /// Extract a capability from the CapabilityVault, or create or destroy a
-/// SubDAOControl.
+/// SubOUControl.
 const VAULT_EXTRACT: u64 = 1 << 10;
 /// Governance changes to the EmergencyFreeze: unfreeze, max duration,
 /// exempt set.

@@ -1,19 +1,19 @@
-# Stretch: Migration via SpawnDAO
+# Stretch: Migration via SpawnOU
 
 > Part of the [stretch features index](00_index.md). Not in hackathon scope.
 
 ---
 
-Creates successor DAO with new governance model. Old DAO enters `Migrating` status — only `TransferAssets` executable. After all assets transferred, `dao::destroy` deletes all companion objects.
+Creates successor OU with new governance model. Old OU enters `Migrating` status — only `TransferAssets` executable. After all assets transferred, `ou::destroy` deletes all companion objects.
 
 ```rust
-struct SpawnDAO has store { ... }     // creates successor
+struct SpawnOU has store { ... }     // creates successor
 struct TransferAssets has store { ... } // moves assets batch-by-batch
 ```
 
 Recommended limit: ~50 assets per `TransferAssets` call.
 
-This is the only mechanism for changing a DAO's governance type (Board → Direct, Direct → Weighted, etc.), enforcing the immutable-governance-model principle from [01 Vision](../01_vision.md) Pillar 2.
+This is the only mechanism for changing an OU's governance type (Board → Direct, Direct → Weighted, etc.), enforcing the immutable-governance-model principle from [01 Vision](../01_vision.md) Pillar 2.
 
 ---
 
@@ -21,7 +21,7 @@ This is the only mechanism for changing a DAO's governance type (Board → Direc
 
 | Invariant |
 |---|
-| `DAOStatus` transitions: `Active → Migrating`. No path back. |
+| `OUStatus` transitions: `Active → Migrating`. No path back. |
 | While `Migrating`, only `TransferAssets` can be created/executed. |
-| `dao::destroy` requires `Migrating` status AND empty vaults. |
-| After destruction, in-flight proposals are unexecutable (DAO object gone). |
+| `ou::destroy` requires `Migrating` status AND empty vaults. |
+| After destruction, in-flight proposals are unexecutable (OU object gone). |

@@ -9,8 +9,8 @@ use std::type_name::TypeName;
 /// payload type against the recorded `TypeName` without reading the frame's
 /// dynamic fields.
 ///
-/// Lives in its own leaf module so `dao` can seed the default "Composite"
-/// slot by type without depending on `composite` (which depends on `dao`).
+/// Lives in its own leaf module so `ou` can seed the default "Composite"
+/// slot by type without depending on `composite` (which depends on `ou`).
 public struct CompositePayload has drop, store {
     frame_id: ID,
     step_type_keys: vector<std::ascii::String>,

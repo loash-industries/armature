@@ -4,7 +4,7 @@
 
 # Armature
 
-A programmable DAO protocol on the [Sui](https://sui.io) blockchain. Armature provides the organizational primitives — governance, treasury, capability vaults, charters, and proposals — for decentralized communities to coordinate without admin keys or backdoors.
+A programmable OU protocol on the [Sui](https://sui.io) blockchain. Armature provides the organizational primitives — governance, treasury, capability vaults, charters, and proposals — for decentralized communities to coordinate without admin keys or backdoors.
 
 Built for the [EVE Frontier](https://evefrontier.com) ecosystem, but general-purpose by design.
 
@@ -25,7 +25,7 @@ This repo contains the on-chain Move packages only. The indexer lives in `armatu
 ```
 ├── packages/
 │   ├── armature_framework/     # Core Move modules (15)
-│   │   └── sources/            #   dao, proposal, governance, treasury_vault,
+│   │   └── sources/            #   ou, proposal, governance, treasury_vault,
 │   │                           #   capability_vault, charter, emergency,
 │   │                           #   board_voting, controller, tribe, composite,
 │   │                           #   encrypted_entry, external_execution,
@@ -36,8 +36,8 @@ This repo contains the on-chain Move packages only. The indexer lives in `armatu
 │   │       ├── board/          #   set board
 │   │       ├── currency/       #   mint, burn, allowances, currency ops
 │   │       ├── security/       #   freeze config, exemptions, admin transfer
-│   │       ├── subdao/         #   create, spawn, spin-out, pause, asset/cap transfer
-│   │       ├── treasury/       #   send coin, small payments, inter-DAO transfers
+│   │       ├── subou/         #   create, spawn, spin-out, pause, asset/cap transfer
+│   │       ├── treasury/       #   send coin, small payments, inter-OU transfers
 │   │       └── upgrade/        #   package upgrades
 │   └── armature_world_bridge/  # EVE Frontier world integration
 ├── specs/                      # Design docs, ADRs, and formal spec
@@ -66,7 +66,7 @@ This repo contains the on-chain Move packages only. The indexer lives in `armatu
 make dev
 ```
 
-This starts sui-localnet, deploys Armature packages, and creates a test DAO.
+This starts sui-localnet, deploys Armature packages, and creates a test OU.
 
 To include EVE Frontier world-contracts (requires `make dev-deps` first):
 
@@ -100,8 +100,8 @@ To cut a new whitepaper version, see [docs/whitepaper-release.md](docs/whitepape
 
 The protocol is split into three packages:
 
-- **armature_framework** — Core DAO primitive: lifecycle, governance config, treasury vault, capability vault, charter, emergency freeze, board voting, tribe management, and the proposal execution engine (hot-potato pattern).
-- **armature_proposals** — Concrete proposal types organized by domain: admin, board, currency, security, sub-DAO, treasury, and upgrades.
+- **armature_framework** — Core OU primitive: lifecycle, governance config, treasury vault, capability vault, charter, emergency freeze, board voting, tribe management, and the proposal execution engine (hot-potato pattern).
+- **armature_proposals** — Concrete proposal types organized by domain: admin, board, currency, security, sub-OU, treasury, and upgrades.
 - **armature_world_bridge** — Integration layer for the EVE Frontier world-contracts.
 
 ```bash

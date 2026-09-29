@@ -2,8 +2,8 @@ module armature_proposals::controller_batch_remove_members;
 
 use std::internal::{Self, Permit};
 
-/// Remove multiple members from a managed sub-DAO's board via SubDAOControl authority.
-/// Proposed on the controller DAO; executes atomically on the target sub-DAO
+/// Remove multiple members from a managed sub-OU's board via SubOUControl authority.
+/// Proposed on the controller OU; executes atomically on the target sub-OU
 /// using the privileged_submit pattern.
 public struct ControllerBatchRemoveMembers has drop, store {
     control_id: ID,

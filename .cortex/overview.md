@@ -1,6 +1,6 @@
 # armature
 
-Programmable DAO protocol on the Sui blockchain. Provides on-chain organizational primitives — governance, treasury, capability vaults, charters, and proposals — for decentralized communities to coordinate without admin keys or backdoors.
+Programmable OU protocol on the Sui blockchain. Provides on-chain organizational primitives — governance, treasury, capability vaults, charters, and proposals — for decentralized communities to coordinate without admin keys or backdoors.
 
 Built for the EVE Frontier ecosystem, but general-purpose by design. Organizations use Armature to represent tribes, alliances, and syndicates on-chain with code-backed guarantees.
 
@@ -16,13 +16,13 @@ This repo contains only the on-chain Move smart contracts. Indexing lives in `ar
 
 | Package | Purpose |
 |---------|---------|
-| `armature_framework` | Core DAO primitive: lifecycle, governance, treasury vault, capability vault, charter, emergency freeze, board voting, proposal execution engine, plus the framework payload types under `sources/types/` and their handlers under `sources/handlers/` (admin, board, member, lifecycle, freeze). Holds every type that changes who may do what; see `docs/package-boundaries.md` |
-| `armature_proposals` | First-party extension: asset-operation payload types and handlers for treasury, currency (incl. the `MintAllowance` bypass allowlist), sub-DAO control and upgrades. Mechanically a third-party package; no special treatment from the framework |
-| `armature_world_bridge` | EVE Frontier world bridge: tribe-allowlisted AutojoinDAO self-join via the bypass path (3 modules) |
+| `armature_framework` | Core OU primitive: lifecycle, governance, treasury vault, capability vault, charter, emergency freeze, board voting, proposal execution engine, plus the framework payload types under `sources/types/` and their handlers under `sources/handlers/` (admin, board, member, lifecycle, freeze). Holds every type that changes who may do what; see `docs/package-boundaries.md` |
+| `armature_proposals` | First-party extension: asset-operation payload types and handlers for treasury, currency (incl. the `MintAllowance` bypass allowlist), sub-OU control and upgrades. Mechanically a third-party package; no special treatment from the framework |
+| `armature_world_bridge` | EVE Frontier world bridge: tribe-allowlisted AutojoinOU self-join via the bypass path (3 modules) |
 
 ### Key Modules
 
-- **`dao`** — DAO lifecycle, root object, and the proposal-type registry (one dynamic-field slot per enabled type, keyed by the payload's `TypeName`; the root never grows with enabled types)
+- **`ou`** — OU lifecycle, root object, and the proposal-type registry (one dynamic-field slot per enabled type, keyed by the payload's `TypeName`; the root never grows with enabled types)
 - **`proposal`** — Hot-potato proposal execution engine
 - **`governance`** — Board roster: a `Table` of members with join/leave tenures and a `roster_version` that advances on every membership change
 - **`treasury_vault`** — Coin storage and release
@@ -40,18 +40,18 @@ This repo contains only the on-chain Move smart contracts. Indexing lives in `ar
 - **Forward-only status transitions** — a live proposal moves `Active → Passed` only. Execution deletes it (`ProposalExecuted`), and anyone can delete it with `delete_expired_proposal` once voting expires (Active) or its execution window closes (Passed), emitting `ProposalExpired`
 - **`controller::privileged_submit`** — proposals bypass voting and go directly to `executed`; no `ProposalPassed` event emitted
 - **Event-only audit for single-PTB executions** — `submit_vote_execute`, `ticket_from_cap` and `privileged_submit` create no `Proposal` object; the proposal ID is minted like an object ID and the lifecycle events are the audit record. Only two-PTB `submit_proposal` shares a `Proposal<P>`
-- **Read-only execution for cooldown-free types** — `submit_vote_execute_readonly` / `ticket_from_vote_readonly` / `ticket_from_cap_readonly` take `&DAO` and skip the last-executed write, so single-vote trades leave the DAO unmodified and do not serialise on it; `&mut DAO` variants remain for types with a cooldown
+- **Read-only execution for cooldown-free types** — `submit_vote_execute_readonly` / `ticket_from_vote_readonly` / `ticket_from_cap_readonly` take `&OU` and skip the last-executed write, so single-vote trades leave the OU unmodified and do not serialise on it; `&mut OU` variants remain for types with a cooldown
 - **Snapshot by roster version** — a proposal records the roster version at creation instead of copying the board; its voters are the members at that version, so the Proposal object's size does not depend on board size. `SetBoard` is an add/remove diff because the roster table cannot be enumerated
-- **Type-keyed registry** — `submit_proposal<P>` / `submit_vote_execute<P>` / `ticket_from_cap<P>` select the config by `P`'s slot; there is no caller-supplied type key to spoof. Display keys are human labels only, unique per DAO, and resolvable back to the type for admin operations
+- **Type-keyed registry** — `submit_proposal<P>` / `submit_vote_execute<P>` / `ticket_from_cap<P>` select the config by `P`'s slot; there is no caller-supplied type key to spoof. Display keys are human labels only, unique per OU, and resolvable back to the type for admin operations
 
 ## Recent Changes
 
 - **2026-09-26 — package boundaries, borrow scope, bypass-safe bits, authenticated MintAllowance bypass (ROAD-39, ARMATURE-31)**: freeze-governance types move into the framework; `ProposalConfig.borrow_scope` limits `VAULT_BORROW` to named cap types; bypass types may not hold authority-graph bits; `MintAllowance<T>` is minted only through an allowlisted bypass entry. Placement rule in `docs/package-boundaries.md`. See `changelog.md`.
 - **2026-09-26 — framework mutators gated by permission bits (ARMATURE-25 – 29, ROAD-39)**: requests carry their type's bits; board, type-registry, lifecycle, charter, freeze, treasury and vault mutators check them; framework types have fixed bits; EnableProposalType's floor is now 80%. See `changelog.md`.
-- **2026-09-26 — per-type permission bits (ARMATURE-22, ARMATURE-23, ROAD-39)**: `ProposalConfig.permissions` (deny-by-default), `ExecutionRequest.privileged` (controller only) and `dao::assert_permitted<P>`; mutators are gated in follow-ups. See `changelog.md`.
+- **2026-09-26 — per-type permission bits (ARMATURE-22, ARMATURE-23, ROAD-39)**: `ProposalConfig.permissions` (deny-by-default), `ExecutionRequest.privileged` (controller only) and `ou::assert_permitted<P>`; mutators are gated in follow-ups. See `changelog.md`.
 - **2026-09-26 — emergency freeze keyed by Move type (ARMATURE-15)**: `freeze_type<P>` / `assert_not_frozen<P>` replace string keys on every execution path; mandatory exemptions are matched by type; freeze events carry `type_name`. See `changelog.md`.
-- **2026-09-26 — table-backed board roster and snapshot-by-version voting (ARMATURE-13, ARMATURE-14)**: the roster moves out of the DAO root into a versioned `Table`; proposals store `snapshot_version` instead of a roster copy; voting moves to `board_voting::vote(proposal, &DAO, …)`; `SetBoard` becomes `{ to_add, to_remove }`. See `changelog.md`.
+- **2026-09-26 — table-backed board roster and snapshot-by-version voting (ARMATURE-13, ARMATURE-14)**: the roster moves out of the OU root into a versioned `Table`; proposals store `snapshot_version` instead of a roster copy; voting moves to `board_voting::vote(proposal, &OU, …)`; `SetBoard` becomes `{ to_add, to_remove }`. See `changelog.md`.
 - **2026-09-25 — executed proposals are deleted, expired ones can be deleted by anyone (ARMATURE-12)**: `ticket_from_vote` consumes and deletes the `Proposal`; `delete_expired_proposal` replaces `try_expire` and also covers passed proposals whose execution window has closed. See `changelog.md`.
 - **2026-09-24 — event-only audit for single-PTB executions (ARMATURE-11)**: atomic, bypass and controller executions emit events instead of creating a shared `Proposal<P>`; `ProposalCreated` gains `metadata_ipfs`. See `changelog.md`.
-- **2026-09-24 — read-only DAO on the atomic and bypass paths (ARMATURE-10)**: `&DAO` variants of `submit_vote_execute`, `ticket_from_vote` and `ticket_from_cap` for types with cooldown 0; no DAO write or write lock on the trading path. See `changelog.md`.
-- **2026-09-24 — type-keyed proposal registry (ARMATURE-9)**: replaced the string-keyed proposal-type maps on `dao::DAO` with one dynamic-field slot per enabled type, keyed by the payload's canonical `TypeName`. Removes the per-transaction rewrite of a root that grew with every enabled type, and removes the caller-supplied `type_key` from submission and execution calls. See `changelog.md`.
+- **2026-09-24 — read-only OU on the atomic and bypass paths (ARMATURE-10)**: `&OU` variants of `submit_vote_execute`, `ticket_from_vote` and `ticket_from_cap` for types with cooldown 0; no OU write or write lock on the trading path. See `changelog.md`.
+- **2026-09-24 — type-keyed proposal registry (ARMATURE-9)**: replaced the string-keyed proposal-type maps on `ou::OU` with one dynamic-field slot per enabled type, keyed by the payload's canonical `TypeName`. Removes the per-transaction rewrite of a root that grew with every enabled type, and removes the caller-supplied `type_key` from submission and execution calls. See `changelog.md`.

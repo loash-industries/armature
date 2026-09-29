@@ -4,42 +4,42 @@
 
 ---
 
-A DAO can simultaneously occupy multiple positions in the organizational graph:
-- Be a SubDAO of Tribe A
+An OU can simultaneously occupy multiple positions in the organizational graph:
+- Be a SubOU of Tribe A
 - Be a federation member of the Haulers' Alliance
-- Be a controller of its own SubDAOs
+- Be a controller of its own SubOUs
 
 These roles are not mutually exclusive because they are encoded in independent capability objects.
 
 ```
                     ┌──────────────────────┐
-                    │  Haulers' Alliance   │  ← Federation DAO
+                    │  Haulers' Alliance   │  ← Federation OU
                     │    (Federation)      │
                     └──┬──────────┬────────┘
                        │          │
               FedSeat  │          │  FedSeat
                        │          │
               ┌────────▼──┐   ┌──▼─────────┐
-              │  Tribe A  │   │  Tribe B    │  ← Independent DAOs
-              │  (DAO)    │   │  (DAO)      │
+              │  Tribe A  │   │  Tribe B    │  ← Independent OUs
+              │  (OU)    │   │  (OU)      │
               └─────┬─────┘   └─────────────┘
                     │
-           SubDAOCtl│
+           SubOUCtl│
                     │
               ┌─────▼─────┐
-              │ Logistics  │  ← SubDAO of Tribe A
-              │ (SubDAO)   │
+              │ Logistics  │  ← SubOU of Tribe A
+              │ (SubOU)   │
               └─────┬──────┘
                     │
-           SubDAOCtl│
+           SubOUCtl│
                     │
               ┌─────▼─────┐
-              │ Fleet Ops  │  ← SubDAO of Logistics
+              │ Fleet Ops  │  ← SubOU of Logistics
               └────────────┘
 ```
 
-The DAO Atom boundary (see [01 Vision](../01_vision.md) — The DAO Atom) is preserved at every node. Cross-atom operations — `SubDAOControl` edges downward, `FederationSeat` edges upward — require governance actions on both sides.
+The OU Atom boundary (see [01 Vision](../01_vision.md) — The OU Atom) is preserved at every node. Cross-atom operations — `SubOUControl` edges downward, `FederationSeat` edges upward — require governance actions on both sides.
 
 ---
 
-**See also:** [Federation System](01_federation.md) for upward composition, [SubDAO Hierarchy](../04_subdao_hierarchy.md) for downward composition.
+**See also:** [Federation System](01_federation.md) for upward composition, [SubOU Hierarchy](../04_subou_hierarchy.md) for downward composition.

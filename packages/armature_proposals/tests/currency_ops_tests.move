@@ -3,11 +3,11 @@ module armature_proposals::currency_ops_tests;
 
 use armature::board_voting;
 use armature::capability_vault::CapabilityVault;
-use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
 use armature::enable_bypass_type::EnableBypassType;
 use armature::external_execution;
 use armature::governance;
+use armature::ou::{Self, OU};
 use armature::proposal::{Self, ExternalExecutionCap, Proposal};
 use armature::treasury_vault::TreasuryVault;
 use armature_proposals::adopt_currency::{Self, AdoptCurrency};
@@ -29,18 +29,18 @@ const RECIPIENT: address = @0xB;
 const OUTSIDER: address = @0xBAD;
 const MINTER: address = @0xC;
 
-/// One-time-witness-style test coin. The DAO's sovereign currency.
+/// One-time-witness-style test coin. The OU's sovereign currency.
 public struct GLYPH has drop {}
 
 // === Helpers ===
 
-fun create_dao(scenario: &mut test_scenario::Scenario) {
+fun create_ou(scenario: &mut test_scenario::Scenario) {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -50,14 +50,14 @@ fun create_dao(scenario: &mut test_scenario::Scenario) {
 fun enable_type<T>(scenario: &mut test_scenario::Scenario, type_key: vector<u8>, bits: u64) {
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         // Every currency type that borrows does so on TreasuryCap<GLYPH>; the
         // scope is inert for types without VAULT_BORROW.
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0)
             .with_permissions(bits)
             .with_borrow_scope(type_permissions::currency_scope<GLYPH>());
-        dao.test_enable_type<T>(type_key.to_ascii_string(), config);
-        test_scenario::return_shared(dao);
+        ou.test_enable_type<T>(type_key.to_ascii_string(), config);
+        test_scenario::return_shared(ou);
     };
 }
 
@@ -73,25 +73,25 @@ fun adopt_glyph(scenario: &mut test_scenario::Scenario, clock: &clock::Clock): I
     // Submit
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let payload = adopt_currency::new<GLYPH>();
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::some(string::utf8(b"Adopt GLYPH")),
             payload,
             clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // Vote
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<AdoptCurrency<GLYPH>>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
@@ -99,7 +99,7 @@ fun adopt_glyph(scenario: &mut test_scenario::Scenario, clock: &clock::Clock): I
     let cap_id;
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut vault = scenario.take_shared<CapabilityVault>();
         let mut proposal = scenario.take_shared<Proposal<AdoptCurrency<GLYPH>>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
@@ -108,7 +108,7 @@ fun adopt_glyph(scenario: &mut test_scenario::Scenario, clock: &clock::Clock): I
         cap_id = object::id(&cap);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             clock,
@@ -121,7 +121,7 @@ fun adopt_glyph(scenario: &mut test_scenario::Scenario, clock: &clock::Clock): I
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     cap_id
@@ -130,51 +130,51 @@ fun adopt_glyph(scenario: &mut test_scenario::Scenario, clock: &clock::Clock): I
 // === Tests ===
 
 #[test]
-/// Mint into the treasury (recipient = none): GLYPH supply lands in the DAO's
+/// Mint into the treasury (recipient = none): GLYPH supply lands in the OU's
 /// own TreasuryVault, where SendCoin would later distribute it.
 fun mint_into_treasury() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1000);
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
     let cap_id = adopt_glyph(&mut scenario, &clock);
     enable_type<MintCoin<GLYPH>>(&mut scenario, b"MintCoin", type_permissions::mint());
 
     // Submit + vote
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let payload = mint_coin::new<GLYPH>(cap_id, 1_000_000, option::none());
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::some(string::utf8(b"Mint into treasury")),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<MintCoin<GLYPH>>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     // Execute
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut cap_vault = scenario.take_shared<CapabilityVault>();
         let mut treasury = scenario.take_shared<TreasuryVault>();
         let mut proposal = scenario.take_shared<Proposal<MintCoin<GLYPH>>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
@@ -192,7 +192,7 @@ fun mint_into_treasury() {
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(treasury);
         test_scenario::return_shared(cap_vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -207,41 +207,41 @@ fun mint_to_recipient() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1000);
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
     let cap_id = adopt_glyph(&mut scenario, &clock);
     enable_type<MintCoin<GLYPH>>(&mut scenario, b"MintCoin", type_permissions::mint());
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let payload = mint_coin::new<GLYPH>(cap_id, 500, option::some(RECIPIENT));
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::some(string::utf8(b"Mint to recipient")),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<MintCoin<GLYPH>>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut cap_vault = scenario.take_shared<CapabilityVault>();
         let mut treasury = scenario.take_shared<TreasuryVault>();
         let mut proposal = scenario.take_shared<Proposal<MintCoin<GLYPH>>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
@@ -260,7 +260,7 @@ fun mint_to_recipient() {
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(treasury);
         test_scenario::return_shared(cap_vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // Recipient holds the minted coin.
@@ -283,7 +283,7 @@ fun burn_from_treasury() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1000);
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
     let cap_id = adopt_glyph(&mut scenario, &clock);
     enable_type<MintCoin<GLYPH>>(&mut scenario, b"MintCoin", type_permissions::mint());
     enable_type<BurnCoin<GLYPH>>(&mut scenario, b"BurnCoin", type_permissions::burn_coin());
@@ -291,34 +291,34 @@ fun burn_from_treasury() {
     // Mint 1_000_000 into treasury (reuse the mint flow inline)
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let payload = mint_coin::new<GLYPH>(cap_id, 1_000_000, option::none());
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::some(string::utf8(b"Mint")),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<MintCoin<GLYPH>>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut cap_vault = scenario.take_shared<CapabilityVault>();
         let mut treasury = scenario.take_shared<TreasuryVault>();
         let mut proposal = scenario.take_shared<Proposal<MintCoin<GLYPH>>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
@@ -333,40 +333,40 @@ fun burn_from_treasury() {
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(treasury);
         test_scenario::return_shared(cap_vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // Burn 400_000
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let payload = burn_coin::new<GLYPH>(cap_id, 400_000);
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::some(string::utf8(b"Burn")),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<BurnCoin<GLYPH>>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut cap_vault = scenario.take_shared<CapabilityVault>();
         let mut treasury = scenario.take_shared<TreasuryVault>();
         let mut proposal = scenario.take_shared<Proposal<BurnCoin<GLYPH>>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
@@ -384,7 +384,7 @@ fun burn_from_treasury() {
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(treasury);
         test_scenario::return_shared(cap_vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -399,7 +399,7 @@ fun return_cap_relinquishes_custody() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1000);
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
     let cap_id = adopt_glyph(&mut scenario, &clock);
     enable_type<ReturnCurrencyCap<GLYPH>>(
         &mut scenario,
@@ -409,33 +409,33 @@ fun return_cap_relinquishes_custody() {
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let payload = return_currency_cap::new<GLYPH>(cap_id, RECIPIENT);
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::some(string::utf8(b"Hand off GLYPH")),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<ReturnCurrencyCap<GLYPH>>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut cap_vault = scenario.take_shared<CapabilityVault>();
         let mut proposal = scenario.take_shared<Proposal<ReturnCurrencyCap<GLYPH>>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
@@ -448,7 +448,7 @@ fun return_cap_relinquishes_custody() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(cap_vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // Recipient now holds the TreasuryCap and can mint freely.
@@ -465,56 +465,56 @@ fun return_cap_relinquishes_custody() {
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = currency_ops::EVaultDAOMismatch)]
+#[test, expected_failure(abort_code = currency_ops::EVaultOUMismatch)]
 /// With recipient = none the minted supply lands in `treasury_vault`, so the
-/// executor cannot pass another DAO's treasury and divert it there.
+/// executor cannot pass another OU's treasury and divert it there.
 fun mint_into_foreign_treasury_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1000);
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
     let cap_id = adopt_glyph(&mut scenario, &clock);
     enable_type<MintCoin<GLYPH>>(&mut scenario, b"MintCoin", type_permissions::mint());
 
     scenario.next_tx(CREATOR);
-    let dao_id = {
-        let dao = scenario.take_shared<DAO>();
+    let ou_id = {
+        let ou = scenario.take_shared<OU>();
         let payload = mint_coin::new<GLYPH>(cap_id, 1_000_000, option::none());
-        board_voting::submit_proposal(&dao, option::none(), payload, &clock, scenario.ctx());
-        let id = dao.id();
-        test_scenario::return_shared(dao);
+        board_voting::submit_proposal(&ou, option::none(), payload, &clock, scenario.ctx());
+        let id = ou.id();
+        test_scenario::return_shared(ou);
         id
     };
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<MintCoin<GLYPH>>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(dao_id);
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(ou_id);
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
-    // The executor's own DAO, whose treasury should not receive the mint.
+    // The executor's own OU, whose treasury should not receive the mint.
     scenario.next_tx(OUTSIDER);
-    let other_id = dao::create(
+    let other_id = ou::create(
         &governance::init_board(vector[OUTSIDER]),
-        string::utf8(b"Other DAO"),
+        string::utf8(b"Other OU"),
         string::utf8(b""),
         scenario.ctx(),
     );
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared_by_id<DAO>(dao_id);
-        let other = scenario.take_shared_by_id<DAO>(other_id);
-        let mut cap_vault = scenario.take_shared_by_id<CapabilityVault>(dao.capability_vault_id());
+        let mut ou = scenario.take_shared_by_id<OU>(ou_id);
+        let other = scenario.take_shared_by_id<OU>(other_id);
+        let mut cap_vault = scenario.take_shared_by_id<CapabilityVault>(ou.capability_vault_id());
         let mut other_treasury = scenario.take_shared_by_id<TreasuryVault>(other.treasury_id());
         let proposal = scenario.take_shared<Proposal<MintCoin<GLYPH>>>();
-        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(dao.emergency_freeze_id());
+        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(ou.emergency_freeze_id());
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
@@ -538,7 +538,7 @@ fun mint_with_unknown_cap_aborts() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1000);
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
     adopt_glyph(&mut scenario, &clock);
     enable_type<MintCoin<GLYPH>>(&mut scenario, b"MintCoin", type_permissions::mint());
 
@@ -553,34 +553,34 @@ fun mint_with_unknown_cap_aborts() {
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let payload = mint_coin::new<GLYPH>(bogus_cap_id, 1, option::none());
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::some(string::utf8(b"Mint with bogus cap")),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<MintCoin<GLYPH>>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut cap_vault = scenario.take_shared<CapabilityVault>();
         let mut treasury = scenario.take_shared<TreasuryVault>();
         let mut proposal = scenario.take_shared<Proposal<MintCoin<GLYPH>>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
@@ -595,7 +595,7 @@ fun mint_with_unknown_cap_aborts() {
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(treasury);
         test_scenario::return_shared(cap_vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -607,7 +607,7 @@ fun mint_with_unknown_cap_aborts() {
 fun enable_mint_allowance_bypass(scenario: &mut test_scenario::Scenario, clock: &clock::Clock): ID {
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let payload = external_execution::new_enable_bypass_type(
             b"MintAllowance".to_ascii_string(),
             type_name::with_defining_ids<MintAllowance<GLYPH>>(),
@@ -615,33 +615,33 @@ fun enable_mint_allowance_bypass(scenario: &mut test_scenario::Scenario, clock: 
                 .with_permissions(type_permissions::mint())
                 .with_borrow_scope(type_permissions::currency_scope<GLYPH>()),
         );
-        board_voting::submit_proposal(&dao, option::none(), payload, clock, scenario.ctx());
-        test_scenario::return_shared(dao);
+        board_voting::submit_proposal(&ou, option::none(), payload, clock, scenario.ctx());
+        test_scenario::return_shared(ou);
     };
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
     let bypass_cap_id;
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut vault = scenario.take_shared<CapabilityVault>();
         let proposal = scenario.take_shared<Proposal<EnableBypassType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             clock,
             scenario.ctx(),
         );
         external_execution::execute_enable_bypass_type<MintAllowance<GLYPH>>(
-            &mut dao,
+            &mut ou,
             &mut vault,
             ticket,
             scenario.ctx(),
@@ -649,7 +649,7 @@ fun enable_mint_allowance_bypass(scenario: &mut test_scenario::Scenario, clock: 
         bypass_cap_id = vault.ids_for_type<ExternalExecutionCap<MintAllowance<GLYPH>>>()[0];
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     bypass_cap_id
@@ -672,7 +672,7 @@ fun mint_allowance_bypass_cap_is_stored() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1000);
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
     adopt_glyph(&mut scenario, &clock);
     let bypass_cap_id = enable_mint_allowance_bypass(&mut scenario, &clock);
 
@@ -700,11 +700,11 @@ fun configure_allowance(
 ) {
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let name = type_name::with_defining_ids<ConfigureMintAllowance<GLYPH>>();
-        if (!dao.is_type_name_enabled(&name)) {
-            dao.test_enable_type<ConfigureMintAllowance<GLYPH>>(
+        if (!ou.is_type_name_enabled(&name)) {
+            ou.test_enable_type<ConfigureMintAllowance<GLYPH>>(
                 b"ConfigureMintAllowance".to_ascii_string(),
                 proposal::new_config(1, 5_000, 0, 604_800_000, 0, 0).with_permissions(
                     type_permissions::configure_mint_allowance(),
@@ -712,16 +712,16 @@ fun configure_allowance(
             );
         };
         let ticket = board_voting::submit_vote_execute<ConfigureMintAllowance<GLYPH>>(
-            &mut dao,
+            &mut ou,
             option::none(),
             configure_mint_allowance::new<GLYPH>(add, vector[], max_per_call, enabled),
             &freeze,
             clock,
             scenario.ctx(),
         );
-        configure_mint_allowance::execute_configure_mint_allowance<GLYPH>(&mut dao, ticket);
+        configure_mint_allowance::execute_configure_mint_allowance<GLYPH>(&mut ou, ticket);
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 }
 
@@ -736,12 +736,12 @@ fun bypass_mint(
 ) {
     scenario.next_tx(sender);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut cap_vault = scenario.take_shared<CapabilityVault>();
         let mut treasury = scenario.take_shared<TreasuryVault>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         currency_ops::mint_allowance_bypass<GLYPH>(
-            &mut dao,
+            &mut ou,
             &mut cap_vault,
             &mut treasury,
             &freeze,
@@ -755,7 +755,7 @@ fun bypass_mint(
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(treasury);
         test_scenario::return_shared(cap_vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 }
 
@@ -767,7 +767,7 @@ fun mint_allowance_bypass_allowed_minter_mints_within_cap() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1000);
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
     let treasury_cap_id = adopt_glyph(&mut scenario, &clock);
     let bypass_cap_id = enable_mint_allowance_bypass(&mut scenario, &clock);
     configure_allowance(
@@ -799,7 +799,7 @@ fun mint_allowance_bypass_outsider_aborts() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1000);
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
     let treasury_cap_id = adopt_glyph(&mut scenario, &clock);
     let bypass_cap_id = enable_mint_allowance_bypass(&mut scenario, &clock);
     configure_allowance(
@@ -822,7 +822,7 @@ fun mint_allowance_bypass_over_cap_aborts() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1000);
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
     let treasury_cap_id = adopt_glyph(&mut scenario, &clock);
     let bypass_cap_id = enable_mint_allowance_bypass(&mut scenario, &clock);
     configure_allowance(
@@ -846,7 +846,7 @@ fun mint_allowance_bypass_unconfigured_aborts() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1000);
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
     let treasury_cap_id = adopt_glyph(&mut scenario, &clock);
     let bypass_cap_id = enable_mint_allowance_bypass(&mut scenario, &clock);
 
@@ -863,7 +863,7 @@ fun mint_allowance_bypass_disabled_aborts() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1000);
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
     let treasury_cap_id = adopt_glyph(&mut scenario, &clock);
     let bypass_cap_id = enable_mint_allowance_bypass(&mut scenario, &clock);
     configure_allowance(

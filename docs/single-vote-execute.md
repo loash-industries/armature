@@ -25,13 +25,13 @@ A proposal type is eligible for the atomic path when **all** of the following ho
 |---|---|
 | `execution_delay_ms = 0` | A non-zero delay requires two PTBs by definition. The check fires before any mutation. |
 | Caller's single vote satisfies quorum **and** `approval_threshold` | The function casts exactly one YES vote and then asserts `prop.status().is_passed()`. If weight is insufficient the call aborts with `EInsufficientVotingWeight`. |
-| DAO is `Active` (or `Migrating` + `TransferAssets`) | Same guard as `submit_proposal`. |
+| OU is `Active` (or `Migrating` + `TransferAssets`) | Same guard as `submit_proposal`. |
 | Type is in `enabled_proposal_types` | Same guard as `submit_proposal`. |
 | Caller is a current board member | Same guard as `submit_proposal`. |
 | Type is not frozen in `EmergencyFreeze` | Checked against the freeze object. |
-| DAO is not `controller_paused` | Checked against the DAO's controller pause flag. |
-| DAO is not `execution_paused` | Checked inside `proposal::execute`. |
-| Cooldown for this type has elapsed | Checked against `dao.last_executed_at` inside `proposal::execute`. |
+| OU is not `controller_paused` | Checked against the OU's controller pause flag. |
+| OU is not `execution_paused` | Checked inside `proposal::execute`. |
+| Cooldown for this type has elapsed | Checked against `ou.last_executed_at` inside `proposal::execute`. |
 
 **Governance-sensitive types must not use this path.** Any type that alters board composition, proposal configs, or bypass privileges (`SetBoard`, `AddMember`, `RemoveMember`, `BatchAddMembers`, `BatchRemoveMembers`, `UpdateProposalConfig`, `EnableProposalType`, `EnableBypassType`, `DisableBypassType`) must be configured with `execution_delay_ms > 0` so the atomic path is statically rejected.
 
@@ -41,7 +41,7 @@ A proposal type is eligible for the atomic path when **all** of the following ho
 
 ```move
 public fun submit_vote_execute<P: store>(
-    dao: &mut DAO,
+    ou: &mut OU,
     type_key: std::ascii::String,
     metadata_ipfs: Option<String>,
     payload: P,
@@ -58,17 +58,17 @@ The returned `ExecutionTicket<P>` is a `Standalone` ticket carrying the proposal
 ## Execution Flow
 
 ```
-submit_vote_execute<P>(dao, type_key, payload, ...)
+submit_vote_execute<P>(ou, type_key, payload, ...)
   │
   ├─ validate (mirrors submit_proposal):
-  │    dao.status is Active | migration-allowed
+  │    ou.status is Active | migration-allowed
   │    type_key ∈ enabled_proposal_types
   │    type_binding matches P (if bound)
   │    ctx.sender ∈ board members
   │    config.execution_delay_ms == 0          ← extra atomic-path guard
   │
   ├─ validate (mirrors ticket_from_vote):
-  │    !dao.is_controller_paused
+  │    !ou.is_controller_paused
   │    freeze.assert_not_frozen(type_key)
   │
   ├─ proposal::create_returning<P>(...)        ← owned, never shared while Active
@@ -80,7 +80,7 @@ submit_vote_execute<P>(dao, type_key, payload, ...)
   │    checks: execution_paused, delay, cooldown
   │    extracts payload → ExecutionRequest hot potato
   │
-  ├─ dao.record_execution(type_key, now)
+  ├─ ou.record_execution(type_key, now)
   │
   ├─ proposal::share_proposal(prop)            ← shares in Executed state (audit record)
   │
@@ -110,7 +110,7 @@ Practical breakpoints:
 | 3 members | 3 333 bps (33%) |
 | 5 members | 2 000 bps (20%) |
 
-For operational DAOs the recommended config is `quorum = 5_000, approval_threshold = 5_000` for small boards (1–2 members) and a lower quorum for larger boards where a single operator needs to act without waiting for peers.
+For operational OUs the recommended config is `quorum = 5_000, approval_threshold = 5_000` for small boards (1–2 members) and a lower quorum for larger boards where a single operator needs to act without waiting for peers.
 
 ---
 
@@ -141,13 +141,13 @@ The on-chain event stream is indistinguishable from a standard proposal that hap
 
 | Abort | Code | Trigger |
 |---|---|---|
-| `EDAONotActive` | `board_voting::0` | DAO is not `Active` (or `Migrating` + non-`TransferAssets`) |
+| `EOUNotActive` | `board_voting::0` | OU is not `Active` (or `Migrating` + non-`TransferAssets`) |
 | `ETypeNotEnabled` | `board_voting::1` | `type_key` not in `enabled_proposal_types` |
-| `EControllerPaused` | `board_voting::3` | Controller has paused the SubDAO |
+| `EControllerPaused` | `board_voting::3` | Controller has paused the SubOU |
 | `ETypeMismatch` | `board_voting::5` | `P` does not match the bound Move type for `type_key` |
 | `EFloorNotMet` | `board_voting::6` | `EnableProposalType` config has `approval_threshold < 66%` |
 | `EDelayForbidsAtomicExecution` | `board_voting::7` | `execution_delay_ms > 0` |
 | `EInsufficientVotingWeight` | `board_voting::8` | Single vote did not pass quorum or threshold |
 | `ENotBoardMember` | `governance::2` | Caller not on the board |
-| `EExecutionPaused` | `proposal::12` | `dao.execution_paused == true` |
+| `EExecutionPaused` | `proposal::12` | `ou.execution_paused == true` |
 | `ECooldownActive` | `proposal::9` | Last execution of this type was within `cooldown_ms` |

@@ -1,4 +1,4 @@
-/// End-to-end tests for the AutojoinDAO bridge against a real
+/// End-to-end tests for the AutojoinOU bridge against a real
 /// `world::character::Character`. Setup uses world's public `init_for_testing`
 /// hooks (cross-package #[test_only] are accessible) plus armature's
 /// test seams (`test_enable_type<T>`) and the
@@ -9,13 +9,13 @@ module armature_world_bridge::autojoin_e2e_tests;
 
 use armature::board_voting;
 use armature::capability_vault::{Self, CapabilityVault};
-use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
+use armature::ou::{Self, OU};
 use armature::permissions;
 use armature::proposal::{Self, ExecutionRequest, Proposal};
 use armature::treasury_vault::TreasuryVault;
-use armature_world_bridge::autojoin_ops::{Self, AutojoinDAO};
+use armature_world_bridge::autojoin_ops::{Self, AutojoinOU};
 use armature_world_bridge::configure_autojoin::{Self, ConfigureAutojoin};
 use std::string;
 use sui::clock;
@@ -83,56 +83,56 @@ fun create_character(
     id
 }
 
-/// Create a DAO with CREATOR as sole board member; enable AutojoinDAO and
+/// Create an OU with CREATOR as sole board member; enable AutojoinOU and
 /// ConfigureAutojoin types via test seams; deposit a synthetic
-/// ExternalExecutionCap<AutojoinDAO> into the vault. Returns (dao_id, vault_id, cap_id).
-fun setup_dao_with_autojoin(scenario: &mut ts::Scenario): (ID, ID, ID) {
+/// ExternalExecutionCap<AutojoinOU> into the vault. Returns (ou_id, vault_id, cap_id).
+fun setup_ou_with_autojoin(scenario: &mut ts::Scenario): (ID, ID, ID) {
     ts::next_tx(scenario, CREATOR);
     {
         let init = governance::init_board(vector[CREATOR]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
     };
 
-    let mut dao_id_opt = option::none<ID>();
+    let mut ou_id_opt = option::none<ID>();
     let mut vault_id_opt = option::none<ID>();
     let mut cap_id_opt = option::none<ID>();
 
     ts::next_tx(scenario, CREATOR);
     {
-        let mut dao = ts::take_shared<DAO>(scenario);
+        let mut ou = ts::take_shared<OU>(scenario);
         let mut vault = ts::take_shared<CapabilityVault>(scenario);
 
         // Enable both proposal types via test seams (slots are keyed by the Move type).
         let cfg = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type<AutojoinDAO>(
-            b"AutojoinDAO".to_ascii_string(),
+        ou.test_enable_type<AutojoinOU>(
+            b"AutojoinOU".to_ascii_string(),
             cfg.with_permissions(autojoin_ops::autojoin_permissions()),
         );
-        dao.test_enable_type<ConfigureAutojoin>(b"ConfigureAutojoin".to_ascii_string(), cfg);
+        ou.test_enable_type<ConfigureAutojoin>(b"ConfigureAutojoin".to_ascii_string(), cfg);
 
-        // Mint a synthetic cap for AutojoinDAO and deposit into the vault.
+        // Mint a synthetic cap for AutojoinOU and deposit into the vault.
         // capability_vault::store_cap_for_testing bypasses the request gate.
-        let cap = proposal::new_external_execution_cap_for_testing<AutojoinDAO>(
-            dao.id(),
+        let cap = proposal::new_external_execution_cap_for_testing<AutojoinOU>(
+            ou.id(),
             scenario.ctx(),
         );
         let cap_id = object::id(&cap);
         capability_vault::store_cap_for_testing(&mut vault, cap);
 
-        dao_id_opt.fill(dao.id());
+        ou_id_opt.fill(ou.id());
         vault_id_opt.fill(object::id(&vault));
         cap_id_opt.fill(cap_id);
 
         ts::return_shared(vault);
-        ts::return_shared(dao);
+        ts::return_shared(ou);
     };
 
-    (dao_id_opt.destroy_some(), vault_id_opt.destroy_some(), cap_id_opt.destroy_some())
+    (ou_id_opt.destroy_some(), vault_id_opt.destroy_some(), cap_id_opt.destroy_some())
 }
 
 /// Configure the allowlist via a real ConfigureAutojoin governance flow
@@ -149,44 +149,44 @@ fun configure_allowlist(
     clock.set_for_testing(ts_submit);
     ts::next_tx(scenario, CREATOR);
     {
-        let dao = ts::take_shared<DAO>(scenario);
+        let ou = ts::take_shared<OU>(scenario);
         let payload = configure_autojoin::new(add_ids, vector[], option::some(enabled));
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::none(),
             payload,
             clock,
             scenario.ctx(),
         );
-        ts::return_shared(dao);
+        ts::return_shared(ou);
     };
 
     clock.set_for_testing(ts_vote);
     ts::next_tx(scenario, CREATOR);
     {
         let mut p = ts::take_shared<Proposal<ConfigureAutojoin>>(scenario);
-        let vote_dao = scenario.take_shared_by_id<DAO>(p.dao_id());
-        board_voting::vote(&mut p, &vote_dao, true, clock, scenario.ctx());
-        ts::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(p.ou_id());
+        board_voting::vote(&mut p, &vote_ou, true, clock, scenario.ctx());
+        ts::return_shared(vote_ou);
         ts::return_shared(p);
     };
 
     clock.set_for_testing(ts_exec);
     ts::next_tx(scenario, CREATOR);
     {
-        let mut dao = ts::take_shared<DAO>(scenario);
+        let mut ou = ts::take_shared<OU>(scenario);
         let p = ts::take_shared<Proposal<ConfigureAutojoin>>(scenario);
         let freeze = ts::take_shared<EmergencyFreeze>(scenario);
         let req = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             p,
             &freeze,
             clock,
             scenario.ctx(),
         );
-        configure_autojoin::execute_configure_autojoin(&mut dao, req);
+        configure_autojoin::execute_configure_autojoin(&mut ou, req);
         ts::return_shared(freeze);
-        ts::return_shared(dao);
+        ts::return_shared(ou);
     };
 }
 
@@ -202,13 +202,13 @@ fun do_autojoin(
 ) {
     ts::next_tx(scenario, sender);
     {
-        let mut dao = ts::take_shared<DAO>(scenario);
+        let mut ou = ts::take_shared<OU>(scenario);
         let vault = ts::take_shared<CapabilityVault>(scenario);
         let character = ts::take_shared_by_id<Character>(scenario, character_id);
         let freeze = ts::take_shared<EmergencyFreeze>(scenario);
 
         autojoin_ops::autojoin(
-            &mut dao,
+            &mut ou,
             &vault,
             cap_id,
             &character,
@@ -220,7 +220,7 @@ fun do_autojoin(
         ts::return_shared(freeze);
         ts::return_shared(character);
         ts::return_shared(vault);
-        ts::return_shared(dao);
+        ts::return_shared(ou);
     };
 }
 
@@ -234,7 +234,7 @@ fun autojoin_happy_path() {
 
     setup_world(&mut scenario);
     let character_id = create_character(&mut scenario, 100, 42, PLAYER);
-    let (_dao_id, _vault_id, cap_id) = setup_dao_with_autojoin(&mut scenario);
+    let (_ou_id, _vault_id, cap_id) = setup_ou_with_autojoin(&mut scenario);
     configure_allowlist(&mut scenario, &mut clock, vector[42], true, 1000, 2000, 3000);
 
     clock.set_for_testing(4000);
@@ -242,10 +242,10 @@ fun autojoin_happy_path() {
 
     ts::next_tx(&mut scenario, CREATOR);
     {
-        let dao = ts::take_shared<DAO>(&scenario);
-        let gov = dao.governance();
+        let ou = ts::take_shared<OU>(&scenario);
+        let gov = ou.governance();
         assert!(gov.is_board_member(PLAYER));
-        ts::return_shared(dao);
+        ts::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -261,7 +261,7 @@ fun autojoin_double_join_aborts() {
 
     setup_world(&mut scenario);
     let character_id = create_character(&mut scenario, 100, 42, PLAYER);
-    let (_, _, cap_id) = setup_dao_with_autojoin(&mut scenario);
+    let (_, _, cap_id) = setup_ou_with_autojoin(&mut scenario);
     configure_allowlist(&mut scenario, &mut clock, vector[42], true, 1000, 2000, 3000);
 
     clock.set_for_testing(4000);
@@ -287,7 +287,7 @@ fun autojoin_wrong_sender_aborts() {
 
     setup_world(&mut scenario);
     let character_id = create_character(&mut scenario, 100, 42, PLAYER);
-    let (_, _, cap_id) = setup_dao_with_autojoin(&mut scenario);
+    let (_, _, cap_id) = setup_ou_with_autojoin(&mut scenario);
     configure_allowlist(&mut scenario, &mut clock, vector[42], true, 1000, 2000, 3000);
 
     // Submit as a different sender than the character's wallet.
@@ -306,7 +306,7 @@ fun autojoin_tribe_not_allowed_aborts() {
 
     setup_world(&mut scenario);
     let character_id = create_character(&mut scenario, 100, 999, PLAYER); // tribe 999
-    let (_, _, cap_id) = setup_dao_with_autojoin(&mut scenario);
+    let (_, _, cap_id) = setup_ou_with_autojoin(&mut scenario);
     configure_allowlist(&mut scenario, &mut clock, vector[42], true, 1000, 2000, 3000);
 
     clock.set_for_testing(4000);
@@ -324,7 +324,7 @@ fun autojoin_kill_switch_off_aborts() {
 
     setup_world(&mut scenario);
     let character_id = create_character(&mut scenario, 100, 42, PLAYER);
-    let (_, _, cap_id) = setup_dao_with_autojoin(&mut scenario);
+    let (_, _, cap_id) = setup_ou_with_autojoin(&mut scenario);
     // enabled = false
     configure_allowlist(&mut scenario, &mut clock, vector[42], false, 1000, 2000, 3000);
 
@@ -348,7 +348,7 @@ fun autojoin_uninitialized_allowlist_aborts() {
 
     setup_world(&mut scenario);
     let character_id = create_character(&mut scenario, 100, 42, PLAYER);
-    let (_, _, cap_id) = setup_dao_with_autojoin(&mut scenario);
+    let (_, _, cap_id) = setup_ou_with_autojoin(&mut scenario);
     // NOTE: deliberately not calling configure_allowlist.
 
     clock.set_for_testing(1000);
@@ -371,7 +371,7 @@ fun configure_rejects_zero_tribe_id() {
 
     setup_world(&mut scenario);
     let _character_id = create_character(&mut scenario, 100, 42, PLAYER);
-    let (_, _, _cap_id) = setup_dao_with_autojoin(&mut scenario);
+    let (_, _, _cap_id) = setup_ou_with_autojoin(&mut scenario);
     configure_allowlist(&mut scenario, &mut clock, vector[42, 0], true, 1000, 2000, 3000);
 
     clock.destroy_for_testing();
@@ -380,12 +380,12 @@ fun configure_rejects_zero_tribe_id() {
 
 // === Scope of the autojoin request ===
 //
-// Any allowlisted player can mint an AutojoinDAO ticket without a vote. Before
+// Any allowlisted player can mint an AutojoinOU ticket without a vote. Before
 // ROAD-39 its request reached every mutator; with permission bits alone it
 // still reached add_board_members_governance with any addresses, so one player
 // could add a board majority. The ticket now never leaves autojoin_ops: it is
 // minted, spent on ctx.sender() and discharged inside `autojoin`, and
-// Permit<AutojoinDAO> (needed for ticket_from_cap, ticket_request and
+// Permit<AutojoinOU> (needed for ticket_from_cap, ticket_request and
 // discharge) can only be minted in that module.
 
 #[test]
@@ -395,14 +395,14 @@ fun autojoin_adds_only_the_sender() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     setup_world(&mut scenario);
     let character_id = create_character(&mut scenario, 100, 42, PLAYER);
-    let (_, _, cap_id) = setup_dao_with_autojoin(&mut scenario);
+    let (_, _, cap_id) = setup_ou_with_autojoin(&mut scenario);
     configure_allowlist(&mut scenario, &mut clock, vector[42], true, 1000, 2000, 3000);
 
     ts::next_tx(&mut scenario, CREATOR);
     let before = {
-        let dao = ts::take_shared<DAO>(&scenario);
-        let count = dao.governance().member_count();
-        ts::return_shared(dao);
+        let ou = ts::take_shared<OU>(&scenario);
+        let count = ou.governance().member_count();
+        ts::return_shared(ou);
         count
     };
 
@@ -411,10 +411,10 @@ fun autojoin_adds_only_the_sender() {
 
     ts::next_tx(&mut scenario, CREATOR);
     {
-        let dao = ts::take_shared<DAO>(&scenario);
-        assert!(dao.governance().member_count() == before + 1);
-        assert!(dao.governance().is_board_member(PLAYER));
-        ts::return_shared(dao);
+        let ou = ts::take_shared<OU>(&scenario);
+        assert!(ou.governance().member_count() == before + 1);
+        assert!(ou.governance().is_board_member(PLAYER));
+        ts::return_shared(ou);
     };
 
     clock.destroy_for_testing();
