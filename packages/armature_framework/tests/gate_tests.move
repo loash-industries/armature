@@ -412,3 +412,23 @@ fun create_wired_subou_needs_vault_extract() {
         abort 0
     });
 }
+
+#[test, expected_failure(abort_code = proposal::EPermissionDenied)]
+/// create_wired_subou needs both bits CreateSubOU holds; VAULT_EXTRACT alone
+/// does not reach it.
+fun create_wired_subou_needs_vault_store() {
+    run!(|ou, _, vault, _, _, ctx| {
+        let r = all_but(ou, permissions::vault_store());
+        tribe::create_wired_subou(
+            vector[CREATOR],
+            string::utf8(b"Sub"),
+            string::utf8(b""),
+            CREATOR,
+            vault,
+            &r,
+            vector[],
+            ctx,
+        );
+        abort 0
+    });
+}

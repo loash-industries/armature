@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Fail if an armature_framework function that acts on an ExecutionRequest is ungated.
 
-Every `public fun` in packages/armature_framework/sources that takes an
-`ExecutionRequest` must call a permission gate (`assert_permitted` or
-`assert_controller`) or be listed in ALLOWED with the reason it needs none.
-Every gated function must also have a denial test in
-packages/armature_framework/tests/gate_tests.move whose name starts with the
-function's name. See ROAD-39 / ARMATURE-32.
+Every `public fun` or `public(package) fun` in
+packages/armature_framework/sources that takes an `ExecutionRequest` must call
+a permission gate (`assert_permitted` or `assert_controller`) or be listed in
+ALLOWED with the reason it needs none. Every gated function must also have a
+denial test in packages/armature_framework/tests/gate_tests.move (the bit is
+necessary) and a grant test in grant_tests.move (the bit is sufficient), each
+named with the function's name as its prefix. See ROAD-39 / ARMATURE-32.
 
 Run from the repo root: python3 scripts/check_request_gates.py
 """
@@ -18,6 +19,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SOURCES = ROOT / "packages/armature_framework/sources"
 GATE_TESTS = ROOT / "packages/armature_framework/tests/gate_tests.move"
+GRANT_TESTS = ROOT / "packages/armature_framework/tests/grant_tests.move"
 
 GATES = ("assert_permitted(", "assert_controller(")
 
@@ -41,6 +43,15 @@ ALLOWED = {
     ("ou", "borrow_type_state_mut"): "type-state keyed by the request's own type P",
     ("ou", "remove_type_state"): "type-state keyed by the request's own type P",
     ("controller", "privileged_consume"): "consumes the request",
+    ("proposal", "consume"): "consumes the request",
+    ("proposal", "new_ticket_standalone"): "wraps a freshly minted request in its ticket",
+    ("proposal", "new_ticket_external"): "wraps a freshly minted request in its ticket",
+    ("proposal", "new_external_execution_cap"): (
+        "only caller execute_enable_bypass_type gates it with TYPE_ADMIN and VAULT_STORE"
+    ),
+    ("proposal", "destroy_external_execution_cap"): (
+        "only caller execute_disable_bypass_type gates it with VAULT_EXTRACT"
+    ),
 }
 
 # (module, function) that must take `Permit<P>`: the only ways to mint, spend
@@ -54,7 +65,7 @@ PERMIT_REQUIRED = {
     ("external_execution", "ticket_from_cap_readonly"),
 }
 
-FUN_RE = re.compile(r"^public fun (\w+)(?:<[^>]*>)?\(([^)]*)\)[^{]*\{", re.M | re.S)
+FUN_RE = re.compile(r"^public(?:\(package\))? fun (\w+)(?:<[^>]*>)?\(([^)]*)\)[^{]*\{", re.M | re.S)
 
 
 def strip_comments(src: str) -> str:
@@ -63,6 +74,7 @@ def strip_comments(src: str) -> str:
 
 def main() -> int:
     tests = GATE_TESTS.read_text()
+    grants = GRANT_TESTS.read_text()
     errors = []
     gated = 0
     permit_seen = set()
@@ -87,6 +99,8 @@ def main() -> int:
             gated += 1
             if not re.search(rf"^fun {name}_\w*\(", tests, re.M):
                 errors.append(f"{module}::{name} has no denial test in gate_tests.move")
+            if not re.search(rf"^fun {name}_\w*\(", grants, re.M):
+                errors.append(f"{module}::{name} has no grant test in grant_tests.move")
     for module, name in sorted(PERMIT_REQUIRED - permit_seen):
         errors.append(f"{module}::{name} not found; update PERMIT_REQUIRED")
     for e in errors:
