@@ -87,9 +87,9 @@
 **Module:** `treasury.move` → `treasury_vault.move`
 
 **Scope:**
-- `TreasuryVault` struct with dynamic field storage (coin type name → `Balance<T>`; multicoin collections as dynamic object fields)
+- `TreasuryVault` struct with dynamic field storage (coin type name → `Balance<T>`)
 - `deposit<T>(vault, coin, ctx)` (permissionless; a zero-value coin is a no-op), `withdraw<T, P>(vault, amount, &ExecutionRequest<P>, ctx)`, `claim_coin<T>(vault, Receiving<Coin<T>>, ctx)`, `balance<T>`. `withdraw` is `public`, not `public(friend)`: it needs a request of this OU carrying `TREASURY_WITHDRAW`
-- Zero-balance cleanup, registry sync; events `CoinDeposited`, `CoinWithdrawn`, `CoinClaimed` (plus `MultiCoinDeposited`, `MultiCoinWithdrawn`)
+- Zero-balance cleanup, registry sync; events `CoinDeposited`, `CoinWithdrawn`, `CoinClaimed`
 
 **Acceptance:** Withdraw auth, registry sync, zero-balance cleanup, deposit, insufficient balance, claim, balance queries (16 tests)
 
