@@ -1,6 +1,6 @@
 # 08 — Stretch Features (Post-Hackathon)
 
-Stretch features have been split into individual documents for easier navigation and maintenance. The documents are kept as originally written (March 2026). Several features have since been implemented, some differently from the design; the Status column below reflects the implementation, and the core specs ([03](03_core_spec.md), [04](04_subdao_hierarchy.md), [05](05_charter.md)) describe what shipped.
+Stretch features have been split into individual documents for easier navigation and maintenance. The documents are kept as originally written (March 2026). Several features have since been implemented, some differently from the design; the Status column below reflects the implementation, and the core specs ([03](03_core_spec.md), [04](04_subou_hierarchy.md), [05](05_charter.md)) describe what shipped.
 
 **See the [stretch features index](stretch/00_index.md) for the full list.**
 

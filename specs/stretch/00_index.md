@@ -12,11 +12,11 @@ For hackathon-scope specs, see the [main document index](../00_index.md).
 |---|---|---|---|
 | 01 | [Federation System](01_federation.md) | Peer associations — alliances, trade agreements, mutual defense pacts | — |
 | 02 | [Governance Models](02_governance_models.md) | Direct and Weighted governance variants beyond Board | — |
-| 03 | [Migration](03_migration.md) | `SpawnDAO` governance model migration with full asset transfer | — |
-| 04 | [Project Funding](04_project_funding.md) | Kickstarter-style SubDAO lifecycle, revenue splits, ticker registry | — |
+| 03 | [Migration](03_migration.md) | `SpawnOU` governance model migration with full asset transfer | — |
+| 04 | [Project Funding](04_project_funding.md) | Kickstarter-style SubOU lifecycle, revenue splits, ticker registry | — |
 | 05 | [Advanced Proposals](05_advanced_proposals.md) | Rate-limited payments, package upgrade authorization | — |
 | 06 | [EVE Infrastructure](06_eve_infrastructure.md) | Application-layer patterns: gates, minehaul, markets, ZK voting | — |
-| 07 | [Lateral Composition](07_lateral_composition.md) | Multi-membership — a DAO as SubDAO, federation member, and controller simultaneously | — |
+| 07 | [Lateral Composition](07_lateral_composition.md) | Multi-membership — an OU as SubOU, federation member, and controller simultaneously | — |
 | 08 | [User Stories](08_user_stories.md) | Narrative scenarios: The Alliance, The Spinout, The Constitutional Crisis | — |
 | 09 | [Proposal Composition](09_proposal_composition.md) | Bundle multiple proposals into atomic composite with hot potato pipeline | [#1](https://github.com/0xErgod/eve-x-sui-hackathon-scratchpad/issues/1) |
 | 10 | [Charter Parametrization](10_charter_parametrization.md) | On-chain charter DFs that encode governance constraints for proposals | [#4](https://github.com/0xErgod/eve-x-sui-hackathon-scratchpad/issues/4) |

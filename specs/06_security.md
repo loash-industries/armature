@@ -57,7 +57,7 @@ These threats were identified in design or security review and resolved with pro
 
 **Original risk:** Delegated capabilities required a two-step process with a race condition window.
 
-**Resolution:** `ReclaimCapFromSubOU` loans the `SubOUControl`, calls `controller::privileged_extract` and stores the capability in the controller's vault in one handler. Pause, board changes and reclaim can run in a single PTB (see [04](04_subdao_hierarchy.md) §5).
+**Resolution:** `ReclaimCapFromSubOU` loans the `SubOUControl`, calls `controller::privileged_extract` and stores the capability in the controller's vault in one handler. Pause, board changes and reclaim can run in a single PTB (see [04](04_subou_hierarchy.md) §5).
 
 ### 2.7 Multi-PTB Migration Window → Resolved
 

@@ -28,7 +28,7 @@ An OU with `controller_cap_id` set cannot enable SpawnOU, SpinOutSubOU, CreateSu
 
 While `controller_paused` is set, the SubOU's two-PTB, atomic and bypass paths refuse to mint tickets (`board_voting::EControllerPaused`, `external_execution::EControllerPaused`); composites are covered because their ticket comes from `ticket_from_vote`. Submission and voting are not blocked, and the controller's privileged path still runs, so it can unpause.
 
-Real suites: `packages/armature_proposals/tests/subou_ops_tests.move` (16) and `migration_tests.move` (`create_subou_and_spin_out_e2e`, `controller_set_board_via_privileged_submit`), plus tests cited from `admin_ops_tests.move`, `controller_tests.move`, `cross_ou_auth_tests.move`, `capability_vault_tests.move`, `gate_tests.move`, `tribe_tests.move`, `ou_tests.move` and `lifecycle_tests.move`. The hierarchy model is specified in `specs/04_subdao_hierarchy.md`.
+Real suites: `packages/armature_proposals/tests/subou_ops_tests.move` (16) and `migration_tests.move` (`create_subou_and_spin_out_e2e`, `controller_set_board_via_privileged_submit`), plus tests cited from `admin_ops_tests.move`, `controller_tests.move`, `cross_ou_auth_tests.move`, `capability_vault_tests.move`, `gate_tests.move`, `tribe_tests.move`, `ou_tests.move` and `lifecycle_tests.move`. The hierarchy model is specified in `specs/04_subou_hierarchy.md`.
 
 ## Test Matrix
 

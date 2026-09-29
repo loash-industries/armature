@@ -81,7 +81,7 @@ Atoms compose into molecules: a SubOU hierarchy is a chain of atoms connected by
 
 The original SubOU spec models a strict top-down tree: controllers own SubOUs, SubOUs cannot act upward. This is necessary but insufficient. Real organizations exist in webs of relationships — a logistics guild is simultaneously a department of Tribe A, a member of the Haulers' Alliance, and a controller of its own regional sub-offices.
 
-The protocol must support this by making the OU a *node in a directed graph*, where edges are capability objects stored in vaults. `SubOUControl` edges point downward (controller → owned). `FederationSeat` edges (planned) point upward (member → federation). The graph is not meant to be a tree but a DAG. The framework's creation paths only ever produce trees; keeping the graph acyclic afterwards is a governance rule (see [04 SubOU Hierarchy](04_subdao_hierarchy.md) §7).
+The protocol must support this by making the OU a *node in a directed graph*, where edges are capability objects stored in vaults. `SubOUControl` edges point downward (controller → owned). `FederationSeat` edges (planned) point upward (member → federation). The graph is not meant to be a tree but a DAG. The framework's creation paths only ever produce trees; keeping the graph acyclic afterwards is a governance rule (see [04 SubOU Hierarchy](04_subou_hierarchy.md) §7).
 
 ### 2. Immutable Governance Model, Mutable State
 

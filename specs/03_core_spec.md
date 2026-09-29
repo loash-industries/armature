@@ -155,7 +155,7 @@ struct SubOUControl has key, store {
 }
 ```
 
-Stored in the controller's `CapabilityVault`. The framework's creation paths (`CreateSubOU`, `tribe::create_tribe(_configured)`, `tribe::create_wired_subou`) mint one per SubOU and record its ID in the SubOU's `controller_cap_id`. Holding it enables `controller::privileged_submit` and `controller::privileged_extract`. Both call `controller::assert_registered_control`: `control.subou_id` must name the target OU (`EControlMismatch`) and the target's `controller_cap_id` must be `some(object::id(control))` (`ENotController`). A control minted elsewhere, or one whose SubOU has been spun out (`clear_controller`), is refused. See [04 SubOU Hierarchy](04_subdao_hierarchy.md).
+Stored in the controller's `CapabilityVault`. The framework's creation paths (`CreateSubOU`, `tribe::create_tribe(_configured)`, `tribe::create_wired_subou`) mint one per SubOU and record its ID in the SubOU's `controller_cap_id`. Holding it enables `controller::privileged_submit` and `controller::privileged_extract`. Both call `controller::assert_registered_control`: `control.subou_id` must name the target OU (`EControlMismatch`) and the target's `controller_cap_id` must be `some(object::id(control))` (`ENotController`). A control minted elsewhere, or one whose SubOU has been spun out (`clear_controller`), is refused. See [04 SubOU Hierarchy](04_subou_hierarchy.md).
 
 ### 1.7 Hot Potatoes
 

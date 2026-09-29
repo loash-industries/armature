@@ -15,7 +15,7 @@ These specs began as the hackathon design (March 2026) and have been updated to 
 | 01 | [Vision](01_vision.md) | Problem statement, design thesis, design pillars | Current |
 | 02 | [Demo Flows](02_demo_flows.md) | **Three Testnet demos** — step-by-step scenarios with PTBs and mockups | Current API; gate/SSU contracts mocked |
 | 03 | [Core Spec](03_core_spec.md) | Objects, packages, Board governance, proposal lifecycle and execution paths, permissions, type registry, invariants, events | Current |
-| 04 | [SubOU Hierarchy](04_subdao_hierarchy.md) | SubOUControl, controller operations, delegation, reclaim, spinout | Current |
+| 04 | [SubOU Hierarchy](04_subou_hierarchy.md) | SubOUControl, controller operations, delegation, reclaim, spinout | Current |
 | 05 | [Charter](05_charter.md) | Charter object and `UpdateMetadata`; planned Walrus-backed amendments | Part A current, Part B planned |
 | 06 | [Data Layer](06_data_layer.md) | How the UI reads state: indexer, direct RPC, event polling | Current |
 | 06 | [Security](06_security.md) | Threat model, resolved threats, accepted risks | Current |
@@ -41,7 +41,7 @@ Companion references outside `specs/`:
 2. **[`docs/package-boundaries.md`](../docs/package-boundaries.md)** — Where a new proposal type goes (5 min)
 3. **[`docs/proposal-types.md`](../docs/proposal-types.md)** — Bits, scopes and floors per type, and integrator guidance (10 min)
 4. **[02 Demo Flows](02_demo_flows.md)** — The protocol in action (15 min)
-5. **[04 SubOU Hierarchy](04_subdao_hierarchy.md)** — Composition mechanics (10 min)
+5. **[04 SubOU Hierarchy](04_subou_hierarchy.md)** — Composition mechanics (10 min)
 
 ### For Evaluators
 1. **[01 Vision](01_vision.md)** — Understand the problem and thesis (5 min)
@@ -54,7 +54,7 @@ Companion references outside `specs/`:
 2. **[06 Security](06_security.md)** — Threat model and mitigations
 3. **[`internal_workings.md`](../packages/armature_framework/internal_workings.md)** — Every gated function and the bit it requires
 4. **[`docs/package-boundaries.md`](../docs/package-boundaries.md)** — The trust boundary between the framework and extension packages
-5. **[04 SubOU Hierarchy](04_subdao_hierarchy.md)** — Hierarchy controls and reclaim
+5. **[04 SubOU Hierarchy](04_subou_hierarchy.md)** — Hierarchy controls and reclaim
 6. **[10 Formal Verification](10_formal_verification.md)** — Planned prover coverage; today's enforcement is unit tests and the CI gate check
 
 ---

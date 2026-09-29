@@ -34,4 +34,4 @@ Requires `staking.move` for `StakePosition` management.
 
 ---
 
-**See also:** [Migration](03_migration.md) for how a DAO transitions between governance models via `SpawnDAO`.
+**See also:** [Migration](03_migration.md) for how an OU transitions between governance models via `SpawnOU`.
