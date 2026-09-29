@@ -15,8 +15,7 @@ use std::type_name::{Self, TypeName};
 use sui::coin::TreasuryCap;
 use sui::package::UpgradeCap;
 
-/// SendCoin<T>, SendCoinToOU<T>, SendSmallPayment<T>, SendBatchMulticoinToAddress,
-/// SendBatchMulticoinToOU: they withdraw from the treasury.
+/// SendCoin<T>, SendCoinToOU<T>, SendSmallPayment<T>: they withdraw from the treasury.
 public fun treasury_spend(): u64 { permissions::treasury_withdraw() }
 
 /// AdoptCurrency<T>: stores the TreasuryCap in the capability vault.

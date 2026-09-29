@@ -2,9 +2,9 @@
 
 ## Summary
 
-`treasury_vault.move` holds an OU's coins. Each coin type's `Balance<T>` is a dynamic field keyed by the type's name string (`type_name::with_original_ids<T>().into_string()`), and `coin_types` lists the types with a non-zero balance. Multicoin balances live in a two-level dynamic-object-field tree: a `CollectionRecord` per collection, holding a `MultiCoinBalance` per asset ID. Deposits and claims are permissionless; withdrawals need an `ExecutionRequest` for the vault's OU carrying `TREASURY_WITHDRAW`.
+`treasury_vault.move` holds an OU's coins. Each coin type's `Balance<T>` is a dynamic field keyed by the type's name string (`type_name::with_original_ids<T>().into_string()`), and `coin_types` lists the types with a non-zero balance. Deposits and claims are permissionless; withdrawals need an `ExecutionRequest` for the vault's OU carrying `TREASURY_WITHDRAW`.
 
-These tests verify the withdrawal gate, the registry's sync with the balances, zero-balance cleanup, permissionless deposits and claims, multicoin bookkeeping, and the emptiness checks `ou::destroy` relies on. The spending handlers (`SendCoin`, `SendCoinToOU`, `SendSmallPayment`, batch multicoin) are in `11_treasury_ops.md`.
+These tests verify the withdrawal gate, the registry's sync with the balances, zero-balance cleanup, permissionless deposits and claims, and the emptiness checks `ou::destroy` relies on. The spending handlers (`SendCoin`, `SendCoinToOU`, `SendSmallPayment`) are in `11_treasury_ops.md`.
 
 ## Test Matrix
 
@@ -14,7 +14,6 @@ These tests verify the withdrawal gate, the registry's sync with the balances, z
 |------|----------|-------|
 | `test_withdraw_with_valid_request_succeeds` | A request for the vault's OU holding the bit withdraws 400 of 1000 | `treasury_vault_tests` |
 | `withdraw_needs_treasury_withdraw` | Every bit except `TREASURY_WITHDRAW`: `proposal::EPermissionDenied` | `gate_tests` |
-| `withdraw_multicoin_needs_treasury_withdraw` | Same for `withdraw_multicoin` | `gate_tests` |
 | `bypass_ticket_cannot_withdraw_from_treasury` | A request of a type holding no bits: `proposal::EPermissionDenied` | `armature_external_type_tests::external_type_lifecycle_tests` |
 | `test_withdraw_other_ou_request_aborts` | A request for another OU: `treasury_vault::EOUIdMismatch` | planned |
 | `test_withdraw_insufficient_balance_aborts` | 200 from 100: `treasury_vault::EInsufficientBalance` | `treasury_vault_tests` |
@@ -46,32 +45,12 @@ These tests verify the withdrawal gate, the registry's sync with the balances, z
 | `test_claim_coin_multiple_types` | SUI then USDC claimed; both balances kept | `treasury_vault_tests` |
 | `test_treasury_events` | `CoinDeposited`, `CoinWithdrawn`, `CoinClaimed` carry the vault and OU IDs, type string and amount | planned |
 
-**Multicoin**
-
-| Test | Expected | Where |
-|------|----------|-------|
-| `test_deposit_first_item_creates_collection` | A `CollectionRecord` is created; collection count 1, item count 1 | `treasury_vault_multicoin_tests` |
-| `test_deposit_same_asset_joins_balance` | Same asset deposited twice: one balance | `treasury_vault_multicoin_tests` |
-| `test_deposit_second_asset_same_collection` | Item count 2 in one collection | `treasury_vault_multicoin_tests` |
-| `test_deposit_second_collection_tracked_separately` | Collection count 2 | `treasury_vault_multicoin_tests` |
-| `test_deposit_zero_is_noop`, `test_deposit_permissionless` | As for coins | `treasury_vault_multicoin_tests` |
-| `test_withdraw_partial_preserves_dofs` | Balance reduced; asset and collection kept | `treasury_vault_multicoin_tests` |
-| `test_withdraw_exact_removes_asset_dof` | Asset removed; item count decremented | `treasury_vault_multicoin_tests` |
-| `test_withdraw_last_asset_removes_collection` | Last asset removed: `CollectionRecord` deleted, collection count 0 | `treasury_vault_multicoin_tests` |
-| `test_withdraw_last_asset_leaves_sibling_collection_intact` | Other collections untouched | `treasury_vault_multicoin_tests` |
-| `test_withdraw_excess_aborts`, `test_withdraw_missing_collection_aborts`, `test_withdraw_missing_asset_in_collection_aborts` | `treasury_vault::EInsufficientBalance` | `treasury_vault_multicoin_tests` |
-| `test_multicoin_balance_missing_collection_returns_zero`, `test_multicoin_balance_missing_asset_returns_zero`, `test_collection_item_count_missing_returns_zero` | Queries on missing entries return 0 | `treasury_vault_multicoin_tests` |
-| `test_multi_deposit_proposal`, `test_multi_deposit_proposal_accumulates_on_repeat`, `test_multi_withdraw_proposal`, `test_multi_withdraw_proposal_full_drain` | Several collections deposited or withdrawn under one request | `treasury_vault_multicoin_tests` |
-
 **Emptiness and destruction**
 
 | Test | Expected | Where |
 |------|----------|-------|
-| `test_is_empty_false_with_only_multicoin` | `is_empty` counts multicoin collections too | `treasury_vault_multicoin_tests` |
-| `test_is_empty_true_after_full_multicoin_withdrawal` | Empty again after draining | `treasury_vault_multicoin_tests` |
 | `test_destroy_empty_succeeds_on_empty_vault` | `destroy_empty` deletes a fresh vault | `treasury_vault_tests` |
 | `test_destroy_empty_aborts_on_non_empty_vault` | A coin balance left: `treasury_vault::EVaultNotEmpty` | `treasury_vault_tests` |
-| `test_destroy_empty_aborts_with_multicoin_assets` | A multicoin balance left: `treasury_vault::EVaultNotEmpty` | `treasury_vault_multicoin_tests` |
 
 ## Tests
 
@@ -79,7 +58,7 @@ These tests verify the withdrawal gate, the registry's sync with the balances, z
 
 ### Withdraw requires TREASURY_WITHDRAW on a request for the vault's OU
 
-**Requirement:** `treasury_vault::withdraw<T, P>(vault, amount, &ExecutionRequest<P>, ctx): Coin<T>` and `withdraw_multicoin<P>(vault, collection_id, asset_id, amount, &req, ctx)` are public but need a request, and only framework code mints requests. Each checks the request's OU against the vault's (`treasury_vault::EOUIdMismatch`), then the bit (`proposal::EPermissionDenied` unless the request carries `TREASURY_WITHDRAW` or is privileged). The bit is fixed on `TransferAssets`; extension types get it when enabled at 80% (`armature_proposals::type_permissions::treasury_spend()`). The handler reads the amount and recipient from the approved payload, since only `P`'s module can reach the request (see `04_proposals.md`).
+**Requirement:** `treasury_vault::withdraw<T, P>(vault, amount, &ExecutionRequest<P>, ctx): Coin<T>` is public but needs a request, and only framework code mints requests. It checks the request's OU against the vault's (`treasury_vault::EOUIdMismatch`), then the bit (`proposal::EPermissionDenied` unless the request carries `TREASURY_WITHDRAW` or is privileged). The bit is fixed on `TransferAssets`; extension types get it when enabled at 80% (`armature_proposals::type_permissions::treasury_spend()`). The handler reads the amount and recipient from the approved payload, since only `P`'s module can reach the request (see `04_proposals.md`).
 
 **Why it matters:** Without this gate anyone could drain the treasury, and without the bit check any approved request, of any type, could.
 
@@ -147,7 +126,7 @@ assert!(vault.balance<SUI>() == 0);
 
 ### Deposits are permissionless
 
-**Requirement:** `deposit<T>(vault, coin, ctx)` needs no request; anyone may call it. A zero-value coin is destroyed and nothing is registered. `deposit_multicoin(vault, balance, ctx)` behaves the same for multicoin balances.
+**Requirement:** `deposit<T>(vault, coin, ctx)` needs no request; anyone may call it. A zero-value coin is destroyed and nothing is registered.
 
 **Why it matters:** OUs receive revenue, grants and payments from anyone without a governance round.
 
@@ -166,7 +145,7 @@ scenario.next_tx(NON_MEMBER);
 
 ### Insufficient balance aborts
 
-**Requirement:** `withdraw` aborts `treasury_vault::EInsufficientBalance` if the type has no balance field or its balance is below `amount`; `withdraw_multicoin` does the same when the collection, the asset or the amount is missing.
+**Requirement:** `withdraw` aborts `treasury_vault::EInsufficientBalance` if the type has no balance field or its balance is below `amount`.
 
 **Why it matters:** A clear abort before any mutation, so an approved but underfunded payment fails cleanly and can be retried after a deposit (the proposal stays Passed; see `04_proposals.md`).
 
@@ -209,29 +188,9 @@ scenario.next_tx(CREATOR);
 
 ---
 
-### Multicoin balances
-
-**Requirement:** `deposit_multicoin` creates a `CollectionRecord` for a new collection (incrementing `multicoin_collection_count`) and a `MultiCoinBalance` for a new asset (incrementing the record's `item_count`), or joins an existing balance. `withdraw_multicoin` splits the balance, removes the asset when it reaches zero, and removes the record when its last asset goes. `multicoin_balance` and `collection_item_count` return 0 for missing entries.
-
-**Why it matters:** The records are the enumeration path for off-chain readers (dynamic fields of the vault, then of each record), and `is_empty` depends on the collection count.
-
-```move
-// From treasury_vault_multicoin_tests::test_withdraw_last_asset_removes_collection
-let bal = multicoin::create_balance_for_testing(coll(COLL_A), ASSET_SWORD, 5, scenario.ctx());
-vault.deposit_multicoin(bal, scenario.ctx());
-
-let req = make_req(&vault);
-let withdrawn = vault.withdraw_multicoin(coll(COLL_A), ASSET_SWORD, 5, &req, scenario.ctx());
-assert!(vault.multicoin_collection_count() == 0);
-assert!(vault.collection_item_count(coll(COLL_A)) == 0);
-assert!(vault.multicoin_balance(coll(COLL_A), ASSET_SWORD) == 0);
-```
-
----
-
 ### Emptiness and destroy_empty
 
-**Requirement:** `is_empty` is true when `coin_types` is empty and there are no multicoin collections. `destroy_empty` (`public(package)`, called by `ou::destroy`) aborts `treasury_vault::EVaultNotEmpty` otherwise.
+**Requirement:** `is_empty` is true when `coin_types` is empty. `destroy_empty` (`public(package)`, called by `ou::destroy`) aborts `treasury_vault::EVaultNotEmpty` otherwise.
 
 **Why it matters:** Destroying a treasury that still holds balances would burn them.
 
@@ -253,6 +212,6 @@ fun test_destroy_empty_aborts_on_non_empty_vault() {
 
 ### Treasury events (planned)
 
-**Requirement:** `deposit` emits `CoinDeposited { vault_id, ou_id, coin_type, amount, depositor }` (not for a zero-value coin); `withdraw` emits `CoinWithdrawn { vault_id, ou_id, coin_type, amount, recipient }`, where `recipient` is the transaction sender (the executor), not the handler's payee; `claim_coin` emits `CoinClaimed { …, claimer }` and then `CoinDeposited`. The multicoin functions emit `MultiCoinDeposited` / `MultiCoinWithdrawn` with the same `recipient` rule.
+**Requirement:** `deposit` emits `CoinDeposited { vault_id, ou_id, coin_type, amount, depositor }` (not for a zero-value coin); `withdraw` emits `CoinWithdrawn { vault_id, ou_id, coin_type, amount, recipient }`, where `recipient` is the transaction sender (the executor), not the handler's payee; `claim_coin` emits `CoinClaimed { …, claimer }` and then `CoinDeposited`.
 
 **Why it matters:** Indexers build treasury history from these events. No test reads them today.

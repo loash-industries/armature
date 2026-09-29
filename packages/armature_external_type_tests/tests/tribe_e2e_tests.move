@@ -14,8 +14,8 @@ use armature::capability_vault::{CapabilityVault, SubOUControl};
 use armature::emergency::EmergencyFreeze;
 use armature::enable_proposal_type::{Self, EnableProposalType};
 use armature::ou::OU;
-use armature::update_proposal_config;
 use armature::proposal::{Self, Proposal};
+use armature::update_proposal_config;
 use armature_external_type_tests::rebalance::{Self, Rebalance};
 use armature_proposals::controller_batch_add_members::{Self, ControllerBatchAddMembers};
 use armature_proposals::controller_batch_remove_members::{Self, ControllerBatchRemoveMembers};
@@ -202,7 +202,13 @@ fun propose_enable_trading(scenario: &mut Scenario, clock: &mut Clock, sender: a
     tick(clock);
     scenario.next_tx(sender);
     let officers = scenario.take_shared_by_id<OU>(t.officer_id);
-    board_voting::submit_proposal(&officers, option::none(), enable_trading_payload(), clock, scenario.ctx());
+    board_voting::submit_proposal(
+        &officers,
+        option::none(),
+        enable_trading_payload(),
+        clock,
+        scenario.ctx(),
+    );
     ts::return_shared(officers);
 }
 
@@ -224,7 +230,13 @@ fun execute_enable_trading(scenario: &mut Scenario, clock: &mut Clock, sender: a
     let mut officers = scenario.take_shared_by_id<OU>(t.officer_id);
     let freeze = scenario.take_shared_by_id<EmergencyFreeze>(officers.emergency_freeze_id());
     let prop = scenario.take_shared<Proposal<EnableProposalType>>();
-    let ticket = board_voting::ticket_from_vote(&mut officers, prop, &freeze, clock, scenario.ctx());
+    let ticket = board_voting::ticket_from_vote(
+        &mut officers,
+        prop,
+        &freeze,
+        clock,
+        scenario.ctx(),
+    );
     admin_ops::execute_enable_proposal_type<Rebalance<SUI>>(&mut officers, ticket);
     ts::return_shared(freeze);
     ts::return_shared(officers);

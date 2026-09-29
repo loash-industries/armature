@@ -76,9 +76,8 @@ Direct RPC alone still works for a single-OU demo against localnet, with the lim
 |------|---------|-------|
 | Coin types | Direct | `sui_getObject(treasury_id)` → `coin_types` (type-name strings) |
 | Balance per type | Dynamic | `suix_getDynamicFieldObject(treasury_id, { type: "0x1::ascii::String", value: <coin type name> })` |
-| Multicoin balances | Dynamic | `CollectionKey { collection_id }` fields on the vault → `AssetKey { asset_id }` fields on each `CollectionRecord` |
 | Claimable coins | Direct | `suix_getOwnedObjects(treasury_id, …)`: coin objects transferred to the vault's address and not yet claimed |
-| Transaction history | Indexed | `CoinDeposited`, `CoinWithdrawn`, `CoinClaimed`, `MultiCoin*`, and the treasury handlers' events (`CoinSent`, `CoinSentToOU`, `SmallPaymentSent`, …) |
+| Transaction history | Indexed | `CoinDeposited`, `CoinWithdrawn`, `CoinClaimed`, and the treasury handlers' events (`CoinSent`, `CoinSentToOU`, `SmallPaymentSent`, …) |
 
 ### Capability Vault
 
@@ -186,7 +185,7 @@ Poll loop (React Query `refetchInterval`):
 | `SubOUCreated` / `SubOUSpunOut` | SubOU list, dashboard, cap vault |
 | `SuccessorOUSpawned` / `AssetsTransferInitiated` / `OUDestroyed` | dashboard (status), treasury, cap vault |
 | `MetadataUpdated` | charter page, dashboard |
-| `CoinDeposited` / `CoinWithdrawn` / `CoinClaimed` / `MultiCoinDeposited` / `MultiCoinWithdrawn` | treasury balances |
+| `CoinDeposited` / `CoinWithdrawn` / `CoinClaimed` | treasury balances |
 | `TypeFrozen` / `TypeUnfrozen` / `FreezeExemptTypeAdded` / `FreezeExemptTypeRemoved` / `FreezeAdminTransferred` / `FreezeConfigUpdated` | emergency page, proposal detail (execution eligibility) |
 | `CapTransferredToSubOU` / `CapReclaimedFromSubOU` | cap vault (both parent and child) |
 | `SubOUExecutionPaused` / `SubOUExecutionUnpaused` | SubOU list, child dashboard |

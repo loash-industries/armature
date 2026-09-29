@@ -152,7 +152,7 @@ Notable local helpers:
 | `permissions_tests` | macro `with_ou!`, `permitted<P>`, `enable_target<P>`, `update_target<P>` | Call the `ou` registry mutators with a request of type `P` |
 | `borrow_scope_tests` | `setup(scope)`, `execute_and_borrow<T>` | A `VAULT_BORROW` type with a chosen scope; borrow through a real atomic ticket |
 | `capability_vault_tests` | `setup`, `make_req`, `setup_two_vaults` | Standalone vaults; a request with every bit and scope `[TestCap]` |
-| `treasury_vault_tests`, `treasury_vault_multicoin_tests` | `create_test_execution_request`, `make_req` | A request with every bit for the vault's OU |
+| `treasury_vault_tests` | `create_test_execution_request`, `make_req` | A request with every bit for the vault's OU |
 | `emergency_tests` | `setup`, `teardown` | Standalone `EmergencyFreeze`, `FreezeAdminCap` and `Clock` |
 | `freeze_path_tests` | `setup`, `run_atomic<T>`, `run_bypass<T>`, `run_two_ptb<T>` | One payload through each execution path |
 | `freeze_ops_tests` | `enable_type<T>`, `submit_exempt_types` | Freeze-governance proposals end to end |

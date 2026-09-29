@@ -13,7 +13,7 @@ Holding a request for one type does **not** authorize mutations that type was ne
 
 The only permissionless operations are:
 - **Reading** accessors on all objects
-- **Depositing** into the treasury vault (`deposit`, `deposit_multicoin`)
+- **Depositing** into the treasury vault (`deposit`)
 - **Claiming** coins directly transferred to the vault address
 - **Voting** (if a board member at the proposal's `snapshot_version`)
 - **Deleting** an expired proposal (`proposal::delete_expired_proposal`)
@@ -90,8 +90,7 @@ Every function below that takes an `ExecutionRequest` checks the request's OU, t
 | Function | Requires | Effect |
 |----------|----------|--------|
 | `withdraw<T, P>()` | `TREASURY_WITHDRAW` | Extract coin from treasury; auto-cleans zero balances |
-| `withdraw_multicoin<P>()` | `TREASURY_WITHDRAW` | Extract a multicoin balance |
-| `deposit<T>()`, `deposit_multicoin()` | **None (permissionless)** | Anyone can deposit |
+| `deposit<T>()` | **None (permissionless)** | Anyone can deposit |
 | `claim_coin<T>()` | **None (permissionless)** | Recover coins directly transferred to vault address |
 
 ### 2.3 capability_vault.move
@@ -202,7 +201,7 @@ Handlers for framework types live in `armature_framework/sources/handlers` (only
 | `member_ops` (framework) | `AddMember`, `BatchAddMembers`, `RemoveMember`, `BatchRemoveMembers` | `ou::add/remove_board_member(s)_governance()` | fixed |
 | `admin_ops` (framework) | `EnableProposalType`, `DisableProposalType`, `UpdateProposalConfig` | `ou::enable/disable_proposal_type()`, `ou::update_proposal_config()` | fixed |
 | `admin_ops` (framework) | `UpdateMetadata` | `charter::update_metadata()` | fixed |
-| `treasury_ops` | `SendCoin<T>`, `SendCoinToOU<T>`, `SendSmallPayment<T>`, `SendBatchMulticoinTo{Address,OU}` | `treasury_vault::withdraw()` / `withdraw_multicoin()` (+ `deposit`) | `treasury_spend()` = TREASURY_WITHDRAW |
+| `treasury_ops` | `SendCoin<T>`, `SendCoinToOU<T>`, `SendSmallPayment<T>` | `treasury_vault::withdraw()` (+ `deposit`) | `treasury_spend()` = TREASURY_WITHDRAW |
 | `currency_ops` | `AdoptCurrency<T>` | `capability_vault::store_cap()` | `adopt_currency()` = VAULT_STORE |
 | `currency_ops` | `MintCoin<T>`, `MintAllowance<T>` | `capability_vault::borrow_cap_mut()` | `mint()` = VAULT_BORROW, scope `currency_scope<T>()` = [`TreasuryCap<T>`] |
 | `configure_mint_allowance` | `ConfigureMintAllowance<T>` | own type-state (minter allowlist read by `currency_ops::mint_allowance_bypass`) | none |

@@ -15,22 +15,20 @@ This summary is built from the Move test suites in the repository (committed cod
 | | `ou_tests` | 20 |
 | | `emergency_tests` | 18 |
 | | `encrypted_entry_tests` | 39 |
-| | `external_execution_tests` | 22 |
+| | `external_execution_tests` | 26 |
 | | `freeze_ops_tests` | 5 |
 | | `freeze_path_tests` | 7 |
-| | `gate_tests` | 35 |
+| | `gate_tests` | 34 |
 | | `lifecycle_ops_tests` | 5 |
 | | `permissions_tests` | 35 |
 | | `proposal_tests` | 42 |
 | | `spend_guard_tests` | 9 |
 | | `submit_vote_execute_tests` | 26 |
-| | `treasury_vault_multicoin_tests` | 23 |
 | | `treasury_vault_tests` | 17 |
-| | `tribe_tests` | 30 |
+| | `tribe_tests` | 41 |
 | | `sources/utils.move` (unit tests) | 8 |
-| | **framework total** | **419** |
+| | **framework total** | **410** |
 | `armature_proposals` | `admin_ops_tests` | 21 |
-| | `batch_multicoin_ops_tests` | 6 |
 | | `board_ops_tests` | 6 |
 | | `charter_tests` | 2 |
 | | `composite_tests` | 20 |
@@ -41,13 +39,16 @@ This summary is built from the Move test suites in the repository (committed cod
 | | `migration_tests` | 4 |
 | | `subou_ops_tests` | 16 |
 | | `treasury_ops_tests` | 9 |
+| | `tribe_setup_tests` | 4 |
 | | `upgrade_ops_tests` | 2 |
-| | **proposals total** | **123** |
+| | **proposals total** | **121** |
 | `armature_world_bridge` | `autojoin_e2e_tests` | 8 |
 | | `tribe_allowlist_tests` | 12 |
 | | **world bridge total** | **20** |
 | `armature_external_type_tests` | `external_type_lifecycle_tests` | 11 |
-| **All packages** | | **573** |
+| | `tribe_e2e_tests` | 7 |
+| | **external type tests total** | **18** |
+| **All packages** | | **569** |
 
 Several `armature_proposals` suites (`admin_ops_tests`, `board_ops_tests`, `member_ops_tests`, `charter_tests`, `migration_tests`, `emergency_freeze_tests`, `lifecycle_tests`) exercise framework handlers (`admin_ops`, `board_ops`, `member_ops`, `lifecycle_ops`, `freeze_ops`); they stayed in that package when the handlers moved into the framework. Setup commonly uses the test seams `ou.test_enable_type<T>`, `test_update_config<T>` and `test_disable_type<T>` (no vote, no floors) and the synthesized requests in `proposal` (`new_permitted_request_for_testing`, `new_privileged_request_for_testing`, `new_standalone_ticket_for_testing`, …).
 
@@ -80,7 +81,7 @@ Unless noted, each invariant has at least one happy-path and one negative test. 
 | Bits and scope are read from the slot when the request is minted | `vote_path_request_carries_current_slot_bits`, `meta_type_may_change_scope`, `request_carries_slot_scope_and_borrows_in_scope` | — | permissions, borrow_scope |
 | `VAULT_BORROW` reaches only cap types in the borrow scope | `request_carries_slot_scope_and_borrows_in_scope`, `privileged_request_ignores_scope` | `borrow_outside_scope_aborts`, `empty_scope_borrows_nothing`, `borrow_cap_scope_denied_with_all_bits`, `borrow_cap_mut_scope_denied_with_all_bits`, `loan_cap_scope_denied_with_all_bits` (`proposal::EBorrowScopeDenied`) | borrow_scope, gate |
 | A ticket authorizes only its own type's bits (composite steps do not pool; bypass and atomic tickets carry their slot's bits) | `composite_steps_perform_their_own_mutations` | `composite_send_coin_step_cannot_add_member`, `bypass_ticket_cannot_unfreeze_other_type`, `bypass_ticket_cannot_withdraw_from_treasury`, `bypass_ticket_cannot_add_board_member`, `atomic_ticket_cannot_migrate_ou`, `atomic_ticket_cannot_unfreeze_other_type` (`proposal::EPermissionDenied`) | composite (pr), external_type_lifecycle |
-| Only `P`'s defining module can spend or close an `ExecutionTicket<P>` or mint a bypass ticket for `P` (`Permit<P>`) | Structural. Handlers read arguments from the payload and check object arguments against it: `autojoin_adds_only_the_sender`, `transfer_assets_moves_listed_coin_to_target` | `transfer_assets_wrong_target_aborts` (`lifecycle_ops::ETargetTreasuryMismatch`), `mint_into_foreign_treasury_aborts` (`currency_ops::EVaultOUMismatch`), `send_batch_to_ou_target_mismatch_aborts` (`treasury_ops::ETargetVaultMismatch`) | autojoin_e2e, lifecycle_ops, currency_ops, batch_multicoin_ops |
+| Only `P`'s defining module can spend or close an `ExecutionTicket<P>` or mint a bypass ticket for `P` (`Permit<P>`) | Structural. Handlers read arguments from the payload and check object arguments against it: `autojoin_adds_only_the_sender`, `transfer_assets_moves_listed_coin_to_target` | `transfer_assets_wrong_target_aborts` (`lifecycle_ops::ETargetTreasuryMismatch`), `mint_into_foreign_treasury_aborts` (`currency_ops::EVaultOUMismatch`), `send_coin_to_ou_target_mismatch_aborts` (`treasury_ops::EVaultOUMismatch`) | autojoin_e2e, lifecycle_ops, currency_ops, treasury_ops |
 | A bypass-enabled type never holds TYPE_ADMIN, MIGRATE, VAULT_EXTRACT or FREEZE | — | `execute_enable_bypass_type_forbidden_bits_aborts`, `ticket_from_cap_forbidden_bits_aborts` (`external_execution::EBypassForbiddenBits`) | external_execution |
 | A bypass type authenticates its caller in its own mint entry | `mint_allowance_bypass_allowed_minter_mints_within_cap`, `mint_allowance_bypass_cap_is_stored`, `autojoin_happy_path` | `mint_allowance_bypass_outsider_aborts` (`currency_ops::ENotAllowedMinter`), `mint_allowance_bypass_over_cap_aborts` (`EExceedsAllowance`), `mint_allowance_bypass_unconfigured_aborts` (`EAllowanceNotConfigured`), `mint_allowance_bypass_disabled_aborts` (`EAllowanceDisabled`); `autojoin_wrong_sender_aborts`, `autojoin_tribe_not_allowed_aborts`, `autojoin_kill_switch_off_aborts`, `autojoin_uninitialized_allowlist_aborts` | currency_ops, autojoin_e2e |
 | `EnableBypassType` needs 80% of the whole board and cannot bootstrap itself | `execute_enable_bypass_type_e2e` | `execute_enable_bypass_type_below_floor_aborts`, `execute_enable_bypass_type_zero_weight_aborts` (`external_execution::EApprovalFloorNotMet`), `execute_enable_bypass_type_self_bootstrap_denied` (`ESelfBootstrapDenied`) | external_execution |
@@ -123,8 +124,7 @@ The effective config of a composite (quorum, threshold, delay and cooldown as th
 |-----------|------------|------------------|--------|
 | Deposits and claims are permissionless; `coin_types` lists exactly the non-zero balances | `test_deposit_first_coin_adds_to_registry`, `test_deposit_second_coin_type_adds_to_registry`, `test_deposit_same_type_joins_balance`, `test_deposit_permissionless`, `test_deposit_zero_amount`, `test_coin_types_reflects_non_zero_balances`, `test_claim_coin_recovers_direct_transfer`, `test_claim_coin_multiple_types` | — | treasury_vault |
 | Withdrawal needs TREASURY_WITHDRAW; an emptied balance is removed | `test_withdraw_with_valid_request_succeeds`, `test_partial_withdraw_preserves_field`, `test_withdraw_exact_balance_removes_field`, `test_withdraw_exact_balance_removes_dynamic_field` | `test_withdraw_insufficient_balance_aborts` (`treasury_vault::EInsufficientBalance`), `withdraw_needs_treasury_withdraw` (`proposal::EPermissionDenied`) | treasury_vault, gate |
-| Multicoin balances by collection and asset | 19 happy-path tests incl. `test_deposit_first_item_creates_collection`, `test_withdraw_last_asset_removes_collection`, `test_multi_withdraw_proposal_full_drain` | `test_withdraw_excess_aborts`, `test_withdraw_missing_collection_aborts`, `test_withdraw_missing_asset_in_collection_aborts` (`EInsufficientBalance`), `withdraw_multicoin_needs_treasury_withdraw` | treasury_vault_multicoin, gate |
-| A vault is destroyed only when empty | `test_destroy_empty_succeeds_on_empty_vault`, `test_is_empty_true_after_full_multicoin_withdrawal` | `test_destroy_empty_aborts_on_non_empty_vault`, `test_destroy_empty_aborts_with_multicoin_assets` (`treasury_vault::EVaultNotEmpty`) | treasury_vault, treasury_vault_multicoin |
+| A vault is destroyed only when empty | `test_destroy_empty_succeeds_on_empty_vault` | `test_destroy_empty_aborts_on_non_empty_vault` (`treasury_vault::EVaultNotEmpty`) | treasury_vault |
 | `spend_guard` rolling-window cap | `new_spend_window_starts_empty`, `charge_within_limit_succeeds`, `charge_at_exact_limit_succeeds`, `charge_rolls_epoch_after_duration`, `charge_skips_multiple_epochs`, `set_max_updates_cap`, `accessors_return_correct_values` | `charge_exceeds_limit_aborts`, `charge_aborts_when_set_max_lowers_cap_below_existing_spend` (`spend_guard::EExceedsEpochLimit`) | spend_guard |
 | Vault registries reflect stored caps; loans keep the ID registered | `test_store_updates_cap_types_and_cap_ids`, `test_store_multiple_same_type_updates_ids`, `test_ids_for_type__returns_correct_list`, `test_contains__returns_true_for_stored_cap`, `test_contains__returns_false_for_missing_cap`, `test_loan_does_not_update_registries` | `test_extract_removes_from_cap_types_and_cap_ids`, `test_extract_last_of_type_removes_type` | capability_vault (fw) |
 | Loaned caps return to the same vault | `test_loan_and_return_restores_capability`, `test_borrow_cap__returns_immutable_reference` | `test_loan_cap_not_borrowable_during_loan` (expected failure, code not pinned) | capability_vault (fw) |
@@ -177,7 +177,7 @@ The effective config of a composite (quorum, threshold, delay and cooldown as th
 
 ## Proposal Type Coverage
 
-41 payload types across four packages (40 shipped plus the test fixture's `Rebalance<T>`). "—" means no test of that kind exists.
+39 payload types across four packages (38 shipped plus the test fixture's `Rebalance<T>`). "—" means no test of that kind exists.
 
 | # | Type | Package | Happy path | Abort | Suites |
 |---|------|---------|-----------|-------|--------|
@@ -204,24 +204,22 @@ The effective config of a composite (quorum, threshold, delay and cooldown as th
 | 21 | `SendCoin<T>` | proposals | `send_coin_e2e`, `composite_send_coin_step_e2e`, `medium_enterprise_lifecycle` | `send_coin_insufficient_balance_aborts`, `composite_send_coin_step_cannot_add_member` | treasury_ops, composite (pr), lifecycle |
 | 22 | `SendCoinToOU<T>` | proposals | `send_coin_to_ou_e2e`, `composite_send_coin_to_ou_step_e2e` | `send_coin_to_ou_target_mismatch_aborts` | treasury_ops, composite (pr) |
 | 23 | `SendSmallPayment<T>` | proposals | `basic_payment_within_cap_succeeds`, `epoch_rollover_resets_spend_tracking`, `multiple_coin_types_independent_state`, `small_startup_lifecycle` | `payment_exceeding_cap_aborts` | treasury_ops, lifecycle |
-| 24 | `SendBatchMulticoinToAddress` | proposals | `send_batch_to_address_e2e`, `send_batch_to_address_partial_withdraw` | `send_batch_to_address_insufficient_balance_aborts` | batch_multicoin_ops |
-| 25 | `SendBatchMulticoinToOU` | proposals | `send_batch_to_ou_e2e`, `send_batch_to_ou_accumulates_in_target` | `send_batch_to_ou_target_mismatch_aborts` | batch_multicoin_ops |
-| 26 | `AdoptCurrency<T>` | proposals | every currency test (the `adopt_glyph` setup votes an `AdoptCurrency<GLYPH>`) | — | currency_ops |
-| 27 | `MintCoin<T>` | proposals | `mint_into_treasury`, `mint_to_recipient` | `mint_into_foreign_treasury_aborts`, `mint_with_unknown_cap_aborts` (`currency_ops::ECapNotInVault`) | currency_ops |
-| 28 | `MintAllowance<T>` | proposals | `mint_allowance_bypass_allowed_minter_mints_within_cap`, `mint_allowance_bypass_cap_is_stored` | `mint_allowance_bypass_outsider_aborts`, `mint_allowance_bypass_over_cap_aborts`, `mint_allowance_bypass_unconfigured_aborts`, `mint_allowance_bypass_disabled_aborts` | currency_ops |
-| 29 | `ConfigureMintAllowance<T>` | proposals | the `configure_allowance` setup of the `mint_allowance_bypass_*` tests (atomic path) | — | currency_ops |
-| 30 | `BurnCoin<T>` | proposals | `burn_from_treasury` | — | currency_ops |
-| 31 | `ReturnCurrencyCap<T>` | proposals | `return_cap_relinquishes_custody` | — | currency_ops |
-| 32 | `TransferCapToSubOU` | proposals | `transfer_cap_to_subou_e2e` | — | subou_ops |
-| 33 | `ReclaimCapFromSubOU` | proposals | `reclaim_cap_from_subou_e2e` | `reclaim_cap_wrong_vault_aborts` | subou_ops |
-| 34 | `PauseSubOUExecution` | proposals | `pause_and_unpause_subou_e2e` | `paused_subou_blocks_execution` (effect of the pause) | subou_ops |
-| 35 | `UnpauseSubOUExecution` | proposals | `pause_and_unpause_subou_e2e` | — | subou_ops |
-| 36 | `ControllerBatchAddMembers` | proposals | `controller_batch_add_members_e2e`, `controller_batch_add_members_existing_skipped` | `controller_batch_add_members_empty_aborts`, `controller_batch_add_members_oversize_aborts` | subou_ops |
-| 37 | `ControllerBatchRemoveMembers` | proposals | `controller_batch_remove_members_e2e` | `controller_batch_remove_members_nonmember_aborts`, `controller_batch_remove_members_empty_aborts`, `controller_batch_remove_members_oversize_aborts` | subou_ops |
-| 38 | `ProposeUpgrade` | proposals | `upgrade_e2e` | `upgrade_vault_mismatch_aborts` | upgrade_ops |
-| 39 | `AutojoinOU` | world bridge | `autojoin_happy_path`, `autojoin_adds_only_the_sender` | `autojoin_double_join_aborts`, `autojoin_wrong_sender_aborts`, `autojoin_tribe_not_allowed_aborts`, `autojoin_kill_switch_off_aborts`, `autojoin_uninitialized_allowlist_aborts` | autojoin_e2e |
-| 40 | `ConfigureAutojoin` | world bridge | the `configure_allowlist` setup of every autojoin test; `tribe_allowlist_tests` | `configure_rejects_zero_tribe_id` (`configure_autojoin::EZeroTribeIdNotAllowed`), `apply_overflow_aborts` | autojoin_e2e, tribe_allowlist |
-| 41 | `Rebalance<T>` (fixture) | external type tests | `enabled_type_executes_on_every_path`, `freeze_leaves_other_instantiation_executable`, `governance_unfreeze_restores_execution` | `frozen_type_blocks_two_ptb`, `frozen_type_blocks_atomic`, `frozen_type_blocks_bypass`, five `*_ticket_cannot_*` tests (`proposal::EPermissionDenied`) | external_type_lifecycle |
+| 24 | `AdoptCurrency<T>` | proposals | every currency test (the `adopt_glyph` setup votes an `AdoptCurrency<GLYPH>`) | — | currency_ops |
+| 25 | `MintCoin<T>` | proposals | `mint_into_treasury`, `mint_to_recipient` | `mint_into_foreign_treasury_aborts`, `mint_with_unknown_cap_aborts` (`currency_ops::ECapNotInVault`) | currency_ops |
+| 26 | `MintAllowance<T>` | proposals | `mint_allowance_bypass_allowed_minter_mints_within_cap`, `mint_allowance_bypass_cap_is_stored` | `mint_allowance_bypass_outsider_aborts`, `mint_allowance_bypass_over_cap_aborts`, `mint_allowance_bypass_unconfigured_aborts`, `mint_allowance_bypass_disabled_aborts` | currency_ops |
+| 27 | `ConfigureMintAllowance<T>` | proposals | the `configure_allowance` setup of the `mint_allowance_bypass_*` tests (atomic path) | — | currency_ops |
+| 28 | `BurnCoin<T>` | proposals | `burn_from_treasury` | — | currency_ops |
+| 29 | `ReturnCurrencyCap<T>` | proposals | `return_cap_relinquishes_custody` | — | currency_ops |
+| 30 | `TransferCapToSubOU` | proposals | `transfer_cap_to_subou_e2e` | — | subou_ops |
+| 31 | `ReclaimCapFromSubOU` | proposals | `reclaim_cap_from_subou_e2e` | `reclaim_cap_wrong_vault_aborts` | subou_ops |
+| 32 | `PauseSubOUExecution` | proposals | `pause_and_unpause_subou_e2e` | `paused_subou_blocks_execution` (effect of the pause) | subou_ops |
+| 33 | `UnpauseSubOUExecution` | proposals | `pause_and_unpause_subou_e2e` | — | subou_ops |
+| 34 | `ControllerBatchAddMembers` | proposals | `controller_batch_add_members_e2e`, `controller_batch_add_members_existing_skipped` | `controller_batch_add_members_empty_aborts`, `controller_batch_add_members_oversize_aborts` | subou_ops |
+| 35 | `ControllerBatchRemoveMembers` | proposals | `controller_batch_remove_members_e2e` | `controller_batch_remove_members_nonmember_aborts`, `controller_batch_remove_members_empty_aborts`, `controller_batch_remove_members_oversize_aborts` | subou_ops |
+| 36 | `ProposeUpgrade` | proposals | `upgrade_e2e` | `upgrade_vault_mismatch_aborts` | upgrade_ops |
+| 37 | `AutojoinOU` | world bridge | `autojoin_happy_path`, `autojoin_adds_only_the_sender` | `autojoin_double_join_aborts`, `autojoin_wrong_sender_aborts`, `autojoin_tribe_not_allowed_aborts`, `autojoin_kill_switch_off_aborts`, `autojoin_uninitialized_allowlist_aborts` | autojoin_e2e |
+| 38 | `ConfigureAutojoin` | world bridge | the `configure_allowlist` setup of every autojoin test; `tribe_allowlist_tests` | `configure_rejects_zero_tribe_id` (`configure_autojoin::EZeroTribeIdNotAllowed`), `apply_overflow_aborts` | autojoin_e2e, tribe_allowlist |
+| 39 | `Rebalance<T>` (fixture) | external type tests | `enabled_type_executes_on_every_path`, `freeze_leaves_other_instantiation_executable`, `governance_unfreeze_restores_execution` | `frozen_type_blocks_two_ptb`, `frozen_type_blocks_atomic`, `frozen_type_blocks_bypass`, five `*_ticket_cannot_*` tests (`proposal::EPermissionDenied`) | external_type_lifecycle |
 
 ## Demo Flow Coverage
 

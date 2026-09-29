@@ -33,7 +33,7 @@ This roadmap was written for the March 2026 hackathon and aligned phases P0–P4
 | OU Object & Creation | `ou.move`, `governance.move` | Flow A Step 1 | **Changed**: the type registry is one dynamic-field slot per enabled type (ARMATURE-9); the roster is a versioned `Table` and Board is the only governance model (ARMATURE-13) |
 | Proposal Lifecycle | `proposal.move` | All flows | **Changed**: handlers receive an `ExecutionTicket<P>` (#149); stored statuses are `Active` / `Passed` only; execution and expiry delete the proposal (ARMATURE-12) |
 | Board Voting | `voting/board.move` → `board_voting.move` | All flows | **Changed**: holds the submit, vote and execute entry points; voters are the members at the proposal's roster version (ARMATURE-13/14) |
-| Treasury Vault | `treasury.move` → `treasury_vault.move` | Flow A Step 3 (deposit), Flow A Step 6 (SendCoin) | **Done**; multicoin balances added (#150) |
+| Treasury Vault | `treasury.move` → `treasury_vault.move` | Flow A Step 3 (deposit), Flow A Step 6 (SendCoin) | **Done**; multicoin balances added (#150), later removed with the `multicoin` dependency |
 | Capability Vault | `capability_vault.move` | Flow B Step 3 (deposit caps), Flow C Steps 1–3 (loan/return) | **Done**; borrows limited to the request's borrow scope (ROAD-39) |
 | Emergency Freeze | `emergency.move` | Safety infrastructure, not demoed directly | **Changed**: keyed by the payload's `TypeName` (ARMATURE-15); the `FreezeAdminCap` goes to the creator, who freezes directly |
 
@@ -42,7 +42,7 @@ This roadmap was written for the March 2026 hackathon and aligned phases P0–P4
 | Deliverable | Modules (planned → current) | Demo Flow Coverage | Status |
 |---|---|---|---|
 | Admin Proposals | `proposals/admin.move` → framework `sources/types/` with handlers `armature::admin_ops` and `armature::freeze_ops` | `EnableProposalType` used throughout to unlock new proposal types | **Changed**: moved into the framework (ARMATURE-9, ROAD-39); EnableProposalType's floor rose from 66% to 80% |
-| Treasury Proposals | `proposals/treasury_ops.move` → `armature_proposals::treasury_ops` | Flow A Step 6, Flow B Step 6 | **Done**; `SendSmallPayment` (#84) and batch multicoin sends (#150) added |
+| Treasury Proposals | `proposals/treasury_ops.move` → `armature_proposals::treasury_ops` | Flow A Step 6, Flow B Step 6 | **Done**; `SendSmallPayment` (#84) and batch multicoin sends (#150) added; the batch sends were later removed with the `multicoin` dependency |
 | Board Proposals | `proposals/board_ops.move` → framework `board_ops`, `member_ops` | Flow A Step 2 (SetBoard), Flow A Step 7 (parent override) | **Changed**: `SetBoard` is an add/remove diff (ARMATURE-13); AddMember / RemoveMember (#134), BatchAddMembers (#142) and BatchRemoveMembers (#158) added |
 
 **Exit criteria:** Can create an OU on localnet, add board members, deposit to treasury, create/vote/execute a SendCoin proposal. **Met**: unit tests, localnet setup scripts (#100) and UI wiring on localnet (#110).
@@ -147,7 +147,7 @@ These were stretch items in the plan (`stretch/03_migration.md`, `stretch/05_adv
 | 2026-05-21 | Currency types over OU-held `TreasuryCap`s: AdoptCurrency, MintCoin, MintAllowance, BurnCoin, ReturnCurrencyCap | #146 |
 | 2026-05-21 | Composite proposals: up to 16 steps, no nesting, component-wise maximum config | #137 |
 | 2026-05-26 | One `ExecutionTicket<P>` handler model for the vote, composite and bypass paths; UI, indexer and API removed from this repo | #149, #148 |
-| 2026-05-28 | Multicoin treasury storage for many assets; batch multicoin send types | #150 |
+| 2026-05-28 | Multicoin treasury storage for many assets; batch multicoin send types (later removed, with the `multicoin` dependency) | #150 |
 | 2026-06-07 | Atomic single-vote path `board_voting::submit_vote_execute` | #152 (`proposals/ADR_SUBMIT_VOTE_EXECUTE.md`) |
 | 2026-06-11 | OU initialization events (`OUBoardInitialized`) | #155 |
 | 2026-06-19 | BatchRemoveMembers; controller batch member ops on SubOUs (`ControllerBatchAddMembers` / `ControllerBatchRemoveMembers`) | #158 |
@@ -259,7 +259,7 @@ Current layout (the March plan had `armature_framework` with `treasury.move` and
 ┌───────────────────────────────────────────────────────────────────┐
 │  External dependencies                                             │
 │  Sui framework + Move stdlib (Clock, dynamic fields,               │
-│  std::internal::Permit) · multicoin · EVE Frontier `world`         │
+│  std::internal::Permit) · EVE Frontier `world`                     │
 │  (world bridge only) · Seal key servers (off-chain, seal_approve)  │
 └───────────────────────────────────────────────────────────────────┘
 ```

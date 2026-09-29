@@ -3,11 +3,9 @@ module armature::treasury_vault;
 
 use armature::permissions;
 use armature::proposal::ExecutionRequest;
-use multicoin::multicoin::{Self, Balance as MultiCoinBalance};
 use sui::balance::Balance;
 use sui::coin::{Self, Coin};
 use sui::dynamic_field as df;
-use sui::dynamic_object_field as dof;
 use sui::event;
 use sui::vec_set::{Self, VecSet};
 
@@ -46,57 +44,15 @@ public struct CoinClaimed has copy, drop {
     claimer: address,
 }
 
-/// Emitted when a multicoin balance is deposited into the vault.
-public struct MultiCoinDeposited has copy, drop {
-    vault_id: ID,
-    ou_id: ID,
-    collection_id: ID,
-    asset_id: u64,
-    amount: u64,
-    depositor: address,
-}
-
-/// Emitted when a multicoin balance is withdrawn from the vault via a proposal execution.
-public struct MultiCoinWithdrawn has copy, drop {
-    vault_id: ID,
-    ou_id: ID,
-    collection_id: ID,
-    asset_id: u64,
-    amount: u64,
-    recipient: address,
-}
-
 // === Structs ===
-
-/// DOF key used on TreasuryVault to look up a CollectionRecord by collection ID.
-public struct CollectionKey has copy, drop, store {
-    collection_id: ID,
-}
-
-/// DOF key used on CollectionRecord to look up a MultiCoinBalance by asset ID.
-public struct AssetKey has copy, drop, store {
-    asset_id: u64,
-}
-
-/// Per-collection sub-object stored as a DOF on TreasuryVault.
-/// Holds one MultiCoinBalance DOF per distinct asset_id.
-/// RPC: sui_getDynamicFields(collection_record_id) enumerates all assets in this collection.
-public struct CollectionRecord has key, store {
-    id: UID,
-    collection_id: ID,
-    item_count: u64,
-}
 
 /// Multi-coin treasury vault.
 /// Coin balances: dynamic fields keyed by type name string.
-/// Multicoin balances: two-level DOF tree — CollectionRecord per collection_id,
-/// MultiCoinBalance per asset_id within each CollectionRecord.
 /// Created as a shared object during OU creation.
 public struct TreasuryVault has key, store {
     id: UID,
     ou_id: ID,
     coin_types: VecSet<std::ascii::String>,
-    multicoin_collection_count: u64,
 }
 
 // === Constructor ===
@@ -107,7 +63,6 @@ public(package) fun new(ou_id: ID, ctx: &mut TxContext): TreasuryVault {
         id: object::new(ctx),
         ou_id,
         coin_types: vec_set::empty(),
-        multicoin_collection_count: 0,
     }
 }
 
@@ -213,124 +168,6 @@ public fun claim_coin<T>(
     self.deposit(coin, ctx);
 }
 
-/// Deposit a multicoin balance into the vault. Permissionless — anyone can deposit.
-/// Zero-value balances are destroyed as a no-op.
-///
-/// Storage layout:
-/// TreasuryVault --dof[CollectionKey]--> CollectionRecord --dof[AssetKey]--> MultiCoinBalance
-///
-/// RPC enumeration:
-/// All assets in a collection: sui_getDynamicFields(collection_record_id)
-/// All collections: sui_getDynamicFields(treasury_vault_id) filtered by key type CollectionKey
-public fun deposit_multicoin(
-    self: &mut TreasuryVault,
-    balance: MultiCoinBalance,
-    ctx: &mut TxContext,
-) {
-    let amount = balance.value();
-    if (amount == 0) {
-        multicoin::destroy_zero(balance);
-        return
-    };
-
-    let collection_id = balance.collection_id();
-    let asset_id = balance.asset_id();
-    let coll_key = CollectionKey { collection_id };
-    let asset_key = AssetKey { asset_id };
-
-    if (!dof::exists_(&self.id, coll_key)) {
-        let record = CollectionRecord {
-            id: object::new(ctx),
-            collection_id,
-            item_count: 0,
-        };
-        dof::add(&mut self.id, coll_key, record);
-        self.multicoin_collection_count = self.multicoin_collection_count + 1;
-    };
-
-    let record: &mut CollectionRecord = dof::borrow_mut(&mut self.id, coll_key);
-
-    if (dof::exists_(&record.id, asset_key)) {
-        let existing: &mut MultiCoinBalance = dof::borrow_mut(&mut record.id, asset_key);
-        existing.join(balance, ctx);
-    } else {
-        dof::add(&mut record.id, asset_key, balance);
-        record.item_count = record.item_count + 1;
-    };
-
-    event::emit(MultiCoinDeposited {
-        vault_id: object::uid_to_inner(&self.id),
-        ou_id: self.ou_id,
-        collection_id,
-        asset_id,
-        amount,
-        depositor: ctx.sender(),
-    });
-}
-
-/// Withdraw a multicoin balance from the vault. Requires an `ExecutionRequest`.
-/// Cleans up the AssetKey DOF when balance reaches zero, and the CollectionRecord
-/// when its last asset is removed.
-/// Requires TREASURY_WITHDRAW (`proposal::assert_permitted`).
-public fun withdraw_multicoin<P>(
-    self: &mut TreasuryVault,
-    collection_id: ID,
-    asset_id: u64,
-    amount: u64,
-    req: &ExecutionRequest<P>,
-    ctx: &mut TxContext,
-): MultiCoinBalance {
-    assert!(self.ou_id == req.req_ou_id(), EOUIdMismatch);
-    req.assert_permitted(permissions::treasury_withdraw());
-
-    let coll_key = CollectionKey { collection_id };
-    let asset_key = AssetKey { asset_id };
-
-    assert!(
-        dof::exists_(&self.id, coll_key) && {
-            let record: &CollectionRecord = dof::borrow(&self.id, coll_key);
-            dof::exists_(&record.id, asset_key) && {
-                let bal: &MultiCoinBalance = dof::borrow(&record.id, asset_key);
-                bal.value() >= amount
-            }
-        },
-        EInsufficientBalance,
-    );
-
-    let record: &mut CollectionRecord = dof::borrow_mut(&mut self.id, coll_key);
-    let bal: &mut MultiCoinBalance = dof::borrow_mut(&mut record.id, asset_key);
-    let withdrawn = bal.split(amount, ctx);
-    let asset_empty = bal.value() == 0;
-
-    if (asset_empty) {
-        let remaining: MultiCoinBalance = dof::remove(&mut record.id, asset_key);
-        multicoin::destroy_zero(remaining);
-        record.item_count = record.item_count - 1;
-    };
-
-    let collection_empty = record.item_count == 0;
-
-    if (collection_empty) {
-        let CollectionRecord { id: record_id, collection_id: _, item_count: _ } = dof::remove(
-            &mut self.id,
-            coll_key,
-        );
-        record_id.delete();
-        self.multicoin_collection_count = self.multicoin_collection_count - 1;
-    };
-
-    event::emit(MultiCoinWithdrawn {
-        vault_id: object::uid_to_inner(&self.id),
-        ou_id: self.ou_id,
-        collection_id,
-        asset_id,
-        amount,
-        recipient: ctx.sender(),
-    });
-
-    withdrawn
-}
-
 // === Accessors ===
 
 /// Returns the OU ID this vault belongs to.
@@ -338,11 +175,6 @@ public fun ou_id(self: &TreasuryVault): ID { self.ou_id }
 
 /// Returns the set of coin type names currently held.
 public fun coin_types(self: &TreasuryVault): &VecSet<std::ascii::String> { &self.coin_types }
-
-/// Returns the number of distinct collections currently held.
-public fun multicoin_collection_count(self: &TreasuryVault): u64 {
-    self.multicoin_collection_count
-}
 
 /// Returns the balance of coin type T, or 0 if not present.
 public fun balance<T>(self: &TreasuryVault): u64 {
@@ -355,44 +187,15 @@ public fun balance<T>(self: &TreasuryVault): u64 {
     }
 }
 
-/// Returns the balance of a specific multicoin asset, or 0 if not present.
-public fun multicoin_balance(self: &TreasuryVault, collection_id: ID, asset_id: u64): u64 {
-    let coll_key = CollectionKey { collection_id };
-    let asset_key = AssetKey { asset_id };
-    if (dof::exists_(&self.id, coll_key)) {
-        let record: &CollectionRecord = dof::borrow(&self.id, coll_key);
-        if (dof::exists_(&record.id, asset_key)) {
-            let bal: &MultiCoinBalance = dof::borrow(&record.id, asset_key);
-            bal.value()
-        } else {
-            0
-        }
-    } else {
-        0
-    }
-}
-
-/// Returns the number of distinct asset IDs held for a collection, or 0 if not present.
-public fun collection_item_count(self: &TreasuryVault, collection_id: ID): u64 {
-    let coll_key = CollectionKey { collection_id };
-    if (dof::exists_(&self.id, coll_key)) {
-        let record: &CollectionRecord = dof::borrow(&self.id, coll_key);
-        record.item_count
-    } else {
-        0
-    }
-}
-
-/// Returns true if the vault holds no coin or multicoin balances.
+/// Returns true if the vault holds no coin balances.
 public fun is_empty(self: &TreasuryVault): bool {
-    self.coin_types.is_empty() && self.multicoin_collection_count == 0
+    self.coin_types.is_empty()
 }
 
 /// Destroy an empty TreasuryVault. Aborts with `EVaultNotEmpty` if the
-/// vault still holds any coin or multicoin balances.
+/// vault still holds any coin balances.
 public(package) fun destroy_empty(vault: TreasuryVault) {
-    let TreasuryVault { id, ou_id: _, coin_types, multicoin_collection_count } = vault;
+    let TreasuryVault { id, ou_id: _, coin_types } = vault;
     assert!(coin_types.is_empty(), EVaultNotEmpty);
-    assert!(multicoin_collection_count == 0, EVaultNotEmpty);
     id.delete();
 }

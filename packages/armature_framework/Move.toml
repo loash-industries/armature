@@ -3,7 +3,6 @@ name = "armature"
 edition = "2024"
 version = "0.0.1"
 [dependencies]
-multicoin = { git = "https://github.com/Algorithmic-Warfare/multicoin", subdir = "packages/multicoin", rev = "e384bbc8670b850cfb82a5e3b9fa46798b0ff6dc" }
 
 [environments]
 testnet_wip = "4c78adac"

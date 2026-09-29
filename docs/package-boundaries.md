@@ -90,7 +90,7 @@ Two standing constraints sit on top of the rule:
 | SpawnOU, CreateSubOU, SpinOutSubOU, TransferAssets | MIGRATE, VAULT_*, TREASURY_WITHDRAW; SpinOutSubOU scoped to `SubOUControl` | framework | 1 |
 | TransferFreezeAdmin, UnfreezeProposalType, UpdateFreezeConfig, UpdateFreezeExemptTypes | FREEZE | framework | 1, 3 |
 | AdoptCurrency, MintCoin, MintAllowance, BurnCoin, ReturnCurrencyCap | vault bits, TREASURY_WITHDRAW; borrowers scoped to `TreasuryCap<T>` | proposals | 4, 5 |
-| SendCoin, SendCoinToOU, SendSmallPayment, SendBatchMulticoin* | TREASURY_WITHDRAW | proposals | 4, 5 |
+| SendCoin, SendCoinToOU, SendSmallPayment | TREASURY_WITHDRAW | proposals | 4, 5 |
 | TransferCapToSubOU, ReclaimCapFromSubOU, ControllerBatch*, PauseSubOUExecution, UnpauseSubOUExecution | VAULT_EXTRACT / VAULT_BORROW scoped to `SubOUControl` | proposals | 5 |
 | ProposeUpgrade | VAULT_BORROW scoped to `UpgradeCap` | proposals | 5 |
 | ConfigureMintAllowance | none (own type-state) | proposals | 5 |

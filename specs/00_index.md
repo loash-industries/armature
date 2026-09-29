@@ -75,7 +75,7 @@ Companion references outside `specs/`:
 | **Borrow scope** | The capability types a `VAULT_BORROW` type may borrow or loan from the vault. |
 | **Bypass type** | A proposal type an OU has opted into executing without a vote (`EnableBypassType`, 80%). Its own module authenticates the caller before minting a ticket with the OU's `ExternalExecutionCap`. |
 | **Composite proposal** | Up to 16 typed steps approved by one vote and executed in order in one PTB. |
-| **TreasuryVault** | A separate shared object holding coin balances (dynamic fields keyed by coin type) and multicoin balances. Each OU has its own treasury. |
+| **TreasuryVault** | A separate shared object holding coin balances (dynamic fields keyed by coin type). Each OU has its own treasury. |
 | **CapabilityVault** | A separate shared object holding arbitrary `key + store` capabilities (e.g., `UpgradeCap`, `SubOUControl`, `TreasuryCap`). Accessed only through governance requests carrying the vault bits. |
 | **SubOUControl** | A capability stored in a *controller* OU's vault, granting authority over a SubOU's board and operations. |
 | **FreezeAdminCap** | The emergency circuit breaker's key: its holder can freeze proposal types for a bounded time. Held by an address (or a parent's vault for some SubOUs); governance can transfer it. |

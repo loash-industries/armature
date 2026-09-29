@@ -4,13 +4,9 @@ use armature::ou::OU;
 use armature::proposal::{ExecutionRequest, ExecutionTicket};
 use armature::treasury_vault::TreasuryVault;
 use armature::utils;
-use armature_proposals::multicoin_item::MultiCoinItem;
-use armature_proposals::send_batch_multicoin_to_ou::{Self, SendBatchMulticoinToOU};
-use armature_proposals::send_batch_multicoin_to_player::{Self, SendBatchMulticoinToAddress};
 use armature_proposals::send_coin::{Self, SendCoin};
 use armature_proposals::send_coin_to_ou::{Self, SendCoinToOU};
 use armature_proposals::send_small_payment::{Self, SendSmallPayment, SmallPaymentState};
-use multicoin::multicoin::Balance as MultiCoinBalance;
 use sui::clock::Clock;
 use sui::event;
 
@@ -43,18 +39,6 @@ public struct SmallPaymentSent has copy, drop {
     recipient: address,
     epoch_spend: u64,
     max_epoch_spend: u64,
-}
-
-public struct BatchMulticoinSentToAddress has copy, drop {
-    ou_id: ID,
-    recipient: address,
-    item_count: u64,
-}
-
-public struct BatchMulticoinSentToOU has copy, drop {
-    ou_id: ID,
-    target_treasury: ID,
-    item_count: u64,
 }
 
 // === Handlers ===
@@ -144,63 +128,6 @@ public fun execute_send_small_payment<T>(
     transfer::public_transfer(coin, payload.recipient());
 
     ticket.discharge(send_small_payment::permit<T>());
-}
-
-public fun execute_send_batch_multicoin_to_player(
-    vault: &mut TreasuryVault,
-    ticket: ExecutionTicket<SendBatchMulticoinToAddress>,
-    ctx: &mut TxContext,
-) {
-    let payload = ticket.ticket_payload();
-    let req = ticket.ticket_request(send_batch_multicoin_to_player::permit());
-    assert!(vault.ou_id() == req.req_ou_id(), EVaultOUMismatch);
-    let recipient = payload.recipient();
-    let item_count = payload.items().length();
-    payload.items().do_ref!(|item: &MultiCoinItem| {
-        let balance: MultiCoinBalance = vault.withdraw_multicoin(
-            item.collection_id(),
-            item.asset_id(),
-            item.amount(),
-            req,
-            ctx,
-        );
-        transfer::public_transfer(balance, recipient);
-    });
-    event::emit(BatchMulticoinSentToAddress {
-        ou_id: vault.ou_id(),
-        recipient,
-        item_count,
-    });
-    ticket.discharge(send_batch_multicoin_to_player::permit());
-}
-
-public fun execute_send_batch_multicoin_to_ou(
-    source_vault: &mut TreasuryVault,
-    target_vault: &mut TreasuryVault,
-    ticket: ExecutionTicket<SendBatchMulticoinToOU>,
-    ctx: &mut TxContext,
-) {
-    let payload = ticket.ticket_payload();
-    let req = ticket.ticket_request(send_batch_multicoin_to_ou::permit());
-    assert!(source_vault.ou_id() == req.req_ou_id(), EVaultOUMismatch);
-    assert!(object::id(target_vault) == payload.recipient_treasury(), ETargetVaultMismatch);
-    let item_count = payload.items().length();
-    payload.items().do_ref!(|item: &MultiCoinItem| {
-        let balance: MultiCoinBalance = source_vault.withdraw_multicoin(
-            item.collection_id(),
-            item.asset_id(),
-            item.amount(),
-            req,
-            ctx,
-        );
-        target_vault.deposit_multicoin(balance, ctx);
-    });
-    event::emit(BatchMulticoinSentToOU {
-        ou_id: source_vault.ou_id(),
-        target_treasury: payload.recipient_treasury(),
-        item_count,
-    });
-    ticket.discharge(send_batch_multicoin_to_ou::permit());
 }
 
 // === Internal ===
