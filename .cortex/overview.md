@@ -25,7 +25,7 @@ This repo contains only the on-chain Move smart contracts. Indexing lives in `ar
 - **`ou`** — OU lifecycle, root object, and the proposal-type registry (one dynamic-field slot per enabled type, keyed by the payload's `TypeName`; the root never grows with enabled types)
 - **`proposal`** — Hot-potato proposal execution engine
 - **`governance`** — Board roster: a `Table` of members with join/leave tenures and a `roster_version` that advances on every membership change
-- **`treasury_vault`** — Coin storage and release
+- **`treasury_vault`** — Coin storage and release (coins only; multicoin assets are held in armature-vault's `DaoReceiptVault`)
 - **`capability_vault`** — Delegated capability management
 - **`charter`** — Governance constitution document
 - **`board_voting`** — Proposal submission, voting (`board_voting::vote`) and execution for board governance
@@ -47,6 +47,7 @@ This repo contains only the on-chain Move smart contracts. Indexing lives in `ar
 
 ## Recent Changes
 
+- **2026-09-29 — multicoin dependency removed**: `TreasuryVault` holds only coins; the batch multicoin send types are gone. Fresh deploy required. See `changelog.md`.
 - **2026-09-29 — tribe setup and whole-board type admin**: `armature_proposals::tribe_setup` builds a tribe whose parents can use their `SubOUControl`s from creation; enabling a type or changing a type's config now needs YES from 80% of the whole board. See `changelog.md`.
 - **2026-09-26 — package boundaries, borrow scope, bypass-safe bits, authenticated MintAllowance bypass (ROAD-39, ARMATURE-31)**: freeze-governance types move into the framework; `ProposalConfig.borrow_scope` limits `VAULT_BORROW` to named cap types; bypass types may not hold authority-graph bits; `MintAllowance<T>` is minted only through an allowlisted bypass entry. Placement rule in `docs/package-boundaries.md`. See `changelog.md`.
 - **2026-09-26 — framework mutators gated by permission bits (ARMATURE-25 – 29, ROAD-39)**: requests carry their type's bits; board, type-registry, lifecycle, charter, freeze, treasury and vault mutators check them; framework types have fixed bits; EnableProposalType's floor is now 80%. See `changelog.md`.

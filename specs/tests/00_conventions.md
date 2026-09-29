@@ -8,12 +8,12 @@ Four packages carry tests. Every test file is a `#[test_only]` module named `<ad
 
 | Package (address) | Test modules | Tests |
 |---|---|---|
-| `armature_framework` (`armature::`) | 21 files in `packages/armature_framework/tests/` + `sources/utils.move` | 419 |
-| `armature_proposals` | 13 files in `packages/armature_proposals/tests/` | 123 |
+| `armature_framework` (`armature::`) | 20 files in `packages/armature_framework/tests/` + `sources/utils.move` | 410 |
+| `armature_proposals` | 13 files in `packages/armature_proposals/tests/` | 121 |
 | `armature_world_bridge` | `autojoin_e2e_tests` (8), `tribe_allowlist_tests` (12) | 20 |
-| `armature_external_type_tests` | `external_type_lifecycle_tests` (third-party fixture, never published) | 11 |
+| `armature_external_type_tests` | `external_type_lifecycle_tests` (11), `tribe_e2e_tests` (7) (third-party fixture, never published) | 18 |
 
-Counts are from `sui move test` on the working tree on top of commit `6ed2b77` (2026-09-26); all 573 pass.
+Counts are from `sui move test` on the working tree on top of commit `690cda2` (2026-09-29), after the `multicoin` dependency was removed; all 569 pass.
 
 **Framework test modules**
 
@@ -28,21 +28,20 @@ Counts are from `sui move test` on the working tree on top of commit `6ed2b77` (
 | `ou_tests` | 20 | creation, default slots, type registry, root size, `ProposalConfig` bounds, `create_returning_vault` |
 | `emergency_tests` | 18 | freeze / unfreeze / expiry / exemptions on a standalone `EmergencyFreeze` |
 | `encrypted_entry_tests` | 39 | Seal-encrypted entries, epoch rotation, `destroy` with entries |
-| `external_execution_tests` | 22 | `EnableBypassType` / `DisableBypassType`, `ticket_from_cap(_readonly)` |
+| `external_execution_tests` | 26 | `EnableBypassType` / `DisableBypassType`, `ticket_from_cap(_readonly)` |
 | `freeze_ops_tests` | 5 | `UpdateFreezeConfig`, `UpdateFreezeExemptTypes` through governance |
 | `freeze_path_tests` | 7 | freeze keyed by `TypeName` on the atomic, bypass and two-PTB paths |
-| `gate_tests` | 35 | one denial test per gated mutator (see CI gate check) |
+| `gate_tests` | 34 | one denial test per gated mutator (see CI gate check) |
 | `lifecycle_ops_tests` | 5 | `TransferAssets` hot-potato flow |
 | `permissions_tests` | 35 | permission bits, floors, grant rules, fixed framework bits, composite grants |
 | `proposal_tests` | 42 | proposal lifecycle, deletion, expiry, snapshot versions, tickets |
 | `spend_guard_tests` | 9 | rolling spend window |
 | `submit_vote_execute_tests` | 26 | atomic single-vote path and its read-only variant |
 | `treasury_vault_tests` | 17 | coin deposit / withdraw / claim, registry, `destroy_empty` |
-| `treasury_vault_multicoin_tests` | 23 | multicoin balances |
-| `tribe_tests` | 30 | tribe constructors, `create_wired_subou`, creation-time overrides |
+| `tribe_tests` | 41 | tribe constructors, `create_wired_subou`, creation-time overrides |
 | `utils` (in `sources/`) | 8 | bps math, `saturating_add` |
 
-**`armature_proposals` test modules**: `admin_ops_tests` (21), `batch_multicoin_ops_tests` (6), `board_ops_tests` (6), `charter_tests` (2), `composite_tests` (20), `currency_ops_tests` (12), `emergency_freeze_tests` (8), `lifecycle_tests` (2), `member_ops_tests` (15), `migration_tests` (4), `subou_ops_tests` (16), `treasury_ops_tests` (9), `upgrade_ops_tests` (2). Several of them drive framework handlers (`admin_ops`, `board_ops`, `member_ops`, `freeze_ops`, `lifecycle_ops`) end to end.
+**`armature_proposals` test modules**: `admin_ops_tests` (21), `board_ops_tests` (6), `charter_tests` (2), `composite_tests` (20), `currency_ops_tests` (12), `emergency_freeze_tests` (8), `lifecycle_tests` (2), `member_ops_tests` (15), `migration_tests` (4), `subou_ops_tests` (16), `treasury_ops_tests` (9), `tribe_setup_tests` (4), `upgrade_ops_tests` (2). Several of them drive framework handlers (`admin_ops`, `board_ops`, `member_ops`, `freeze_ops`, `lifecycle_ops`) end to end.
 
 ## Citing Tests in These Specs
 
@@ -131,4 +130,4 @@ Locally, `--build-env testnet` is needed: the packages declare only testnet-styl
 - a gated function has no test in `packages/armature_framework/tests/gate_tests.move` whose name starts with `<function>_` (so every new gated mutator needs a denial test there);
 - `proposal::ticket_request`, `discharge`, `discharge_returning_payload` or `external_execution::ticket_from_cap(_readonly)` stops taking `Permit<P>`.
 
-At `6ed2b77` it reports `30 gated functions, 18 allowed without a gate, 5 Permit-gated ticket entry points`. Each `gate_tests` test builds a request with every bit except the one the mutator needs (`permissions::all() ^ missing`) and expects `proposal::EPermissionDenied` (`ou::ENotPrivileged` for the controller-only `set_controller_paused` and `clear_controller`); three more expect `proposal::EBorrowScopeDenied` from a request holding every bit and an empty borrow scope.
+On the same tree it reports `28 gated functions, 18 allowed without a gate, 5 Permit-gated ticket entry points`. Each `gate_tests` test builds a request with every bit except the one the mutator needs (`permissions::all() ^ missing`) and expects `proposal::EPermissionDenied` (`ou::ENotPrivileged` for the controller-only `set_controller_paused` and `clear_controller`); three more expect `proposal::EBorrowScopeDenied` from a request holding every bit and an empty borrow scope.

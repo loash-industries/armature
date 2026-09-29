@@ -2,23 +2,21 @@
 
 ## Summary
 
-`armature_proposals::treasury_ops` handles the five treasury spend types:
+`armature_proposals::treasury_ops` handles the three treasury spend types:
 
 | Type | Handler | Event |
 |------|---------|-------|
 | `SendCoin<T> { recipient, amount }` | `execute_send_coin<T>(vault, ticket, ctx)` | `CoinSent` |
 | `SendCoinToOU<T> { recipient_treasury, amount }` | `execute_send_coin_to_ou<T>(source_vault, target_vault, ticket, ctx)` | `CoinSentToOU` |
 | `SendSmallPayment<T> { recipient, amount }` | `execute_send_small_payment<T>(ou, vault, ticket, clock, ctx)` | `SmallPaymentSent` |
-| `SendBatchMulticoinToAddress { recipient, items }` | `execute_send_batch_multicoin_to_player(vault, ticket, ctx)` | `BatchMulticoinSentToAddress` |
-| `SendBatchMulticoinToOU { recipient_treasury, items }` | `execute_send_batch_multicoin_to_ou(source_vault, target_vault, ticket, ctx)` | `BatchMulticoinSentToOU` |
 
 None is a default type. Each needs `TREASURY_WITHDRAW` (`type_permissions::treasury_spend()`), so every config enabling it must have `approval_threshold >= 8000` (`ou::permission_floor`); a type enabled without the bit aborts `proposal::EPermissionDenied` when its handler withdraws. Generic types get one slot per instantiation: `SendCoin<SUI>` and `SendCoin<USDC>` are enabled, configured and frozen separately.
 
-Every handler checks that the source vault belongs to the ticket's OU (`treasury_ops::EVaultOUMismatch`); the OU-to-OU handlers also check that the target vault is the payload's `recipient_treasury` (`treasury_ops::ETargetVaultMismatch`). Withdrawals go through `treasury_vault::withdraw` / `withdraw_multicoin`, which check the vault's OU (`treasury_vault::EOUIdMismatch`), the bit and the balance (`treasury_vault::EInsufficientBalance`), and emit `CoinWithdrawn` / `MultiCoinWithdrawn`. Deposits into a target vault are permissionless.
+Every handler checks that the source vault belongs to the ticket's OU (`treasury_ops::EVaultOUMismatch`); the OU-to-OU handler also checks that the target vault is the payload's `recipient_treasury` (`treasury_ops::ETargetVaultMismatch`). Withdrawals go through `treasury_vault::withdraw`, which checks the vault's OU (`treasury_vault::EOUIdMismatch`), the bit and the balance (`treasury_vault::EInsufficientBalance`), and emits `CoinWithdrawn`. Deposits into a target vault are permissionless.
 
 `TREASURY_WITHDRAW` covers every coin at any amount; the amount is bounded by the handler (the payload's `amount`, and `SendSmallPayment`'s epoch cap). Only `treasury_ops` can spend these tickets (`Permit<P>`), so the recipient and amount always come from the approved payload.
 
-The real tests enable types with the `ou.test_enable_type` seam, which skips the vote and the floors; on a live OU they are enabled by an 80% `EnableProposalType` vote or a creation-time `ProposalTypeInit`. Real suites: `packages/armature_proposals/tests/treasury_ops_tests.move` (9) and `batch_multicoin_ops_tests.move` (6). Currency types that mint into or burn from the treasury (`MintCoin`, `BurnCoin`, …) are in `currency_ops_tests.move` and listed in `17_coverage_summary.md`; the `TreasuryVault` module itself is in `05_treasury.md`.
+The real tests enable types with the `ou.test_enable_type` seam, which skips the vote and the floors; on a live OU they are enabled by an 80% `EnableProposalType` vote or a creation-time `ProposalTypeInit`. Real suites: `packages/armature_proposals/tests/treasury_ops_tests.move` (9). Currency types that mint into or burn from the treasury (`MintCoin`, `BurnCoin`, …) are in `currency_ops_tests.move` and listed in `17_coverage_summary.md`; the `TreasuryVault` module itself is in `05_treasury.md`.
 
 ## Test Matrix
 
@@ -44,14 +42,8 @@ The real tests enable types with the `ou.test_enable_type` seam, which skips the
 | SendSmallPayment | `lifecycle_tests::small_startup_lifecycle` | Payments before and after a board change |
 | SendSmallPayment | `zero_balance_blocks_payments` | Submits and votes only; does not execute (see below) |
 | SendSmallPayment | `test_small_payment__zero_balance_aborts` (planned) | Balance 0: the new state's cap is 0, so any amount aborts `treasury_ops::EExceedsDailyCap` |
-| SendBatchMulticoinToAddress | `send_batch_to_address_e2e` | Three items withdrawn; recipient receives all three balances |
-| SendBatchMulticoinToAddress | `send_batch_to_address_partial_withdraw` | Two of three items; the third stays in the vault |
-| SendBatchMulticoinToAddress | `send_batch_to_address_insufficient_balance_aborts` | One item over balance: whole batch aborts `treasury_vault::EInsufficientBalance` |
-| SendBatchMulticoinToOU | `send_batch_to_ou_e2e` | Source debited, target credited with every item |
-| SendBatchMulticoinToOU | `send_batch_to_ou_accumulates_in_target` | Target already holding the asset accumulates |
-| SendBatchMulticoinToOU | `send_batch_to_ou_target_mismatch_aborts` | Target vault ≠ `recipient_treasury`: Abort `treasury_ops::ETargetVaultMismatch` |
 
-Unqualified names are in `treasury_ops_tests.move` (SendCoin, SendCoinToOU, SendSmallPayment) or `batch_multicoin_ops_tests.move` (batch types).
+Unqualified names are in `treasury_ops_tests.move`.
 
 ## Tests
 
@@ -147,25 +139,3 @@ assert!(state.max_epoch_spend() == 10_000);
 `epoch_rollover_resets_spend_tracking` spends 9,000, advances past 24 h, and pays 5,000: the new cap is 1% of 991,000 = 9,910, computed before the second withdrawal.
 
 **Note on `zero_balance_blocks_payments`:** the test submits and votes but never executes, so it asserts nothing about a zero balance. Its comment expects an `EInsufficientBalance` abort; with a zero balance the new state's cap is 0, so the handler aborts earlier with `treasury_ops::EExceedsDailyCap`. `test_small_payment__zero_balance_aborts` (planned) should execute and expect that code.
-
----
-
-### Batch multicoin transfers
-
-**Requirement:** Each `MultiCoinItem { collection_id, asset_id, amount }` (`multicoin_item::new`) is withdrawn with `treasury_vault::withdraw_multicoin` (TREASURY_WITHDRAW). `SendBatchMulticoinToAddress` transfers each withdrawn balance to `recipient`; `SendBatchMulticoinToOU` deposits each into the target vault, which must be `recipient_treasury`.
-
-**Why it matters:** One vote moves many game assets. The batch is atomic: one item over balance aborts the whole PTB.
-
-```move
-// send_batch_to_address_e2e
-let items = vector[
-    multicoin_item::new(coll(COLL_A), ASSET_SWORD, 4),
-    multicoin_item::new(coll(COLL_A), ASSET_SHIELD, 6),
-    multicoin_item::new(coll(COLL_B), ASSET_POTION, 8),
-];
-let payload = send_batch_multicoin_to_player::new(PLAYER, items);
-// ... submit, vote, ticket_from_vote ...
-treasury_ops::execute_send_batch_multicoin_to_player(&mut vault, ticket, scenario.ctx());
-```
-
-The `SendBatchMulticoinToAddress` type is defined in module `armature_proposals::send_batch_multicoin_to_player` (file `send_batch_multicoin_to_address.move`).

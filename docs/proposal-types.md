@@ -191,12 +191,6 @@ Transfer `amount` of `Coin<T>` from the OU's `TreasuryVault` directly into anoth
 ### `SendSmallPayment<T>`
 Rate-limited withdrawal from the treasury. Uses `SmallPaymentState` (a dynamic field on the OU, keyed per coin type) to enforce a cumulative spend cap within rolling time epochs. Designed for recurring operational expenses without a fresh vote per payment.
 
-### `SendBatchMulticoinToAddress`
-Transfer a batch of multicoin (collection/asset) balances from the treasury to a player address in a single proposal.
-
-### `SendBatchMulticoinToOU`
-Transfer a batch of multicoin balances from the treasury directly into another OU's `TreasuryVault`.
-
 ---
 
 ## Upgrade
@@ -219,7 +213,7 @@ A type's `ProposalConfig.permissions` is a bitmask from `armature::permissions` 
 | `PAUSE` | — | `set_execution_paused` |
 | `MIGRATE` | 80% | `set_migrating` |
 | `METADATA` | — | `charter::update_metadata` |
-| `TREASURY_WITHDRAW` | 80% | `treasury_vault::withdraw`, `withdraw_multicoin` |
+| `TREASURY_WITHDRAW` | 80% | `treasury_vault::withdraw` |
 | `VAULT_STORE` | — | `store_cap`; receiving side of `receive_cap_authorized` |
 | `VAULT_BORROW` | 80% | `borrow_cap`, `borrow_cap_mut`, `loan_cap`, further limited to the cap types in the config's `borrow_scope` |
 | `VAULT_EXTRACT` | 80% | `extract_cap`, `destroy_subou_control`; sending side of `receive_cap_authorized` and `controller::receive_cap_from_controller`; package-only `create_subou_control` and `receive_cap` |

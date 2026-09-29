@@ -5,7 +5,6 @@ version = "0.0.1"
 
 [dependencies]
 armature = { local = "../armature_framework", env = "testnet_wip" }
-multicoin = { git = "https://github.com/Algorithmic-Warfare/multicoin", subdir = "packages/multicoin", rev = "e384bbc8670b850cfb82a5e3b9fa46798b0ff6dc" }
 
 [environments]
 testnet_wip = "4c78adac"

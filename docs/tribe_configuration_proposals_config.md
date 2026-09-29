@@ -294,7 +294,7 @@ fun officer_config_overrides(): vector<ProposalTypeInit> {
 
         // ── Officers' own treasury ────────────────────────────────────────
         // SendSmallPayment: rate-limited, safe for single-vote. Coin-specific
-        // entries in §4. SendCoin / SendBatchMulticoin: officer consensus.
+        // entries in §4. SendCoin: officer consensus.
 
         // ── Governance meta ───────────────────────────────────────────────
         // EnableProposalType and UpdateProposalConfig keep their defaults: YES
@@ -317,7 +317,6 @@ fun officer_config_overrides(): vector<ProposalTypeInit> {
 | `SetupTradingAccount` | One-time infrastructure setup — should be deliberate |
 | `CreateMulticoinPool` | Creates persistent on-chain pool |
 | `SendCoin<T>` / `SendCoinToOU<T>` | Non-trivial treasury transfers |
-| `SendBatchMulticoinToAddress` / `SendBatchMulticoinToOU` | Bulk asset movement |
 | `SetBoard` | Full board replacement — higher threshold recommended |
 | `UnfreezeProposalType` | Reverses an emergency freeze — must not be unilateral |
 | `UpdateProposalConfig` | Can reclassify proposal governance — needs 80% of the whole board |
@@ -363,9 +362,6 @@ ou::new_type_init<SendSmallPayment<SUI>>(
 // SendCoin<T> / SendCoinToOU<T>: officer consensus, e.g.
 // proposal::new_config(5000, 8000, 0, 604_800_000, 0, 0)
 //     .with_permissions(type_permissions::treasury_spend())
-
-// Multicoin batch types are not generic — one entry covers all coins.
-// Officer consensus, same bits.
 ```
 
 > **Summary of treasury proposal types:**
@@ -375,8 +371,6 @@ ou::new_type_init<SendSmallPayment<SUI>>(
 > | `SendCoin<T>` | yes — per coin | `treasury_spend()` | No — officer consensus |
 > | `SendCoinToOU<T>` | yes — per coin | `treasury_spend()` | No — officer consensus |
 > | `SendSmallPayment<T>` | yes — per coin | `treasury_spend()` | Yes — rate-limited |
-> | `SendBatchMulticoinToAddress` | no | `treasury_spend()` | No — officer consensus |
-> | `SendBatchMulticoinToOU` | no | `treasury_spend()` | No — officer consensus |
 
 ---
 

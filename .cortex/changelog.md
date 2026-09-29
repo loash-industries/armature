@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-29 — remove the multicoin dependency
+
+- Removed the `multicoin` dependency from `armature_framework` and `armature_proposals`. `TreasuryVault` is now `{ id, ou_id, coin_types }` and holds only coin balances: `deposit_multicoin`, `withdraw_multicoin`, `multicoin_balance`, `multicoin_collection_count`, `collection_item_count`, `CollectionKey` / `AssetKey` / `CollectionRecord` and the `MultiCoinDeposited` / `MultiCoinWithdrawn` events are gone, and `is_empty` / `destroy_empty` check only `coin_types`.
+- Removed the `SendBatchMulticoinToAddress` / `SendBatchMulticoinToOU` proposal types, `multicoin_item`, their `treasury_ops` handlers and the `BatchMulticoinSent*` events, along with the `treasury_vault_multicoin_tests` and `batch_multicoin_ops_tests` suites and the `withdraw_multicoin` gate test.
+- Breaking and not upgrade-compatible: a fresh deploy is required. `armature-trading`'s `DepositMulticoinToBook` / `SweepMulticoinToTreasury` depend on the removed vault functions and must be dropped; multicoin moves between an OU and the book go through armature-vault's `DaoReceiptVault` instead. Docs and specs follow.
+
 ## 2026-09-29 — tribe setup with usable controls; whole-board vote for type admin
 
 - Added `armature_proposals::tribe_setup`: `create_tribe` / `create_tribe_configured` wrap `armature::tribe` and enable the controller types on the Tribe OU and the Officers SubOU, each with its `type_permissions` bits, `SubOUControl` borrow scope and an 80% threshold. `ControllerBatchAddMembers`, `ControllerBatchRemoveMembers` and `PauseSubOUExecution` are single-vote (quorum 1 bps); `UnpauseSubOUExecution`, `ReclaimCapFromSubOU` and `TransferCapToSubOU` need 50% quorum. Before this, a new tribe's `SubOUControl`s could not be used until each parent passed an `EnableProposalType` vote.

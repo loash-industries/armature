@@ -82,7 +82,7 @@
 
 #### #14: TreasuryVault — deposit, withdraw, balance, claim — Part of #3
 
-**Outcome: Done** (PR #25). The module is `treasury_vault.move`. Deposit/withdraw events (#121) and multicoin balances (#150) were added, and since ROAD-39 `withdraw` checks the `TREASURY_WITHDRAW` bit.
+**Outcome: Done** (PR #25). The module is `treasury_vault.move`. Deposit/withdraw events (#121) and multicoin balances (#150) were added, and since ROAD-39 `withdraw` checks the `TREASURY_WITHDRAW` bit. The multicoin balances were later removed, with the `multicoin` dependency; the vault now holds only `Balance<T>` fields.
 
 **Module:** `treasury.move` → `treasury_vault.move`
 
@@ -199,7 +199,7 @@
 
 #### C-08: Treasury proposals — SendCoin, SendCoinToOU — Part of #2
 
-**Outcome: Done.** In `armature_proposals::treasury_ops`; `SendSmallPayment` (#84) and the batch multicoin sends (#150) joined them.
+**Outcome: Done.** In `armature_proposals::treasury_ops`; `SendSmallPayment` (#84) and the batch multicoin sends (#150) joined them; the batch sends were later removed, with the `multicoin` dependency.
 
 **Module:** `proposals/treasury_ops.move` → `armature_proposals/sources/treasury/treasury_ops.move`
 

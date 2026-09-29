@@ -10,7 +10,7 @@ This protocol governs treasury funds, capability delegation, organizational hier
 
 **Testing proves the presence of correct behavior. Formal verification proves the absence of incorrect behavior.**
 
-The invariants in `03_core_spec.md` §6 are covered by about 573 Move tests (framework 419, proposals 123, world bridge 20, external-type fixture 11) and by a CI check that every mutator is gated. Tests only cover enumerated scenarios. The prover checks specs against *all* possible inputs, catching edge cases no human would think to write tests for: integer boundary overflows, obscure abort paths, and subtle state-machine violations.
+The invariants in `03_core_spec.md` §6 are covered by about 569 Move tests (framework 410, proposals 121, world bridge 20, external-type fixture 18) and by a CI check that every mutator is gated. Tests only cover enumerated scenarios. The prover checks specs against *all* possible inputs, catching edge cases no human would think to write tests for: integer boundary overflows, obscure abort paths, and subtle state-machine violations.
 
 ### High-Value Targets
 
@@ -179,7 +179,7 @@ Each invariant below restates one from `03_core_spec.md` §6 (Consolidated Invar
 
 | ID | Invariant | Enforced today by |
 |----|-----------|-------------------|
-| `Treasury::WithdrawGate` | `withdraw` and `withdraw_multicoin` need a request of this OU carrying TREASURY_WITHDRAW (or privileged) | `gate_tests`, `treasury_vault_tests` |
+| `Treasury::WithdrawGate` | `withdraw` needs a request of this OU carrying TREASURY_WITHDRAW (or privileged) | `gate_tests`, `treasury_vault_tests` |
 | `Treasury::Conservation` | `withdraw` lowers the balance by exactly `amount` and returns a coin of `amount`; `deposit` raises it by the coin's value | `treasury_vault_tests` |
 | `Treasury::RegistrySynced` | `coin_types` is exactly the set of coin types with a non-zero balance | `treasury_vault_tests` |
 | `Treasury::ZeroBalanceCleanup` | No zero `Balance<T>` field persists; a zero-value deposit is a no-op | `treasury_vault_tests` |
@@ -260,15 +260,15 @@ Accepted behaviours, which specs must state rather than forbid:
 ### Current enforcement (in place of proofs)
 
 - **Move type system.** Hot potatoes have no abilities. `ExecutionRequest` has no public constructor: its mint functions and `proposal::create`, `record_vote`, `execute` and `consume` are `public(package)`. `std::internal::Permit<P>` can be minted only by `P`'s defining module.
-- **Unit and scenario tests** (`sui move test` per package): framework 419, proposals 123, world bridge 20, external-type fixture 11. The security-relevant suites are:
-  - `gate_tests.move`: one denial test per gated mutator (30). Each mutator must refuse a request holding every bit except the one it needs; for the controller-only pair, any unprivileged request
+- **Unit and scenario tests** (`sui move test` per package): framework 410, proposals 121, world bridge 20, external-type fixture 18. The security-relevant suites are:
+  - `gate_tests.move`: one denial test per gated mutator (28). Each mutator must refuse a request holding every bit except the one it needs; for the controller-only pair, any unprivileged request
   - `permissions_tests`, `borrow_scope_tests`, `freeze_path_tests`, `submit_vote_execute_tests`
   - `cross_ou_auth_tests`: forged or spun-out `SubOUControl`s, another OU's freeze object, deposits into a vault the sender does not control, and composites run against another OU or after a pause or disable
   - `proposal_tests`: deadlines, deletion, snapshot eligibility, the saturating maximum expiry
   - `armature_external_type_tests`: a third-party type on every path, and replays of the confirmed cross-type attacks
   - the world bridge's autojoin tickets, which carry BOARD_ADD only
   - `currency_ops_tests::mint_allowance_bypass_outsider_aborts` (ARMATURE-31)
-- **CI gate check** — `scripts/check_request_gates.py`. Every `public fun` in `armature_framework/sources` that takes an `ExecutionRequest` must call `assert_permitted` / `assert_controller` or be on the reviewed allowlist (18 entries). Every gated function (30 today) must have a denial test in `gate_tests.move` whose name starts with the function's name. The five ticket entry points (`ticket_request`, `discharge`, `discharge_returning_payload`, `ticket_from_cap`, `ticket_from_cap_readonly`) must take `Permit<P>`. Removing a gate or adding an ungated mutator fails CI.
+- **CI gate check** — `scripts/check_request_gates.py`. Every `public fun` in `armature_framework/sources` that takes an `ExecutionRequest` must call `assert_permitted` / `assert_controller` or be on the reviewed allowlist (18 entries). Every gated function (28 today) must have a denial test in `gate_tests.move` whose name starts with the function's name. The five ticket entry points (`ticket_request`, `discharge`, `discharge_returning_payload`, `ticket_from_cap`, `ticket_from_cap_readonly`) must take `Permit<P>`. Removing a gate or adding an ungated mutator fails CI.
 - **CI workflow** — `.github/workflows/pr.yml` runs on pull requests to `main` that touch `packages/**` or the workflows. It runs the prettier-move format check (`armature_framework`, `armature_proposals`), then the gate check, then `sui move build` and `sui move test` for every package under `packages/`. A separate job builds the whitepaper when `whitepaper/**` changes. There is no prover step.
 
 ### Proposed prover job (not in the repo)

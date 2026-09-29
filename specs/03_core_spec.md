@@ -50,28 +50,24 @@ Type-state (per-type persistent data such as `SmallPaymentState` or an autojoin 
 
 ### 1.2 `TreasuryVault`
 
-Multi-coin treasury. Coin balances are dynamic fields keyed by coin type name; multicoin balances (the `multicoin` package) are a two-level dynamic-object-field tree.
+Multi-coin treasury. Coin balances are dynamic fields keyed by coin type name.
 
 ```rust
 struct TreasuryVault has key, store {
-    id:                         UID,
-    ou_id:                     ID,
-    coin_types:                 VecSet<ascii::String>,  // coin types with a non-zero balance
-    multicoin_collection_count: u64,
-    // dynamic fields:        coin type name -> Balance<T>
-    // dynamic object fields: CollectionKey { collection_id } -> CollectionRecord
-    //                        --AssetKey { asset_id }--> MultiCoinBalance
+    id:         UID,
+    ou_id:      ID,
+    coin_types: VecSet<ascii::String>,  // coin types with a non-zero balance
+    // dynamic fields: coin type name -> Balance<T>
 }
 ```
 
 **API:**
 - `deposit<T>(vault, coin, ctx)` — permissionless. A zero-value coin is destroyed as a no-op.
-- `withdraw<T, P>(vault, amount, &ExecutionRequest<P>, ctx) → Coin<T>` — requires a request for this OU carrying `TREASURY_WITHDRAW` (§4.5). `withdraw_multicoin<P>` is gated the same way.
-- `deposit_multicoin(vault, balance, ctx)` — permissionless.
+- `withdraw<T, P>(vault, amount, &ExecutionRequest<P>, ctx) → Coin<T>` — requires a request for this OU carrying `TREASURY_WITHDRAW` (§4.5).
 - `claim_coin<T>(vault, Receiving<Coin<T>>, ctx)` — permissionless recovery of coins transferred directly to the vault's address.
-- `balance<T>`, `multicoin_balance`, `collection_item_count`, `is_empty` — read-only queries.
+- `balance<T>`, `coin_types`, `is_empty` — read-only queries.
 
-A withdrawal that empties a balance removes the dynamic field and the `coin_types` entry. Events: `CoinDeposited`, `CoinWithdrawn`, `CoinClaimed`, `MultiCoinDeposited`, `MultiCoinWithdrawn`.
+A withdrawal that empties a balance removes the dynamic field and the `coin_types` entry. Events: `CoinDeposited`, `CoinWithdrawn`, `CoinClaimed`.
 
 ### 1.3 `CapabilityVault`
 
@@ -208,7 +204,7 @@ armature_framework/  (armature::)            -- kernel; not touched after a rele
 └── handlers/               // admin_ops, board_ops, member_ops, lifecycle_ops, freeze_ops
 
 armature_proposals/  (armature_proposals::)  -- first-party extension; asset operations
-├── treasury/               // SendCoin, SendCoinToOU, SendSmallPayment, SendBatchMulticoinTo{Address,OU}; treasury_ops
+├── treasury/               // SendCoin, SendCoinToOU, SendSmallPayment; treasury_ops
 ├── currency/               // AdoptCurrency, MintCoin, MintAllowance, ConfigureMintAllowance, BurnCoin, ReturnCurrencyCap; currency_ops
 ├── subou/                 // TransferCapToSubOU, ReclaimCapFromSubOU, Pause/UnpauseSubOUExecution, ControllerBatch{Add,Remove}Members; subou_ops
 ├── upgrade/                // ProposeUpgrade; upgrade_ops
@@ -373,7 +369,7 @@ Two hot potatoes are alive at once in the same PTB: the controller's ticket and 
 | `PAUSE` | — | `set_execution_paused` |
 | `MIGRATE` | 80% | `set_migrating` |
 | `METADATA` | — | `charter::update_metadata` |
-| `TREASURY_WITHDRAW` | 80% | `treasury_vault::withdraw`, `withdraw_multicoin` |
+| `TREASURY_WITHDRAW` | 80% | `treasury_vault::withdraw` |
 | `VAULT_STORE` | — | `store_cap`; receiver side of `receive_cap_authorized` |
 | `VAULT_BORROW` | 80% | `borrow_cap`, `borrow_cap_mut`, `loan_cap`, limited to the cap types in the config's `borrow_scope` (`EBorrowScopeDenied`, 22) |
 | `VAULT_EXTRACT` | 80% | `extract_cap`, `destroy_subou_control`, sender side of `receive_cap_authorized` and `controller::receive_cap_from_controller`; package-only `create_subou_control` and `receive_cap` |
@@ -472,7 +468,6 @@ About 40 types across three packages. Bits and floors per type: [`docs/proposal-
 |---|---|
 | `SendCoin<T>`, `SendCoinToOU<T>` | ⬜ |
 | `SendSmallPayment<T>` (rolling-epoch cap in type-state) | ⬜ |
-| `SendBatchMulticoinToAddress`, `SendBatchMulticoinToOU` | ⬜ |
 
 All hold `TREASURY_WITHDRAW`, so every config for them needs 80%.
 
@@ -559,7 +554,7 @@ Proposed on the controller OU; the SubOU-side effect runs on a privileged reques
 
 | Invariant |
 |---|
-| `withdraw` / `withdraw_multicoin` require a request of this OU carrying `TREASURY_WITHDRAW`. |
+| `withdraw` requires a request of this OU carrying `TREASURY_WITHDRAW`. |
 | `coin_types` exactly reflects non-zero `Balance<T>` dynamic fields. |
 | No `Balance<T>` with value zero may exist. Zero-balance withdrawal removes both field and registry entry. |
 

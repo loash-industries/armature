@@ -64,7 +64,7 @@ graph TD
 
 - **Players** — The members who participate in governance. In Board governance, the board members; in other models, the electorate. Players are the only external input to the atom.
 - **Proposals** — The nucleus. Every state change flows through a typed proposal: spending funds, editing the charter, adding or removing proposal types, changing the board. Proposals mediate *all* relationships between the other components.
-- **Treasury** — The assets under collective custody: coins, multicoin balances, capability objects, `TreasuryCap`s. Anyone can deposit; proposals are the only way out.
+- **Treasury** — The assets under collective custody: coins, capability objects, `TreasuryCap`s. Anyone can deposit; proposals are the only way out.
 - **Charter** — The constitution: the organization's name and a pointer to the document that defines its purpose and rules. Today the parameters that shape how proposals behave live in each proposal type's config; moving them into the charter, so that the charter parametrizes proposals on-chain, is a planned feature ([stretch/10](stretch/10_charter_parametrization.md)). Proposals are the only way to change the charter.
 
 The key insight is the **self-referential loop**: proposals can expand or reduce the set of proposal types the OU recognizes, reconfigure those types (including the ones that do the reconfiguring), and edit the charter. This circularity is what makes an OU a *living* organizational unit rather than a static contract. The atom governs itself, amends itself, and defines the boundaries of its own authority. Safety floors keep the loop from dissolving itself: the types that change the rules require an 80% vote.

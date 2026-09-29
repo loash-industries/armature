@@ -255,15 +255,6 @@ fun withdraw_needs_treasury_withdraw() {
     });
 }
 
-#[test, expected_failure(abort_code = proposal::EPermissionDenied)]
-fun withdraw_multicoin_needs_treasury_withdraw() {
-    run!(|ou, treasury, _, _, _, ctx| {
-        let r = all_but(ou, permissions::treasury_withdraw());
-        let balance = treasury.withdraw_multicoin(object::id_from_address(@0x3), 0, 1, &r, ctx);
-        abort 0
-    });
-}
-
 // === capability_vault ===
 
 #[test, expected_failure(abort_code = proposal::EPermissionDenied)]
