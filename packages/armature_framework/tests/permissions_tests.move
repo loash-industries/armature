@@ -683,3 +683,86 @@ fun framework_type_fixed_bits_need_their_floor() {
         abort 0
     });
 }
+
+// === Registry invariants hold for every TYPE_ADMIN caller (ARMATURE-19) ===
+//
+// admin_ops checks the undisableable and SubOU-blocked rules before calling
+// ou; these tests call ou directly, as an extension handler holding
+// TYPE_ADMIN or a controller's privileged request can.
+
+fun type_admin_req<P>(ou: &OU): ExecutionRequest<P> {
+    permitted<P>(ou, permissions::type_admin())
+}
+
+fun privileged_req<P>(ou: &OU): ExecutionRequest<P> {
+    proposal::new_privileged_request_for_testing<P>(ou.id(), fake_id())
+}
+
+fun make_controlled(ou: &mut OU) {
+    ou.set_controller_for_testing(fake_id());
+}
+
+#[test, expected_failure(abort_code = ou::EUndisableableType)]
+/// An extension type holding TYPE_ADMIN cannot disable EnableProposalType.
+fun type_admin_extension_cannot_disable_undisableable_type() {
+    with_ou!(|ou| {
+        let r = type_admin_req<Granted>(ou);
+        ou.disable_proposal_type(type_name::with_defining_ids<EnableProposalType>(), &r);
+        abort 0
+    });
+}
+
+#[test, expected_failure(abort_code = ou::EUndisableableType)]
+/// A privileged (controller) request cannot disable UnfreezeProposalType.
+fun privileged_request_cannot_disable_undisableable_type() {
+    with_ou!(|ou| {
+        let r = privileged_req<Unknown>(ou);
+        let name = type_name::with_defining_ids<
+            armature::unfreeze_proposal_type::UnfreezeProposalType,
+        >();
+        ou.disable_proposal_type(name, &r);
+        abort 0
+    });
+}
+
+#[test]
+/// TYPE_ADMIN still lets an extension disable an ordinary type.
+fun type_admin_extension_disables_ordinary_type() {
+    with_ou!(|ou| {
+        let r = type_admin_req<Granted>(ou);
+        ou.disable_proposal_type(type_name::with_defining_ids<Ungranted>(), &r);
+        proposal::consume_execution_request_for_testing(r);
+        assert!(!ou.is_type_enabled<Ungranted>());
+    });
+}
+
+#[test, expected_failure(abort_code = ou::EBlockedProposalType)]
+/// An extension type holding TYPE_ADMIN cannot enable SpawnOU on a controlled SubOU.
+fun type_admin_extension_cannot_enable_blocked_type_on_subou() {
+    with_ou!(|ou| {
+        make_controlled(ou);
+        let r = type_admin_req<Granted>(ou);
+        ou.enable_proposal_type<armature::spawn_ou::SpawnOU, Granted>(
+            b"SpawnOU".to_ascii_string(),
+            config_at(8_000, 0),
+            &r,
+        );
+        abort 0
+    });
+}
+
+#[test, expected_failure(abort_code = ou::EBlockedProposalType)]
+/// A privileged (controller) request cannot enable CreateSubOU on its SubOU
+/// while the controller is still attached.
+fun privileged_request_cannot_enable_blocked_type_on_subou() {
+    with_ou!(|ou| {
+        make_controlled(ou);
+        let r = privileged_req<Unknown>(ou);
+        ou.enable_proposal_type<armature::create_subou::CreateSubOU, Unknown>(
+            b"CreateSubOU".to_ascii_string(),
+            config_at(8_000, 0),
+            &r,
+        );
+        abort 0
+    });
+}

@@ -84,6 +84,8 @@ const EEnableQuorumTooLow: u64 = 26;
 /// UPDATE_PROPOSAL_CONFIG_MIN_THRESHOLD × 100%: a minority of the board could
 /// pass it and make any enabled type single-vote.
 const EUpdateConfigQuorumTooLow: u64 = 27;
+/// The type is one of the core undisableable types (`is_undisableable_type`).
+const EUndisableableType: u64 = 28;
 
 // === Constants ===
 
@@ -976,8 +978,11 @@ public fun remove_board_members_governance<P>(
 
 /// Enable proposal type `NewType` with a display key and config.
 /// Aborts if `NewType` already has a slot or the display key is taken, if the
-/// config misses a floor (`assert_config_floors`), or if it holds permission
-/// bits that `P` may not grant (`assert_may_change_permissions`).
+/// config misses a floor (`assert_config_floors`), if it holds permission
+/// bits that `P` may not grant (`assert_may_change_permissions`), or with
+/// EBlockedProposalType if this OU has a controller and `NewType` is
+/// SubOU-blocked (`is_subou_blocked_type`). The native handlers check the
+/// blocked rule first; checking it here holds it for every TYPE_ADMIN caller.
 /// Requires TYPE_ADMIN (`assert_permitted`).
 public fun enable_proposal_type<NewType, P>(
     self: &mut OU,
@@ -987,6 +992,10 @@ public fun enable_proposal_type<NewType, P>(
 ) {
     self.assert_permitted(permissions::type_admin(), req);
     let name = type_name_of<NewType>();
+    assert!(
+        self.controller_cap_id.is_none() || !is_subou_blocked_type(&name),
+        EBlockedProposalType,
+    );
     let config = with_fixed_permissions(&name, config);
     assert_config_floors(&name, &config);
     assert_may_change_permissions(0, config.permissions(), &vector[], &config.borrow_scope(), req);
@@ -1000,9 +1009,13 @@ public fun enable_proposal_type<NewType, P>(
 /// Cooldown state is not preserved: if the type is re-enabled later, its first
 /// execution is not subject to the cooldown. Re-enabling requires an
 /// EnableProposalType or EnableBypassType vote (both 80% floor).
+/// Aborts with EUndisableableType for a core undisableable type
+/// (`is_undisableable_type`). The native handlers check this first; checking
+/// it here holds it for every TYPE_ADMIN caller.
 /// Requires TYPE_ADMIN (`assert_permitted`).
 public fun disable_proposal_type<P>(self: &mut OU, name: TypeName, req: &ExecutionRequest<P>) {
     self.assert_permitted(permissions::type_admin(), req);
+    assert!(!is_undisableable_type(&name), EUndisableableType);
     let ou_id = self.id();
     remove_slot(&mut self.id, ou_id, name);
 }

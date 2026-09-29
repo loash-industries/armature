@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-29 — registry invariants enforced in `ou` for every caller (ARMATURE-19)
+
+- `ou::disable_proposal_type` now refuses the undisableable types (`EnableProposalType`, `DisableProposalType`, `EnableBypassType`, `DisableBypassType`, `TransferFreezeAdmin`, `UnfreezeProposalType`) with the new `ou::EUndisableableType` (28), and `ou::enable_proposal_type` refuses SubOU-blocked types on an OU with a controller with the existing `ou::EBlockedProposalType` (11). Before, only the `admin_ops` and `external_execution` handlers checked these rules, so a non-framework type granted `TYPE_ADMIN` or a controller's privileged request could call `ou` directly to disable governance meta-types or enable `SpawnOU` / `CreateSubOU` on a controlled SubOU. The handlers still check first, so their abort codes are unchanged; `SpinOutSubOU` clears the controller before enabling the hierarchy types, so it is unaffected.
+- Added five tests to `permissions_tests` (four abort paths that passed before the fix, one positive control). `specs/03_core_spec.md`, `specs/10_formal_verification.md` §4.1 and `specs/tests/17_coverage_summary.md` now say these checks live in `ou`; the composable-versus-cooldown check is still handler-level.
+
 ## 2026-09-29 — remove the multicoin dependency
 
 - Removed the `multicoin` dependency from `armature_framework` and `armature_proposals`. `TreasuryVault` is now `{ id, ou_id, coin_types }` and holds only coin balances: `deposit_multicoin`, `withdraw_multicoin`, `multicoin_balance`, `multicoin_collection_count`, `collection_item_count`, `CollectionKey` / `AssetKey` / `CollectionRecord` and the `MultiCoinDeposited` / `MultiCoinWithdrawn` events are gone, and `is_empty` / `destroy_empty` check only `coin_types`.
