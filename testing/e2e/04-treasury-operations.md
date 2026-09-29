@@ -2,21 +2,21 @@
 
 > **Tool:** Playwright (Chromium)
 > **Network:** Sui localnet
-> **Route:** `/dao/$daoId/treasury`, `/dao/$daoId/proposals/new`
+> **Route:** `/ou/$ouId/treasury`, `/ou/$ouId/proposals/new`
 
 ## Prerequisites
 
-- DAO created with board members [A, B, C]
-- TreasuryWithdraw, SendCoinToDAO, SendSmallPayment proposal types enabled
+- OU created with board members [A, B, C]
+- TreasuryWithdraw, SendCoinToOU, SendSmallPayment proposal types enabled
 - Treasury funded with SUI (via deposit or localnet setup)
-- A second DAO exists for cross-DAO transfer tests
+- A second OU exists for cross-OU transfer tests
 
 ## Scenarios
 
 ### 4.1 — Deposit SUI into treasury
 
 1. Connect as any wallet (need not be a board member)
-2. Navigate to `/dao/$daoId/treasury`
+2. Navigate to `/ou/$ouId/treasury`
 3. Click "Deposit" button
 4. Deposit dialog opens — select a coin object from wallet
 5. Confirm deposit
@@ -43,7 +43,7 @@
 
 1. Treasury has 10 SUI
 2. Connect as wallet A
-3. Navigate to `/dao/$daoId/proposals/new?type=TreasuryWithdraw`
+3. Navigate to `/ou/$ouId/proposals/new?type=TreasuryWithdraw`
 4. Fill form:
    - Coin type: SUI
    - Amount: 2 SUI (2_000_000_000 MIST)
@@ -59,21 +59,21 @@
 - `CoinSent` event emitted with correct coin_type, amount, recipient
 - Treasury page reflects updated balance
 
-### 4.4 — SendCoinToDAO (cross-DAO transfer)
+### 4.4 — SendCoinToOU (cross-OU transfer)
 
-1. DAO Alpha treasury has 8 SUI
-2. DAO Beta exists with its own TreasuryVault
-3. Submit SendCoinToDAO proposal:
+1. OU Alpha treasury has 8 SUI
+2. OU Beta exists with its own TreasuryVault
+3. Submit SendCoinToOU proposal:
    - Coin type: SUI
    - Amount: 3 SUI
-   - Recipient Treasury ID: DAO Beta's treasury vault ID
-4. Vote + execute on DAO Alpha
+   - Recipient Treasury ID: OU Beta's treasury vault ID
+4. Vote + execute on OU Alpha
 
 **Expected:**
 
-- DAO Alpha treasury: 5 SUI
-- DAO Beta treasury: +3 SUI
-- `CoinSentToDAO` event emitted
+- OU Alpha treasury: 5 SUI
+- OU Beta treasury: +3 SUI
+- `CoinSentToOU` event emitted
 
 ### 4.5 — SendSmallPayment — first payment (lazy init)
 

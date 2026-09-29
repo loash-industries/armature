@@ -2,7 +2,7 @@
 
 ## About This Repo
 
-`armature` is the on-chain DAO protocol for the Trinary Exchange platform — a programmable governance, treasury, and capability framework written in Move for the Sui blockchain. It also contains the React UI dashboard. For full context see `.cortex/overview.md`.
+`armature` is the on-chain OU protocol for the Trinary Exchange platform — a programmable governance, treasury, and capability framework written in Move for the Sui blockchain. It also contains the React UI dashboard. For full context see `.cortex/overview.md`.
 
 The Rust indexer lives in the separate `armature-indexer` repo.
 
@@ -34,8 +34,8 @@ chronicle_changes({
 
 - Move packages: `armature_framework` (core primitives) and `armature_proposals` (concrete proposal types)
 - Proposal execution uses the **hot-potato pattern** — proposals must be consumed in a single PTB
-- Status transitions are **forward-only**: `active → passed → executed` (or `active → expired`)
-- `controller::privileged_submit` proposals go directly `active → executed` — no `ProposalPassed` event is emitted
+- Status transitions are **forward-only**: `Active → Passed` is the only stored transition. Execution (`ticket_from_vote`) deletes the `Proposal` and emits `ProposalExecuted`; `proposal::delete_expired_proposal` lets anyone delete an Active proposal past `expiry_ms`, or a Passed one whose execution window (`passed_at + execution_delay_ms + expiry_ms`) has closed, emitting `ProposalExpired`. The storage rebate goes to that transaction's gas payer
+- Single-PTB executions (`submit_vote_execute`, `ticket_from_cap`, `controller::privileged_submit`) create **no** `Proposal` object — the `proposal_id` is minted via `ctx.fresh_object_address()` and the audit trail is events only. `privileged_submit` emits `ProposalCreated` + `ProposalPayloadCreated` + `ProposalExecuted` (no `ProposalPassed`)
 - UI is at `ui/` — React 19 + Vite + TanStack + shadcn/ui
 
 ## Build & Run

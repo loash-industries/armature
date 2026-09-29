@@ -14,15 +14,18 @@
 /// potato after all steps have been advanced.
 module armature::composite;
 
-use armature::dao::DAO;
+use armature::composite_payload::{Self, CompositePayload};
 use armature::emergency::EmergencyFreeze;
+use armature::enable_proposal_type::EnableProposalType;
+use armature::ou::OU;
 use armature::proposal::{Self, ExecutionTicket, ProposalConfig};
+use armature::update_proposal_config::UpdateProposalConfig;
 use std::string::String;
 use std::type_name::{Self, TypeName};
 use sui::clock::Clock;
 use sui::dynamic_field as df;
 use sui::event;
-use sui::vec_map::VecMap;
+use sui::vec_map::{Self, VecMap};
 
 // === Errors ===
 
@@ -32,8 +35,8 @@ const EFrameMismatch: u64 = 2;
 const EPipelineComplete: u64 = 3;
 const EPipelineIncomplete: u64 = 4;
 const ECompositeNesting: u64 = 5;
-const EDAOIdMismatch: u64 = 6;
-const EDAONotActive: u64 = 7;
+const EOUIdMismatch: u64 = 6;
+const EOUNotActive: u64 = 7;
 const EFloorNotMet: u64 = 8;
 const EEmptyFrame: u64 = 9;
 /// A type with cooldown_ms > 0 reached advance_step (defence-in-depth).
@@ -46,17 +49,29 @@ const EFrameAlreadySealed: u64 = 13;
 const EFrameContentsMismatch: u64 = 14;
 /// delete_exhausted_frame called before all steps have been extracted.
 const EFrameNotExhausted: u64 = 15;
+/// EnableProposalType and UpdateProposalConfig steps must go through
+/// add_enable_proposal_type_step / add_update_proposal_config_step, which can
+/// read the payload.
+const EUseTypedStep: u64 = 16;
+/// A step would grant or change permission bits. Grants are standalone-only:
+/// composite step tickets carry no vote weights to check a grant floor against.
+const EGrantInComposite: u64 = 17;
+/// An UpdateProposalConfig step names a display key no enabled type carries.
+const ETargetNotEnabled: u64 = 18;
+/// advance_step on an OU whose execution is paused.
+const EExecutionPaused: u64 = 19;
+/// advance_step on a SubOU whose controller has paused it.
+const EControllerPaused: u64 = 20;
+/// advance_step for a step type the OU has since disabled.
+const ETypeNotEnabled: u64 = 21;
 
 // === Constants ===
 
 /// Maximum steps in a single composite proposal. Guards against unbounded PTBs.
 const MAX_COMPOSITE_STEPS: u64 = 16;
 
-/// The type_key registered in the DAO for composite proposals.
-const COMPOSITE_TYPE_KEY: vector<u8> = b"Composite";
-
-/// 66% floor for EnableProposalType steps inside a composite (basis points).
-const ENABLE_APPROVAL_FLOOR_BPS: u64 = 6_600;
+/// 80% floor for EnableProposalType steps inside a composite (basis points).
+const ENABLE_APPROVAL_FLOOR_BPS: u64 = 8_000;
 
 /// 80% floor for self-targeting UpdateProposalConfig steps inside a composite (basis points).
 const SELF_UPDATE_APPROVAL_FLOOR_BPS: u64 = 8_000;
@@ -82,17 +97,7 @@ public struct CompositeFrame has key, store {
     /// Tracks how many step payloads have been extracted by advance_step.
     /// Used by delete_exhausted_frame to verify all steps have run.
     steps_extracted: u64,
-    dao_id: ID,
-    step_type_keys: vector<std::ascii::String>,
-    step_types: vector<TypeName>,
-}
-
-/// Stored inside Proposal<CompositePayload>.
-/// References the shared CompositeFrame by ID; records step metadata copied
-/// at submission so advance_step can validate P against the recorded TypeName
-/// without reading the frame's dynamic fields.
-public struct CompositePayload has drop, store {
-    frame_id: ID,
+    ou_id: ID,
     step_type_keys: vector<std::ascii::String>,
     step_types: vector<TypeName>,
 }
@@ -100,16 +105,16 @@ public struct CompositePayload has drop, store {
 /// Hot-potato step sequencer. No abilities — must be consumed in the same PTB
 /// via finalize_pipeline after all steps have been advanced.
 ///
-/// `last_executed_snapshot` captures `dao.last_executed_at()` at begin_pipeline
+/// `last_executed_snapshot` captures each step type's last-executed timestamp at begin_pipeline
 /// time. advance_step checks cooldowns against this snapshot so that two steps
 /// sharing a type_key within the same composite don't block each other.
 public struct Pipeline {
     frame_id: ID,
-    dao_id: ID,
+    ou_id: ID,
     composite_proposal_id: ID,
     current_step: u64,
     total_steps: u64,
-    last_executed_snapshot: VecMap<std::ascii::String, u64>,
+    last_executed_snapshot: VecMap<TypeName, u64>,
 }
 
 // === Events ===
@@ -120,7 +125,7 @@ public struct Pipeline {
 /// proposal_id; the frame_id here is the cross-reference key.
 public struct CompositeSubmitted has copy, drop {
     frame_id: ID,
-    dao_id: ID,
+    ou_id: ID,
     step_count: u64,
     proposer: address,
 }
@@ -129,52 +134,98 @@ public struct CompositeSubmitted has copy, drop {
 
 /// Create a new CompositeFrame owned by the caller. Steps are added via add_step<P>.
 /// Required creation sequence:
-///   1. new_frame(dao_id, ctx)
-///   2. add_step<P>(...) for each step
-///   3. composite::seal_frame(&mut frame)   ← frame is now immutable to callers
-///   4. submit_composite(dao, frame, ...)   ← seals internally if not already sealed
-public fun new_frame(dao_id: ID, ctx: &mut TxContext): CompositeFrame {
+/// 1. new_frame(ou_id, ctx)
+/// 2. add_step<P>(...) for each step
+/// 3. composite::seal_frame(&mut frame)   ← frame is now immutable to callers
+/// 4. submit_composite(ou, frame, ...)   ← seals internally if not already sealed
+public fun new_frame(ou_id: ID, ctx: &mut TxContext): CompositeFrame {
     CompositeFrame {
         id: object::new(ctx),
         sealed: false,
         steps_extracted: 0,
-        dao_id,
+        ou_id,
         step_type_keys: vector[],
         step_types: vector[],
     }
 }
 
-/// Append a typed step payload to the frame. Aborts if:
+/// Append a typed step payload to the frame. The step's proposal type is `P`
+/// itself; its slot on the OU supplies the config and display key. Aborts if:
 /// - The step count would exceed MAX_COMPOSITE_STEPS
-/// - type_key is "Composite" (self-nesting is unconditionally blocked)
+/// - P is CompositePayload (self-nesting is unconditionally blocked)
+/// - P is EnableProposalType or UpdateProposalConfig (EUseTypedStep): use
+/// add_enable_proposal_type_step / add_update_proposal_config_step
+/// - The type is not enabled in the OU
 /// - The type's ProposalConfig has composable_allowed = false
-/// - The type is not enabled in the DAO
-#[allow(lint(share_owned))]
-public fun add_step<P: store>(
-    frame: &mut CompositeFrame,
-    dao: &DAO,
-    type_key: std::ascii::String,
-    payload: P,
-) {
-    assert!(!frame.sealed, EFrameAlreadySealed);
-    assert!(frame.dao_id == dao.id(), EDAOIdMismatch);
-    assert!(frame.step_type_keys.length() < MAX_COMPOSITE_STEPS, EPipelineComplete);
-    assert!(type_key != b"Composite".to_ascii_string(), ECompositeNesting);
-    assert!(dao.enabled_proposal_types().contains(&type_key), ENotComposable);
+public fun add_step<P: store>(frame: &mut CompositeFrame, ou: &OU, payload: P) {
+    let step_type = type_name::with_defining_ids<P>();
+    assert!(
+        step_type != type_name::with_defining_ids<EnableProposalType>()
+            && step_type != type_name::with_defining_ids<UpdateProposalConfig>(),
+        EUseTypedStep,
+    );
+    add_step_unchecked(frame, ou, payload);
+}
 
-    let step_config = dao.proposal_configs().get(&type_key);
-    assert!(step_config.composable_allowed(), ENotComposable);
+/// add_step for an EnableProposalType step. Aborts with EGrantInComposite if
+/// the new type's config holds any permission bits or a borrow scope: grant
+/// them with a standalone vote instead.
+public fun add_enable_proposal_type_step(
+    frame: &mut CompositeFrame,
+    ou: &OU,
+    payload: EnableProposalType,
+) {
+    assert!(payload.config().permissions() == 0, EGrantInComposite);
+    assert!(payload.config().borrow_scope().is_empty(), EGrantInComposite);
+    add_step_unchecked(frame, ou, payload);
+}
+
+/// add_step for an UpdateProposalConfig step. Aborts with EGrantInComposite if
+/// the payload would change the target type's permission bits or borrow
+/// scope, and with ETargetNotEnabled if it sets either for a display key no
+/// type carries. A step that leaves both alone composes as before.
+public fun add_update_proposal_config_step(
+    frame: &mut CompositeFrame,
+    ou: &OU,
+    payload: UpdateProposalConfig,
+) {
+    let bits = payload.permissions();
+    let scope = payload.borrow_scope();
+    if (bits.is_some() || scope.is_some()) {
+        let target = ou.type_for_display_key(&payload.target_type_key());
+        assert!(target.is_some(), ETargetNotEnabled);
+        let current = ou.type_config_by_name(target.borrow());
+        if (bits.is_some()) {
+            assert!(bits.destroy_some() == current.permissions(), EGrantInComposite);
+        };
+        if (scope.is_some()) {
+            assert!(scope.destroy_some() == current.borrow_scope(), EGrantInComposite);
+        };
+    };
+    add_step_unchecked(frame, ou, payload);
+}
+
+#[allow(lint(share_owned))]
+fun add_step_unchecked<P: store>(frame: &mut CompositeFrame, ou: &OU, payload: P) {
+    assert!(!frame.sealed, EFrameAlreadySealed);
+    assert!(frame.ou_id == ou.id(), EOUIdMismatch);
+    assert!(frame.step_type_keys.length() < MAX_COMPOSITE_STEPS, EPipelineComplete);
 
     let step_type = type_name::with_defining_ids<P>();
+    assert!(step_type != type_name::with_defining_ids<CompositePayload>(), ECompositeNesting);
+    assert!(ou.is_type_name_enabled(&step_type), ENotComposable);
 
-    frame.step_type_keys.push_back(type_key);
+    let step_config = ou.type_config_by_name(&step_type);
+    assert!(step_config.composable_allowed(), ENotComposable);
+
+    frame.step_type_keys.push_back(ou.type_display_key_by_name(&step_type));
     frame.step_types.push_back(step_type);
     df::add(&mut frame.id, StepKey { index: frame.step_type_keys.length() - 1 }, payload);
 }
 
 /// Submit a composite proposal. Consumes the frame (which is shared internally),
 /// computes the effective ProposalConfig as the component-wise max of all step
-/// configs and the "Composite" type's own DAO config, enforces submission-time
+/// configs and the "Composite" type's own OU config, enforces submission-time
 /// floors for floor-gated step types, and creates a Proposal<CompositePayload>.
 ///
 /// The effective config governs the vote threshold, quorum, and delays. Because
@@ -182,36 +233,35 @@ public fun add_step<P: store>(
 /// under weaker requirements than any individual step would require standalone.
 #[allow(lint(share_owned, custom_state_change))]
 public fun submit_composite(
-    dao: &DAO,
+    ou: &OU,
     mut frame: CompositeFrame,
     metadata_ipfs: Option<String>,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    assert!(frame.dao_id == dao.id(), EDAOIdMismatch);
-    assert!(dao.status().is_active(), EDAONotActive);
+    assert!(frame.ou_id == ou.id(), EOUIdMismatch);
+    assert!(ou.status().is_active(), EOUNotActive);
     assert!(!frame.step_type_keys.is_empty(), EEmptyFrame);
 
-    let composite_key = COMPOSITE_TYPE_KEY.to_ascii_string();
-    assert!(dao.enabled_proposal_types().contains(&composite_key), ENotComposable);
+    assert!(ou.is_type_enabled<CompositePayload>(), ENotComposable);
 
     let proposer = ctx.sender();
-    dao.governance().assert_board_member(proposer);
+    ou.governance().assert_board_member(proposer);
 
     // Compute effective config: component-wise max of the "Composite" base config
     // and every step type's config. This guarantees no step can weaken the bar.
-    let effective = compute_effective_config(dao, &frame.step_type_keys);
+    let effective = compute_effective_config(ou, &frame.step_types);
 
     // Submission-time floor enforcement for floor-gated step types.
     // Mirrors board_voting::submit_proposal's EnableProposalType check but
     // operating on the composite's effective approval_threshold.
-    assert_composite_floors(&frame.step_type_keys, effective.approval_threshold());
+    assert_composite_floors(&frame.step_types, effective.approval_threshold());
 
     let frame_id = object::id(&frame);
     let step_type_keys = copy_ascii_vec(&frame.step_type_keys);
     let step_types = copy_type_name_vec(&frame.step_types);
 
-    let payload = CompositePayload { frame_id, step_type_keys, step_types };
+    let payload = composite_payload::new(frame_id, step_type_keys, step_types);
 
     let step_count = frame.step_type_keys.length();
 
@@ -222,13 +272,13 @@ public fun submit_composite(
     transfer::public_share_object(frame);
 
     proposal::create<CompositePayload>(
-        dao.id(),
-        composite_key,
+        ou.id(),
+        ou.type_display_key<CompositePayload>(),
         proposer,
         metadata_ipfs,
         payload,
         effective,
-        dao.governance(),
+        ou.governance(),
         true,
         clock,
         ctx,
@@ -239,7 +289,7 @@ public fun submit_composite(
     // on the shared frame_id without needing to join on block position.
     event::emit(CompositeSubmitted {
         frame_id,
-        dao_id: dao.id(),
+        ou_id: ou.id(),
         step_count,
         proposer,
     });
@@ -252,29 +302,30 @@ public fun submit_composite(
 /// Verifies the frame is sealed and its contents match what was voted on.
 /// Returns a Pipeline hot potato that enforces forward-only step ordering.
 public fun begin_pipeline(
-    dao: &DAO,
+    ou: &OU,
     frame: &CompositeFrame,
     ticket: ExecutionTicket<CompositePayload>,
 ): Pipeline {
+    assert!(ou.id() == ticket.ticket_ou_id(), EOUIdMismatch);
     let payload = ticket.ticket_payload();
-    assert!(payload.frame_id == object::id(frame), EFrameMismatch);
+    assert!(payload.frame_id() == object::id(frame), EFrameMismatch);
 
     // Verify the frame was sealed at proposal creation and has not been modified.
     assert!(frame.is_sealed(), EFrameNotSealed);
-    assert!(payload.step_type_keys == frame.step_type_keys(), EFrameContentsMismatch);
-    assert!(payload.step_types == frame.step_types(), EFrameContentsMismatch);
+    assert!(*payload.step_type_keys() == frame.step_type_keys(), EFrameContentsMismatch);
+    assert!(*payload.step_types() == frame.step_types(), EFrameContentsMismatch);
 
-    let total_steps = payload.step_type_keys.length();
-    let last_executed_snapshot = *dao.last_executed_at();
-    let dao_id = ticket.ticket_dao_id();
-    let composite_proposal_id = ticket.ticket_request().req_proposal_id();
+    let total_steps = payload.step_count();
+    let last_executed_snapshot = snapshot_last_executed(ou, payload.step_types());
+    let ou_id = ticket.ticket_ou_id();
+    let composite_proposal_id = ticket.ticket_proposal_id();
 
     // Consume the composite-level ticket; the Pipeline hot potato takes over.
-    ticket.discharge();
+    ticket.discharge(composite_payload::permit());
 
     Pipeline {
         frame_id: object::id(frame),
-        dao_id,
+        ou_id,
         composite_proposal_id,
         current_step: 0,
         total_steps,
@@ -282,34 +333,41 @@ public fun begin_pipeline(
     }
 }
 
-/// Advance the pipeline by one step. Validates the caller-supplied type P
-/// against the recorded TypeName, enforces per-step freeze check, asserts
+/// Advance the pipeline by one step. Validates that `ou` is the pipeline's
+/// OU and is not execution- or controller-paused, checks the caller-supplied
+/// type P against the recorded TypeName and that it is still enabled,
+/// enforces the per-step freeze check against the OU's own freeze, asserts
 /// the type has no cooldown (cooldown-bearing types are prohibited from
 /// composites), extracts the payload, and returns
-///   (ExecutionTicket<P>, next_pipeline: Pipeline)
+/// (ExecutionTicket<P>, next_pipeline: Pipeline)
 ///
 /// Pass the ticket to the unified execute_* handler for P.
 /// The returned Pipeline must be used in the next advance_step or
 /// finalize_pipeline call.
 public fun advance_step<P: store>(
-    dao: &mut DAO,
+    ou: &mut OU,
     frame: &mut CompositeFrame,
     pipeline: Pipeline,
     freeze: &EmergencyFreeze,
     clock: &Clock,
 ): (ExecutionTicket<P>, Pipeline) {
+    assert!(ou.id() == pipeline.ou_id, EOUIdMismatch);
     assert!(object::id(frame) == pipeline.frame_id, EFrameMismatch);
     assert!(pipeline.current_step < pipeline.total_steps, EPipelineComplete);
+    // Re-checked per step: an earlier step (or the controller) may have paused
+    // the OU or disabled a later step's type since the composite was voted.
+    assert!(!ou.is_execution_paused(), EExecutionPaused);
+    assert!(!ou.is_controller_paused(), EControllerPaused);
 
     let step_idx = pipeline.current_step;
-    let step_type_key = frame.step_type_keys[step_idx];
     let expected_type = frame.step_types[step_idx];
 
     assert!(type_name::with_defining_ids<P>() == expected_type, EStepTypeMismatch);
+    assert!(ou.is_type_name_enabled(&expected_type), ETypeNotEnabled);
 
-    freeze.assert_not_frozen(&step_type_key, clock);
+    freeze.assert_not_frozen<P>(pipeline.ou_id, clock);
 
-    let step_config = *dao.proposal_configs().get(&step_type_key);
+    let step_config = ou.type_config_by_name(&expected_type);
 
     // Cooldown-bearing types are prohibited from composites unless explicitly
     // opted-in via composable_allowed (enforced at config-write time by
@@ -319,20 +377,22 @@ public fun advance_step<P: store>(
         ECooldownTypeNotComposable,
     );
 
-    dao.record_execution(step_type_key, clock.timestamp_ms());
+    ou.record_execution(expected_type, clock.timestamp_ms());
 
     let payload: P = df::remove(&mut frame.id, StepKey { index: step_idx });
     frame.steps_extracted = frame.steps_extracted + 1;
 
     let ticket = proposal::new_ticket_composite<P>(
-        pipeline.dao_id,
+        pipeline.ou_id,
         pipeline.composite_proposal_id,
         payload,
+        step_config.permissions(),
+        step_config.borrow_scope(),
     );
 
     let Pipeline {
         frame_id,
-        dao_id,
+        ou_id,
         composite_proposal_id,
         current_step: _,
         total_steps,
@@ -341,7 +401,7 @@ public fun advance_step<P: store>(
 
     let next = Pipeline {
         frame_id,
-        dao_id,
+        ou_id,
         composite_proposal_id,
         current_step: step_idx + 1,
         total_steps,
@@ -357,7 +417,7 @@ public fun finalize_pipeline(pipeline: Pipeline) {
     assert!(pipeline.current_step == pipeline.total_steps, EPipelineIncomplete);
     let Pipeline {
         frame_id: _,
-        dao_id: _,
+        ou_id: _,
         composite_proposal_id: _,
         current_step: _,
         total_steps: _,
@@ -374,7 +434,7 @@ public fun delete_exhausted_frame(frame: CompositeFrame) {
         id,
         sealed: _,
         steps_extracted,
-        dao_id: _,
+        ou_id: _,
         step_type_keys,
         step_types: _,
     } = frame;
@@ -411,12 +471,8 @@ public fun step_types(frame: &CompositeFrame): vector<TypeName> {
 
 /// Compute the effective ProposalConfig for a composite as the component-wise
 /// max of the "Composite" base config and each step type's config.
-fun compute_effective_config(
-    dao: &DAO,
-    step_type_keys: &vector<std::ascii::String>,
-): ProposalConfig {
-    let composite_key = COMPOSITE_TYPE_KEY.to_ascii_string();
-    let base = *dao.proposal_configs().get(&composite_key);
+fun compute_effective_config(ou: &OU, step_types: &vector<TypeName>): ProposalConfig {
+    let base = ou.type_config<CompositePayload>();
 
     let mut quorum = base.quorum();
     let mut approval_threshold = base.approval_threshold();
@@ -424,8 +480,8 @@ fun compute_effective_config(
     let mut cooldown_ms = base.cooldown_ms();
 
     let mut i = 0;
-    while (i < step_type_keys.length()) {
-        let step_config = dao.proposal_configs().get(&step_type_keys[i]);
+    while (i < step_types.length()) {
+        let step_config = ou.type_config_by_name(&step_types[i]);
         if (step_config.quorum() > quorum) { quorum = step_config.quorum() };
         if (step_config.approval_threshold() > approval_threshold) {
             approval_threshold = step_config.approval_threshold()
@@ -450,12 +506,14 @@ fun compute_effective_config(
 /// Enforce submission-time approval-threshold floors for floor-gated types
 /// appearing as steps in the composite. Uses the already-computed
 /// effective_threshold so any single floor-gated step raises the whole composite.
-fun assert_composite_floors(step_type_keys: &vector<std::ascii::String>, effective_threshold: u16) {
+fun assert_composite_floors(step_types: &vector<TypeName>, effective_threshold: u16) {
+    let enable_type = type_name::with_defining_ids<EnableProposalType>();
+    let update_config_type = type_name::with_defining_ids<UpdateProposalConfig>();
     let mut i = 0;
-    while (i < step_type_keys.length()) {
-        let key = &step_type_keys[i];
+    while (i < step_types.length()) {
+        let step_type = step_types[i];
 
-        if (*key == b"EnableProposalType".to_ascii_string()) {
+        if (step_type == enable_type) {
             assert!((effective_threshold as u64) >= ENABLE_APPROVAL_FLOOR_BPS, EFloorNotMet);
         };
 
@@ -464,12 +522,30 @@ fun assert_composite_floors(step_type_keys: &vector<std::ascii::String>, effecti
         // moving it out), we apply the conservative floor to all UpdateProposalConfig
         // steps in composites — the payload-level check is only feasible for single-action
         // submissions (see admin_ops::propose_update_proposal_config).
-        if (*key == b"UpdateProposalConfig".to_ascii_string()) {
+        if (step_type == update_config_type) {
             assert!((effective_threshold as u64) >= SELF_UPDATE_APPROVAL_FLOOR_BPS, EFloorNotMet);
         };
 
         i = i + 1;
     };
+}
+
+/// Snapshot the last-executed timestamp of every step type at begin_pipeline time.
+/// Steps sharing a type record it once (VecMap keys are unique).
+fun snapshot_last_executed(ou: &OU, step_types: &vector<TypeName>): VecMap<TypeName, u64> {
+    let mut snapshot = vec_map::empty<TypeName, u64>();
+    let mut i = 0;
+    while (i < step_types.length()) {
+        let step_type = step_types[i];
+        if (!snapshot.contains(&step_type)) {
+            let last = ou.last_executed_ms_by_name(&step_type);
+            if (last.is_some()) {
+                snapshot.insert(step_type, last.destroy_some());
+            };
+        };
+        i = i + 1;
+    };
+    snapshot
 }
 
 /// Copy a vector<ascii::String> element-by-element (ascii::String has copy).
@@ -495,14 +571,6 @@ fun copy_type_name_vec(v: &vector<TypeName>): vector<TypeName> {
 }
 
 // === Accessors ===
-
-public fun frame_id(payload: &CompositePayload): ID { payload.frame_id }
-
-public fun step_count(payload: &CompositePayload): u64 { payload.step_type_keys.length() }
-
-public fun step_type_key_at(payload: &CompositePayload, index: u64): std::ascii::String {
-    payload.step_type_keys[index]
-}
 
 public fun pipeline_current_step(pipeline: &Pipeline): u64 { pipeline.current_step }
 

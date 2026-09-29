@@ -1,18 +1,19 @@
 module armature::charter;
 
+use armature::permissions;
 use armature::proposal::ExecutionRequest;
 
 // === Errors ===
 
-const EDaoMismatch: u64 = 0;
+const EOuMismatch: u64 = 0;
 
 // === Structs ===
 
-/// On-chain charter / constitution for the DAO.
-/// Stores the human-readable purpose and rules. Created as a shared object during DAO creation.
+/// On-chain charter / constitution for the OU.
+/// Stores the human-readable purpose and rules. Created as a shared object during OU creation.
 public struct Charter has key, store {
     id: UID,
-    dao_id: ID,
+    ou_id: ID,
     name: std::string::String,
     metadata_uri: std::string::String,
 }
@@ -21,14 +22,14 @@ public struct Charter has key, store {
 
 /// Create a new Charter. Only callable within the framework package.
 public(package) fun new(
-    dao_id: ID,
+    ou_id: ID,
     name: std::string::String,
     metadata_uri: std::string::String,
     ctx: &mut TxContext,
 ): Charter {
     Charter {
         id: object::new(ctx),
-        dao_id,
+        ou_id,
         name,
         metadata_uri,
     }
@@ -42,30 +43,32 @@ public(package) fun share(charter: Charter) {
 
 // === Accessors ===
 
-/// Returns the DAO ID this charter belongs to.
-public fun dao_id(self: &Charter): ID { self.dao_id }
+/// Returns the OU ID this charter belongs to.
+public fun ou_id(self: &Charter): ID { self.ou_id }
 
-/// Returns the DAO name.
+/// Returns the OU name.
 public fun name(self: &Charter): &std::string::String { &self.name }
 
-/// Returns the DAO metadata URL.
+/// Returns the OU metadata URL.
 public fun metadata_uri(self: &Charter): &std::string::String { &self.metadata_uri }
 
 /// Destroy a Charter object.
 public(package) fun destroy(charter: Charter) {
-    let Charter { id, dao_id: _, name: _, metadata_uri: _ } = charter;
+    let Charter { id, ou_id: _, name: _, metadata_uri: _ } = charter;
     id.delete();
 }
 
 // === Public Mutators (ExecutionRequest-gated) ===
 
-/// Update the DAO's metadata URL.
+/// Update the OU's metadata URL.
 /// Authorized by ExecutionRequest — only callable within a governance-approved PTB.
+/// Requires METADATA (`proposal::assert_permitted`).
 public fun update_metadata<P>(
     self: &mut Charter,
     new_metadata_uri: std::string::String,
     req: &ExecutionRequest<P>,
 ) {
-    assert!(self.dao_id == req.req_dao_id(), EDaoMismatch);
+    assert!(self.ou_id == req.req_ou_id(), EOuMismatch);
+    req.assert_permitted(permissions::metadata());
     self.metadata_uri = new_metadata_uri;
 }

@@ -5,7 +5,7 @@
 | **Status**     | Proposed                                                    |
 | **Date**       | 2026-06-07                                                  |
 | **Authors**    | —                                                           |
-| **Package**    | `armature_framework` (`dao.move`, `board_voting.move`)      |
+| **Package**    | `armature_framework` (`ou.move`, `board_voting.move`)      |
 | **Depends on** | `ADR_SUBMIT_VOTE_EXECUTE` (introduces `submit_vote_execute`) |
 | **Supersedes** | —                                                           |
 
@@ -33,8 +33,8 @@ The ADR's Constraint 6 states:
 > `EnableProposalType`) MUST be configured with `execution_delay_ms > 0`. This is a configuration
 > requirement, not a framework enforcement.
 
-However, the current default — set by `dao.move::config_for_type` — is `DEFAULT_EXECUTION_DELAY_MS = 0`
-for all types, including every governance-sensitive type. A newly created DAO is therefore immediately
+However, the current default — set by `ou.move::config_for_type` — is `DEFAULT_EXECUTION_DELAY_MS = 0`
+for all types, including every governance-sensitive type. A newly created OU is therefore immediately
 vulnerable on all boards where a single member can meet quorum:
 
 | Board size | Default quorum (50%) | Single-vote quorum met? |
@@ -73,7 +73,7 @@ comments, with no co-location signal to alert a developer editing either functio
 
 ### 1. Per-Type Execution Delay Defaults in `config_for_type`
 
-Extend `dao.move::config_for_type` to assign a non-zero `execution_delay_ms` for each
+Extend `ou.move::config_for_type` to assign a non-zero `execution_delay_ms` for each
 governance-sensitive type. All other types retain `DEFAULT_EXECUTION_DELAY_MS = 0`.
 
 The chosen default delay is **24 hours (86 400 000 ms)**. This matches common governance
@@ -81,7 +81,7 @@ best-practice and gives board members and freeze admins a meaningful observation
 
 ```move
 // Governance-sensitive types get a 24-hour default delay so that
-// submit_vote_execute cannot be used for them on freshly created DAOs.
+// submit_vote_execute cannot be used for them on freshly created OUs.
 // Deployers may reduce this via UpdateProposalConfig if their trust
 // model explicitly permits shorter windows.
 const GOVERNANCE_TYPE_EXECUTION_DELAY_MS: u64 = 86_400_000; // 24 hours
@@ -157,23 +157,23 @@ if (type_key == b"EnableProposalType".to_ascii_string()) {
 ## Constraints
 
 1. **Deployer override remains possible** — The 24-hour default can be reduced by any board member
-   with sufficient weight via `UpdateProposalConfig`. The default protects freshly deployed DAOs;
-   it does not permanently lock governance speed for all DAOs.
+   with sufficient weight via `UpdateProposalConfig`. The default protects freshly deployed OUs;
+   it does not permanently lock governance speed for all OUs.
 
-2. **Existing DAOs are unaffected** — This change only affects `config_for_type`, which is called
-   at DAO creation time. Live DAOs already have their configs stored on-chain and are not
+2. **Existing OUs are unaffected** — This change only affects `config_for_type`, which is called
+   at OU creation time. Live OUs already have their configs stored on-chain and are not
    retroactively updated.
 
-3. **Single-operator trading sub-DAOs are unaffected** — The use case for `submit_vote_execute`
+3. **Single-operator trading sub-OUs are unaffected** — The use case for `submit_vote_execute`
    is trading operation types (e.g., `PlaceLimitOrder`), which are not in the governance-sensitive
    list and retain `execution_delay_ms = 0`. The 24-hour delay only applies to the types that
-   govern the DAO's own structure and security controls.
+   govern the OU's own structure and security controls.
 
-4. **SubDAO configs use the same `config_for_type`** — `subdao_proposal_configs` calls
-   `build_proposal_configs` with the same function, so SubDAOs automatically inherit the
+4. **SubOU configs use the same `config_for_type`** — `subou_proposal_configs` calls
+   `build_proposal_configs` with the same function, so SubOUs automatically inherit the
    non-zero delays for governance types.
 
-5. **Test suite updates required** — Tests that create DAOs and immediately execute governance
+5. **Test suite updates required** — Tests that create OUs and immediately execute governance
    types (e.g., `SetBoard` tests that expect zero delay) will need to either: (a) advance the
    test clock past the delay, or (b) use `test_update_config` to set `execution_delay_ms = 0`
    in test-only setup, making the delay override explicit in each test.
@@ -216,11 +216,11 @@ Hardcode a list of governance-sensitive type keys inside `submit_vote_execute` a
 caller attempts to use any of them:
 
 ```move
-assert!(!dao::is_governance_sensitive_type(&type_key), EGovernanceTypeNotAllowed);
+assert!(!ou::is_governance_sensitive_type(&type_key), EGovernanceTypeNotAllowed);
 ```
 
 **Why not chosen:** A denylist requires ongoing maintenance as new governance types are added and
-creates an implicit coupling between `submit_vote_execute` and DAO type taxonomy. The delay-based
+creates an implicit coupling between `submit_vote_execute` and OU type taxonomy. The delay-based
 approach is self-maintaining: any governance type correctly configured with a non-zero delay is
 automatically blocked, and deployers who explicitly want to use the atomic path for a governance
 type can do so by setting `execution_delay_ms = 0`.
@@ -232,7 +232,7 @@ to set non-zero delays for governance types, as specified in Constraint 6 of
 `ADR_SUBMIT_VOTE_EXECUTE`.
 
 **Why not chosen:** Zero-delay defaults create a misconfiguration trap for the exact use case
-`submit_vote_execute` targets — small-board trading sub-DAOs that may not have dedicated
+`submit_vote_execute` targets — small-board trading sub-OUs that may not have dedicated
 governance engineers reviewing their configs. A secure default is strictly better than a
 documented manual step.
 
@@ -243,14 +243,14 @@ Add a framework check in the `UpdateProposalConfig` handler that rejects configs
 
 **Why not chosen:** This removes legitimate flexibility for deployers who understand the
 trade-offs and explicitly want zero-delay governance (e.g., a highly trusted single-operator
-DAO that accepts the reduced observation window). The default approach preserves this flexibility
+OU that accepts the reduced observation window). The default approach preserves this flexibility
 while securing the out-of-the-box experience.
 
 ---
 
 ## Implementation Checklist
 
-- [ ] Add `GOVERNANCE_TYPE_EXECUTION_DELAY_MS: u64 = 86_400_000` constant to `dao.move`
+- [ ] Add `GOVERNANCE_TYPE_EXECUTION_DELAY_MS: u64 = 86_400_000` constant to `ou.move`
 - [ ] Extend `config_for_type` with the `execution_delay_ms` branch for the 11 governance types
 - [ ] Add sync-obligation comment block before the floor check in `board_voting::submit_proposal`
 - [ ] Add sync-obligation comment block before the floor check in `board_voting::submit_vote_execute`
@@ -264,7 +264,7 @@ while securing the out-of-the-box experience.
 
 ## References
 
-- `armature_framework/sources/dao.move` — `config_for_type`, `DEFAULT_EXECUTION_DELAY_MS`
+- `armature_framework/sources/ou.move` — `config_for_type`, `DEFAULT_EXECUTION_DELAY_MS`
 - `armature_framework/sources/board_voting.move` — `submit_proposal`, `submit_vote_execute`
 - `ADR_SUBMIT_VOTE_EXECUTE.md` — Constraint 6, Constraint 7, S4, S11
 - `ADR_SUBMISSION_TIME_FLOOR_ENFORCEMENT.md` — precedent for moving enforcement into submission-time checks

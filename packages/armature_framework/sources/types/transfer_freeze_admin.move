@@ -1,0 +1,26 @@
+module armature::transfer_freeze_admin;
+
+use std::internal::{Self, Permit};
+
+/// Transfer the FreezeAdminCap to a new address.
+/// Unfreezes all currently frozen types as a side effect.
+/// Cannot itself be frozen.
+public struct TransferFreezeAdmin has drop, store {
+    new_admin: address,
+}
+
+// === Constructor ===
+
+public fun new(new_admin: address): TransferFreezeAdmin {
+    TransferFreezeAdmin { new_admin }
+}
+
+// === Accessors ===
+
+public fun new_admin(self: &TransferFreezeAdmin): address { self.new_admin }
+
+// === Handler authority ===
+
+/// `Permit<TransferFreezeAdmin>` for this package's handler: the only way to spend or close
+/// an `ExecutionTicket<TransferFreezeAdmin>` (see `proposal::ticket_request`).
+public(package) fun permit(): Permit<TransferFreezeAdmin> { internal::permit() }

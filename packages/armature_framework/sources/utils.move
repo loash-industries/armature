@@ -22,6 +22,13 @@ public fun gte_bps(numerator: u64, denominator: u64, threshold_bps: u64): bool {
 /// The basis point scale factor (10,000 = 100%).
 public fun bps_scale(): u64 { BPS_SCALE }
 
+/// `a + b`, capped at u64::MAX instead of aborting on overflow.
+/// Used for timestamp deadlines, where an overflowing sum means "never".
+public fun saturating_add(a: u64, b: u64): u64 {
+    let max = std::u64::max_value!();
+    if (a > max - b) max else a + b
+}
+
 // === Tests ===
 
 #[test]
@@ -82,6 +89,15 @@ fun gte_bps_edge_cases() {
     assert!(gte_bps(100, 100, 10_000) == true);
     // Anything / 0 >= any bps → true (zero-denominator: numerator*SCALE >= 0)
     assert!(gte_bps(0, 0, 10_000) == true);
+}
+
+#[test]
+fun saturating_add_caps_at_max() {
+    let max = std::u64::max_value!();
+    assert!(saturating_add(1, 2) == 3);
+    assert!(saturating_add(max - 1, 1) == max);
+    assert!(saturating_add(max, 1) == max);
+    assert!(saturating_add(max, max) == max);
 }
 
 #[test]

@@ -1,5 +1,7 @@
 module armature_proposals::propose_upgrade;
 
+use std::internal::{Self, Permit};
+
 /// Authorize a package upgrade using a stored UpgradeCap.
 public struct ProposeUpgrade has drop, store {
     cap_id: ID,
@@ -23,3 +25,9 @@ public fun package_id(self: &ProposeUpgrade): ID { self.package_id }
 public fun digest(self: &ProposeUpgrade): &vector<u8> { &self.digest }
 
 public fun policy(self: &ProposeUpgrade): u8 { self.policy }
+
+// === Handler authority ===
+
+/// `Permit<ProposeUpgrade>` for this package's handler: the only way to spend or close
+/// an `ExecutionTicket<ProposeUpgrade>` (see `proposal::ticket_request`).
+public(package) fun permit(): Permit<ProposeUpgrade> { internal::permit() }

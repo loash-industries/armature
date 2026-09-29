@@ -1,60 +1,44 @@
 module armature_proposals::treasury_ops;
 
-use armature::dao::DAO;
+use armature::ou::OU;
 use armature::proposal::{ExecutionRequest, ExecutionTicket};
 use armature::treasury_vault::TreasuryVault;
 use armature::utils;
-use armature_proposals::multicoin_item::MultiCoinItem;
-use armature_proposals::send_batch_multicoin_to_dao::SendBatchMulticoinToDAO;
-use armature_proposals::send_batch_multicoin_to_player::SendBatchMulticoinToAddress;
-use armature_proposals::send_coin::SendCoin;
-use armature_proposals::send_coin_to_dao::SendCoinToDAO;
+use armature_proposals::send_coin::{Self, SendCoin};
+use armature_proposals::send_coin_to_ou::{Self, SendCoinToOU};
 use armature_proposals::send_small_payment::{Self, SendSmallPayment, SmallPaymentState};
-use multicoin::multicoin::Balance as MultiCoinBalance;
 use sui::clock::Clock;
 use sui::event;
 
 // === Errors ===
 
-const EVaultDAOMismatch: u64 = 0;
+const EVaultOUMismatch: u64 = 0;
 const ETargetVaultMismatch: u64 = 1;
 const EExceedsDailyCap: u64 = 2;
 
 // === Events ===
 
 public struct CoinSent has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     coin_type: std::ascii::String,
     amount: u64,
     recipient: address,
 }
 
-public struct CoinSentToDAO has copy, drop {
-    dao_id: ID,
+public struct CoinSentToOU has copy, drop {
+    ou_id: ID,
     coin_type: std::ascii::String,
     amount: u64,
     target_treasury: ID,
 }
 
 public struct SmallPaymentSent has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     coin_type: std::ascii::String,
     amount: u64,
     recipient: address,
     epoch_spend: u64,
     max_epoch_spend: u64,
-}
-
-public struct BatchMulticoinSentToAddress has copy, drop {
-    dao_id: ID,
-    recipient: address,
-    item_count: u64,
-}
-
-public struct BatchMulticoinSentToDAO has copy, drop {
-    dao_id: ID,
-    target_treasury: ID,
-    item_count: u64,
 }
 
 // === Handlers ===
@@ -64,45 +48,50 @@ public fun execute_send_coin<T>(
     ticket: ExecutionTicket<SendCoin<T>>,
     ctx: &mut TxContext,
 ) {
-    send_coin_impl(vault, ticket.ticket_payload(), ticket.ticket_request(), ctx);
-    ticket.discharge();
+    send_coin_impl(
+        vault,
+        ticket.ticket_payload(),
+        ticket.ticket_request(send_coin::permit<T>()),
+        ctx,
+    );
+    ticket.discharge(send_coin::permit<T>());
 }
 
-public fun execute_send_coin_to_dao<T>(
+public fun execute_send_coin_to_ou<T>(
     source_vault: &mut TreasuryVault,
     target_vault: &mut TreasuryVault,
-    ticket: ExecutionTicket<SendCoinToDAO<T>>,
+    ticket: ExecutionTicket<SendCoinToOU<T>>,
     ctx: &mut TxContext,
 ) {
-    send_coin_to_dao_impl(
+    send_coin_to_ou_impl(
         source_vault,
         target_vault,
         ticket.ticket_payload(),
-        ticket.ticket_request(),
+        ticket.ticket_request(send_coin_to_ou::permit<T>()),
         ctx,
     );
-    ticket.discharge();
+    ticket.discharge(send_coin_to_ou::permit<T>());
 }
 
 /// Execute a SendSmallPayment proposal: rate-limited withdrawal from treasury.
-/// Uses ProposalTypeState on the DAO to enforce epoch-based cumulative spend caps.
+/// Uses ProposalTypeState on the OU to enforce epoch-based cumulative spend caps.
 public fun execute_send_small_payment<T>(
-    dao: &mut DAO,
+    ou: &mut OU,
     vault: &mut TreasuryVault,
     ticket: ExecutionTicket<SendSmallPayment<T>>,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    assert!(vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
+    assert!(vault.ou_id() == ticket.ticket_ou_id(), EVaultOUMismatch);
 
     let payload = ticket.ticket_payload();
-    let req = ticket.ticket_request();
+    let req = ticket.ticket_request(send_small_payment::permit<T>());
     let now = clock.timestamp_ms();
 
-    if (!dao.has_type_state<SendSmallPayment<T>>()) {
+    if (!ou.has_type_state<SendSmallPayment<T>>()) {
         let balance = vault.balance<T>();
         let max_spend = utils::mul_bps(balance, send_small_payment::default_spend_limit_bps());
-        dao.init_type_state(
+        ou.init_type_state(
             send_small_payment::new_state(
                 now,
                 0,
@@ -114,7 +103,7 @@ public fun execute_send_small_payment<T>(
         );
     };
 
-    let state: &mut SmallPaymentState = dao.borrow_type_state_mut(req);
+    let state: &mut SmallPaymentState = ou.borrow_type_state_mut(req);
 
     if (now >= state.epoch_start_ms() + state.epoch_duration_ms()) {
         let balance = vault.balance<T>();
@@ -128,7 +117,7 @@ public fun execute_send_small_payment<T>(
     let coin = vault.withdraw<T, SendSmallPayment<T>>(payload.amount(), req, ctx);
 
     event::emit(SmallPaymentSent {
-        dao_id: vault.dao_id(),
+        ou_id: vault.ou_id(),
         coin_type: std::type_name::with_original_ids<T>().into_string(),
         amount: payload.amount(),
         recipient: payload.recipient(),
@@ -138,64 +127,7 @@ public fun execute_send_small_payment<T>(
 
     transfer::public_transfer(coin, payload.recipient());
 
-    ticket.discharge();
-}
-
-public fun execute_send_batch_multicoin_to_player(
-    vault: &mut TreasuryVault,
-    ticket: ExecutionTicket<SendBatchMulticoinToAddress>,
-    ctx: &mut TxContext,
-) {
-    let payload = ticket.ticket_payload();
-    let req = ticket.ticket_request();
-    assert!(vault.dao_id() == req.req_dao_id(), EVaultDAOMismatch);
-    let recipient = payload.recipient();
-    let item_count = payload.items().length();
-    payload.items().do_ref!(|item: &MultiCoinItem| {
-        let balance: MultiCoinBalance = vault.withdraw_multicoin(
-            item.collection_id(),
-            item.asset_id(),
-            item.amount(),
-            req,
-            ctx,
-        );
-        transfer::public_transfer(balance, recipient);
-    });
-    event::emit(BatchMulticoinSentToAddress {
-        dao_id: vault.dao_id(),
-        recipient,
-        item_count,
-    });
-    ticket.discharge();
-}
-
-public fun execute_send_batch_multicoin_to_dao(
-    source_vault: &mut TreasuryVault,
-    target_vault: &mut TreasuryVault,
-    ticket: ExecutionTicket<SendBatchMulticoinToDAO>,
-    ctx: &mut TxContext,
-) {
-    let payload = ticket.ticket_payload();
-    let req = ticket.ticket_request();
-    assert!(source_vault.dao_id() == req.req_dao_id(), EVaultDAOMismatch);
-    assert!(object::id(target_vault) == payload.recipient_treasury(), ETargetVaultMismatch);
-    let item_count = payload.items().length();
-    payload.items().do_ref!(|item: &MultiCoinItem| {
-        let balance: MultiCoinBalance = source_vault.withdraw_multicoin(
-            item.collection_id(),
-            item.asset_id(),
-            item.amount(),
-            req,
-            ctx,
-        );
-        target_vault.deposit_multicoin(balance, ctx);
-    });
-    event::emit(BatchMulticoinSentToDAO {
-        dao_id: source_vault.dao_id(),
-        target_treasury: payload.recipient_treasury(),
-        item_count,
-    });
-    ticket.discharge();
+    ticket.discharge(send_small_payment::permit<T>());
 }
 
 // === Internal ===
@@ -206,10 +138,10 @@ fun send_coin_impl<T>(
     request: &ExecutionRequest<SendCoin<T>>,
     ctx: &mut TxContext,
 ) {
-    assert!(vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
+    assert!(vault.ou_id() == request.req_ou_id(), EVaultOUMismatch);
     let coin = vault.withdraw<T, SendCoin<T>>(payload.amount(), request, ctx);
     event::emit(CoinSent {
-        dao_id: vault.dao_id(),
+        ou_id: vault.ou_id(),
         coin_type: std::type_name::with_original_ids<T>().into_string(),
         amount: payload.amount(),
         recipient: payload.recipient(),
@@ -217,19 +149,19 @@ fun send_coin_impl<T>(
     transfer::public_transfer(coin, payload.recipient());
 }
 
-fun send_coin_to_dao_impl<T>(
+fun send_coin_to_ou_impl<T>(
     source_vault: &mut TreasuryVault,
     target_vault: &mut TreasuryVault,
-    payload: &SendCoinToDAO<T>,
-    request: &ExecutionRequest<SendCoinToDAO<T>>,
+    payload: &SendCoinToOU<T>,
+    request: &ExecutionRequest<SendCoinToOU<T>>,
     ctx: &mut TxContext,
 ) {
-    assert!(source_vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
+    assert!(source_vault.ou_id() == request.req_ou_id(), EVaultOUMismatch);
     assert!(object::id(target_vault) == payload.recipient_treasury(), ETargetVaultMismatch);
-    let coin = source_vault.withdraw<T, SendCoinToDAO<T>>(payload.amount(), request, ctx);
+    let coin = source_vault.withdraw<T, SendCoinToOU<T>>(payload.amount(), request, ctx);
     target_vault.deposit(coin, ctx);
-    event::emit(CoinSentToDAO {
-        dao_id: source_vault.dao_id(),
+    event::emit(CoinSentToOU {
+        ou_id: source_vault.ou_id(),
         coin_type: std::type_name::with_original_ids<T>().into_string(),
         amount: payload.amount(),
         target_treasury: payload.recipient_treasury(),

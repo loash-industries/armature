@@ -2,33 +2,33 @@ module armature::spend_guard;
 
 /// Reusable rolling-epoch spend-limit building block for third-party treasury handlers.
 ///
-/// Store one of these as proposal type state on the DAO via `dao::init_type_state<P, SpendWindow>`
-/// and update it each execution via `dao::borrow_type_state_mut<P, SpendWindow>`.
+/// Store one of these as proposal type state on the OU via `ou::init_type_state<P, SpendWindow>`
+/// and update it each execution via `ou::borrow_type_state_mut<P, SpendWindow>`.
 /// See `armature_proposals::send_small_payment` for a full worked example.
 ///
 /// Example handler skeleton:
 ///
-///   public fun execute_my_payment<T>(
-///       dao: &mut DAO,
-///       vault: &mut TreasuryVault,
-///       proposal: &Proposal<MyPayload>,
-///       req: ExecutionRequest<MyPayload>,
-///       clock: &Clock,
-///       ctx: &mut TxContext,
-///   ) {
-///       let now = clock.timestamp_ms();
-///       if (!dao.has_type_state<MyPayload>()) {
-///           dao.init_type_state(
-///               spend_guard::new(now, MAX_EPOCH_SPEND, EPOCH_MS),
-///               &req,
-///           );
-///       };
-///       let window: &mut SpendWindow = dao.borrow_type_state_mut(&req);
-///       window.charge(proposal.payload().amount(), now);
-///       let coin = vault.withdraw<T, MyPayload>(proposal.payload().amount(), &req, ctx);
-///       transfer::public_transfer(coin, proposal.payload().recipient());
-///       proposal::finalize(req, proposal);
-///   }
+/// public fun execute_my_payment<T>(
+/// ou: &mut OU,
+/// vault: &mut TreasuryVault,
+/// proposal: &Proposal<MyPayload>,
+/// req: ExecutionRequest<MyPayload>,
+/// clock: &Clock,
+/// ctx: &mut TxContext,
+/// ) {
+/// let now = clock.timestamp_ms();
+/// if (!ou.has_type_state<MyPayload>()) {
+/// ou.init_type_state(
+/// spend_guard::new(now, MAX_EPOCH_SPEND, EPOCH_MS),
+/// &req,
+/// );
+/// };
+/// let window: &mut SpendWindow = ou.borrow_type_state_mut(&req);
+/// window.charge(proposal.payload().amount(), now);
+/// let coin = vault.withdraw<T, MyPayload>(proposal.payload().amount(), &req, ctx);
+/// transfer::public_transfer(coin, proposal.payload().recipient());
+/// proposal::finalize(req, proposal);
+/// }
 public struct SpendWindow has drop, store {
     epoch_start_ms: u64,
     epoch_spend: u64,

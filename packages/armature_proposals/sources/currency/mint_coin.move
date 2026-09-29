@@ -1,10 +1,12 @@
 module armature_proposals::mint_coin;
 
-/// Mint `amount` of `Coin<T>` using the DAO's custodied `TreasuryCap<T>`.
+use std::internal::{Self, Permit};
+
+/// Mint `amount` of `Coin<T>` using the OU's custodied `TreasuryCap<T>`.
 ///
-/// `recipient = none` mints into the DAO's own `TreasuryVault`, where existing
+/// `recipient = none` mints into the OU's own `TreasuryVault`, where existing
 /// `SendCoin` / `SendSmallPayment` proposals handle distribution — this is the
-/// common path for a sovereign currency the DAO spends through governance.
+/// common path for a sovereign currency the OU spends through governance.
 /// `recipient = some(addr)` issues directly to an address (e.g. a one-off
 /// grant) without routing through the treasury.
 public struct MintCoin<phantom T> has drop, store {
@@ -26,3 +28,9 @@ public fun treasury_cap_id<T>(self: &MintCoin<T>): ID { self.treasury_cap_id }
 public fun amount<T>(self: &MintCoin<T>): u64 { self.amount }
 
 public fun recipient<T>(self: &MintCoin<T>): Option<address> { self.recipient }
+
+// === Handler authority ===
+
+/// `Permit<MintCoin>` for this package's handler: the only way to spend or close
+/// an `ExecutionTicket<MintCoin>` (see `proposal::ticket_request`).
+public(package) fun permit<T>(): Permit<MintCoin<T>> { internal::permit() }

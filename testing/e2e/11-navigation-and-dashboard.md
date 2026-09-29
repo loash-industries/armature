@@ -2,11 +2,11 @@
 
 > **Tool:** Playwright (Chromium)
 > **Network:** Sui localnet
-> **Route:** All routes under `/dao/$daoId/*` and `/create`
+> **Route:** All routes under `/ou/$ouId/*` and `/create`
 
 ## Prerequisites
 
-- At least one DAO created with funded treasury, some proposals, and SubDAOs
+- At least one OU created with funded treasury, some proposals, and SubOUs
 - Board members [A, B, C]
 
 ## Scenarios
@@ -21,19 +21,19 @@
 
 **Expected:**
 
-- DAO creation form loads
+- OU creation form loads
 - Form fields: name, description, image URL, board members
 - Submit button present
 
-### 11.2 — Navigate to DAO after creation
+### 11.2 — Navigate to OU after creation
 
-1. Create a DAO via `/create`
+1. Create an OU via `/create`
 2. After successful creation
 
 **Expected:**
 
-- Redirected to `/dao/$daoId` (dashboard)
-- URL contains the new DAO's object ID
+- Redirected to `/ou/$ouId` (dashboard)
+- URL contains the new OU's object ID
 
 ---
 
@@ -41,17 +41,17 @@
 
 ### 11.3 — All sidebar links work
 
-1. Navigate to `/dao/$daoId`
+1. Navigate to `/ou/$ouId`
 2. Click each sidebar link in order:
-   - Dashboard (`/dao/$daoId/`)
-   - Treasury (`/dao/$daoId/treasury`)
-   - Capability Vault (`/dao/$daoId/vault`)
-   - Proposals (`/dao/$daoId/proposals`)
-   - Board (`/dao/$daoId/board`)
-   - Charter (`/dao/$daoId/charter`)
-   - Governance (`/dao/$daoId/governance`)
-   - Emergency (`/dao/$daoId/emergency`)
-   - SubDAOs (`/dao/$daoId/subdaos`)
+   - Dashboard (`/ou/$ouId/`)
+   - Treasury (`/ou/$ouId/treasury`)
+   - Capability Vault (`/ou/$ouId/vault`)
+   - Proposals (`/ou/$ouId/proposals`)
+   - Board (`/ou/$ouId/board`)
+   - Charter (`/ou/$ouId/charter`)
+   - Governance (`/ou/$ouId/governance`)
+   - Emergency (`/ou/$ouId/emergency`)
+   - SubOUs (`/ou/$ouId/subous`)
 
 **Expected:**
 
@@ -65,7 +65,7 @@
 
 **Expected:**
 
-- Navigates to `/dao/$daoId/proposals/new`
+- Navigates to `/ou/$ouId/proposals/new`
 - Proposal type selector dialog appears
 
 ---
@@ -79,7 +79,7 @@
    - Treasury total matches `treasury_vault::balance<SUI>`
    - Board member count matches governance config
    - Charter name matches `charter::name()`
-   - Enabled proposal types count matches DAO's enabled set
+   - Enabled proposal types count matches OU's enabled set
 
 **Expected:**
 
@@ -92,7 +92,7 @@
 **Expected:**
 
 - Each coin type row with balance
-- "View All" link navigates to `/dao/$daoId/treasury`
+- "View All" link navigates to `/ou/$ouId/treasury`
 
 ### 11.7 — Activity feed
 
@@ -102,7 +102,7 @@
 **Expected:**
 
 - Recent Activity section shows last 10 events
-- Events include: DAOCreated, ProposalCreated, VoteCast, ProposalPassed, ProposalExecuted, ProposalExpired, TypeFrozen, TypeUnfrozen, CoinClaimed
+- Events include: OUCreated, ProposalCreated, VoteCast, ProposalPassed, ProposalExecuted, ProposalExpired, TypeFrozen, TypeUnfrozen, CoinClaimed
 - Events in reverse chronological order
 - Each event shows type, summary, timestamp
 
@@ -116,15 +116,15 @@
 - Alert banner visible: "Emergency Freeze Active" (or similar)
 - Banner links to emergency page or shows details
 
-### 11.9 — Migrating DAO alert banner
+### 11.9 — Migrating OU alert banner
 
-1. DAO is in Migrating status
+1. OU is in Migrating status
 2. Navigate to dashboard
 
 **Expected:**
 
-- Alert banner visible: "DAO Migrating" (or similar)
-- Banner indicates successor DAO
+- Alert banner visible: "OU Migrating" (or similar)
+- Banner indicates successor OU
 
 ---
 
@@ -132,12 +132,12 @@
 
 ### 11.10 — Type selector shows correct states
 
-1. Navigate to `/dao/$daoId/proposals/new`
+1. Navigate to `/ou/$ouId/proposals/new`
 2. Type selector dialog appears
 
 **Expected:**
 
-- Types grouped by category (Board, Admin, Security, Treasury, SubDAO, Upgrade)
+- Types grouped by category (Board, Admin, Security, Treasury, SubOU, Upgrade)
 - Enabled types are selectable
 - Disabled types shown but grayed out / not selectable
 - Frozen types shown with frozen badge
@@ -163,18 +163,18 @@
 
 ## Error States
 
-### 11.12 — Invalid DAO ID in URL
+### 11.12 — Invalid OU ID in URL
 
-1. Navigate to `/dao/0xinvalid`
+1. Navigate to `/ou/0xinvalid`
 
 **Expected:**
 
-- Error state or "DAO not found" message
+- Error state or "OU not found" message
 - No unhandled crash
 
 ### 11.13 — Invalid proposal ID in URL
 
-1. Navigate to `/dao/$daoId/proposals/0xinvalid`
+1. Navigate to `/ou/$ouId/proposals/0xinvalid`
 
 **Expected:**
 
@@ -183,7 +183,7 @@
 
 ### 11.14 — Wallet disconnects during navigation
 
-1. Connected wallet viewing DAO dashboard
+1. Connected wallet viewing OU dashboard
 2. Disconnect wallet
 3. Navigate between pages
 

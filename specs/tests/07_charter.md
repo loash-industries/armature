@@ -2,274 +2,163 @@
 
 ## Summary
 
-The `charter.move` module manages the on-chain reference to the DAO's constitutional document on Walrus. These tests verify version monotonicity, amendment history completeness, and the distinction between content amendments and storage renewals.
+`charter.move` defines the `Charter` object: `{ id, ou_id, name, metadata_uri }`. Every OU constructor creates and shares one from its `name` and `metadata_uri` arguments. The name never changes. The only mutator is `charter::update_metadata<P>(charter, new_metadata_uri, &ExecutionRequest<P>)`, which requires the `METADATA` bit and is reached through the `UpdateMetadata` proposal type (default display key "CharterUpdate", handler `admin_ops::execute_update_metadata`).
+
+These tests verify charter creation, the metadata update and its checks, and the charter's removal with its OU. The Walrus-backed charter with versions and amendment history described in `specs/05_charter.md` Part B is not implemented; its test list is kept at the end under **Planned (not implemented)**.
 
 ## Test Matrix
 
-| Test | Expected |
-|------|----------|
-| `test_version_starts_at_one` | `charter.version == 1` after creation |
-| `test_version_increments_on_amendment` | `version` goes from 1 to 2 after `AmendCharter` |
-| `test_version_monotonic_across_multiple_amendments` | 1 -> 2 -> 3 -> 4 |
-| `test_version_cannot_decrease` | No function allows decrementing version |
-| `test_amendment_records_previous_blob_id` | `AmendmentRecord.previous_blob_id` matches prior charter |
-| `test_amendment_records_new_blob_id` | `AmendmentRecord.new_blob_id` matches payload |
-| `test_amendment_records_proposal_id` | `AmendmentRecord.proposal_id` matches the authorizing proposal |
-| `test_amendment_history_grows` | `amendment_history` length increases by 1 per amendment |
-| `test_renew_changes_blob_id_only` | `current_blob_id` changes, `content_hash` and `version` unchanged |
-| `test_renew_does_not_add_amendment_record` | `amendment_history` length unchanged |
+| Test | Expected | Where |
+|------|----------|-------|
+| `test_create_ou` | The charter is shared and carries the name passed to `ou::create` | `ou_tests` |
+| `test_create_returning_vault_other_companions_are_shared` | Same for the package-internal constructor | `ou_tests` |
+| `charter_update_lifecycle` | `metadata_uri` starts as the creation argument; two `UpdateMetadata` proposals (submit, vote, `ticket_from_vote`, `admin_ops::execute_update_metadata`) each replace it | `armature_proposals::charter_tests` |
+| `charter_update_wrong_ou_aborts` | Executing OU A's proposal against OU B's charter: `admin_ops::ECharterOuMismatch` | `armature_proposals::charter_tests` |
+| `update_metadata_needs_metadata` | `charter::update_metadata` with every bit except `METADATA`: `proposal::EPermissionDenied` | `gate_tests` |
+| `composite_update_metadata_step_e2e` | `UpdateMetadata` as a composite step updates `metadata_uri` | `armature_proposals::composite_tests` |
+| `test_default_proposal_types` | `UpdateMetadata` is a default slot with display key "CharterUpdate" | `ou_tests` |
+| `test_update_metadata_other_ou_request_aborts` | `charter::update_metadata` with a request for another OU: `charter::EOuMismatch` | planned |
+| `test_update_metadata_emits_event` | `admin_ops::MetadataUpdated { ou_id, new_ipfs_cid }` | planned |
+| `test_update_metadata_keeps_name` | After an update, `name` is unchanged | planned (no mutator writes `name`; structural) |
+| `test_privileged_request_updates_subou_metadata` | A controller's privileged request for the SubOU passes the `METADATA` check | planned |
+| `spawn_ou_and_destroy_origin_e2e` | `ou::destroy` deletes the charter with the other companions | `armature_proposals::migration_tests` |
 
 ## Tests
 
 ---
 
-### Version starts at 1
+### Every OU gets a charter with its name
 
-**Requirement:** `Charter.version` is monotonically increasing, starting at 1.
+**Requirement:** `ou::create`, `create_subou(_configured)`, the tribe constructors and `tribe::create_wired_subou` create a `Charter` with `ou_id` set to the new OU and `name` / `metadata_uri` from their arguments, and share it; the OU stores its ID (`ou.charter_id()`). An empty name aborts `ou::EInvalidName` before anything is created. `CreateSubOU` and `SpawnOU` payloads carry the new OU's name and metadata URI. Anyone can read the charter (`charter::ou_id`, `name`, `metadata_uri`).
 
-**Why it matters:** Version 0 would be ambiguous — is it "never set" or "original"? Starting at 1 gives the initial charter a clear identity.
+**Why it matters:** The charter is the OU's public identity: the name and a pointer to the document that describes its purpose and rules.
 
 ```move
-#[test]
-fun test_version_starts_at_one() {
-    let mut scenario = test_scenario::begin(ALICE);
-    let dao_id = test_helpers::setup_dao(&mut scenario, vector[ALICE]);
-
-    scenario.next_tx(ALICE);
-    {
-        let charter = test_scenario::take_shared<Charter>(&scenario);
-
-        assert!(charter::version(&charter) == 1);
-        assert!(charter::current_blob_id(&charter) == b"walrus://test_charter_v1");
-        assert!(vector::length(&charter::amendment_history(&charter)) == 0);
-
-        test_scenario::return_shared(charter);
-    };
-    test_scenario::end(scenario);
-}
+// From armature_proposals::charter_tests::charter_update_lifecycle
+let ou = scenario.take_shared_by_id<OU>(ou_id);
+let charter = scenario.take_shared_by_id<Charter>(ou.charter_id());
+assert!(charter.ou_id() == ou_id);
+assert!(charter.metadata_uri() == &string::utf8(b"https://old-logo.png"));
 ```
+
+(`charter_update_lifecycle` checks the URI and `ou_tests::test_create_ou` the name. No test asserts the `ou_id` back-reference directly; the update tests depend on it, since the handler compares it with the ticket's OU.)
 
 ---
 
-### Version increments on amendment
+### UpdateMetadata replaces the metadata URI
 
-**Requirement:** Each `AmendCharter` execution increments `version` by 1.
+**Requirement:** `UpdateMetadata { new_ipfs_cid: String }` is a framework type seeded on every OU under the display key "CharterUpdate", with the fixed bit `METADATA` and a default config of 50% quorum, 50% threshold, 7-day expiry, no delay, no cooldown, composable. `admin_ops::execute_update_metadata(&mut charter, ticket)` checks the charter belongs to the ticket's OU (`admin_ops::ECharterOuMismatch`), calls `charter::update_metadata` with the payload's CID, emits `admin_ops::MetadataUpdated { ou_id, new_ipfs_cid }` and discharges the ticket. The URI is stored as given; it is not parsed or validated. The type can be submitted any number of times.
 
-**Why it matters:** If version didn't increment, you couldn't distinguish between charter versions — UIs and voters would not know whether they're reading the current or a stale charter.
+**Why it matters:** The metadata document can change as the OU does, but only through a governance decision.
 
 ```move
-#[test]
-fun test_version_increments_on_amendment() {
-    let mut scenario = test_scenario::begin(ALICE);
-    let dao_id = test_helpers::setup_dao(&mut scenario, vector[ALICE, BOB, CAROL]);
-
-    // Enable AmendCharter (opt-in type)
-    test_helpers::enable_proposal_type<charter_ops::AmendCharter>(&mut scenario, dao_id);
-
-    // Propose and execute an amendment
-    let prop_id = test_helpers::create_proposal(
-        &mut scenario, dao_id,
-        charter_ops::new_amend_charter(
-            b"walrus://charter_v2",
-            b"new-sha256-hash",
-            b"Updated revenue distribution rules",
-        ),
+// From armature_proposals::charter_tests::charter_update_lifecycle
+scenario.next_tx(CREATOR);
+{
+    let ou = scenario.take_shared_by_id<OU>(ou_id);
+    board_voting::submit_proposal(
+        &ou,
+        option::some(string::utf8(b"Update logo to v1")),
+        update_metadata::new(string::utf8(b"ipfs://QmNewHashV1")),
+        &clock,
+        scenario.ctx(),
     );
-    test_helpers::pass_proposal<charter_ops::AmendCharter>(
-        &mut scenario, prop_id, vector[ALICE, BOB, CAROL],
-    );
-    // Execute + handle amendment ...
-
-    scenario.next_tx(ALICE);
-    {
-        let charter = test_scenario::take_shared<Charter>(&scenario);
-
-        assert!(charter::version(&charter) == 2);
-        assert!(charter::current_blob_id(&charter) == b"walrus://charter_v2");
-
-        test_scenario::return_shared(charter);
-    };
-    test_scenario::end(scenario);
-}
+    test_scenario::return_shared(ou);
+};
+// ... CREATOR votes YES (1 of 2 meets the 50% quorum)
+scenario.next_tx(CREATOR);
+{
+    let mut ou = scenario.take_shared_by_id<OU>(ou_id);
+    let proposal = scenario.take_shared<Proposal<UpdateMetadata>>();
+    let mut charter = scenario.take_shared_by_id<Charter>(charter_id);
+    let freeze = scenario.take_shared_by_id<EmergencyFreeze>(ou.emergency_freeze_id());
+    let ticket = board_voting::ticket_from_vote(&mut ou, proposal, &freeze, &clock, scenario.ctx());
+    admin_ops::execute_update_metadata(&mut charter, ticket);
+    assert!(charter.metadata_uri() == &string::utf8(b"ipfs://QmNewHashV1"));
+    test_scenario::return_shared(freeze);
+    test_scenario::return_shared(charter);
+    test_scenario::return_shared(ou);
+};
 ```
+
+Because the default slot must hold `METADATA` for `charter::update_metadata` to accept the request, this test also shows the seeded bit is right.
 
 ---
 
-### Version monotonic across multiple amendments
+### The update is checked against the charter's OU and the METADATA bit
+
+**Requirement:** `charter::update_metadata<P>` aborts `charter::EOuMismatch` unless the request is for the charter's OU, then `proposal::EPermissionDenied` unless the request carries `METADATA` or is privileged (a controller override of that OU). The handler's own check (`admin_ops::ECharterOuMismatch`) runs first, so `charter::EOuMismatch` is reached only by calling `charter::update_metadata` directly. Only `UpdateMetadata`'s handler module can reach its request (see `04_proposals.md`), so the new URI always comes from the approved payload.
+
+**Why it matters:** A request of another type, or of another OU, must not rewrite this OU's public identity.
 
 ```move
-#[test]
-fun test_version_monotonic_across_multiple_amendments() {
-    let mut scenario = test_scenario::begin(ALICE);
-    let dao_id = test_helpers::setup_dao(&mut scenario, vector[ALICE, BOB, CAROL]);
-    test_helpers::enable_proposal_type<charter_ops::AmendCharter>(&mut scenario, dao_id);
-
-    // Three successive amendments
-    // Amendment 1: version 1 -> 2
-    // ... (create, pass, execute AmendCharter)
-    // Amendment 2: version 2 -> 3
-    // ... (create, pass, execute AmendCharter)
-    // Amendment 3: version 3 -> 4
-    // ... (create, pass, execute AmendCharter)
-
-    scenario.next_tx(ALICE);
-    {
-        let charter = test_scenario::take_shared<Charter>(&scenario);
-        assert!(charter::version(&charter) == 4);
-        assert!(vector::length(&charter::amendment_history(&charter)) == 3);
-        test_scenario::return_shared(charter);
-    };
-    test_scenario::end(scenario);
-}
-```
-
----
-
-### Amendment records previous and new blob IDs
-
-**Requirement:** `AmendCharter` records both previous and new blob IDs in `amendment_history`.
-
-**Why it matters:** The amendment history is the on-chain audit trail. Without `previous_blob_id`, you couldn't reconstruct the charter's evolution without trusting an indexer.
-
-```move
-#[test]
-fun test_amendment_records_previous_blob_id() {
-    let mut scenario = test_scenario::begin(ALICE);
-    let dao_id = test_helpers::setup_dao(&mut scenario, vector[ALICE, BOB, CAROL]);
-    test_helpers::enable_proposal_type<charter_ops::AmendCharter>(&mut scenario, dao_id);
-
-    // Execute amendment from v1 blob to v2 blob
+// From armature_proposals::charter_tests::charter_update_wrong_ou_aborts
+#[test, expected_failure(abort_code = armature::admin_ops::ECharterOuMismatch)]
+fun charter_update_wrong_ou_aborts() {
+    // ... OU A passes UpdateMetadata; OU B's charter is taken by ID
+    let ticket = board_voting::ticket_from_vote(&mut ou, proposal, &freeze, &clock, scenario.ctx());
+    admin_ops::execute_update_metadata(&mut wrong_charter, ticket);
     // ...
+}
 
-    scenario.next_tx(ALICE);
-    {
-        let charter = test_scenario::take_shared<Charter>(&scenario);
-        let history = charter::amendment_history(&charter);
-        let record = vector::borrow(history, 0);
+// From gate_tests: every bit except METADATA
+#[test, expected_failure(abort_code = proposal::EPermissionDenied)]
+fun update_metadata_needs_metadata() {
+    run!(|ou, _, _, charter, _, _| {
+        let r = all_but(ou, permissions::metadata());
+        charter.update_metadata(string::utf8(b"ipfs://x"), &r);
+        abort 0
+    });
+}
 
-        // Previous blob was the original
-        assert!(charter::record_previous_blob_id(record) == b"walrus://test_charter_v1");
-        // New blob is the amendment
-        assert!(charter::record_new_blob_id(record) == b"walrus://charter_v2");
-        // Version in record matches
-        assert!(charter::record_version(record) == 2);
-
-        test_scenario::return_shared(charter);
-    };
-    test_scenario::end(scenario);
+#[test, expected_failure(abort_code = charter::EOuMismatch)]
+fun test_update_metadata_other_ou_request_aborts() {   // planned
+    // ... OU created; its charter taken by ID
+    let req = proposal::new_execution_request_for_testing<Probe>(
+        object::id_from_address(@0xD1FF),   // not the charter's OU
+        object::id_from_address(@0x1),
+    );
+    charter.update_metadata(string::utf8(b"ipfs://x"), &req);
+    abort 0
 }
 ```
 
 ---
 
-### Amendment records proposal ID
+### The name is fixed
 
-**Why it matters:** Links each charter change to the specific governance decision that authorized it — critical for dispute resolution and audit.
+**Requirement:** No function writes `Charter.name` after creation.
 
-```move
-#[test]
-fun test_amendment_records_proposal_id() {
-    let mut scenario = test_scenario::begin(ALICE);
-    let dao_id = test_helpers::setup_dao(&mut scenario, vector[ALICE, BOB, CAROL]);
-    test_helpers::enable_proposal_type<charter_ops::AmendCharter>(&mut scenario, dao_id);
+**Why it matters:** The name identifies the OU in events, UIs and its successor's lineage; renaming would need a new OU (`SpawnOU`).
 
-    let prop_id = test_helpers::create_proposal(
-        &mut scenario, dao_id,
-        charter_ops::new_amend_charter(b"walrus://v2", b"hash2", b"summary"),
-    );
-    test_helpers::pass_proposal<charter_ops::AmendCharter>(
-        &mut scenario, prop_id, vector[ALICE, BOB, CAROL],
-    );
-    // Execute + handle ...
-
-    scenario.next_tx(ALICE);
-    {
-        let charter = test_scenario::take_shared<Charter>(&scenario);
-        let history = charter::amendment_history(&charter);
-        let record = vector::borrow(history, 0);
-        assert!(charter::record_proposal_id(record) == prop_id);
-        test_scenario::return_shared(charter);
-    };
-    test_scenario::end(scenario);
-}
-```
+Structural: `charter.move` has no mutator for `name`. The planned `test_update_metadata_keeps_name` asserts `charter.name()` is unchanged after `charter_update_lifecycle`'s updates.
 
 ---
 
-### RenewCharterStorage changes blob ID only
+### The charter is destroyed with its OU
 
-**Requirement:** `RenewCharterStorage` changes `current_blob_id` without incrementing version.
+**Requirement:** `ou::destroy` checks the charter passed is the OU's own (`ou::ECharterIdMismatch`) and deletes it (`charter::destroy`, `public(package)`) along with the other companions.
 
-**Why it matters:** Storage renewal is a maintenance operation, not a content change. Incrementing the version would falsely signal to voters and UIs that the charter content changed.
+**Why it matters:** A charter must not outlive its OU pointing at a deleted `ou_id`.
 
-```move
-#[test]
-fun test_renew_changes_blob_id_only() {
-    let mut scenario = test_scenario::begin(ALICE);
-    let dao_id = test_helpers::setup_dao(&mut scenario, vector[ALICE, BOB, CAROL]);
-    test_helpers::enable_proposal_type<charter_ops::RenewCharterStorage>(&mut scenario, dao_id);
-
-    // Record initial state
-    let initial_version;
-    let initial_hash;
-    scenario.next_tx(ALICE);
-    {
-        let charter = test_scenario::take_shared<Charter>(&scenario);
-        initial_version = charter::version(&charter);
-        initial_hash = charter::content_hash(&charter);
-        test_scenario::return_shared(charter);
-    };
-
-    // Execute RenewCharterStorage with new blob ID
-    let prop_id = test_helpers::create_proposal(
-        &mut scenario, dao_id,
-        charter_ops::new_renew_charter_storage(b"walrus://charter_v1_renewed"),
-    );
-    test_helpers::pass_proposal<charter_ops::RenewCharterStorage>(
-        &mut scenario, prop_id, vector[ALICE, BOB, CAROL],
-    );
-    // Execute + handle ...
-
-    scenario.next_tx(ALICE);
-    {
-        let charter = test_scenario::take_shared<Charter>(&scenario);
-
-        // Blob ID changed
-        assert!(charter::current_blob_id(&charter) == b"walrus://charter_v1_renewed");
-        // Version unchanged
-        assert!(charter::version(&charter) == initial_version);
-        // Content hash unchanged
-        assert!(charter::content_hash(&charter) == initial_hash);
-
-        test_scenario::return_shared(charter);
-    };
-    test_scenario::end(scenario);
-}
-```
+Covered by `armature_proposals::migration_tests::spawn_ou_and_destroy_origin_e2e`; the ID check is in `02_ou_lifecycle.md` (planned `test_destroy_wrong_companion_aborts`).
 
 ---
 
-### Renew does not add amendment record
+## Planned (not implemented)
 
-**Why it matters:** Amendment history tracks content changes. A storage renewal entry would pollute the history with false amendments.
+`specs/05_charter.md` Part B designs a Walrus-backed charter: a blob ID and content hash, a version starting at 1, an amendment history, and two proposal types, `AmendCharter` and `RenewCharterStorage`, with a `CharterAmended` event. None of these exist: no fields, accessors, types, handlers or events. The tests below would be written if that design is built; they have no code to run against and no snippets are given.
 
-```move
-#[test]
-fun test_renew_does_not_add_amendment_record() {
-    let mut scenario = test_scenario::begin(ALICE);
-    let dao_id = test_helpers::setup_dao(&mut scenario, vector[ALICE, BOB, CAROL]);
-    test_helpers::enable_proposal_type<charter_ops::RenewCharterStorage>(&mut scenario, dao_id);
+| Planned test | Would check |
+|------|----------|
+| `test_version_starts_at_one` | A new charter is at version 1 with an empty history |
+| `test_version_increments_on_amendment` | Each executed `AmendCharter` adds 1 |
+| `test_version_monotonic_across_multiple_amendments` | Three amendments give version 4 and three history records |
+| `test_amendment_records_previous_blob_id` | The record keeps the previous and new blob IDs and the new version |
+| `test_amendment_records_proposal_id` | The record keeps the authorizing proposal ID (the ticket's `ticket_proposal_id`, which for a single-PTB execution is the fresh ID from its events) |
+| `test_amendment_history_grows` | One record per amendment |
+| `test_renew_changes_blob_id_only` | `RenewCharterStorage` changes the blob ID, not the hash or version |
+| `test_renew_does_not_add_amendment_record` | Renewal leaves the history unchanged |
+| `test_amend_other_ou_charter_aborts` | Like `update_metadata`, a charter/OU mismatch aborts |
 
-    // Execute RenewCharterStorage
-    // ...
-
-    scenario.next_tx(ALICE);
-    {
-        let charter = test_scenario::take_shared<Charter>(&scenario);
-        // amendment_history length should still be 0
-        assert!(vector::length(&charter::amendment_history(&charter)) == 0);
-        test_scenario::return_shared(charter);
-    };
-    test_scenario::end(scenario);
-}
-```
+Each planned write would need a new gated mutator in `armature::charter` that checks the charter's OU and a permission bit, as `update_metadata` checks `METADATA`; `scripts/check_request_gates.py` would then require a denial test for it in `gate_tests`.

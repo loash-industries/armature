@@ -1,9 +1,11 @@
 #[test_only]
 module armature::proposal_tests;
 
-use armature::dao::{Self, DAO};
+use armature::board_voting;
 use armature::governance;
+use armature::ou::{Self, OU};
 use armature::proposal::{Self, Proposal};
+use std::internal;
 use std::string;
 use sui::clock::{Self, Clock};
 use sui::test_scenario;
@@ -22,13 +24,13 @@ public struct TestPayload has drop, store {
 
 // === Helpers ===
 
-fun create_test_dao(scenario: &mut test_scenario::Scenario) {
+fun create_test_ou(scenario: &mut test_scenario::Scenario) {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR, MEMBER_B]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -49,21 +51,21 @@ fun default_config(): proposal::ProposalConfig {
 fun create_test_proposal(scenario: &mut test_scenario::Scenario, clock: &Clock) {
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let config = default_config();
         proposal::create<TestPayload>(
-            dao.id(),
+            ou.id(),
             b"SetBoard".to_ascii_string(),
             CREATOR,
             option::some(string::utf8(b"ipfs://test")),
             TestPayload { value: 42 },
             config,
-            dao.governance(),
-            dao.status().is_active(),
+            ou.governance(),
+            ou.status().is_active(),
             clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 }
 
@@ -73,7 +75,7 @@ fun create_test_proposal(scenario: &mut test_scenario::Scenario, clock: &Clock) 
 /// ExecutionRequest has no drop/copy/store — it's a hot potato.
 /// This test just verifies it can be created and consumed.
 fun test_execution_request_no_drop() {
-    let req = proposal::new_execution_request<TestPayload>(
+    let req = proposal::new_execution_request_for_testing<TestPayload>(
         object::id_from_address(@0x1),
         object::id_from_address(@0x2),
     );
@@ -89,14 +91,16 @@ fun test_status_active_to_passed() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     create_test_proposal(&mut scenario, &clock);
 
     // CREATOR votes yes (weight 1, total 2 members)
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         // quorum: 1*10000 >= 5000*2 → 10000 >= 10000 ✓
         // threshold: 1*10000 >= 5000*1 → 10000 >= 5000 ✓
         assert!(prop.status().is_passed());
@@ -107,69 +111,92 @@ fun test_status_active_to_passed() {
     scenario.end();
 }
 
-// === Test 6: Active -> Expired ===
+// === Test 6: Active proposal deleted after expiry ===
 
 #[test]
-/// try_expire after expiry_ms sets Expired.
-fun test_status_active_to_expired() {
+/// delete_expired_proposal deletes an Active proposal once expiry_ms has passed.
+fun test_delete_expired_active() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     create_test_proposal(&mut scenario, &clock);
 
-    // Advance clock past expiry (1 hour = 3_600_000ms)
+    // Advance clock to expiry (1 hour = 3_600_000ms)
     clock.set_for_testing(1_000_000 + 3_600_000);
 
-    scenario.next_tx(CREATOR);
+    // Anyone may delete it, not just board members.
+    scenario.next_tx(NON_MEMBER);
+    let prop_id;
     {
-        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.try_expire(&clock);
-        assert!(prop.status().is_expired());
-        test_scenario::return_shared(prop);
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        prop_id = object::id(&prop);
+        proposal::delete_expired_proposal(prop, &clock);
     };
+
+    let effects = scenario.next_tx(CREATOR);
+    assert!(effects.deleted() == vector[prop_id]);
+    assert!(!test_scenario::has_most_recent_shared<Proposal<TestPayload>>());
 
     clock.destroy_for_testing();
     scenario.end();
 }
 
-// === Test 7: Passed -> Executed ===
+// === Test 7: Execute deletes the proposal ===
 
 #[test]
-/// execute sets Executed and returns ExecutionRequest.
-fun test_status_passed_to_executed() {
+/// execute returns the payload and an ExecutionRequest and deletes the proposal.
+fun test_execute_deletes_proposal() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     create_test_proposal(&mut scenario, &clock);
 
     // Vote to pass
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(prop);
     };
 
     // Execute
     scenario.next_tx(CREATOR);
+    let prop_id;
     {
-        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        let dao = scenario.take_shared<DAO>();
-        let (_payload, req) = prop.execute(
-            dao.governance(),
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        prop_id = object::id(&prop);
+        let ou = scenario.take_shared<OU>();
+        let (payload, req) = prop.execute(
+            ou.governance(),
             option::none(),
             false,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
-        assert!(prop.status().is_executed());
+        assert!(payload.value == 42);
+        assert!(req.req_proposal_id() == prop_id);
         proposal::consume(req);
-        test_scenario::return_shared(prop);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
+    };
+
+    let effects = scenario.next_tx(CREATOR);
+    // test_scenario also reports the roster entry that execute's membership
+    // check read as deleted. It is not: the executor is still a member below.
+    assert!(effects.deleted().length() == 2);
+    assert!(effects.deleted().contains(&prop_id));
+    assert!(!test_scenario::has_most_recent_shared<Proposal<TestPayload>>());
+    {
+        let ou = scenario.take_shared<OU>();
+        assert!(ou.governance().is_board_member(CREATOR));
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -185,14 +212,16 @@ fun test_cannot_vote_on_passed_aborts() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     create_test_proposal(&mut scenario, &clock);
 
     // Pass the proposal
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         assert!(prop.status().is_passed());
         test_scenario::return_shared(prop);
     };
@@ -201,7 +230,9 @@ fun test_cannot_vote_on_passed_aborts() {
     scenario.next_tx(MEMBER_B);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(prop);
     };
 
@@ -209,32 +240,26 @@ fun test_cannot_vote_on_passed_aborts() {
     scenario.end();
 }
 
-// === Test 9: Cannot vote on Expired ===
+// === Test 8b: Cannot vote after the voting period ===
 
-#[test, expected_failure(abort_code = proposal::ENotActive)]
-/// Abort — cannot vote on expired proposal.
-fun test_cannot_vote_on_expired_aborts() {
+#[test, expected_failure(abort_code = proposal::EVotingClosed)]
+/// Abort — a late vote must not pass an expired proposal and open a fresh
+/// execution window.
+fun test_vote_after_expiry_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     create_test_proposal(&mut scenario, &clock);
 
-    // Expire the proposal
     clock.set_for_testing(1_000_000 + 3_600_000);
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.try_expire(&clock);
-        test_scenario::return_shared(prop);
-    };
-
-    // Try to vote
-    scenario.next_tx(CREATOR);
-    {
-        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(prop);
     };
 
@@ -242,124 +267,259 @@ fun test_cannot_vote_on_expired_aborts() {
     scenario.end();
 }
 
-// === Test 10: Cannot vote on Executed ===
-
-#[test, expected_failure(abort_code = proposal::ENotActive)]
-/// Abort — cannot vote on executed proposal.
-fun test_cannot_vote_on_executed_aborts() {
+#[test]
+/// The last millisecond of the voting period still accepts votes.
+fun test_vote_just_before_expiry() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     create_test_proposal(&mut scenario, &clock);
 
-    // Pass
+    clock.set_for_testing(1_000_000 + 3_600_000 - 1);
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+        assert!(prop.status().is_passed());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(prop);
     };
 
-    // Execute
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// === Test 9: Active proposal cannot be deleted before expiry ===
+
+#[test, expected_failure(abort_code = proposal::ENotExpired)]
+/// Abort — an Active proposal is still open for voting until expiry_ms passes.
+fun test_delete_expired_active_too_early_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_test_ou(&mut scenario);
+    create_test_proposal(&mut scenario, &clock);
+
+    clock.set_for_testing(1_000_000 + 3_600_000 - 1);
+    scenario.next_tx(NON_MEMBER);
+    {
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        proposal::delete_expired_proposal(prop, &clock);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// === Test 10: Passed proposal deleted after its execution window ===
+
+#[test]
+/// A Passed proposal that nobody executes can be deleted once its execution
+/// window (passed_at + execution_delay_ms + expiry_ms) has closed.
+fun test_delete_expired_passed_after_window() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_test_ou(&mut scenario);
+    create_test_proposal(&mut scenario, &clock);
+
+    // Pass 10 minutes after creation, so the window runs from the pass time.
+    clock.set_for_testing(1_600_000);
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        let dao = scenario.take_shared<DAO>();
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
+        test_scenario::return_shared(prop);
+    };
+
+    clock.set_for_testing(1_600_000 + 3_600_000);
+    scenario.next_tx(NON_MEMBER);
+    {
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        proposal::delete_expired_proposal(prop, &clock);
+    };
+
+    scenario.next_tx(CREATOR);
+    assert!(!test_scenario::has_most_recent_shared<Proposal<TestPayload>>());
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// === Test 11: Passed proposal cannot be deleted inside its window ===
+
+#[test, expected_failure(abort_code = proposal::ENotExpired)]
+/// Abort — the window is measured from the pass time, not the creation time.
+fun test_delete_expired_passed_inside_window_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_test_ou(&mut scenario);
+    create_test_proposal(&mut scenario, &clock);
+
+    clock.set_for_testing(1_600_000);
+    scenario.next_tx(CREATOR);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
+        test_scenario::return_shared(prop);
+    };
+
+    // Past created_at + expiry_ms, but inside passed_at + expiry_ms.
+    clock.set_for_testing(1_600_000 + 3_600_000 - 1);
+    scenario.next_tx(NON_MEMBER);
+    {
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        proposal::delete_expired_proposal(prop, &clock);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// === Test 12: Cannot execute after the execution window ===
+
+#[test, expected_failure(abort_code = proposal::EExecutionWindowClosed)]
+/// Abort — once a Passed proposal's window closes it can only be deleted.
+fun test_execute_after_window_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_test_ou(&mut scenario);
+    create_test_proposal(&mut scenario, &clock);
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
+        test_scenario::return_shared(prop);
+    };
+
+    clock.set_for_testing(1_000_000 + 3_600_000);
+    scenario.next_tx(CREATOR);
+    {
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        let ou = scenario.take_shared<OU>();
         let (_payload, req) = prop.execute(
-            dao.governance(),
+            ou.governance(),
             option::none(),
             false,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
         proposal::consume(req);
-        test_scenario::return_shared(prop);
-        test_scenario::return_shared(dao);
-    };
-
-    // Try to vote
-    scenario.next_tx(MEMBER_B);
-    {
-        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
-        test_scenario::return_shared(prop);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
     scenario.end();
 }
 
-// === Test 11: Cannot execute Expired ===
+// === Test 12a: Enormous expiry saturates instead of overflowing ===
 
-#[test, expected_failure(abort_code = proposal::ENotPassed)]
-/// Abort — expired cannot be executed.
-fun test_cannot_execute_expired_aborts() {
+/// Create a proposal whose expiry_ms is u64::MAX (a "never expires" config)
+/// and pass it at the current clock time.
+fun create_and_pass_max_expiry_proposal(scenario: &mut test_scenario::Scenario, clock: &Clock) {
+    scenario.next_tx(CREATOR);
+    {
+        let ou = scenario.take_shared<OU>();
+        let config = proposal::new_config(
+            5_000,
+            5_000,
+            0,
+            std::u64::max_value!(), // expiry: never
+            0,
+            0,
+        );
+        proposal::create<TestPayload>(
+            ou.id(),
+            b"SetBoard".to_ascii_string(),
+            CREATOR,
+            option::some(string::utf8(b"ipfs://test")),
+            TestPayload { value: 42 },
+            config,
+            ou.governance(),
+            ou.status().is_active(),
+            clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(ou);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
+        test_scenario::return_shared(prop);
+    };
+}
+
+#[test]
+/// passed_at + execution_delay_ms + expiry_ms would overflow; the deadline
+/// saturates at u64::MAX so the proposal still executes.
+fun test_execute_with_max_expiry_does_not_overflow() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_test_dao(&mut scenario);
-    create_test_proposal(&mut scenario, &clock);
+    create_test_ou(&mut scenario);
+    create_and_pass_max_expiry_proposal(&mut scenario, &clock);
 
-    // Expire
-    clock.set_for_testing(1_000_000 + 3_600_000);
+    clock.set_for_testing(1_000_000_000_000);
     scenario.next_tx(CREATOR);
     {
-        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.try_expire(&clock);
-        test_scenario::return_shared(prop);
-    };
-
-    // Try to execute
-    scenario.next_tx(CREATOR);
-    {
-        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        let dao = scenario.take_shared<DAO>();
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        let ou = scenario.take_shared<OU>();
         let (_payload, req) = prop.execute(
-            dao.governance(),
+            ou.governance(),
             option::none(),
             false,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
         proposal::consume(req);
-        test_scenario::return_shared(prop);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
     scenario.end();
 }
 
-// === Test 12: Cannot expire Passed ===
-
-#[test, expected_failure(abort_code = proposal::ENotActive)]
-/// Abort — Passed cannot transition to Expired.
-fun test_cannot_expire_passed_aborts() {
+#[test, expected_failure(abort_code = proposal::ENotExpired)]
+/// With a saturated deadline the proposal never expires: delete aborts with
+/// ENotExpired, not an arithmetic overflow.
+fun test_delete_with_max_expiry_not_expired() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_test_dao(&mut scenario);
-    create_test_proposal(&mut scenario, &clock);
+    create_test_ou(&mut scenario);
+    create_and_pass_max_expiry_proposal(&mut scenario, &clock);
 
-    // Pass
-    scenario.next_tx(CREATOR);
+    clock.set_for_testing(1_000_000_000_000);
+    scenario.next_tx(NON_MEMBER);
     {
-        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
-        test_scenario::return_shared(prop);
-    };
-
-    // Try to expire
-    clock.set_for_testing(1_000_000 + 3_600_000);
-    scenario.next_tx(CREATOR);
-    {
-        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.try_expire(&clock);
-        test_scenario::return_shared(prop);
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        proposal::delete_expired_proposal(prop, &clock);
     };
 
     clock.destroy_for_testing();
@@ -375,23 +535,25 @@ fun test_vote_snapshot_immutable_after_creation() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     create_test_proposal(&mut scenario, &clock);
 
     // Change board members via governance_mut
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let new_member: address = @0xC;
-        dao.governance_mut().set_board(vector[CREATOR, new_member]);
-        test_scenario::return_shared(dao);
+        ou.governance_mut().set_board(vector[new_member], vector[MEMBER_B]);
+        test_scenario::return_shared(ou);
     };
 
     // Original MEMBER_B can still vote (in snapshot)
     scenario.next_tx(MEMBER_B);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(prop);
     };
 
@@ -408,23 +570,25 @@ fun test_new_member_cannot_vote_on_old_proposal() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     create_test_proposal(&mut scenario, &clock);
 
     // Add new member
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let new_member: address = @0xC;
-        dao.governance_mut().set_board(vector[CREATOR, MEMBER_B, new_member]);
-        test_scenario::return_shared(dao);
+        ou.governance_mut().set_board(vector[new_member], vector[]);
+        test_scenario::return_shared(ou);
     };
 
     // New member tries to vote
     scenario.next_tx(@0xC);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(prop);
     };
 
@@ -441,32 +605,35 @@ fun test_non_board_member_cannot_execute_aborts() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     create_test_proposal(&mut scenario, &clock);
 
     // Pass
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(prop);
     };
 
     // Non-member tries to execute
     scenario.next_tx(NON_MEMBER);
     {
-        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        let dao = scenario.take_shared<DAO>();
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        let ou = scenario.take_shared<OU>();
         let (_payload, req) = prop.execute(
-            dao.governance(),
+            ou.governance(),
             option::none(),
             false,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
         proposal::consume(req);
-        test_scenario::return_shared(prop);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -482,33 +649,35 @@ fun test_board_member_can_execute() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     create_test_proposal(&mut scenario, &clock);
 
     // Pass
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(prop);
     };
 
     // MEMBER_B executes (board member, not the voter)
     scenario.next_tx(MEMBER_B);
     {
-        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        let dao = scenario.take_shared<DAO>();
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        let ou = scenario.take_shared<OU>();
         let (_payload, req) = prop.execute(
-            dao.governance(),
+            ou.governance(),
             option::none(),
             false,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
-        assert!(prop.status().is_executed());
         proposal::consume(req);
-        test_scenario::return_shared(prop);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -525,14 +694,16 @@ fun test_passed_proposal_retryable_after_failure() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     create_test_proposal(&mut scenario, &clock);
 
     // Pass
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         assert!(prop.status().is_passed());
         test_scenario::return_shared(prop);
     };
@@ -540,19 +711,19 @@ fun test_passed_proposal_retryable_after_failure() {
     // Execute succeeds
     scenario.next_tx(CREATOR);
     {
-        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        let dao = scenario.take_shared<DAO>();
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        let ou = scenario.take_shared<OU>();
         let (_payload, req) = prop.execute(
-            dao.governance(),
+            ou.governance(),
             option::none(),
             false,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
-        assert!(prop.status().is_executed());
         proposal::consume(req);
-        test_scenario::return_shared(prop);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -568,14 +739,16 @@ fun test_vote_double_vote_aborts() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     create_test_proposal(&mut scenario, &clock);
 
     // First vote (NO so proposal stays Active)
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(false, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, false, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(prop);
     };
 
@@ -583,7 +756,9 @@ fun test_vote_double_vote_aborts() {
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(prop);
     };
 
@@ -594,20 +769,22 @@ fun test_vote_double_vote_aborts() {
 // === Test 20: Non-snapshot member cannot vote ===
 
 #[test, expected_failure(abort_code = proposal::ENotInSnapshot)]
-/// Abort — not in vote_snapshot.
+/// Abort — not a member at the proposal's snapshot version.
 fun test_vote_non_snapshot_member_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     create_test_proposal(&mut scenario, &clock);
 
     // Non-member tries to vote
     scenario.next_tx(NON_MEMBER);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(prop);
     };
 
@@ -624,14 +801,16 @@ fun test_vote_no_vote_counted_correctly() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     create_test_proposal(&mut scenario, &clock);
 
     // Vote NO
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(false, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, false, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         assert!(prop.no_weight() == 1);
         assert!(prop.yes_weight() == 0);
         assert!(prop.status().is_active()); // Not passed
@@ -651,12 +830,12 @@ fun test_execute_delay_not_elapsed_aborts() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     // Create proposal with 1 hour execution delay
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let config = proposal::new_config(
             5_000,
             5_000,
@@ -666,25 +845,27 @@ fun test_execute_delay_not_elapsed_aborts() {
             0,
         );
         proposal::create<TestPayload>(
-            dao.id(),
+            ou.id(),
             b"SetBoard".to_ascii_string(),
             CREATOR,
             option::some(string::utf8(b"ipfs://test")),
             TestPayload { value: 42 },
             config,
-            dao.governance(),
-            dao.status().is_active(),
+            ou.governance(),
+            ou.status().is_active(),
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // Pass
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         assert!(prop.status().is_passed());
         test_scenario::return_shared(prop);
     };
@@ -692,18 +873,19 @@ fun test_execute_delay_not_elapsed_aborts() {
     // Try execute immediately (delay not elapsed)
     scenario.next_tx(CREATOR);
     {
-        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        let dao = scenario.take_shared<DAO>();
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        let ou = scenario.take_shared<OU>();
         let (_payload, req) = prop.execute(
-            dao.governance(),
+            ou.governance(),
             option::none(),
             false,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
         proposal::consume(req);
-        test_scenario::return_shared(prop);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -719,12 +901,12 @@ fun test_execute_delay_elapsed_succeeds() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     // Create proposal with 1 hour execution delay
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let config = proposal::new_config(
             5_000,
             5_000,
@@ -734,25 +916,27 @@ fun test_execute_delay_elapsed_succeeds() {
             0,
         );
         proposal::create<TestPayload>(
-            dao.id(),
+            ou.id(),
             b"SetBoard".to_ascii_string(),
             CREATOR,
             option::some(string::utf8(b"ipfs://test")),
             TestPayload { value: 42 },
             config,
-            dao.governance(),
-            dao.status().is_active(),
+            ou.governance(),
+            ou.status().is_active(),
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // Pass
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(prop);
     };
 
@@ -762,19 +946,93 @@ fun test_execute_delay_elapsed_succeeds() {
     // Execute succeeds
     scenario.next_tx(CREATOR);
     {
-        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        let dao = scenario.take_shared<DAO>();
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        let ou = scenario.take_shared<OU>();
         let (_payload, req) = prop.execute(
-            dao.governance(),
+            ou.governance(),
             option::none(),
             false,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
-        assert!(prop.status().is_executed());
         proposal::consume(req);
+        test_scenario::return_shared(ou);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+// === Test 23a: Execution window starts after the delay ===
+
+#[test]
+/// The window stays open for expiry_ms after the delay elapses, so a proposal
+/// with a delay is still executable at passed_at + delay + expiry - 1.
+fun test_execute_window_starts_after_delay() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_test_ou(&mut scenario);
+
+    // Create proposal with 1 hour execution delay
+    scenario.next_tx(CREATOR);
+    {
+        let ou = scenario.take_shared<OU>();
+        let config = proposal::new_config(
+            5_000,
+            5_000,
+            0,
+            3_600_000,
+            3_600_000, // execution_delay = 1 hour
+            0,
+        );
+        proposal::create<TestPayload>(
+            ou.id(),
+            b"SetBoard".to_ascii_string(),
+            CREATOR,
+            option::some(string::utf8(b"ipfs://test")),
+            TestPayload { value: 42 },
+            config,
+            ou.governance(),
+            ou.status().is_active(),
+            &clock,
+            scenario.ctx(),
+        );
+        test_scenario::return_shared(ou);
+    };
+
+    // Pass
+    scenario.next_tx(CREATOR);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(prop);
-        test_scenario::return_shared(dao);
+    };
+
+    // Last millisecond of the window
+    clock.set_for_testing(1_000_000 + 3_600_000 + 3_600_000 - 1);
+
+    // Execute succeeds
+    scenario.next_tx(CREATOR);
+    {
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        let ou = scenario.take_shared<OU>();
+        let (_payload, req) = prop.execute(
+            ou.governance(),
+            option::none(),
+            false,
+            0,
+            vector[],
+            &clock,
+            scenario.ctx(),
+        );
+        proposal::consume(req);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -790,12 +1048,12 @@ fun test_execute_cooldown_active_aborts() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     // Create proposal with 1 hour cooldown
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let config = proposal::new_config(
             5_000,
             5_000,
@@ -805,44 +1063,47 @@ fun test_execute_cooldown_active_aborts() {
             3_600_000, // cooldown = 1 hour
         );
         proposal::create<TestPayload>(
-            dao.id(),
+            ou.id(),
             b"SetBoard".to_ascii_string(),
             CREATOR,
             option::some(string::utf8(b"ipfs://test")),
             TestPayload { value: 42 },
             config,
-            dao.governance(),
-            dao.status().is_active(),
+            ou.governance(),
+            ou.status().is_active(),
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // Pass
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(prop);
     };
 
     // Try execute with recent last_executed_at (cooldown active)
     scenario.next_tx(CREATOR);
     {
-        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        let dao = scenario.take_shared<DAO>();
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        let ou = scenario.take_shared<OU>();
         // Last executed 500ms ago — within 1hr cooldown
         let (_payload, req) = prop.execute(
-            dao.governance(),
+            ou.governance(),
             option::some(999_500),
             false,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
         proposal::consume(req);
-        test_scenario::return_shared(prop);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -858,12 +1119,12 @@ fun test_execute_cooldown_elapsed_succeeds() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(10_000_000);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
 
     // Create proposal with 1 hour cooldown
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let config = proposal::new_config(
             5_000,
             5_000,
@@ -873,45 +1134,47 @@ fun test_execute_cooldown_elapsed_succeeds() {
             3_600_000, // cooldown = 1 hour
         );
         proposal::create<TestPayload>(
-            dao.id(),
+            ou.id(),
             b"SetBoard".to_ascii_string(),
             CREATOR,
             option::some(string::utf8(b"ipfs://test")),
             TestPayload { value: 42 },
             config,
-            dao.governance(),
-            dao.status().is_active(),
+            ou.governance(),
+            ou.status().is_active(),
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // Pass
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(prop);
     };
 
     // Execute with old last_executed_at (cooldown elapsed)
     scenario.next_tx(CREATOR);
     {
-        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        let dao = scenario.take_shared<DAO>();
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        let ou = scenario.take_shared<OU>();
         // Last executed 2 hours ago — cooldown elapsed
         let (_payload, req) = prop.execute(
-            dao.governance(),
+            ou.governance(),
             option::some(10_000_000 - 7_200_000),
             false,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
-        assert!(prop.status().is_executed());
         proposal::consume(req);
-        test_scenario::return_shared(prop);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -924,32 +1187,35 @@ fun test_execute_paused_aborts() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     create_test_proposal(&mut scenario, &clock);
 
     // CREATOR's single vote meets 50% threshold — proposal passes
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(prop);
     };
 
     // Execute with execution_paused=true — should abort with EExecutionPaused
     scenario.next_tx(CREATOR);
     {
-        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        let dao = scenario.take_shared<DAO>();
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        let ou = scenario.take_shared<OU>();
         let (_payload, req) = prop.execute(
-            dao.governance(),
+            ou.governance(),
             option::none(),
             true,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
         proposal::consume(req);
-        test_scenario::return_shared(prop);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -963,11 +1229,11 @@ fun test_execute_paused_aborts() {
 #[test]
 /// consume_execution_request destroys the hot potato without requiring a Proposal object.
 fun consume_execution_request_destroys_hot_potato() {
-    let dao_id = object::id_from_address(@0xDA0);
+    let ou_id = object::id_from_address(@0xDA0);
     let proposal_id = object::id_from_address(@0xBEEF);
-    let req = proposal::new_execution_request<TestPayload>(dao_id, proposal_id);
+    let req = proposal::new_execution_request_for_testing<TestPayload>(ou_id, proposal_id);
 
-    assert!(req.req_dao_id() == dao_id);
+    assert!(req.req_ou_id() == ou_id);
     assert!(req.req_proposal_id() == proposal_id);
 
     proposal::consume_execution_request_for_testing(req);
@@ -980,31 +1246,34 @@ fun consume_execution_request_works_after_governance_execution() {
     let mut scenario = test_scenario::begin(CREATOR);
     let clock = clock::create_for_testing(scenario.ctx());
 
-    create_test_dao(&mut scenario);
+    create_test_ou(&mut scenario);
     create_test_proposal(&mut scenario, &clock);
 
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(prop);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        let dao = scenario.take_shared<DAO>();
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        let ou = scenario.take_shared<OU>();
         let (_payload, req) = prop.execute(
-            dao.governance(),
+            ou.governance(),
             option::none(),
             false,
+            0,
+            vector[],
             &clock,
             scenario.ctx(),
         );
         // Consume without passing the Proposal object — the hot potato is sufficient proof.
         proposal::consume_execution_request_for_testing(req);
-        test_scenario::return_shared(prop);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -1018,10 +1287,10 @@ fun consume_execution_request_works_after_governance_execution() {
 #[test]
 /// ticket_is_standalone returns true for Standalone tickets.
 fun test_ticket_is_standalone_true() {
-    let dao_id = object::id_from_address(@0xDA0);
+    let ou_id = object::id_from_address(@0xDA0);
     let proposal_id = object::id_from_address(@0xBEEF);
     let ticket = proposal::new_standalone_ticket_for_testing<TestPayload>(
-        dao_id,
+        ou_id,
         proposal_id,
         TestPayload { value: 1 },
         100,
@@ -1030,135 +1299,66 @@ fun test_ticket_is_standalone_true() {
     assert!(ticket.ticket_is_standalone());
     assert!(ticket.ticket_yes_weight() == 100);
     assert!(ticket.ticket_total_snapshot_weight() == 200);
-    assert!(ticket.ticket_dao_id() == dao_id);
-    ticket.discharge();
+    assert!(ticket.ticket_ou_id() == ou_id);
+    ticket.discharge(internal::permit());
 }
 
 #[test, expected_failure(abort_code = armature::proposal::ENotStandaloneTicket)]
 /// ticket_yes_weight aborts on Composite tickets.
 fun test_ticket_yes_weight_aborts_on_composite() {
-    let dao_id = object::id_from_address(@0xDA0);
+    let ou_id = object::id_from_address(@0xDA0);
     let proposal_id = object::id_from_address(@0xBEEF);
     let ticket = proposal::new_composite_ticket_for_testing<TestPayload>(
-        dao_id,
+        ou_id,
         proposal_id,
         TestPayload { value: 1 },
     );
     // Composite ticket — this must abort
     let _w = ticket.ticket_yes_weight();
-    ticket.discharge();
+    ticket.discharge(internal::permit());
 }
 
 #[test, expected_failure(abort_code = armature::proposal::ENotStandaloneTicket)]
 /// ticket_total_snapshot_weight aborts on External tickets.
 fun test_ticket_total_snapshot_weight_aborts_on_external() {
-    let dao_id = object::id_from_address(@0xDA0);
+    let ou_id = object::id_from_address(@0xDA0);
     let proposal_id = object::id_from_address(@0xBEEF);
     let ticket = proposal::new_external_ticket_for_testing<TestPayload>(
-        dao_id,
+        ou_id,
         proposal_id,
         TestPayload { value: 1 },
     );
     // External ticket — this must abort
     let _w = ticket.ticket_total_snapshot_weight();
-    ticket.discharge();
+    ticket.discharge(internal::permit());
 }
 
 #[test]
 /// ticket_is_standalone returns false for Composite tickets.
 fun test_ticket_is_standalone_false_for_composite() {
-    let dao_id = object::id_from_address(@0xDA0);
+    let ou_id = object::id_from_address(@0xDA0);
     let proposal_id = object::id_from_address(@0xBEEF);
     let ticket = proposal::new_composite_ticket_for_testing<TestPayload>(
-        dao_id,
+        ou_id,
         proposal_id,
         TestPayload { value: 1 },
     );
     assert!(!ticket.ticket_is_standalone());
-    ticket.discharge();
+    ticket.discharge(internal::permit());
 }
 
 #[test]
 /// ticket_is_standalone returns false for External tickets.
 fun test_ticket_is_standalone_false_for_external() {
-    let dao_id = object::id_from_address(@0xDA0);
+    let ou_id = object::id_from_address(@0xDA0);
     let proposal_id = object::id_from_address(@0xBEEF);
     let ticket = proposal::new_external_ticket_for_testing<TestPayload>(
-        dao_id,
+        ou_id,
         proposal_id,
         TestPayload { value: 1 },
     );
     assert!(!ticket.ticket_is_standalone());
-    ticket.discharge();
-}
-
-// =========================================================================
-// delete_executed_proposal tests
-// =========================================================================
-
-#[test]
-/// delete_executed_proposal succeeds on an executed proposal with payload=None.
-fun test_delete_executed_proposal_succeeds() {
-    let mut scenario = test_scenario::begin(CREATOR);
-    let clock = clock::create_for_testing(scenario.ctx());
-
-    create_test_dao(&mut scenario);
-    create_test_proposal(&mut scenario, &clock);
-
-    // Vote to pass
-    scenario.next_tx(CREATOR);
-    {
-        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        prop.vote(true, &clock, scenario.ctx());
-        test_scenario::return_shared(prop);
-    };
-
-    // Execute (extracts payload)
-    scenario.next_tx(CREATOR);
-    {
-        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        let dao = scenario.take_shared<DAO>();
-        let (_payload, req) = prop.execute(
-            dao.governance(),
-            option::none(),
-            false,
-            &clock,
-            scenario.ctx(),
-        );
-        proposal::consume_execution_request_for_testing(req);
-        test_scenario::return_shared(prop);
-        test_scenario::return_shared(dao);
-    };
-
-    // Delete the executed proposal
-    scenario.next_tx(CREATOR);
-    {
-        let prop = scenario.take_shared<Proposal<TestPayload>>();
-        proposal::delete_executed_proposal(prop);
-    };
-
-    clock.destroy_for_testing();
-    scenario.end();
-}
-
-#[test, expected_failure(abort_code = armature::proposal::ENotExecuted)]
-/// delete_executed_proposal aborts when status is not Executed.
-fun test_delete_executed_proposal_not_executed_aborts() {
-    let mut scenario = test_scenario::begin(CREATOR);
-    let clock = clock::create_for_testing(scenario.ctx());
-
-    create_test_dao(&mut scenario);
-    create_test_proposal(&mut scenario, &clock);
-
-    // Try to delete while still Active (not voted on)
-    scenario.next_tx(CREATOR);
-    {
-        let prop = scenario.take_shared<Proposal<TestPayload>>();
-        proposal::delete_executed_proposal(prop);
-    };
-
-    clock.destroy_for_testing();
-    scenario.end();
+    ticket.discharge(internal::permit());
 }
 
 // =========================================================================
@@ -1173,17 +1373,281 @@ public struct NonDropPayload has store {
 #[test]
 /// discharge_returning_payload returns the payload from a Standalone ticket.
 fun test_discharge_returning_payload() {
-    let dao_id = object::id_from_address(@0xDA0);
+    let ou_id = object::id_from_address(@0xDA0);
     let proposal_id = object::id_from_address(@0xBEEF);
     let ticket = proposal::new_standalone_ticket_for_testing<NonDropPayload>(
-        dao_id,
+        ou_id,
         proposal_id,
         NonDropPayload { value: 42 },
         100,
         200,
     );
-    let payload = proposal::discharge_returning_payload(ticket);
+    let payload = proposal::discharge_returning_payload(ticket, internal::permit());
     assert!(payload.value == 42);
     // Manually destructure since NonDropPayload has no drop
     let NonDropPayload { value: _ } = payload;
+}
+
+// === Roster versions ===
+
+#[test]
+/// A member of the board at creation who is removed afterwards can still vote:
+/// eligibility is membership at the snapshot version, not current membership.
+fun test_removed_member_keeps_vote_on_old_proposal() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_test_ou(&mut scenario);
+    create_test_proposal(&mut scenario, &clock);
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut ou = scenario.take_shared<OU>();
+        ou.governance_mut().remove_board_member(MEMBER_B);
+        test_scenario::return_shared(ou);
+    };
+
+    scenario.next_tx(MEMBER_B);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let ou = scenario.take_shared<OU>();
+        assert!(!ou.governance().is_board_member(MEMBER_B));
+        board_voting::vote(&mut prop, &ou, true, &clock, scenario.ctx());
+        assert!(prop.yes_weight() == 1);
+        assert!(prop.status().is_passed());
+        test_scenario::return_shared(ou);
+        test_scenario::return_shared(prop);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+/// A member of the board at creation who is removed and re-added can still
+/// vote: their first tenure covers the proposal's snapshot version.
+fun test_readded_member_keeps_vote_on_old_proposal() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_test_ou(&mut scenario);
+    create_test_proposal(&mut scenario, &clock);
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut ou = scenario.take_shared<OU>();
+        ou.governance_mut().remove_board_member(MEMBER_B);
+        ou.governance_mut().add_board_member(MEMBER_B);
+        test_scenario::return_shared(ou);
+    };
+
+    scenario.next_tx(MEMBER_B);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let ou = scenario.take_shared<OU>();
+        board_voting::vote(&mut prop, &ou, true, &clock, scenario.ctx());
+        assert!(prop.status().is_passed());
+        test_scenario::return_shared(ou);
+        test_scenario::return_shared(prop);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = proposal::ENotInSnapshot)]
+/// A former member re-added after a proposal was created cannot vote on it:
+/// they were not a member at its snapshot version.
+fun test_member_readded_after_creation_cannot_vote() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_test_ou(&mut scenario);
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut ou = scenario.take_shared<OU>();
+        ou.governance_mut().remove_board_member(MEMBER_B);
+        test_scenario::return_shared(ou);
+    };
+
+    create_test_proposal(&mut scenario, &clock);
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut ou = scenario.take_shared<OU>();
+        ou.governance_mut().add_board_member(MEMBER_B);
+        test_scenario::return_shared(ou);
+    };
+
+    scenario.next_tx(MEMBER_B);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let ou = scenario.take_shared<OU>();
+        board_voting::vote(&mut prop, &ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(ou);
+        test_scenario::return_shared(prop);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+/// Quorum is measured against the board at creation, not the current board.
+fun test_quorum_uses_total_weight_at_creation() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_test_ou(&mut scenario);
+    create_test_proposal(&mut scenario, &clock);
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut ou = scenario.take_shared<OU>();
+        ou.governance_mut().add_board_members(vector[@0xC1, @0xC2, @0xC3]);
+        assert!(ou.governance().member_count() == 5);
+        test_scenario::return_shared(ou);
+    };
+
+    // One YES of the two members at creation meets the 50% quorum.
+    scenario.next_tx(CREATOR);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let ou = scenario.take_shared<OU>();
+        assert!(prop.total_snapshot_weight() == 2);
+        board_voting::vote(&mut prop, &ou, true, &clock, scenario.ctx());
+        assert!(prop.status().is_passed());
+        test_scenario::return_shared(ou);
+        test_scenario::return_shared(prop);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = proposal::ENotEligible)]
+/// Execution requires current membership: a member removed after voting a
+/// proposal through cannot execute it.
+fun test_removed_member_cannot_execute() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_test_ou(&mut scenario);
+    create_test_proposal(&mut scenario, &clock);
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let ou = scenario.take_shared<OU>();
+        board_voting::vote(&mut prop, &ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(ou);
+        test_scenario::return_shared(prop);
+    };
+
+    scenario.next_tx(MEMBER_B);
+    {
+        let mut ou = scenario.take_shared<OU>();
+        ou.governance_mut().remove_board_member(CREATOR);
+        test_scenario::return_shared(ou);
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        let ou = scenario.take_shared<OU>();
+        let (_payload, req) = prop.execute(
+            ou.governance(),
+            option::none(),
+            false,
+            0,
+            vector[],
+            &clock,
+            scenario.ctx(),
+        );
+        proposal::consume(req);
+        test_scenario::return_shared(ou);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = board_voting::EOUIdMismatch)]
+/// Votes are checked against the proposal's own OU: passing another OU,
+/// where the voter is a member, aborts.
+fun test_vote_with_other_ou_aborts() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_test_ou(&mut scenario);
+    create_test_proposal(&mut scenario, &clock);
+
+    scenario.next_tx(NON_MEMBER);
+    let other_id = ou::create(
+        &governance::init_board(vector[NON_MEMBER]),
+        string::utf8(b"Other OU"),
+        string::utf8(b"https://example.com/logo.png"),
+        scenario.ctx(),
+    );
+
+    scenario.next_tx(NON_MEMBER);
+    {
+        let mut prop = scenario.take_shared<Proposal<TestPayload>>();
+        let other = scenario.take_shared_by_id<OU>(other_id);
+        board_voting::vote(&mut prop, &other, true, &clock, scenario.ctx());
+        test_scenario::return_shared(other);
+        test_scenario::return_shared(prop);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+/// The roster version advances once per membership change, a batch counting
+/// as one change, and not at all for a batch that adds nobody. Proposals
+/// record the version current at creation.
+fun test_roster_version_and_snapshot_version() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    clock.set_for_testing(1_000_000);
+
+    create_test_ou(&mut scenario);
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut ou = scenario.take_shared<OU>();
+        assert!(ou.governance().roster_version() == 0);
+        ou.governance_mut().add_board_members(vector[@0xC1, @0xC2]);
+        assert!(ou.governance().roster_version() == 1);
+        ou.governance_mut().add_board_members(vector[@0xC1, @0xC2]);
+        assert!(ou.governance().roster_version() == 1);
+        ou.governance_mut().remove_board_members(vector[@0xC1, @0xC2]);
+        assert!(ou.governance().roster_version() == 2);
+        assert!(ou.governance().member_count() == 2);
+        assert!(ou.governance().was_member_at(@0xC1, 1));
+        assert!(!ou.governance().was_member_at(@0xC1, 0));
+        assert!(!ou.governance().was_member_at(@0xC1, 2));
+        assert!(!ou.governance().is_board_member(@0xC1));
+        test_scenario::return_shared(ou);
+    };
+
+    create_test_proposal(&mut scenario, &clock);
+
+    scenario.next_tx(CREATOR);
+    {
+        let prop = scenario.take_shared<Proposal<TestPayload>>();
+        assert!(prop.snapshot_version() == 2);
+        test_scenario::return_shared(prop);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
 }

@@ -1,142 +1,63 @@
-# 05 — Charter Object and Walrus Integration
+# 05 — Charter
 
 ## Overview
 
-Every DAO has a Charter — a human-readable constitutional document that defines the organization's purpose, operating agreements, membership rules, and amendment procedures. The Charter is stored on **Walrus** (Sui's decentralized blob storage) and referenced on-chain via a `Charter` shared object that tracks the current blob ID, content hash, version, and amendment history.
-
-The Charter is not decorative metadata. It is a first-class governance artifact with its own high-threshold amendment process. Changing the Charter requires the same governance rigor as changing the organization's structure.
+Every OU has a Charter: its name and a pointer to a human-readable document that defines the organization's purpose, operating agreements and rules. Part A describes what is implemented: an on-chain `Charter` object holding the name and a metadata URI (an IPFS CID), changed by the `UpdateMetadata` proposal type. Part B describes the planned Walrus-backed charter with versioned, hash-verified amendments, which is **not implemented**.
 
 ---
+
+# Part A — Implemented
 
 ## 1. Core Object: `Charter`
 
-A separate shared object, following the same concurrent-access pattern as `TreasuryVault` and `CapabilityVault`. The `DAO` stores only a `charter_id: ID` reference to it.
+A separate shared object, following the same concurrent-access pattern as `TreasuryVault` and `CapabilityVault`. The `OU` stores only a `charter_id: ID` reference to it.
 
 ```rust
-struct Charter has key {
-    id:                UID,
-    dao_id:            ID,                            // back-reference to the owning DAO
-    current_blob_id:   String,                        // Walrus blob ID for current charter content
-    content_hash:      vector<u8>,                    // SHA-256 hash of the charter content
-    version:           u64,                           // monotonically increasing version number
-    amendment_history: vector<AmendmentRecord>,       // chronological history of amendments
-    created_at_ms:     u64,
-}
-
-struct AmendmentRecord has copy, drop, store {
-    version:          u64,                // version number after this amendment
-    previous_blob_id: String,             // blob ID of the previous version
-    new_blob_id:      String,             // blob ID of the new version
-    content_hash:     vector<u8>,         // hash of the new content
-    proposal_id:      ID,                 // the AmendCharter proposal that authorized this change
-    amended_at_ms:    u64,
+struct Charter has key, store {
+    id:           UID,
+    ou_id:       ID,       // back-reference to the owning OU
+    name:         String,   // the OU's name, set at creation
+    metadata_uri: String,   // IPFS CID / URI of the OU's metadata document
 }
 ```
+
+Accessors: `charter::ou_id`, `name`, `metadata_uri`.
 
 ### Design Decisions
 
-- **Separate shared object.** Like `TreasuryVault`, the `Charter` is independently shared so that reads (anyone can read the charter) don't contend with writes (governance-authorized amendments) or with other DAO operations.
-- **Content hash for integrity.** Anyone can fetch the Walrus blob and verify `SHA-256(blob_content) == charter.content_hash`. This prevents silent content replacement on Walrus (where blobs are content-addressed but could theoretically be re-uploaded with modifications under a new blob ID).
-- **Amendment history on-chain.** The full history of blob ID transitions is stored on-chain, providing an immutable audit trail. Anyone can reconstruct the charter's evolution without trusting an indexer.
-- **Version monotonicity.** `version` starts at 1 and increments on each amendment. It cannot decrease, skip, or be reset.
-
----
+- **Separate shared object.** The `Charter` is independently shared so that reads (anyone can read it) don't contend with writes or with other OU operations.
+- **Pointer, not content.** The chain stores only a URI. The document it points to (description, logo, charter text) lives off-chain; an IPFS CID is content-addressed, so the URI itself pins the content.
+- **Name is fixed.** No mutator changes `name`.
 
 ## 2. Charter Creation
 
-A `Charter` is created alongside the DAO during `dao::create`. The creator provides the initial charter content:
+A `Charter` is created alongside the OU by every OU constructor, from the `name` and `metadata_uri` arguments (`ou::create`, the SubOU constructors, `tribe::create_tribe(_configured)`, `tribe::create_wired_subou`). An empty name aborts with `ou::EInvalidName`. A `CreateSubOU` payload carries the new SubOU's `name` and `metadata_uri`; a `SpawnOU` payload carries the successor's.
 
-1. The creator uploads the charter document to Walrus (off-chain, before the creation transaction).
-2. The creation transaction includes the Walrus blob ID and the content hash.
-3. `dao::create` creates the `Charter` shared object with `version = 1` and an empty `amendment_history`.
-4. The DAO stores `charter_id: ID` referencing the new `Charter`.
-
-For SubDAOs, the `CreateSubDAO` proposal payload includes charter parameters. The controller provides the initial charter for the new SubDAO.
-
----
-
-## 3. Amending the Charter: `AmendCharter`
-
-Charter amendments are high-stakes governance actions. They change the foundational rules of the organization.
+## 3. Updating Metadata: `UpdateMetadata`
 
 ```rust
-struct AmendCharter has store {
-    new_blob_id:    String,       // Walrus blob ID of the new charter content
-    content_hash:   vector<u8>,   // SHA-256 hash of the new charter content
-    summary:        String,       // human-readable summary of what changed
+struct UpdateMetadata has copy, drop, store {
+    new_ipfs_cid: String,
 }
 ```
 
-### 3.1 Recommended Governance Parameters
+- Framework type, seeded on every OU with the display key **`CharterUpdate`**; its fixed permission bit is `METADATA`.
+- Handler: `admin_ops::execute_update_metadata(charter, ticket)`. It checks the charter belongs to the ticket's OU (`admin_ops::ECharterOuMismatch`) and calls `charter::update_metadata<P>(charter, new_metadata_uri, &ExecutionRequest<P>)`, which checks the OU again (`charter::EOuMismatch`) and requires `METADATA` (`proposal::EPermissionDenied`).
+- Emits `admin_ops::MetadataUpdated { ou_id, new_ipfs_cid }`.
+- Composable by default, so it can be a composite step.
 
-`AmendCharter` should be configured with conservative governance parameters:
-
-| Parameter | Recommended Value | Rationale |
-|---|---|---|
-| `approval_threshold` | `8000` (80%) | Constitutional changes should require near-unanimity |
-| `execution_delay_ms` | `172_800_000` (48 hours) | Long cooling-off period for stakeholder review |
-| `cooldown_ms` | `604_800_000` (7 days) | Prevent rapid-fire charter changes |
-| `expiry_ms` | `1_209_600_000` (14 days) | Long voting window for major decisions |
-
-These are recommendations, not framework-enforced floors. Each DAO configures `AmendCharter` via `EnableProposalType` with its own `ProposalConfig`. The 66% floor on `EnableProposalType` provides a baseline guarantee.
-
-### 3.2 Amendment Execution
-
-On execution:
-1. Assert `object::id(charter) == dao.charter_id`.
-2. Record the current state in a new `AmendmentRecord`:
-   - `previous_blob_id = charter.current_blob_id`
-   - `new_blob_id = payload.new_blob_id`
-   - `content_hash = payload.content_hash`
-   - `proposal_id = req.proposal_id`
-   - `amended_at_ms = clock.timestamp_ms()`
-   - `version = charter.version + 1`
-3. Push the `AmendmentRecord` to `charter.amendment_history`.
-4. Update `charter.current_blob_id`, `charter.content_hash`, and `charter.version`.
-5. Emit `CharterAmended` event.
-
-### 3.3 Amendment Workflow (Off-Chain + On-Chain)
-
-1. **Draft.** The proposer drafts the new charter content (or diff) off-chain.
-2. **Upload.** The proposer uploads the new content to Walrus, receiving a blob ID.
-3. **Hash.** The proposer computes `SHA-256(content)` locally.
-4. **Propose.** The proposer creates an `AmendCharter` proposal with `{ new_blob_id, content_hash, summary }`.
-5. **Review.** Voters fetch the blob from Walrus, verify `SHA-256(content) == content_hash`, and read the proposed changes.
-6. **Vote.** Board members vote yes/no.
-7. **Execute.** After passage and execution delay, a board member executes the proposal.
-8. **Verify.** Anyone can verify the new charter: fetch `charter.current_blob_id` from Walrus, check `SHA-256(content) == charter.content_hash`.
-
----
+Recommended governance parameters depend on how much the OU's metadata matters to it. An OU that treats the metadata document as its constitution should raise `UpdateMetadata`'s threshold, delay and cooldown with `UpdateProposalConfig`.
 
 ## 4. Reading the Charter
 
-The charter is readable by anyone:
+Anyone can read the `Charter` object (standard Sui RPC) and fetch the document at `metadata_uri`. No authorization is needed. Indexers can follow changes through `MetadataUpdated` events.
 
-1. Read `charter.current_blob_id` from the on-chain `Charter` object (standard Sui RPC).
-2. Fetch the blob from Walrus using the blob ID.
-3. Verify integrity: `SHA-256(blob_content) == charter.content_hash`.
+## 5. Metadata Document Format
 
-No governance authorization is needed to read. The `Charter` is a shared object with publicly readable fields.
-
-### 4.1 Historical Versions
-
-Any previous version can be retrieved:
-1. Read `charter.amendment_history` from the on-chain object.
-2. Each `AmendmentRecord` contains the `previous_blob_id` and `new_blob_id`.
-3. Fetch any historical blob from Walrus.
-
-This provides full version history without an indexer.
-
----
-
-## 5. Charter Content Format
-
-Charters are stored as structured markdown with standard sections. This is a convention, not an on-chain enforcement — the framework stores the blob ID and hash but does not parse content.
-
-### Recommended Structure
+The framework stores the URI and does not parse the document. It typically carries the OU's display fields (description, logo) and, for OUs that want one, a charter text. Recommended structure for the charter text, as structured markdown:
 
 ```markdown
-# [DAO Name] Charter
+# [OU Name] Charter
 Version: [N]
 Ratified: [date]
 
@@ -145,7 +66,7 @@ Ratified: [date]
 
 ## 2. Membership
 [Who can be a member. How members join and leave.
- For SubDAOs: relationship to controller.]
+ For SubOUs: relationship to controller.]
 
 ## 3. Governance
 [Governance model (Board).
@@ -157,7 +78,7 @@ Ratified: [date]
  Budget allocation philosophy. Revenue distribution rules.]
 
 ## 5. Organizational Structure
-[SubDAO relationships.
+[SubOU relationships.
  Delegation of authority. Reporting lines.]
 
 ## 6. Amendment Procedure
@@ -171,50 +92,93 @@ Ratified: [date]
  Successor designation.]
 ```
 
-### Why Structured Markdown?
+Structured markdown is human-readable, parseable by UIs, diff-friendly for review, and extensible.
 
-- **Human-readable.** Anyone can read the charter without special tooling.
-- **Machine-parseable.** Standard sections enable UI rendering and comparison tooling.
-- **Diff-friendly.** Structured markdown produces meaningful diffs for amendment review.
-- **Extensible.** DAOs can add sections beyond the standard template without breaking parsers.
-
----
-
-## 6. Storage Renewal
-
-Walrus blobs have a finite storage duration. Charter content must be renewed before expiry to remain accessible.
-
-### Considerations
-
-- **Renewal is off-chain.** The protocol does not enforce renewal on-chain. If a blob expires, the content becomes inaccessible, but the on-chain `Charter` object (with its `content_hash`) remains.
-- **Content hash provides recovery.** Even if a blob expires, anyone who has a copy of the charter content can re-upload it to Walrus. The new blob ID would differ, but the content hash can verify authenticity. A `RenewCharterStorage` proposal type could update `current_blob_id` without changing `content_hash` or incrementing `version`.
-- **Amendment history preserves references.** Historical blob IDs in `amendment_history` may point to expired blobs. Off-chain archival (pinning services, IPFS backup) is recommended for long-lived DAOs.
-
-### `RenewCharterStorage` Proposal Type
-
-```rust
-struct RenewCharterStorage has store {
-    new_blob_id:  String,       // new Walrus blob ID for the same content
-}
-```
-
-The handler:
-1. Fetches the blob at `new_blob_id` and verifies `SHA-256(content) == charter.content_hash` (this verification is off-chain; on-chain, the handler trusts the proposer's assertion and governance approval).
-2. Updates `charter.current_blob_id` without changing `content_hash` or `version`.
-3. Does *not* add an `AmendmentRecord` — this is a storage operation, not a content change.
-
-This proposal type can have lower governance thresholds than `AmendCharter` since it does not change the charter's content.
-
----
-
-## 7. Integration with DAO Lifecycle
+## 6. Integration with OU Lifecycle
 
 | Lifecycle Event | Charter Impact |
 |---|---|
-| `dao::create` | Initial `Charter` created with `version = 1` |
-| `CreateSubDAO` | New `Charter` created for SubDAO with controller-provided content |
+| OU creation (any constructor) | `Charter` created with the given `name` and `metadata_uri` |
+| `CreateSubOU` / tribe constructors | `Charter` created for each SubOU from the payload or arguments |
+| `UpdateMetadata` | `metadata_uri` replaced; `MetadataUpdated` emitted |
+| `ou::destroy` | `Charter` destroyed alongside the other companion objects |
+
+---
+
+# Part B — Planned: Walrus-Backed Charter with Amendments (not implemented)
+
+> **Status:** design only. None of the objects, types or events below exist. The whitepaper (v0.2) describes the implemented charter as "a name + IPFS metadata-URI pointer".
+
+The goal is to make the charter a first-class governance artifact with a high-threshold amendment process and a verifiable on-chain history. The content would be stored on **Walrus** and referenced by blob ID and content hash.
+
+## 7. Planned State
+
+```rust
+// Planned. Charter's struct layout is fixed by the published framework, so this state
+// would live in dynamic fields on the Charter's UID or ship with a fresh framework publish.
+current_blob_id:   String,                   // Walrus blob ID for current charter content
+content_hash:      vector<u8>,               // SHA-256 hash of the charter content
+version:           u64,                      // monotonically increasing version number
+amendment_history: vector<AmendmentRecord>,  // chronological history of amendments
+
+struct AmendmentRecord has copy, drop, store {
+    version:          u64,          // version number after this amendment
+    previous_blob_id: String,
+    new_blob_id:      String,
+    content_hash:     vector<u8>,   // hash of the new content
+    proposal_id:      ID,           // the proposal (or single-PTB execution) that authorized it
+    amended_at_ms:    u64,
+}
+```
+
+- **Content hash for integrity.** Anyone can fetch the Walrus blob and verify `SHA-256(blob_content) == content_hash`.
+- **Amendment history on-chain.** Anyone can reconstruct the charter's evolution without trusting an indexer.
+- **Version monotonicity.** `version` starts at 1, increments by one per amendment, and never decreases or resets.
+
+## 8. Planned Types
+
+The charter's fields are private to the framework, so every planned write needs a new gated mutator in `armature::charter`. It would check the charter's OU and a permission bit, as `update_metadata` checks `METADATA`. Under the placement rule in [`docs/package-boundaries.md`](../docs/package-boundaries.md), a type the framework seeds as a default slot must itself be a framework type.
+
+### 8.1 `AmendCharter`
+
+```rust
+struct AmendCharter has drop, store {
+    new_blob_id:  String,       // Walrus blob ID of the new charter content
+    content_hash: vector<u8>,   // SHA-256 hash of the new charter content
+    summary:      String,       // human-readable summary of what changed
+}
+```
+
+On execution the handler would record an `AmendmentRecord` (`previous_blob_id = current_blob_id`, `proposal_id = ticket_proposal_id`, `version + 1`), update `current_blob_id`, `content_hash` and `version`, and emit a `CharterAmended` event.
+
+Recommended parameters (configuration, not framework floors):
+
+| Parameter | Recommended Value | Rationale |
+|---|---|---|
+| `approval_threshold` | `8000` (80%) | Constitutional changes should require near-unanimity |
+| `execution_delay_ms` | `172_800_000` (48 hours) | Cooling-off period for review; also keeps it off the single-vote atomic path |
+| `cooldown_ms` | `604_800_000` (7 days) | Prevent rapid-fire charter changes |
+| `expiry_ms` | `1_209_600_000` (14 days) | Long voting window for major decisions |
+
+Workflow: draft off-chain → upload to Walrus → compute `SHA-256` → propose `{ new_blob_id, content_hash, summary }` → voters fetch and verify the blob → vote → execute after the delay → anyone verifies `current_blob_id` against `content_hash`.
+
+### 8.2 `RenewCharterStorage`
+
+Walrus blobs have a finite storage duration. Renewal is off-chain; if a blob expires, anyone holding the content can re-upload it, and the unchanged `content_hash` verifies it.
+
+```rust
+struct RenewCharterStorage has drop, store {
+    new_blob_id: String,   // new Walrus blob ID for the same content
+}
+```
+
+The handler would update `current_blob_id` without changing `content_hash` or `version` and without adding an `AmendmentRecord`. The hash check is off-chain; the handler trusts governance approval. It could have lower thresholds than `AmendCharter`, since it does not change content. Historical blob IDs in `amendment_history` may point to expired blobs, so off-chain archival is recommended for long-lived OUs.
+
+## 9. Planned Lifecycle Impact
+
+| Lifecycle Event | Charter Impact (planned) |
+|---|---|
+| OU creation | Initial charter at `version = 1`, empty history |
+| `CreateSubOU` | Controller provides the SubOU's initial charter content |
 | `AmendCharter` | Charter updated, `version` incremented, `AmendmentRecord` added |
 | `RenewCharterStorage` | `current_blob_id` updated, content unchanged |
-| `dao::destroy` | `Charter` shared object destroyed alongside other DAO objects |
-
-The Charter is a companion object to the DAO — created with it, destroyed with it, and governed by it throughout its lifecycle.

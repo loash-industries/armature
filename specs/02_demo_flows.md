@@ -4,9 +4,11 @@ Three live Testnet demos, each chosen to highlight a distinct axis of the protoc
 
 | Demo | Axis | What It Proves |
 |------|------|----------------|
-| **A — One Vision, One Tribe** | Scaling | One person's vision becomes a structured tribe — the DAO scales from founder to organization |
-| **B — The Gate Builders** | Emergence | Bottom-up initiative creates a funded sub-DAO whose revenue flows back to the parent |
-| **C — Gate Network Franchise** | Integration | DAOs plug directly into EVE Frontier smart assemblies (SSUs, Gates, Turrets) |
+| **A — One Vision, One Tribe** | Scaling | One person's vision becomes a structured tribe — the OU scales from founder to organization |
+| **B — The Gate Builders** | Emergence | Bottom-up initiative creates a funded sub-OU whose revenue flows back to the parent |
+| **C — Gate Network Franchise** | Integration | OUs plug directly into EVE Frontier smart assemblies (SSUs, Gates, Turrets) |
+
+All PTBs below use the current API. Proposal types other than the defaults (`SetBoard`, the member types, `UpdateMetadata`, the type-admin and freeze meta-types, `Composite`) are opt-in: an OU enables each one with an `EnableProposalType` vote (80%), which also sets the permission bits the type's handler needs (`armature_proposals::type_permissions`). Configs holding `TREASURY_WITHDRAW`, `VAULT_BORROW` or `VAULT_EXTRACT` need an 80% approval threshold.
 
 ---
 
@@ -14,39 +16,45 @@ Three live Testnet demos, each chosen to highlight a distinct axis of the protoc
 
 ### Context
 
-Alice is a solo miner with a vision: build the largest hauling operation in the sector. She doesn't start by recruiting — she starts by **codifying her intent**. She creates a DAO with a charter that describes what "Iron Haulers" stands for, how decisions will be made, and what kind of people she wants on board. The DAO is her civilizational seed — a structure that can grow from one person to many without ever being rewritten.
+Alice is a solo miner with a vision: build the largest hauling operation in the sector. She doesn't start by recruiting — she starts by **codifying her intent**. She creates an OU with a charter document that describes what "Iron Haulers" stands for, how decisions will be made, and what kind of people she wants on board. The OU is her civilizational seed — a structure that can grow from one person to many without ever being rewritten.
 
-As she recruits Bob and Carol, they join the board and contribute to the treasury. As the tribe grows further, they spin up specialized sub-DAOs and delegate authority downward. The same `DAO` object that started as Alice's solo venture now governs a multi-department tribe — no migrations, no restructuring. The primitive scales because it was designed to.
+As she recruits Bob and Carol, they join the board and contribute to the treasury. As the tribe grows further, they spin up specialized sub-OUs and delegate authority downward. The same `OU` object that started as Alice's solo venture now governs a multi-department tribe — no migrations, no restructuring. The primitive scales because it was designed to.
+
+(For a tribe that starts with its full structure, `tribe::create_tribe` builds a Tribe OU, an Officers SubOU and a Members SubOU in one transaction; see [`docs/tribe-creation.md`](../docs/tribe-creation.md).)
 
 ### Steps
 
 ```
 Step 1: Alice Plants the Seed
 ─────────────────────────────────────────────────────────────
-Alice creates "Iron Haulers" — a DAO with herself as the
-sole board member. She writes a charter describing her
-vision: a hauling tribe that shares profits, votes on
-strategy, and scales by delegating to sub-DAOs.
+Alice creates "Iron Haulers" — an OU with herself as the
+sole board member. She publishes a charter document to IPFS
+describing her vision: a hauling tribe that shares profits,
+votes on strategy, and scales by delegating to sub-OUs.
 
-  PTB: dao::create_dao(
-         name: "Iron Haulers",
-         governance: Board { members: [Alice] },
-         charter_blob_id: "walrus://ironhaulers_v1..."
+  PTB: ou::create(
+         gov_init:     governance::init_board(vector[Alice]),
+         name:         "Iron Haulers",
+         metadata_uri: "ipfs://<ironhaulers charter CID>",
        )
 
-  Charter excerpt (on Walrus):
+  Charter excerpt (at metadata_uri):
     "Iron Haulers is a mining and logistics tribe.
      Membership is by board invitation. Treasury funds
-     are spent only through proposals. Sub-DAOs may be
+     are spent only through proposals. Sub-OUs may be
      created for specialized operations. The founder
      retains no special privileges beyond her board seat."
 
   On-chain result:
-    DAO #0xDAO1 (Iron Haulers)
+    OU #0xOU1 (Iron Haulers)
     ├── TreasuryVault #0xTV1
     ├── CapabilityVault #0xCV1
-    ├── Charter #0xCH1 (v1, blob: walrus://ironhaulers_v1)
-    └── Board: [Alice]
+    ├── Charter #0xCH1 (name, metadata_uri)
+    ├── EmergencyFreeze #0xEF1
+    ├── Board: [Alice]
+    └── default proposal types seeded (SetBoard, AddMember,
+        …, EnableProposalType, UpdateProposalConfig, Composite)
+    FreezeAdminCap → Alice's wallet
 ```
 
 ```
@@ -58,13 +66,20 @@ sole member, she goes through governance. This sets the
 precedent: everything happens through proposals.
 
   Proposal #P1 (on Iron Haulers): SetBoard
-    new_board: [Alice, Bob, Carol]
+    to_add:    [Bob, Carol]
+    to_remove: []
 
-  Voting (sole member):
-    Alice: YES → PASSED
+  As the only member, Alice's single YES passes, so she can
+  submit, vote and execute in one PTB:
+    1. board_voting::submit_vote_execute<SetBoard>(OU1, …)
+         → ExecutionTicket<SetBoard>
+    2. board_ops::execute_set_board(OU1, ticket)
 
   Board is now [Alice, Bob, Carol].
-  Alice has no more power than Bob or Carol — by design.
+  Alice has no more voting power than Bob or Carol — by design.
+  (She holds the FreezeAdminCap, which can pause proposal
+  types but never act; the board can move it with
+  TransferFreezeAdmin.)
 ```
 
 ```
@@ -74,61 +89,78 @@ All three members deposit SUI into the shared treasury.
 No proposal needed — deposits are permissionless. Anyone
 can contribute to a cause they believe in.
 
-  PTB: treasury::deposit<SUI>(vault: #0xTV1, coin: 100 SUI)
+  PTB: treasury_vault::deposit<SUI>(#0xTV1, coin: 100 SUI, ctx)
        × 3 (one per member)
 
   Treasury balance: 300 SUI
 ```
 
 ```
-Step 4: First Real Decision — Create a Logistics Sub-DAO
+Step 4: First Real Decision — Create a Logistics Sub-OU
 ─────────────────────────────────────────────────────────────
 The tribe is growing. Bob proposes a Logistics department
 to manage hauling routes. This is the first structural
 decision the tribe makes together.
 
-  Proposal #P2: CreateSubDAO
-    name: "Logistics Dept"
-    initial_board: [Bob, Dave]
-    funding: 50 SUI from parent treasury
+  CreateSubOU and SendCoinToOU are opt-in, so the board
+  first expands its proposal set (80% votes):
+    EnableProposalType { type_key: "CreateSubOU", … }
+    EnableProposalType { type_key: "SendCoinToOU<SUI>",
+      config: … .with_permissions(TREASURY_WITHDRAW) }
 
-  Voting (quorum: 2, threshold: 66%):
-    Alice: YES    Bob: YES    Carol: ABSTAIN
-    Result: 2/2 = 100% → PASSED
+  Proposal #P2: CreateSubOU
+    name:          "Logistics Dept"
+    initial_board: [Bob, Dave]
+    metadata_uri:  "ipfs://<logistics charter CID>"
+
+  Voting (quorum: 50%, threshold: 80%):
+    Alice: YES    Bob: YES    Carol: (does not vote)
+    Result: 2 of 3 voted (quorum met), 2/2 = 100% YES → PASSED
+
+  Proposal #P3: SendCoinToOU<SUI>
+    recipient_treasury: <Logistics treasury>
+    amount: 50 SUI
+    (submitted once #P2 has executed and the SubOU's
+     treasury ID is known)
 ```
 
 ```
 Step 5: The Tribe Takes Shape
 ─────────────────────────────────────────────────────────────
-Execution produces a new sub-DAO. The parent retains
-oversight through SubDAOControl, but the sub-DAO governs
-its own day-to-day operations.
+Executing #P2 (lifecycle_ops::execute_create_subou) produces
+a new sub-OU. The parent keeps oversight through
+SubOUControl, but the sub-OU governs its own day-to-day
+operations. Executing #P3 funds it.
 
-  DAO #0xDAO1 (Iron Haulers)
+  OU #0xOU1 (Iron Haulers)
   ├── TreasuryVault: 250 SUI
-  ├── CapabilityVault: [SubDAOControl(#0xDAO2)]
+  ├── CapabilityVault: [SubOUControl(#0xOU2),
+  │                     FreezeAdminCap(#0xOU2)]
   └── Board: [Alice, Bob, Carol]
        │
-       └──► DAO #0xDAO2 (Logistics Dept)   [CONTROLLED]
+       └──► OU #0xOU2 (Logistics Dept)   [CONTROLLED]
             ├── TreasuryVault: 50 SUI
-            ├── Board: [Bob, Dave]  (managed by parent)
-            └── controller_cap_id: Some(SubDAOControl in #0xCV1)
+            ├── Board: [Bob, Dave]  (parent can override)
+            └── controller_cap_id: Some(SubOUControl in #0xCV1)
 ```
 
 ```
-Step 6: Sub-DAO Operates Autonomously
+Step 6: Sub-OU Operates Autonomously
 ─────────────────────────────────────────────────────────────
 Bob proposes a SendCoin from the Logistics treasury to pay
-a hauler (Eve) for a delivery. The sub-DAO votes and
-executes on its own — no parent approval needed.
+a hauler (Eve) for a delivery. The sub-OU votes and
+executes on its own — no parent approval needed. (Logistics
+enabled SendCoin<SUI> with TREASURY_WITHDRAW by its own
+80% vote.)
 
-  Proposal #P3 (on DAO #0xDAO2): SendCoin<SUI>
+  Proposal #P4 (on OU #0xOU2): SendCoin<SUI>
     recipient: Eve
     amount: 10 SUI
 
   Voting (on Logistics board):
     Bob: YES    Dave: YES
-    Result: PASSED → Eve receives 10 SUI
+    Result: PASSED → treasury_ops::execute_send_coin
+            → Eve receives 10 SUI
 
   Alice didn't need to approve this. She trusted the
   structure she built. That's the point.
@@ -137,13 +169,28 @@ executes on its own — no parent approval needed.
 ```
 Step 7: Parent Overrides — Accountability Preserved
 ─────────────────────────────────────────────────────────────
-Dave goes inactive. The parent tribe replaces the Logistics
-board using privileged_submit (instant, no vote on sub-DAO).
+Dave goes inactive. The parent tribe replaces him on the
+Logistics board. The controller acts through its
+SubOUControl — no vote on the sub-OU.
 Delegation doesn't mean abandonment.
 
-  PTB (by Alice, authorized by parent board vote):
-    1. proposal::execute(#P4)         → ExecutionRequest<SetBoard>
-    2. board_ops::handle(req, DAO#2)  → Board set to [Bob, Frank]
+  Proposal #P5 (on Iron Haulers): a composite of
+    ControllerBatchRemoveMembers { control_id, members: [Dave] }
+    ControllerBatchAddMembers    { control_id, members: [Frank] }
+  (both enabled with VAULT_BORROW scoped to SubOUControl,
+   80%, composable)
+
+  PTB (by Alice, after the parent board passes #P5):
+    1. board_voting::ticket_from_vote(OU1, #P5, …)
+         → ExecutionTicket<CompositePayload>
+    2. composite::begin_pipeline → advance_step per step, each
+       ticket passed to its handler
+       (subou_ops::execute_controller_batch_remove_members, then
+       subou_ops::execute_controller_batch_add_members), which
+       loans the SubOUControl, calls
+       controller::privileged_submit on OU#2, and changes the
+       board with the privileged request
+    3. composite::finalize_pipeline
 
   Logistics board is now [Bob, Frank] — instant effect.
 ```
@@ -152,27 +199,27 @@ Delegation doesn't mean abandonment.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  IRON HAULERS                          DAO #0xDAO1          │
+│  IRON HAULERS                          OU #0xOU1          │
 │  ═══════════                                                │
 │                                                             │
-│  Board Members          Treasury             Charter v1     │
+│  Board Members          Treasury             Charter        │
 │  ┌───────────┐         ┌──────────┐         ┌───────────┐  │
-│  │ ★ Alice   │         │ 250 SUI  │         │ View on   │  │
-│  │   Bob     │         │          │         │ Walrus ↗  │  │
+│  │ ★ Alice   │         │ 250 SUI  │         │ View      │  │
+│  │   Bob     │         │          │         │ document ↗│  │
 │  │   Carol   │         └──────────┘         └───────────┘  │
 │  └───────────┘                                              │
 │                                                             │
-│  SubDAOs                                                    │
+│  SubOUs                                                    │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │  📁 Logistics Dept        Board: Bob, Frank         │    │
 │  │     Treasury: 40 SUI      Status: ACTIVE            │    │
-│  │     [Manage]  [Reclaim Caps]  [Replace Board]       │    │
+│  │     [Manage]  [Reclaim Caps]  [Change Board]        │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                                                             │
 │  Active Proposals                                           │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │  #P5  Expand Proposal Set         2 of 3 voted      │    │
-│  │       Threshold: 66%              Expires: 18h       │    │
+│  │  #P6  Expand Proposal Set         2 of 3 voted      │    │
+│  │       Threshold: 80%              Expires: 18h       │    │
 │  │       [Vote YES]  [Vote NO]  [Details]               │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                                                             │
@@ -182,30 +229,30 @@ Delegation doesn't mean abandonment.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  CREATE SUBDAO PROPOSAL                                     │
+│  CREATE SUBOU PROPOSAL                                     │
 │  ═════════════════════                                      │
 │                                                             │
-│  SubDAO Name:    [ Logistics Dept_____________ ]            │
+│  SubOU Name:    [ Logistics Dept_____________ ]            │
+│  Charter (URI):  [ ipfs://..._________________ ]            │
 │                                                             │
 │  Initial Board:                                             │
 │    [ 0xBob...  ] [+]                                        │
 │    [ 0xDave... ] [+]                                        │
 │    [___________] [Add Member]                               │
 │                                                             │
-│  Initial Funding:                                           │
+│  Initial Funding (follow-up SendCoinToOU proposal):        │
 │    Amount: [ 50    ] SUI                                    │
 │    Source: Parent Treasury (250 SUI available)               │
 │                                                             │
-│  Proposal Config:                                           │
-│    Voting window:  [ 72h ]                                  │
-│    Approval:       [ 66% ]                                  │
+│  Approval required: 80% (CreateSubOU floor)                │
 │                                                             │
 │  ┌────────────────────────────────────────────┐             │
-│  │ This will create a controlled sub-DAO.     │             │
-│  │ The parent DAO retains:                    │             │
-│  │  • Board replacement authority             │             │
+│  │ This will create a controlled sub-OU.     │             │
+│  │ The parent OU retains:                    │             │
+│  │  • Board membership override               │             │
 │  │  • Capability reclaim rights               │             │
 │  │  • Execution pause/unpause                 │             │
+│  │  • Custody of the sub-OU's FreezeAdminCap │             │
 │  └────────────────────────────────────────────┘             │
 │                                                             │
 │  [Cancel]                           [Submit Proposal]       │
@@ -218,74 +265,79 @@ Delegation doesn't mean abandonment.
 
 ### Context
 
-Iron Haulers has a funded treasury and a working governance structure (established in Flow A). Dave, a new recruit, sees an opportunity: three star systems nearby have no jump gates. He proposes a **gate-building project** to the parent DAO. The DAO votes to create a "Gate Builders" sub-DAO, seeds it with treasury funds, and delegates it the authority to deploy and manage gates. Once the gates go live and collect tolls, **revenue flows back up** to the parent treasury.
+Iron Haulers has a funded treasury and a working governance structure (established in Flow A). Dave, a new recruit, sees an opportunity: three star systems nearby have no jump gates. He proposes a **gate-building project** to the parent OU. The OU votes to create a "Gate Builders" sub-OU, seeds it with treasury funds, and delegates it the authority to deploy and manage gates. Once the gates go live and collect tolls, **revenue flows back up** to the parent treasury.
 
-This is **emergent gameplay**: the protocol doesn't hardcode "ventures," "projects," or "revenue-sharing agreements." Players use the existing DAO/sub-DAO primitives — proposals, treasury funding, capability delegation, charter amendments — to **invent project-based organizations** from the bottom up. The gate-building venture was never designed into the protocol; it emerged from a player's initiative and the composability of the governance primitives.
+This is **emergent gameplay**: the protocol doesn't hardcode "ventures," "projects," or "revenue-sharing agreements." Players use the existing OU/sub-OU primitives — proposals, treasury funding, capability delegation, charter updates — to **invent project-based organizations** from the bottom up. The gate-building venture was never designed into the protocol; it emerged from a player's initiative and the composability of the governance primitives.
+
+The gate types in this flow (`AdoptGateCaps`, `ConfigureGateAccess`) come from a mocked gate integration package (see the Flow C note). Like any third-party type, each is enabled by an 80% vote with only the bits its handler needs, and only its own module can spend its tickets.
 
 ### Steps
 
 ```
 Step 1: Dave Pitches the Gate Project
 ─────────────────────────────────────────────────────────────
-Dave proposes a CreateSubDAO to the Iron Haulers board.
-The proposal includes a charter describing the project:
-build 3 gates, charge tolls, return revenue to parent.
+Dave proposes a CreateSubOU to the Iron Haulers board.
+Its charter document describes the project: build 3 gates,
+charge tolls, return revenue to parent.
 
-  Proposal #P5 (on Iron Haulers): CreateSubDAO
-    name: "Gate Builders"
+  Proposal #P7 (on Iron Haulers): CreateSubOU
+    name:          "Gate Builders"
     initial_board: [Dave, Eve]
-    funding: 100 SUI from parent treasury
-    charter_blob_id: "walrus://gateproject_v1..."
+    metadata_uri:  "ipfs://<gateproject v1 CID>"
+  followed by SendCoinToOU<SUI> for 100 SUI of seed funding
 
-  Charter excerpt (on Walrus):
-    "Gate Builders is a project sub-DAO of Iron Haulers.
+  Charter excerpt (at metadata_uri):
+    "Gate Builders is a project sub-OU of Iron Haulers.
      Mission: deploy jump gates connecting Systems A, B, C.
      Revenue policy: 80% of toll revenue flows to parent
      treasury; 20% retained for maintenance and ops.
      Dissolution: parent may reclaim all caps at any time."
 
-  Voting (quorum: 2, threshold: 66%):
+  Voting (quorum: 50%, threshold: 80%):
     Alice: YES    Bob: YES    Carol: YES
     Result: 3/3 = 100% → PASSED
 ```
 
 ```
-Step 2: Gate Builders Sub-DAO Materializes
+Step 2: Gate Builders Sub-OU Materializes
 ─────────────────────────────────────────────────────────────
 Execution produces:
-  - A new DAO #0xDAO3 (Gate Builders)
-  - SubDAOControl cap stored in parent's CapabilityVault
-  - 100 SUI transferred to Gate Builders treasury
+  - A new OU #0xOU3 (Gate Builders)
+  - SubOUControl and the sub-OU's FreezeAdminCap stored in
+    the parent's CapabilityVault
+  - 100 SUI sent to the Gate Builders treasury (SendCoinToOU)
 
-  DAO #0xDAO1 (Iron Haulers)
+  OU #0xOU1 (Iron Haulers)
   ├── TreasuryVault: 150 SUI  (was 250, minus 100 funding)
-  ├── CapabilityVault: [SubDAOControl(Logistics), SubDAOControl(Gate Builders)]
+  ├── CapabilityVault: [SubOUControl(Logistics), SubOUControl(Gate Builders), …]
   └── Board: [Alice, Bob, Carol]
        │
-       ├──► DAO #0xDAO2 (Logistics Dept)    [CONTROLLED]
+       ├──► OU #0xOU2 (Logistics Dept)    [CONTROLLED]
        │    └── ...
        │
-       └──► DAO #0xDAO3 (Gate Builders)     [CONTROLLED]
+       └──► OU #0xOU3 (Gate Builders)     [CONTROLLED]
             ├── TreasuryVault: 100 SUI
             ├── CapabilityVault: empty (no caps yet)
             ├── Board: [Dave, Eve]
-            └── Charter: "walrus://gateproject_v1..."
+            └── Charter: "ipfs://<gateproject v1 CID>"
 ```
 
 ```
 Step 3: Gate Builders Deploy Infrastructure  [MOCKED — see Flow C note]
 ─────────────────────────────────────────────────────────────
-Dave deploys three Smart Gates and deposits their ownership
-caps into the Gate Builders' CapabilityVault.
-(Uses mocked gate contracts — see Flow C integration note.)
+Dave deploys three Smart Gates. A vault accepts capabilities
+only through a governed request carrying VAULT_STORE, so the
+Gate Builders board passes an AdoptGateCaps proposal (a
+mocked type holding VAULT_STORE, like AdoptCurrency) whose
+handler stores the caps.
 
   PTB:
     1. gate::deploy(system_a, system_b) → GateOwnerCap #0xG1
     2. gate::deploy(system_b, system_c) → GateOwnerCap #0xG2
     3. gate::deploy(system_c, system_a) → GateOwnerCap #0xG3
-    4. capability_vault::deposit(#0xCV3, #0xG1)
-    5. capability_vault::deposit(#0xCV3, #0xG2)
-    6. capability_vault::deposit(#0xCV3, #0xG3)
+    4. ticket_from_vote(OU3, AdoptGateCaps proposal, …)
+    5. gate_ops::execute_adopt_gate_caps(#0xCV3, caps, ticket)
+         → capability_vault::store_cap × 3
 
   Gate Builders CapabilityVault now holds:
     [GateOwnerCap(#0xG1), GateOwnerCap(#0xG2), GateOwnerCap(#0xG3)]
@@ -294,15 +346,16 @@ caps into the Gate Builders' CapabilityVault.
 ```
 Step 4: Configure Gates — Tolls Go Live
 ─────────────────────────────────────────────────────────────
-Dave proposes on the Gate Builders sub-DAO to configure
-all gates with toll pricing. The sub-DAO votes and executes
+Dave proposes on the Gate Builders sub-OU to configure
+all gates with toll pricing. The sub-OU votes and executes
 autonomously — no parent approval needed.
 
-  Proposal #P6 (on Gate Builders): ConfigureGateAccess
+  Proposal #P8 (on Gate Builders): ConfigureGateAccess
     gates: [#0xG1, #0xG2, #0xG3]
     access_policy:
       iron_haulers_members: FREE
       public: 1 SUI toll per jump
+  (enabled with VAULT_BORROW, borrow scope [GateOwnerCap], 80%)
 
   Voting (on Gate Builders board):
     Dave: YES    Eve: YES → PASSED
@@ -316,8 +369,9 @@ autonomously — no parent approval needed.
 ```
 Step 5: Revenue Flows — Tolls Accumulate
 ─────────────────────────────────────────────────────────────
-Ships start jumping through the gates. Toll payments
-accumulate in the Gate Builders treasury.
+Ships start jumping through the gates. The gate contract
+deposits toll payments into the Gate Builders treasury
+(treasury_vault::deposit is permissionless).
 
   Event stream:
     gate_jump { gate: #0xG1, jumper: Frank, toll: 1 SUI }
@@ -334,11 +388,11 @@ accumulate in the Gate Builders treasury.
 Step 6: Revenue Share — Pay the Parent Back
 ─────────────────────────────────────────────────────────────
 Per the charter, 80% of toll revenue goes to the parent.
-Eve proposes a SendCoin to transfer 40 SUI (80% of 50)
-to the Iron Haulers treasury.
+Eve proposes sending 40 SUI (80% of 50) to the Iron Haulers
+treasury.
 
-  Proposal #P7 (on Gate Builders): SendCoin<SUI>
-    recipient: Iron Haulers Treasury (#0xTV1)
+  Proposal #P9 (on Gate Builders): SendCoinToOU<SUI>
+    recipient_treasury: Iron Haulers Treasury (#0xTV1)
     amount: 40 SUI
 
   Voting:
@@ -347,46 +401,48 @@ to the Iron Haulers treasury.
   Iron Haulers treasury: 190 SUI (150 + 40 revenue)
   Gate Builders treasury: 110 SUI (150 - 40 paid up)
 
-  Revenue sharing can be enforced on-chain via a RevenuePolicy
-  object — see "Revenue Enforcement Options" below. For the
-  demo, we use the split-on-deposit approach. The parent can
-  also override the sub-DAO board if terms are violated.
+  The split is a charter term, paid by vote. Enforcing it
+  on-chain is not implemented — see "Revenue Enforcement
+  Options" below. The parent can override the sub-OU board
+  if terms are violated.
 ```
 
 ```
-Step 7: Emergent Self-Modification — Charter Amendment
+Step 7: Emergent Self-Modification — Charter Update
 ─────────────────────────────────────────────────────────────
-The gate network is thriving. Dave proposes amending the
+The gate network is thriving. Dave proposes updating the
 Gate Builders charter to adjust the revenue split from
 80/20 to 70/30 (more retained for expansion).
 
-  Proposal #P8 (on Gate Builders): AmendCharter
-    new_charter_blob_id: "walrus://gateproject_v2..."
-    description: "Reduce parent share to 70% to fund
-                  expansion into Systems D and E"
+  Proposal #P10 (on Gate Builders): UpdateMetadata
+    new_ipfs_cid: "ipfs://<gateproject v2 CID>"
+    (metadata: "Reduce parent share to 70% to fund
+                expansion into Systems D and E")
 
   Voting:
     Dave: YES    Eve: YES → PASSED
 
-  But wait — the parent DAO may not agree. Alice notices
-  the amendment and proposes a parent override:
-
-  Proposal #P9 (on Iron Haulers): privileged_submit
-    target: Gate Builders
-    action: AmendCharter (revert to 80/20)
+  But wait — the parent OU may not agree. Alice proposes a
+  parent override that restores the v1 charter on the
+  sub-OU through its SubOUControl (a custom controller type:
+  loan the control, privileged_submit on Gate Builders,
+  charter::update_metadata with the privileged request).
+  It holds VAULT_BORROW, so it needs 80%:
 
   Voting on Iron Haulers board:
-    Alice: YES    Bob: NO    Carol: ABSTAIN
-    Result: 1/1 = 100% of YES votes... but below quorum?
+    Alice: YES    Bob: NO    Carol: (does not vote)
+    Result: 1 YES / 2 cast = 50% < 80% → does not pass
 
-  The parent board is split. The amendment stands — for now.
+  The parent board is split. The update stands — for now.
   This is emergent negotiation: governance tensions resolved
   through the protocol's own mechanisms, not hardcoded rules.
 ```
 
 ### Revenue Enforcement Options
 
-Three approaches were considered for enforcing revenue-sharing on-chain between a sub-DAO and its parent. All rely on a `RevenuePolicy` object created at sub-DAO inception, controlled by the parent via `SubDAOControl`.
+> **Status:** not implemented. None of these options exists in the packages. The options are kept as design notes.
+
+Three approaches were considered for enforcing revenue-sharing on-chain between a sub-OU and its parent. All rely on a `RevenuePolicy` object created at sub-OU inception, controlled by the parent via `SubOUControl`.
 
 ```
 struct RevenuePolicy has key, store {
@@ -397,23 +453,24 @@ struct RevenuePolicy has key, store {
 }
 ```
 
-**Option A — Split-on-Deposit (Recommended for hackathon)**
+**Option A — Split-on-Deposit**
 
-The sub-DAO's `treasury::deposit` checks for an attached `RevenuePolicy`. If present, incoming `Coin<T>` is split *before* it enters the sub-DAO treasury — the parent's share is forwarded immediately, and only the retained portion is deposited.
+The sub-OU's `treasury_vault::deposit` checks for an attached `RevenuePolicy`. If present, incoming `Coin<T>` is split *before* it enters the sub-OU treasury — the parent's share is forwarded immediately, and only the retained portion is deposited.
 
 - Simplest implementation, no accounting state
-- Tamper-proof: the sub-DAO never touches the parent's share
-- Enforcement is transparent and obvious to judges
-- Tradeoff: the sub-DAO cannot batch or defer payments — every deposit triggers a split
+- Tamper-proof: the sub-OU never touches the parent's share
+- Tradeoff: the sub-OU cannot batch or defer payments — every deposit triggers a split
+- Requires a hook in the framework's `deposit`, which is not upgraded after a release: it would ship only with a fresh framework publish
 
 **Option B — Split-on-Withdrawal with Accounting**
 
-All revenue accumulates in the sub-DAO treasury. A `RevenuePolicy` tracks an `owed_to_parent` counter. Any `SendCoin` proposal execution checks the policy and requires the parent's share to be settled first (or settled as part of the same PTB).
+All revenue accumulates in the sub-OU treasury. A `RevenuePolicy` tracks an `owed_to_parent` counter. Treasury-spending handlers check the policy and require the parent's share to be settled first (or settled as part of the same PTB).
 
-- More flexible: sub-DAO can manage cash flow
+- More flexible: sub-OU can manage cash flow
 - Requires accounting state (`owed_to_parent`, `total_revenue_received`)
-- Enforcement point is at withdrawal, not deposit — sub-DAO holds funds in the interim
-- Risk: if the sub-DAO's treasury is drained by other proposals before settling, the parent share could be underfunded. Mitigation: reserve a portion of treasury as "encumbered" and block withdrawals that would breach the reserve
+- Enforcement point is at withdrawal, not deposit — sub-OU holds funds in the interim
+- Risk: if the sub-OU's treasury is drained by other proposals before settling, the parent share could be underfunded. Mitigation: reserve a portion of treasury as "encumbered" and block withdrawals that would breach the reserve
+- Can live in an extension package: its own spend types would enforce it, but any other type holding `TREASURY_WITHDRAW` on the sub-OU bypasses it
 
 **Option C — Revenue Escrow**
 
@@ -421,28 +478,26 @@ Revenue goes into a shared `RevenueSplitEscrow` object (not directly into either
 
 - Most trustless — neither party has custody of unsplit funds
 - Adds an extra object and interaction step
-- Clean separation of concerns: the escrow is a standalone primitive
+- Clean separation of concerns: the escrow is a standalone primitive that needs no framework change
 - Tradeoff: requires the revenue source (e.g., gate tolls) to target the escrow address instead of a treasury directly
 
-**Decision**: Option A (split-on-deposit) for the hackathon demo. Option B or C may be more appropriate for production use where sub-DAOs need cash flow flexibility or where trust assumptions differ.
-
-The `RevenuePolicy` is created during `CreateSubDAO` execution and is immutable from the sub-DAO's perspective. Renegotiation (e.g., the 80/20 → 70/30 amendment in Step 7) requires the parent to update the policy via `privileged_submit`. This turns the charter's revenue terms into an on-chain enforceable constraint while preserving the governance negotiation narrative.
+Renegotiation (e.g., the 80/20 → 70/30 change in Step 7) would require the parent to update the policy through its `SubOUControl`. This turns the charter's revenue terms into an on-chain enforceable constraint while preserving the governance negotiation narrative.
 
 ### Interface Mockups
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  GATE BUILDERS                         DAO #0xDAO3          │
-│  ═════════════                     (SubDAO of Iron Haulers) │
+│  GATE BUILDERS                         OU #0xOU3          │
+│  ═════════════                     (SubOU of Iron Haulers) │
 │                                                             │
-│  Board Members          Treasury             Charter v2     │
+│  Board Members          Treasury             Charter        │
 │  ┌───────────┐         ┌──────────┐         ┌───────────┐  │
-│  │ ★ Dave    │         │ 110 SUI  │         │ View on   │  │
-│  │   Eve     │         │          │         │ Walrus ↗  │  │
+│  │ ★ Dave    │         │ 110 SUI  │         │ View      │  │
+│  │   Eve     │         │          │         │ document ↗│  │
 │  └───────────┘         └──────────┘         └───────────┘  │
 │                                                             │
-│  Parent: Iron Haulers (#0xDAO1)    [View Parent]            │
-│  Revenue Policy: 80% to parent (charter v1 terms)           │
+│  Parent: Iron Haulers (#0xOU1)    [View Parent]            │
+│  Revenue terms: 80% to parent (charter v1)                  │
 │                                                             │
 │  Infrastructure Assets (from CapabilityVault)               │
 │  ┌─────────────────────────────────────────────────────┐    │
@@ -458,10 +513,10 @@ The `RevenuePolicy` is created during `CreateSubDAO` execution and is immutable 
 │  │  Retained (20%):         10 SUI     │                   │
 │  └──────────────────────────────────────┘                   │
 │                                                             │
-│  Active Proposals                                           │
+│  Recent Proposals                                           │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │  #P8  Amend Charter (70/30 split)  PASSED           │    │
-│  │       ⚠ Parent override pending — see Iron Haulers  │    │
+│  │  #P10 Update Charter (70/30 split)  EXECUTED        │    │
+│  │       ⚠ Parent override proposed — see Iron Haulers │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                                                             │
 │  [+ New Proposal]  [Configure Gates]  [Pay Parent]          │
@@ -470,12 +525,12 @@ The `RevenuePolicy` is created during `CreateSubDAO` execution and is immutable 
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  PROJECT PROPOSAL — CREATE SUBDAO                           │
+│  PROJECT PROPOSAL — CREATE SUBOU                           │
 │  ════════════════════════════════                            │
 │                                                             │
 │  Project Name:   [ Gate Builders________________ ]          │
 │                                                             │
-│  Project Charter (uploaded to Walrus):                      │
+│  Project Charter (published to IPFS):                       │
 │  ┌────────────────────────────────────────────────┐         │
 │  │  Mission: Deploy jump gates connecting         │         │
 │  │  Systems A, B, C.                              │         │
@@ -484,23 +539,23 @@ The `RevenuePolicy` is created during `CreateSubDAO` execution and is immutable 
 │  │                                                │         │
 │  │  Dissolution: Parent may reclaim all caps.     │         │
 │  └────────────────────────────────────────────────┘         │
-│  [Edit on Walrus ↗]                                         │
+│  [Edit document ↗]                                          │
 │                                                             │
 │  Initial Board:                                             │
 │    [ 0xDave... ] [+]                                        │
 │    [ 0xEve...  ] [+]                                        │
 │    [___________] [Add Member]                               │
 │                                                             │
-│  Initial Funding:                                           │
+│  Initial Funding (follow-up SendCoinToOU proposal):        │
 │    Amount: [ 100   ] SUI                                    │
 │    Source: Parent Treasury (250 SUI available)               │
 │                                                             │
 │  ┌────────────────────────────────────────────┐             │
-│  │ This creates a controlled project sub-DAO. │             │
-│  │ The parent DAO retains:                    │             │
-│  │  • Board replacement authority             │             │
+│  │ This creates a controlled project sub-OU. │             │
+│  │ The parent OU retains:                    │             │
+│  │  • Board membership override               │             │
 │  │  • Capability reclaim rights               │             │
-│  │  • Charter override via privileged_submit  │             │
+│  │  • Execution pause/unpause                 │             │
 │  └────────────────────────────────────────────┘             │
 │                                                             │
 │  [Cancel]                           [Submit Proposal]       │
@@ -513,61 +568,68 @@ The `RevenuePolicy` is created during `CreateSubDAO` execution and is immutable 
 
 ### Context
 
-Iron Haulers decides to build a toll gate network connecting three star systems. The DAO holds the **Smart Gate ownership capabilities** in its CapabilityVault. Gate access logic calls back to on-chain DAO state to check membership. Toll revenue flows into the DAO treasury. A third-party logistics DApp reads DAO membership to offer route planning through the gate network.
+Iron Haulers decides to build a toll gate network connecting three star systems. The OU holds the **Smart Gate ownership capabilities** in its CapabilityVault. Gate access logic calls back to on-chain OU state to check membership. Toll revenue flows into the OU treasury. A third-party logistics DApp reads OU membership to offer route planning through the gate network.
 
-This demonstrates direct integration with EVE Frontier's **Smart Assemblies** (Gates, SSUs) — the DAO protocol isn't a standalone governance toy but a **composable primitive** that plugs into the game world.
+This demonstrates direct integration with EVE Frontier's **Smart Assemblies** (Gates, SSUs) — the OU protocol isn't a standalone governance toy but a **composable primitive** that plugs into the game world.
 
 > **Note — Mocked Integration**: The EVE Frontier world contracts currently only
-> allow `Character` objects (not arbitrary Sui objects like DAOs) to hold Smart
+> allow `Character` objects (not arbitrary Sui objects like OUs) to hold Smart
 > Assembly `OwnerCap`s. Object-based custody is flagged as future work by CCP.
 >
-> For the hackathon demo, we **mock the Smart Assembly modules** (`gate::`, `ssu::`)
+> For the demo, we **mock the Smart Assembly modules** (`gate::`, `ssu::`)
 > with simplified contracts that allow object-based custody. This lets us demonstrate
-> the full DAO-holds-caps-and-loans-them-via-proposals architecture without being
+> the full OU-holds-caps-and-loans-them-via-proposals architecture without being
 > blocked by the current world contract limitation.
 >
 > The capability names below (`GateOwnerCap`, `SSUOwnerCap`) are illustrative.
-> The pattern — DAO holds caps, proposals loan them for configuration — is
+> The pattern — OU holds caps, proposals loan them for configuration — is
 > architecture-stable regardless of final naming or custody model.
+>
+> The integration that ships today is `armature_world_bridge`: a Members OU can
+> let players self-join by proving, through their world `Character`, that they
+> belong to an allowlisted in-game tribe (`AutojoinOU`, a bypass type).
 
 ### Steps
 
 ```
-Step 1: DAO Acquires Gate Ownership Capabilities
+Step 1: OU Acquires Gate Ownership Capabilities
 ─────────────────────────────────────────────────────────────
-Alice deploys three Smart Gates and transfers their ownership
-capabilities into the Iron Haulers CapabilityVault.
+Alice deploys three Smart Gates and the board stores their
+ownership capabilities in the Iron Haulers CapabilityVault
+through an AdoptGateCaps proposal (VAULT_STORE).
 
   PTB:
     1. gate::deploy(system_a, system_b) → GateOwnerCap #0xG1
     2. gate::deploy(system_b, system_c) → GateOwnerCap #0xG2
     3. gate::deploy(system_c, system_a) → GateOwnerCap #0xG3
-    4. capability_vault::deposit(#0xCV1, #0xG1)
-    5. capability_vault::deposit(#0xCV1, #0xG2)
-    6. capability_vault::deposit(#0xCV1, #0xG3)
+    4. ticket_from_vote(OU1, AdoptGateCaps proposal, …)
+    5. gate_ops::execute_adopt_gate_caps(#0xCV1, caps, ticket)
 
   CapabilityVault #0xCV1 now holds:
-    [SubDAOControl(Logistics), SubDAOControl(Gate Builders),
-     GateOwnerCap(#0xG1), GateOwnerCap(#0xG2), GateOwnerCap(#0xG3)]
+    [SubOUControl(Logistics), SubOUControl(Gate Builders),
+     GateOwnerCap(#0xG1), GateOwnerCap(#0xG2), GateOwnerCap(#0xG3), …]
 ```
 
 ```
 Step 2: Proposal — Configure Gate Access Policy
 ─────────────────────────────────────────────────────────────
-Bob proposes configuring all gates to allow only DAO members
+Bob proposes configuring all gates to allow only OU members
 and charge 1 SUI toll per jump for non-members.
 
   This uses a custom proposal type that loans the GateOwnerCap
   from the vault and calls the gate's configuration function.
+  The OU enabled it with VAULT_BORROW and a borrow scope of
+  [GateOwnerCap], so its requests can reach no other cap in
+  the vault (not the SubOUControls, not an UpgradeCap).
 
-  Proposal #P10: ConfigureGateAccess
+  Proposal #P11: ConfigureGateAccess
     gates: [#0xG1, #0xG2, #0xG3]
     access_policy:
       members: FREE
       non_members: 1 SUI toll
       blacklist: [known pirates]
 
-  Voting:
+  Voting (threshold 80%):
     Alice: YES    Bob: YES    Carol: YES → PASSED
 ```
 
@@ -575,17 +637,26 @@ and charge 1 SUI toll per jump for non-members.
 Step 3: Execute — Gate Access Logic Set On-Chain
 ─────────────────────────────────────────────────────────────
   PTB (execution):
-    1. proposal::execute(#P10)      → ExecutionRequest<ConfigureGateAccess>
-    2. cap_vault::loan_cap(#0xCV1, #0xG1) → (GateOwnerCap, CapLoan)
-    3. gate::set_access_hook(cap, policy)  // EVE world contract call
-    4. cap_vault::return_cap(#0xCV1, cap, loan)
-    ... repeat for #0xG2, #0xG3
+    1. board_voting::ticket_from_vote(OU1, #P11, freeze, clock)
+         → ExecutionTicket<ConfigureGateAccess>
+    2. gate_ops::execute_configure_gate_access(#0xCV1, gates, ticket):
+         for each gate:
+           capability_vault::loan_cap<GateOwnerCap, ConfigureGateAccess>(
+             #0xCV1, gate_cap_id, ticket.ticket_request(permit))
+             → (GateOwnerCap, CapLoan)
+           gate::set_access_hook(cap, policy)  // EVE world contract call
+           capability_vault::return_cap(#0xCV1, cap, loan)
+         ticket.discharge(permit)
+
+  Only gate_ops (the module defining ConfigureGateAccess) can
+  spend the ticket, so the policy applied is the one voted on.
 
   The gate's canJump hook now queries:
-    fn can_jump(character_id):
-      if dao::is_member(#0xDAO1, character_id) → allow (free)
-      if has_toll_ticket(character_id)         → allow (paid)
-      if blacklisted(character_id)             → deny
+    fn can_jump(character):
+      if ou::is_governance_member(&OU1, character.character_address())
+                                               → allow (free)
+      if has_toll_ticket(character)            → allow (paid)
+      if blacklisted(character)                → deny
       else                                     → charge toll
 ```
 
@@ -593,7 +664,8 @@ Step 3: Execute — Gate Access Logic Set On-Chain
 Step 4: Toll Revenue Flows Into Treasury
 ─────────────────────────────────────────────────────────────
 As ships jump through the gates, toll payments accumulate.
-The gate contract sends toll revenue to the DAO's treasury.
+The gate contract deposits toll revenue into the OU's
+treasury (treasury_vault::deposit, permissionless).
 
   Event stream:
     gate_jump { gate: #0xG1, jumper: Eve, toll: 1 SUI }
@@ -602,18 +674,20 @@ The gate contract sends toll revenue to the DAO's treasury.
 
   Treasury balance: 252 SUI (250 + 2 tolls)
 
-  Revenue is visible on the DAO dashboard and auditable
-  on-chain — every toll is a traceable transaction.
+  Revenue is visible on the OU dashboard and auditable
+  on-chain — every deposit emits CoinDeposited.
 ```
 
 ```
 Step 5: Third-Party DApp Integration — Route Planner
 ─────────────────────────────────────────────────────────────
 A logistics DApp ("StarRoutes") queries on-chain state to
-offer route planning through DAO-governed gate networks.
+offer route planning through OU-governed gate networks.
 
   StarRoutes reads:
-    1. dao::get_members(#0xDAO1) → membership list
+    1. ou::is_governance_member(&OU1, user) → member?
+       (the full roster comes from the indexer or the
+        members table; see 06 Data Layer)
     2. gate::get_access_policy(#0xG1) → toll/free for user
     3. gate::get_connections() → system graph
 
@@ -634,39 +708,42 @@ offer route planning through DAO-governed gate networks.
 ```
 
 ```
-Step 6: Delegate Gate Ops to Logistics SubDAO
+Step 6: Delegate Gate Ops to Logistics SubOU
 ─────────────────────────────────────────────────────────────
-The parent DAO delegates one gate's ownership to the
-Logistics SubDAO, letting them manage it independently.
+The parent OU delegates one gate's ownership to the
+Logistics SubOU, letting them manage it independently.
 
-  Proposal #P11 (on Iron Haulers): TransferCapToSubDAO
-    capability: GateOwnerCap(#0xG2)
-    target_subdao: #0xDAO2 (Logistics Dept)
+  Proposal #P12 (on Iron Haulers): TransferCapToSubOU
+    cap_id:        GateOwnerCap(#0xG2)
+    target_subou: #0xOU2 (Logistics Dept)
+  (VAULT_EXTRACT, 80%)
 
   Voting: PASSED
 
-  Execution:
+  Execution (subou_ops::execute_transfer_cap<GateOwnerCap>):
     1. Extract GateOwnerCap(#0xG2) from parent vault
-    2. Deposit into Logistics SubDAO's CapabilityVault
+    2. Receive it into Logistics SubOU's CapabilityVault
 
-  Now Logistics can reconfigure Gate #0xG2 autonomously.
-  Parent retains reclaim rights via SubDAOControl.
+  Once Logistics enables ConfigureGateAccess on its own OU,
+  it can reconfigure Gate #0xG2 autonomously.
+  Parent retains reclaim rights (ReclaimCapFromSubOU).
 ```
 
 ```
 Step 7: SSU Integration — Tribe Supply Depot
 ─────────────────────────────────────────────────────────────
 Iron Haulers deploys a Smart Storage Unit (SSU) at their
-base station. The SSU ownership cap is held in the DAO's
-CapabilityVault. Access is governed by DAO membership.
+base station. The SSU ownership cap is held in the OU's
+CapabilityVault. Access is governed by OU membership.
 
   PTB:
     1. ssu::deploy(station_id) → SSUOwnerCap #0xSSU1
-    2. capability_vault::deposit(#0xCV1, #0xSSU1)
+    2. store it via an adopt proposal (VAULT_STORE), as in Step 1
 
   SSU access hook:
-    fn can_access(character_id):
-      if dao::is_member(#0xDAO1, character_id) → allow
+    fn can_access(character):
+      if ou::is_governance_member(&OU1, character.character_address())
+                                               → allow
       → deny
 
   Only Iron Haulers members can deposit/withdraw from
@@ -678,22 +755,22 @@ CapabilityVault. Access is governed by DAO membership.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  GATE NETWORK MANAGEMENT              Iron Haulers DAO      │
+│  GATE NETWORK MANAGEMENT              Iron Haulers OU      │
 │  ═══════════════════════                                    │
 │                                                             │
 │  Infrastructure Assets (from CapabilityVault)               │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │  Gate  System A ↔ B    Owner: This DAO    Status: ● │    │
+│  │  Gate  System A ↔ B    Owner: This OU    Status: ● │    │
 │  │  #0xG1                 Toll: 1 SUI        Jumps: 47 │    │
-│  │  [Configure]  [Delegate to SubDAO]  [View Revenue]  │    │
+│  │  [Configure]  [Delegate to SubOU]  [View Revenue]  │    │
 │  ├─────────────────────────────────────────────────────┤    │
 │  │  Gate  System B ↔ C    Owner: Logistics   Status: ● │    │
 │  │  #0xG2                 Toll: 1 SUI        Jumps: 23 │    │
-│  │  [Reclaim from SubDAO]  [View Revenue]              │    │
+│  │  [Reclaim from SubOU]  [View Revenue]              │    │
 │  ├─────────────────────────────────────────────────────┤    │
-│  │  Gate  System C ↔ A    Owner: This DAO    Status: ● │    │
+│  │  Gate  System C ↔ A    Owner: This OU    Status: ● │    │
 │  │  #0xG3                 Toll: 2 SUI        Jumps: 12 │    │
-│  │  [Configure]  [Delegate to SubDAO]  [View Revenue]  │    │
+│  │  [Configure]  [Delegate to SubOU]  [View Revenue]  │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                                                             │
 │  Revenue Summary (last 7 days)                              │
@@ -718,7 +795,7 @@ CapabilityVault. Access is governed by DAO membership.
 │                                                             │
 │  Access Rules:                                              │
 │  ┌────────────────────────────────────────────────┐         │
-│  │  DAO Members (Iron Haulers)                    │         │
+│  │  OU Members (Iron Haulers)                    │         │
 │  │    Access: [✓ Allowed]    Toll: [ FREE       ] │         │
 │  ├────────────────────────────────────────────────┤         │
 │  │  Public                                        │         │
@@ -731,11 +808,11 @@ CapabilityVault. Access is governed by DAO membership.
 │  │    [______________ ] [Add]                     │         │
 │  └────────────────────────────────────────────────┘         │
 │                                                             │
-│  Revenue Destination: [ DAO Treasury (#0xTV1)      ▼ ]      │
+│  Revenue Destination: [ OU Treasury (#0xTV1)      ▼ ]      │
 │                                                             │
 │  ┌────────────────────────────────────────────┐             │
 │  │ This creates a ConfigureGateAccess proposal │             │
-│  │ requiring board approval (66% threshold).   │             │
+│  │ requiring board approval (80% threshold).   │             │
 │  └────────────────────────────────────────────┘             │
 │                                                             │
 │  [Cancel]                        [Submit Proposal]          │
@@ -794,20 +871,24 @@ CapabilityVault. Access is governed by DAO membership.
 
 | Feature | Flow A | Flow B | Flow C |
 |---------|--------|--------|--------|
-| `dao::create_dao` | ✓ | | |
-| `treasury::deposit` | ✓ | | |
-| `proposal::create` / `vote` / `execute` | ✓ | ✓ | ✓ |
-| `board_ops::handle (SetBoard)` | ✓ | | |
-| `subdao_ops::handle (CreateSubDAO)` | ✓ | ✓ | |
-| `treasury_ops::handle (SendCoin)` | ✓ | ✓ | |
-| `charter_ops::handle (AmendCharter)` | | ✓ | |
-| `capability_vault::deposit` | | ✓ | ✓ |
-| `capability_vault::loan_cap / return_cap` | | ✓ | ✓ |
-| Custom: `ConfigureGateAccess` handler | | ✓ | ✓ |
-| `privileged_submit` (parent override) | ✓ | ✓ | |
-| `subdao_ops::handle (TransferCapToSubDAO)` | | | ✓ |
-| `RevenuePolicy` (split-on-deposit) | | ✓ | |
-| Walrus charter upload/read | ✓ | ✓ | |
+| `ou::create` (or `tribe::create_tribe`) | ✓ | | |
+| `treasury_vault::deposit` | ✓ | ✓ | ✓ |
+| `board_voting::submit_proposal` / `vote` / `ticket_from_vote` | ✓ | ✓ | ✓ |
+| `board_voting::submit_vote_execute` (sole-member board) | ✓ | | |
+| `admin_ops::execute_enable_proposal_type` (opt-in types, with bits) | ✓ | ✓ | ✓ |
+| `board_ops::execute_set_board` (SetBoard) | ✓ | | |
+| `lifecycle_ops::execute_create_subou` (CreateSubOU) | ✓ | ✓ | |
+| `treasury_ops::execute_send_coin` / `execute_send_coin_to_ou` | ✓ | ✓ | |
+| `subou_ops::execute_controller_batch_add_members` / `execute_controller_batch_remove_members` | ✓ | | |
+| `composite` (bundle controller steps) | ✓ | | |
+| `admin_ops::execute_update_metadata` (charter update) | | ✓ | |
+| `capability_vault::store_cap` (through a VAULT_STORE adopt type) | | ✓ | ✓ |
+| `capability_vault::loan_cap` / `return_cap` (VAULT_BORROW + scope) | | ✓ | ✓ |
+| Custom: `AdoptGateCaps`, `ConfigureGateAccess` types and handlers | | ✓ | ✓ |
+| `controller::privileged_submit` (parent override) | ✓ | ✓ | |
+| `subou_ops::execute_transfer_cap` (TransferCapToSubOU) | | | ✓ |
+| `RevenuePolicy` (not implemented) | | ✓ | |
+| Charter document at `metadata_uri` (IPFS) | ✓ | ✓ | |
 | Smart Gate integration hooks (mocked) | | ✓ | ✓ |
 | Smart SSU integration hooks (mocked) | | | ✓ |
-| Third-party DApp read queries | | | ✓ |
+| Third-party DApp read queries (`ou::is_governance_member`, indexer) | | | ✓ |

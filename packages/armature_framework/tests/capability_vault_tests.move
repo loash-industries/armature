@@ -26,9 +26,9 @@ const ADMIN: address = @0xA;
 // === Helpers ===
 
 fun setup(ctx: &mut TxContext): (CapabilityVault, ID) {
-    let dao_id = object::id_from_address(@0xDA0);
-    let vault = capability_vault::new(dao_id, ctx);
-    (vault, dao_id)
+    let ou_id = object::id_from_address(@0xDA0);
+    let vault = capability_vault::new(ou_id, ctx);
+    (vault, ou_id)
 }
 
 fun make_cap(ctx: &mut TxContext, value: u64): TestCap {
@@ -39,20 +39,27 @@ fun make_another_cap(ctx: &mut TxContext): AnotherCap {
     AnotherCap { id: object::new(ctx) }
 }
 
-fun make_req(dao_id: ID): proposal::ExecutionRequest<TestProposal> {
-    proposal::new_execution_request<TestProposal>(dao_id, object::id_from_address(@0xBEEF))
+/// A request carrying every bit, scoped to borrow `TestCap`.
+fun make_req(ou_id: ID): proposal::ExecutionRequest<TestProposal> {
+    proposal::new_execution_request_for_testing<TestProposal>(
+        ou_id,
+        object::id_from_address(@0xBEEF),
+    ).with_borrow_scope_for_testing(vector[std::type_name::with_defining_ids<TestCap>()])
 }
 
-fun make_recv_req(dao_id: ID): proposal::ExecutionRequest<RecvProposal> {
-    proposal::new_execution_request<RecvProposal>(dao_id, object::id_from_address(@0xCAFE))
+fun make_recv_req(ou_id: ID): proposal::ExecutionRequest<RecvProposal> {
+    proposal::new_execution_request_for_testing<RecvProposal>(
+        ou_id,
+        object::id_from_address(@0xCAFE),
+    )
 }
 
 fun setup_two_vaults(ctx: &mut TxContext): (CapabilityVault, CapabilityVault, ID, ID) {
-    let dao_a = object::id_from_address(@0xDA0A);
-    let dao_b = object::id_from_address(@0xDA0B);
-    let vault_a = capability_vault::new(dao_a, ctx);
-    let vault_b = capability_vault::new(dao_b, ctx);
-    (vault_a, vault_b, dao_a, dao_b)
+    let ou_a = object::id_from_address(@0xDA0A);
+    let ou_b = object::id_from_address(@0xDA0B);
+    let vault_a = capability_vault::new(ou_a, ctx);
+    let vault_b = capability_vault::new(ou_b, ctx);
+    (vault_a, vault_b, ou_a, ou_b)
 }
 
 // === Tests ===
@@ -61,9 +68,9 @@ fun setup_two_vaults(ctx: &mut TxContext): (CapabilityVault, CapabilityVault, ID
 /// store_cap requires ExecutionRequest — verifies the function works with one.
 fun test_store_cap_requires_execution_request() {
     let mut ctx = tx_context::dummy();
-    let (mut vault, dao_id) = setup(&mut ctx);
+    let (mut vault, ou_id) = setup(&mut ctx);
     let cap = make_cap(&mut ctx, 1);
-    let req = make_req(dao_id);
+    let req = make_req(ou_id);
 
     vault.store_cap(cap, &req);
 
@@ -75,11 +82,11 @@ fun test_store_cap_requires_execution_request() {
 /// borrow_cap requires ExecutionRequest — verifies the function works with one.
 fun test_borrow_cap_requires_execution_request() {
     let mut ctx = tx_context::dummy();
-    let (mut vault, dao_id) = setup(&mut ctx);
+    let (mut vault, ou_id) = setup(&mut ctx);
     let cap = make_cap(&mut ctx, 10);
     let cap_id = object::id(&cap);
     vault.store_cap_init(cap);
-    let req = make_req(dao_id);
+    let req = make_req(ou_id);
 
     let ref_cap: &TestCap = vault.borrow_cap(cap_id, &req);
     assert!(ref_cap.value == 10);
@@ -92,11 +99,11 @@ fun test_borrow_cap_requires_execution_request() {
 /// loan_cap requires ExecutionRequest — verifies the function works with one.
 fun test_loan_cap_requires_execution_request() {
     let mut ctx = tx_context::dummy();
-    let (mut vault, dao_id) = setup(&mut ctx);
+    let (mut vault, ou_id) = setup(&mut ctx);
     let cap = make_cap(&mut ctx, 20);
     let cap_id = object::id(&cap);
     vault.store_cap_init(cap);
-    let req = make_req(dao_id);
+    let req = make_req(ou_id);
 
     let (loaned, loan) = vault.loan_cap<TestCap, TestProposal>(cap_id, &req);
     vault.return_cap(loaned, loan);
@@ -109,11 +116,11 @@ fun test_loan_cap_requires_execution_request() {
 /// extract_cap requires ExecutionRequest — verifies the function works with one.
 fun test_extract_cap_requires_execution_request() {
     let mut ctx = tx_context::dummy();
-    let (mut vault, dao_id) = setup(&mut ctx);
+    let (mut vault, ou_id) = setup(&mut ctx);
     let cap = make_cap(&mut ctx, 30);
     let cap_id = object::id(&cap);
     vault.store_cap_init(cap);
-    let req = make_req(dao_id);
+    let req = make_req(ou_id);
 
     let extracted = vault.extract_cap<TestCap, TestProposal>(cap_id, &req);
 
@@ -123,10 +130,10 @@ fun test_extract_cap_requires_execution_request() {
 }
 
 #[test]
-/// store_cap_init is public(package) — works during DAO init context.
-fun test_store_cap_init_only_during_dao_creation() {
+/// store_cap_init is public(package) — works during OU init context.
+fun test_store_cap_init_only_during_ou_creation() {
     let mut ctx = tx_context::dummy();
-    let (mut vault, _dao_id) = setup(&mut ctx);
+    let (mut vault, _ou_id) = setup(&mut ctx);
     let cap = make_cap(&mut ctx, 99);
     let cap_id = object::id(&cap);
 
@@ -140,7 +147,7 @@ fun test_store_cap_init_only_during_dao_creation() {
 /// Storing a capability updates both cap_types and cap_ids registries.
 fun test_store_updates_cap_types_and_cap_ids() {
     let mut ctx = tx_context::dummy();
-    let (mut vault, _dao_id) = setup(&mut ctx);
+    let (mut vault, _ou_id) = setup(&mut ctx);
     let cap = make_cap(&mut ctx, 1);
     let cap_id = object::id(&cap);
 
@@ -156,11 +163,11 @@ fun test_store_updates_cap_types_and_cap_ids() {
 /// Extracting a capability removes it from both cap_types and cap_ids registries.
 fun test_extract_removes_from_cap_types_and_cap_ids() {
     let mut ctx = tx_context::dummy();
-    let (mut vault, dao_id) = setup(&mut ctx);
+    let (mut vault, ou_id) = setup(&mut ctx);
     let cap = make_cap(&mut ctx, 1);
     let cap_id = object::id(&cap);
     vault.store_cap_init(cap);
-    let req = make_req(dao_id);
+    let req = make_req(ou_id);
 
     let extracted = vault.extract_cap<TestCap, TestProposal>(cap_id, &req);
 
@@ -177,7 +184,7 @@ fun test_extract_removes_from_cap_types_and_cap_ids() {
 /// Storing multiple capabilities of the same type registers all their IDs.
 fun test_store_multiple_same_type_updates_ids() {
     let mut ctx = tx_context::dummy();
-    let (mut vault, _dao_id) = setup(&mut ctx);
+    let (mut vault, _ou_id) = setup(&mut ctx);
     let cap_a = make_cap(&mut ctx, 1);
     let cap_b = make_cap(&mut ctx, 2);
     let id_a = object::id(&cap_a);
@@ -199,15 +206,15 @@ fun test_store_multiple_same_type_updates_ids() {
 /// Extracting the last capability of a type removes the type from cap_types.
 fun test_extract_last_of_type_removes_type() {
     let mut ctx = tx_context::dummy();
-    let (mut vault, dao_id) = setup(&mut ctx);
+    let (mut vault, ou_id) = setup(&mut ctx);
     let cap_a = make_cap(&mut ctx, 1);
     let cap_b = make_cap(&mut ctx, 2);
     let id_a = object::id(&cap_a);
     let id_b = object::id(&cap_b);
     vault.store_cap_init(cap_a);
     vault.store_cap_init(cap_b);
-    let req_a = make_req(dao_id);
-    let req_b = make_req(dao_id);
+    let req_a = make_req(ou_id);
+    let req_b = make_req(ou_id);
 
     let ex_a = vault.extract_cap<TestCap, TestProposal>(id_a, &req_a);
     // Type should still be present (cap_b remains)
@@ -229,11 +236,11 @@ fun test_extract_last_of_type_removes_type() {
 /// Loaning a capability does NOT update cap_types or cap_ids registries.
 fun test_loan_does_not_update_registries() {
     let mut ctx = tx_context::dummy();
-    let (mut vault, dao_id) = setup(&mut ctx);
+    let (mut vault, ou_id) = setup(&mut ctx);
     let cap = make_cap(&mut ctx, 42);
     let cap_id = object::id(&cap);
     vault.store_cap_init(cap);
-    let req = make_req(dao_id);
+    let req = make_req(ou_id);
 
     let (loaned, loan) = vault.loan_cap<TestCap, TestProposal>(cap_id, &req);
 
@@ -252,11 +259,11 @@ fun test_loan_does_not_update_registries() {
 /// After loaning and returning, the capability is accessible again.
 fun test_loan_and_return_restores_capability() {
     let mut ctx = tx_context::dummy();
-    let (mut vault, dao_id) = setup(&mut ctx);
+    let (mut vault, ou_id) = setup(&mut ctx);
     let cap = make_cap(&mut ctx, 77);
     let cap_id = object::id(&cap);
     vault.store_cap_init(cap);
-    let req = make_req(dao_id);
+    let req = make_req(ou_id);
 
     let (loaned, loan) = vault.loan_cap<TestCap, TestProposal>(cap_id, &req);
     assert!(loaned.value == 77);
@@ -274,11 +281,11 @@ fun test_loan_and_return_restores_capability() {
 /// A loaned capability cannot be borrowed while on loan.
 fun test_loan_cap_not_borrowable_during_loan() {
     let mut ctx = tx_context::dummy();
-    let (mut vault, dao_id) = setup(&mut ctx);
+    let (mut vault, ou_id) = setup(&mut ctx);
     let cap = make_cap(&mut ctx, 42);
     let cap_id = object::id(&cap);
     vault.store_cap_init(cap);
-    let req = make_req(dao_id);
+    let req = make_req(ou_id);
 
     let (loaned, loan) = vault.loan_cap<TestCap, TestProposal>(cap_id, &req);
 
@@ -292,15 +299,15 @@ fun test_loan_cap_not_borrowable_during_loan() {
 }
 
 #[test]
-/// privileged_extract works with correct SubDAOControl.
-fun test_privileged_extract_requires_subdao_control() {
+/// privileged_extract works with correct SubOUControl.
+fun test_privileged_extract_requires_subou_control() {
     let mut ctx = tx_context::dummy();
-    let (mut vault, dao_id) = setup(&mut ctx);
+    let (mut vault, ou_id) = setup(&mut ctx);
     let cap = make_cap(&mut ctx, 55);
     let cap_id = object::id(&cap);
     vault.store_cap_init(cap);
 
-    let control = capability_vault::new_subdao_control_for_testing(dao_id, &mut ctx);
+    let control = capability_vault::new_subou_control_for_testing(ou_id, &mut ctx);
     let extracted = vault.privileged_extract<TestCap>(cap_id, &control);
 
     assert!(extracted.value == 55);
@@ -310,17 +317,17 @@ fun test_privileged_extract_requires_subdao_control() {
 }
 
 #[test]
-/// privileged_extract verifies control.subdao_id matches vault.dao_id.
-fun test_privileged_extract_verifies_subdao_id() {
+/// privileged_extract verifies control.subou_id matches vault.ou_id.
+fun test_privileged_extract_verifies_subou_id() {
     let mut ctx = tx_context::dummy();
-    let (mut vault, dao_id) = setup(&mut ctx);
+    let (mut vault, ou_id) = setup(&mut ctx);
     let cap = make_cap(&mut ctx, 66);
     let cap_id = object::id(&cap);
     vault.store_cap_init(cap);
 
-    // Matching subdao_id succeeds
-    let control = capability_vault::new_subdao_control_for_testing(dao_id, &mut ctx);
-    assert!(control.subdao_id() == vault.dao_id());
+    // Matching subou_id succeeds
+    let control = capability_vault::new_subou_control_for_testing(ou_id, &mut ctx);
+    assert!(control.subou_id() == vault.ou_id());
 
     let extracted = vault.privileged_extract<TestCap>(cap_id, &control);
     sui::test_utils::destroy(extracted);
@@ -329,17 +336,17 @@ fun test_privileged_extract_verifies_subdao_id() {
 }
 
 #[test, expected_failure(abort_code = capability_vault::ENotController)]
-/// privileged_extract aborts when control.subdao_id does not match vault.dao_id.
-fun test_privileged_extract_wrong_subdao_aborts() {
+/// privileged_extract aborts when control.subou_id does not match vault.ou_id.
+fun test_privileged_extract_wrong_subou_aborts() {
     let mut ctx = tx_context::dummy();
-    let (mut vault, _dao_id) = setup(&mut ctx);
+    let (mut vault, _ou_id) = setup(&mut ctx);
     let cap = make_cap(&mut ctx, 77);
     let cap_id = object::id(&cap);
     vault.store_cap_init(cap);
 
-    // Wrong subdao_id
+    // Wrong subou_id
     let wrong_id = object::id_from_address(@0xBAD);
-    let control = capability_vault::new_subdao_control_for_testing(wrong_id, &mut ctx);
+    let control = capability_vault::new_subou_control_for_testing(wrong_id, &mut ctx);
 
     // Should abort with ENotController
     let extracted = vault.privileged_extract<TestCap>(cap_id, &control);
@@ -354,12 +361,12 @@ fun test_privileged_extract_wrong_subdao_aborts() {
 /// privileged_extract succeeds and updates registries.
 fun test_privileged_extract_succeeds() {
     let mut ctx = tx_context::dummy();
-    let (mut vault, dao_id) = setup(&mut ctx);
+    let (mut vault, ou_id) = setup(&mut ctx);
     let cap = make_cap(&mut ctx, 88);
     let cap_id = object::id(&cap);
     vault.store_cap_init(cap);
 
-    let control = capability_vault::new_subdao_control_for_testing(dao_id, &mut ctx);
+    let control = capability_vault::new_subou_control_for_testing(ou_id, &mut ctx);
     let extracted = vault.privileged_extract<TestCap>(cap_id, &control);
 
     // Registries updated
@@ -376,7 +383,7 @@ fun test_privileged_extract_succeeds() {
 /// contains returns true for a stored capability.
 fun test_contains__returns_true_for_stored_cap() {
     let mut ctx = tx_context::dummy();
-    let (mut vault, _dao_id) = setup(&mut ctx);
+    let (mut vault, _ou_id) = setup(&mut ctx);
     let cap = make_cap(&mut ctx, 1);
     let cap_id = object::id(&cap);
 
@@ -390,7 +397,7 @@ fun test_contains__returns_true_for_stored_cap() {
 /// contains returns false for a non-existent capability.
 fun test_contains__returns_false_for_missing_cap() {
     let mut ctx = tx_context::dummy();
-    let (vault, _dao_id) = setup(&mut ctx);
+    let (vault, _ou_id) = setup(&mut ctx);
     let missing_id = object::id_from_address(@0xDEAD);
 
     assert!(!vault.contains(missing_id));
@@ -401,7 +408,7 @@ fun test_contains__returns_false_for_missing_cap() {
 /// ids_for_type returns the correct list of IDs for a given type.
 fun test_ids_for_type__returns_correct_list() {
     let mut ctx = tx_context::dummy();
-    let (mut vault, _dao_id) = setup(&mut ctx);
+    let (mut vault, _ou_id) = setup(&mut ctx);
 
     // Store two TestCaps and one AnotherCap
     let cap_a = make_cap(&mut ctx, 1);
@@ -433,11 +440,11 @@ fun test_ids_for_type__returns_correct_list() {
 /// borrow_cap returns an immutable reference with correct data.
 fun test_borrow_cap__returns_immutable_reference() {
     let mut ctx = tx_context::dummy();
-    let (mut vault, dao_id) = setup(&mut ctx);
+    let (mut vault, ou_id) = setup(&mut ctx);
     let cap = make_cap(&mut ctx, 123);
     let cap_id = object::id(&cap);
     vault.store_cap_init(cap);
-    let req = make_req(dao_id);
+    let req = make_req(ou_id);
 
     let ref_cap: &TestCap = vault.borrow_cap(cap_id, &req);
     assert!(ref_cap.value == 123);
@@ -451,16 +458,16 @@ fun test_borrow_cap__returns_immutable_reference() {
 // =========================================================================
 
 #[test]
-/// receive_cap_authorized succeeds when recv_req.dao_id matches the receiving vault.
-fun receive_cap_authorized_succeeds_with_matching_recv_dao() {
+/// receive_cap_authorized succeeds when recv_req.ou_id matches the receiving vault.
+fun receive_cap_authorized_succeeds_with_matching_recv_ou() {
     let mut ctx = tx_context::dummy();
-    let (mut src_vault, mut recv_vault, dao_a, dao_b) = setup_two_vaults(&mut ctx);
+    let (mut src_vault, mut recv_vault, ou_a, ou_b) = setup_two_vaults(&mut ctx);
     let cap = make_cap(&mut ctx, 99);
     let cap_id = object::id(&cap);
     src_vault.store_cap_init(cap);
 
-    let send_req = make_req(dao_a);
-    let recv_req = make_recv_req(dao_b);
+    let send_req = make_req(ou_a);
+    let recv_req = make_recv_req(ou_b);
 
     let extracted = src_vault.extract_cap<TestCap, TestProposal>(cap_id, &send_req);
     recv_vault.receive_cap_authorized(extracted, &send_req, &recv_req);
@@ -473,21 +480,21 @@ fun receive_cap_authorized_succeeds_with_matching_recv_dao() {
     sui::test_utils::destroy(recv_vault);
 }
 
-#[test, expected_failure(abort_code = capability_vault::EDAOIdMismatch)]
-/// receive_cap_authorized aborts when recv_req.dao_id does not match the receiving vault's dao_id.
-fun receive_cap_authorized_aborts_on_recv_dao_mismatch() {
+#[test, expected_failure(abort_code = capability_vault::EOUIdMismatch)]
+/// receive_cap_authorized aborts when recv_req.ou_id does not match the receiving vault's ou_id.
+fun receive_cap_authorized_aborts_on_recv_ou_mismatch() {
     let mut ctx = tx_context::dummy();
-    let (mut src_vault, mut recv_vault, dao_a, _dao_b) = setup_two_vaults(&mut ctx);
+    let (mut src_vault, mut recv_vault, ou_a, _ou_b) = setup_two_vaults(&mut ctx);
     let cap = make_cap(&mut ctx, 77);
     let cap_id = object::id(&cap);
     src_vault.store_cap_init(cap);
 
-    let send_req = make_req(dao_a);
-    // recv_req carries dao_a's ID but recv_vault belongs to dao_b → mismatch
-    let wrong_recv_req = make_recv_req(dao_a);
+    let send_req = make_req(ou_a);
+    // recv_req carries ou_a's ID but recv_vault belongs to ou_b → mismatch
+    let wrong_recv_req = make_recv_req(ou_a);
 
     let extracted = src_vault.extract_cap<TestCap, TestProposal>(cap_id, &send_req);
-    // Should abort: recv_vault.dao_id() == dao_b but wrong_recv_req.dao_id == dao_a
+    // Should abort: recv_vault.ou_id() == ou_b but wrong_recv_req.ou_id == ou_a
     recv_vault.receive_cap_authorized(extracted, &send_req, &wrong_recv_req);
 
     // Unreachable — satisfy type checker
@@ -498,18 +505,18 @@ fun receive_cap_authorized_aborts_on_recv_dao_mismatch() {
 }
 
 #[test]
-/// receive_cap (unguarded) succeeds regardless of which dao_id the request carries —
+/// receive_cap (unguarded) succeeds regardless of which ou_id the request carries —
 /// it is intended for intra-framework parent→child transfers where only the source
-/// DAO's vote is required.
-fun receive_cap_unguarded_accepts_any_req_dao_id() {
+/// OU's vote is required.
+fun receive_cap_unguarded_accepts_any_req_ou_id() {
     let mut ctx = tx_context::dummy();
-    let (mut src_vault, mut recv_vault, dao_a, _dao_b) = setup_two_vaults(&mut ctx);
+    let (mut src_vault, mut recv_vault, ou_a, _ou_b) = setup_two_vaults(&mut ctx);
     let cap = make_cap(&mut ctx, 55);
     let cap_id = object::id(&cap);
     src_vault.store_cap_init(cap);
 
-    // req carries dao_a — matches src_vault, NOT recv_vault; receive_cap doesn't check
-    let req = make_req(dao_a);
+    // req carries ou_a — matches src_vault, NOT recv_vault; receive_cap doesn't check
+    let req = make_req(ou_a);
     let extracted = src_vault.extract_cap<TestCap, TestProposal>(cap_id, &req);
     recv_vault.receive_cap(extracted, &req);
 

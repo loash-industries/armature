@@ -2,7 +2,7 @@
 
 > Implementation design for `specs/stretch/09_proposal_composition.md`.
 > Covers all structural decisions, module contracts, handler migration patterns,
-> DAO configuration, and security analysis needed to ship this feature.
+> OU configuration, and security analysis needed to ship this feature.
 
 ---
 
@@ -17,14 +17,14 @@
    - 6.1 [composite.move (new)](#61-compositemove-new)
    - 6.2 [board_voting.move (extended)](#62-board_votingmove-extended)
    - 6.3 [composite_ops.move (new)](#63-composite_opsmove-new)
-   - 6.4 [dao.move (extended)](#64-daomove-extended)
+   - 6.4 [ou.move (extended)](#64-oumove-extended)
 7. [Lifecycle Flows](#7-lifecycle-flows)
    - 7.1 [Submission PTB](#71-submission-ptb)
    - 7.2 [Voting](#72-voting)
    - 7.3 [Execution PTB](#73-execution-ptb)
 8. [Effective ProposalConfig Derivation](#8-effective-proposalconfig-derivation)
 9. [Handler Adapter Pattern](#9-handler-adapter-pattern)
-10. [DAO Registration and Type Bindings](#10-dao-registration-and-type-bindings)
+10. [OU Registration and Type Bindings](#10-ou-registration-and-type-bindings)
 11. [Blocked and Restricted Types](#11-blocked-and-restricted-types)
 12. [Security Analysis](#12-security-analysis)
 13. [Testing Strategy](#13-testing-strategy)
@@ -36,14 +36,14 @@
 ## 1. Problem Statement
 
 The current proposal system requires one `Proposal<P>` per logical operation. Operations
-that are inherently atomic — like **CreateSubDAO + fund it + delegate a capability** — must be
+that are inherently atomic — like **CreateSubOU + fund it + delegate a capability** — must be
 split across three separate vote cycles. This creates two failure modes:
 
 **Governance overhead**: N vote cycles × the voting window means multi-week delays for
 operations that should be approved once.
 
 **Consistency risk**: If votes 1 and 2 pass but vote 3 fails (quorum not reached, expired,
-or vetoed), the DAO is left in an intermediate state. A SubDAO exists but is unfunded; a
+or vetoed), the OU is left in an intermediate state. A SubOU exists but is unfunded; a
 charter amendment passed but the treasury allocation did not. Recovery requires additional
 proposals, which themselves can fail.
 
@@ -51,7 +51,7 @@ Real-world governance operations that hit this today:
 
 | Operation | Steps today | Consistency risk |
 |---|---|---|
-| CreateSubDAO + fund + delegate cap | 3 proposals | SubDAO unfunded if step 2/3 fails |
+| CreateSubOU + fund + delegate cap | 3 proposals | SubOU unfunded if step 2/3 fails |
 | Amend charter + treasury allocation | 2 proposals | Allocation orphaned if step 2 fails |
 | Board restructure + freeze admin transfer | 2 proposals | Board restructured without safety cap |
 | Federation formation + initial contribution | 2 proposals | Federation formed with no resources |
@@ -84,15 +84,15 @@ cannot live on `Proposal<CompositePayload>.id`.
 ### 2.3 Existing handlers take `&Proposal<P>` to read payload data
 
 ```move
-pub fun execute_create_subdao(
+pub fun execute_create_subou(
     vault: &mut CapabilityVault,
-    proposal: &Proposal<CreateSubDAO>,   // reads .payload() internally
-    request: ExecutionRequest<CreateSubDAO>,
+    proposal: &Proposal<CreateSubOU>,   // reads .payload() internally
+    request: ExecutionRequest<CreateSubOU>,
     ctx: &mut TxContext,
 )
 ```
 
-In a composite, no `Proposal<CreateSubDAO>` exists. The step payload lives in a dynamic
+In a composite, no `Proposal<CreateSubOU>` exists. The step payload lives in a dynamic
 field on a separate object. Existing handlers cannot be called unchanged without a
 `Proposal<P>` to pass in.
 
@@ -100,7 +100,7 @@ field on a separate object. Existing handlers cannot be called unchanged without
 
 ```move
 public struct ExecutionRequest<phantom P> {
-    dao_id: ID,
+    ou_id: ID,
     proposal_id: ID,
 }
 ```
@@ -148,12 +148,12 @@ design: build (owned) → share → execute (shared).
 ```
 Submission PTB                          Voting                    Execution PTB
 ─────────────────────────────────────   ─────────────────────     ─────────────────────────────────
-new_frame(dao_id)                       vote() × N                authorize_execution<CompositePayload>
+new_frame(ou_id)                       vote() × N                authorize_execution<CompositePayload>
   → CompositeFrame (owned)                                          → ExecutionRequest<CompositePayload>
-add_step<A>(frame, dao, key, payload_a)                           begin_pipeline(prop, req, frame)
-add_step<B>(frame, dao, key, payload_b)                             → Pipeline (hot potato)
-add_step<C>(frame, dao, key, payload_c)
-submit_composite(dao, frame, ...)                                  advance_step<A>(pipeline, frame)
+add_step<A>(frame, ou, key, payload_a)                           begin_pipeline(prop, req, frame)
+add_step<B>(frame, ou, key, payload_b)                             → Pipeline (hot potato)
+add_step<C>(frame, ou, key, payload_c)
+submit_composite(ou, frame, ...)                                  advance_step<A>(pipeline, frame)
   → CompositeFrame (shared)                                          → (payload_a: A, ExecutionRequest<A>, Pipeline)
   → Proposal<CompositePayload> (shared)                           handler_a_step(payload_a, req_a, ...)
 
@@ -181,8 +181,8 @@ which resolves the constraint in §2.2.
 ```
 CompositeFrame (shared)
 ├─ id: UID                            ← dynamic fields attached here
-├─ dao_id: ID
-├─ step_type_keys: vector<ascii::String>   ← for DAO config lookups
+├─ ou_id: ID
+├─ step_type_keys: vector<ascii::String>   ← for OU config lookups
 ├─ step_types: vector<TypeName>            ← for advance_step<P> validation
 └─ dynamic fields:
    ├─ StepKey { index: 0 } → payload_a: A
@@ -202,7 +202,7 @@ validate the frame during execution.
 ```
 Proposal<CompositePayload> (shared)
 ├─ id: UID
-├─ dao_id: ID
+├─ ou_id: ID
 ├─ payload: CompositePayload
 │   ├─ frame_id: ID               ← reference to CompositeFrame
 │   ├─ step_type_keys: vector<ascii::String>
@@ -219,7 +219,7 @@ stored, copied, or dropped. Must be finalized in the same PTB.
 ```
 Pipeline (no abilities)
 ├─ frame_id: ID                    ← asserted against CompositeFrame at each advance_step
-├─ dao_id: ID
+├─ ou_id: ID
 ├─ composite_proposal_id: ID       ← carried into each ExecutionRequest<P>
 ├─ current_step: u64
 └─ total_steps: u64
@@ -248,7 +248,7 @@ Used as the dynamic field name on `CompositeFrame.id`. Step index matches positi
 ```move
 module armature::composite;
 
-use armature::dao::DAO;
+use armature::ou::OU;
 use armature::proposal::{Self, ExecutionRequest, Proposal};
 use std::ascii;
 use std::type_name::{Self, TypeName};
@@ -261,7 +261,7 @@ public struct StepKey has copy, drop, store { index: u64 }
 /// After sharing, serves as the mutable execution target for advance_step.
 public struct CompositeFrame has key {
     id: UID,
-    dao_id: ID,
+    ou_id: ID,
     step_type_keys: vector<ascii::String>,
     step_types: vector<TypeName>,
 }
@@ -277,7 +277,7 @@ public struct CompositePayload has store {
 /// Enforces forward-only step ordering. No abilities.
 public struct Pipeline {
     frame_id: ID,
-    dao_id: ID,
+    ou_id: ID,
     composite_proposal_id: ID,
     current_step: u64,
     total_steps: u64,
@@ -292,10 +292,10 @@ public struct Pipeline {
 | 1 | `EStepTypeMismatch` | `advance_step<P>` called but current step recorded a different TypeName |
 | 2 | `EPipelineIncomplete` | `finalize_pipeline` called before all steps consumed |
 | 3 | `EIncomposableType` | Step type_key is on the blocked list |
-| 4 | `EFrameDAOMismatch` | Frame's `dao_id` does not match the DAO or pipeline |
+| 4 | `EFrameOUMismatch` | Frame's `ou_id` does not match the OU or pipeline |
 | 5 | `EFrameProposalMismatch` | Frame's ID does not match `CompositePayload.frame_id` |
-| 6 | `ETypeNotEnabled` | Step type_key is not enabled in the DAO |
-| 7 | `ETypeMismatch` | P does not match the DAO's type binding for the given type_key |
+| 6 | `ETypeNotEnabled` | Step type_key is not enabled in the OU |
+| 7 | `ETypeMismatch` | P does not match the OU's type binding for the given type_key |
 | 8 | `EEmptyComposite` | `submit_composite` called on a frame with zero steps |
 
 #### Public API
@@ -303,12 +303,12 @@ public struct Pipeline {
 ```move
 /// Create an owned CompositeFrame. Called at the start of the submission PTB.
 /// The frame is mutable until submit_composite consumes it.
-public fun new_frame(dao_id: ID, ctx: &mut TxContext): CompositeFrame;
+public fun new_frame(ou_id: ID, ctx: &mut TxContext): CompositeFrame;
 
 /// Add a typed step to the frame.
 ///
 /// Validates:
-///   - type_key is enabled in the DAO
+///   - type_key is enabled in the OU
 ///   - If a type binding exists for type_key, P must match it
 ///   - type_key is not on the blocked list
 ///   - frame.step_types.length() < max_steps
@@ -317,7 +317,7 @@ public fun new_frame(dao_id: ID, ctx: &mut TxContext): CompositeFrame;
 /// Records type_key and TypeName in the frame's vectors.
 public fun add_step<P: store>(
     frame: &mut CompositeFrame,
-    dao: &DAO,
+    ou: &OU,
     type_key: ascii::String,
     payload: P,
     max_steps: u64,
@@ -327,7 +327,7 @@ public fun add_step<P: store>(
 ///
 /// Validates:
 ///   - object::id(frame) == proposal.payload().frame_id
-///   - frame.dao_id == proposal.dao_id()
+///   - frame.ou_id == proposal.ou_id()
 ///   - proposal.status is Executed (guaranteed by authorize_execution)
 ///
 /// Consumes the CompositePayload ExecutionRequest (hot potato consumed here).
@@ -384,10 +384,10 @@ One new function is added. Existing `submit_proposal` and `authorize_execution` 
 ///
 /// The proposer must be a board member.
 /// The frame must have at least one step (EEmptyComposite).
-/// The "Composite" type_key must be enabled in the DAO.
+/// The "Composite" type_key must be enabled in the OU.
 #[allow(lint(share_owned, custom_state_change))]
 public fun submit_composite(
-    dao: &DAO,
+    ou: &OU,
     frame: CompositeFrame,
     metadata_ipfs: Option<String>,
     clock: &Clock,
@@ -413,12 +413,12 @@ The adapter pattern is:
 
 ```
 Existing handler (unchanged):
-  execute_foo(dao, &Proposal<Foo>, ExecutionRequest<Foo>, ctx)
+  execute_foo(ou, &Proposal<Foo>, ExecutionRequest<Foo>, ctx)
   └─ reads proposal.payload()
   └─ calls proposal::finalize(request, proposal)
 
 New composite variant:
-  execute_foo_step(dao, payload: Foo, ExecutionRequest<Foo>, ctx)
+  execute_foo_step(ou, payload: Foo, ExecutionRequest<Foo>, ctx)
   └─ receives payload directly from advance_step
   └─ calls proposal::consume_execution_request(request)
 ```
@@ -439,11 +439,11 @@ pub fun execute_send_coin_step<T>(
     ctx: &mut TxContext,
 );
 
-pub fun execute_send_coin_to_dao_step<T>(
+pub fun execute_send_coin_to_ou_step<T>(
     source_vault: &mut TreasuryVault,
     target_vault: &mut TreasuryVault,
-    payload: SendCoinToDAO<T>,
-    request: ExecutionRequest<SendCoinToDAO<T>>,
+    payload: SendCoinToOU<T>,
+    request: ExecutionRequest<SendCoinToOU<T>>,
     ctx: &mut TxContext,
 );
 ```
@@ -451,21 +451,21 @@ pub fun execute_send_coin_to_dao_step<T>(
 Note: `SendSmallPayment` is **excluded from composite composition** (see §11). Its epoch-state
 management interacts poorly with batch execution ordering; treat this as a blocked type.
 
-**SubDAO**
+**SubOU**
 
 ```move
-pub fun execute_create_subdao_step(
+pub fun execute_create_subou_step(
     vault: &mut CapabilityVault,
-    payload: CreateSubDAO,
-    request: ExecutionRequest<CreateSubDAO>,
+    payload: CreateSubOU,
+    request: ExecutionRequest<CreateSubOU>,
     ctx: &mut TxContext,
 );
 
 pub fun execute_transfer_cap_step<T: key + store>(
     source_vault: &mut CapabilityVault,
     target_vault: &mut CapabilityVault,
-    payload: TransferCapToSubDAO,
-    request: ExecutionRequest<TransferCapToSubDAO>,
+    payload: TransferCapToSubOU,
+    request: ExecutionRequest<TransferCapToSubOU>,
 );
 ```
 
@@ -485,13 +485,13 @@ pub fun execute_update_metadata_step(
 
 ```move
 pub fun execute_add_member_step(
-    dao: &mut DAO,
+    ou: &mut OU,
     payload: AddMember,
     request: ExecutionRequest<AddMember>,
 );
 
 pub fun execute_remove_member_step(
-    dao: &mut DAO,
+    ou: &mut OU,
     payload: RemoveMember,
     request: ExecutionRequest<RemoveMember>,
 );
@@ -501,16 +501,16 @@ pub fun execute_remove_member_step(
 
 ---
 
-### 6.4 `dao.move` (extended)
+### 6.4 `ou.move` (extended)
 
 **Package**: `armature_framework`
 
 Two additions:
 
-#### 6.4.1 `max_composite_steps` DAO config field
+#### 6.4.1 `max_composite_steps` OU config field
 
 ```move
-public struct DAO has key, store {
+public struct OU has key, store {
     ...
     max_composite_steps: u64,   // default: 5
 }
@@ -529,7 +529,7 @@ reuse of an existing field (e.g., `propose_threshold`). Rejected — semantic ov
 
 | Field | Default | Rationale |
 |---|---|---|
-| `quorum` | 5000 (50%) | Matches DAO default; effective config may raise it |
+| `quorum` | 5000 (50%) | Matches OU default; effective config may raise it |
 | `approval_threshold` | 6600 (66%) | Higher floor than standard 50%; composites affect multiple subsystems |
 | `propose_threshold` | 0 | Unchanged — any board member may propose |
 | `expiry_ms` | 604_800_000 (7d) | Standard window |
@@ -547,27 +547,27 @@ effective config (§8) and may raise it further.
 
 ```
 // 1. Create owned frame
-let frame = composite::new_frame(dao.id(), ctx);
+let frame = composite::new_frame(ou.id(), ctx);
 
 // 2. Add steps (validates type_key, binding, blocked list, step count)
-composite::add_step<CreateSubDAO>(
-    &mut frame, dao, b"CreateSubDAO".to_ascii_string(),
-    create_subdao::new(name, description, initial_board, metadata),
-    dao.max_composite_steps(),
+composite::add_step<CreateSubOU>(
+    &mut frame, ou, b"CreateSubOU".to_ascii_string(),
+    create_subou::new(name, description, initial_board, metadata),
+    ou.max_composite_steps(),
 );
-composite::add_step<SendCoinToDAO<SUI>>(
-    &mut frame, dao, b"SendCoinToDAOSUI".to_ascii_string(),
-    send_coin_to_dao::new<SUI>(target_treasury_id, amount),
-    dao.max_composite_steps(),
+composite::add_step<SendCoinToOU<SUI>>(
+    &mut frame, ou, b"SendCoinToOUSUI".to_ascii_string(),
+    send_coin_to_ou::new<SUI>(target_treasury_id, amount),
+    ou.max_composite_steps(),
 );
-composite::add_step<TransferCapToSubDAO>(
-    &mut frame, dao, b"TransferCapToSubDAO".to_ascii_string(),
-    transfer_cap_to_subdao::new(cap_id, subdao_id),
-    dao.max_composite_steps(),
+composite::add_step<TransferCapToSubOU>(
+    &mut frame, ou, b"TransferCapToSubOU".to_ascii_string(),
+    transfer_cap_to_subou::new(cap_id, subou_id),
+    ou.max_composite_steps(),
 );
 
 // 3. Submit (shares frame + proposal; voting begins)
-board_voting::submit_composite(dao, frame, option::none(), clock, ctx);
+board_voting::submit_composite(ou, frame, option::none(), clock, ctx);
 ```
 
 After this PTB:
@@ -590,29 +590,29 @@ After the execution delay elapses (if configured):
 ```
 // 1. Authorize execution (standard flow — no changes)
 let req = board_voting::authorize_execution<CompositePayload>(
-    dao, composite_proposal, freeze, clock, ctx
+    ou, composite_proposal, freeze, clock, ctx
 );
 
 // 2. Begin pipeline (validates frame matches proposal, consumes CompositePayload req)
 let pipeline = composite::begin_pipeline(composite_proposal, req, composite_frame);
 
-// 3. Step 1: CreateSubDAO
-let (subdao_payload, subdao_req, pipeline) =
-    composite::advance_step<CreateSubDAO>(pipeline, composite_frame);
-composite_ops::execute_create_subdao_step(cap_vault, subdao_payload, subdao_req, ctx);
+// 3. Step 1: CreateSubOU
+let (subou_payload, subou_req, pipeline) =
+    composite::advance_step<CreateSubOU>(pipeline, composite_frame);
+composite_ops::execute_create_subou_step(cap_vault, subou_payload, subou_req, ctx);
 
-// 4. Step 2: SendCoinToDAO
+// 4. Step 2: SendCoinToOU
 let (fund_payload, fund_req, pipeline) =
-    composite::advance_step<SendCoinToDAO<SUI>>(pipeline, composite_frame);
-composite_ops::execute_send_coin_to_dao_step<SUI>(
+    composite::advance_step<SendCoinToOU<SUI>>(pipeline, composite_frame);
+composite_ops::execute_send_coin_to_ou_step<SUI>(
     treasury, target_treasury, fund_payload, fund_req, ctx
 );
 
-// 5. Step 3: TransferCapToSubDAO
+// 5. Step 3: TransferCapToSubOU
 let (cap_payload, cap_req, pipeline) =
-    composite::advance_step<TransferCapToSubDAO>(pipeline, composite_frame);
+    composite::advance_step<TransferCapToSubOU>(pipeline, composite_frame);
 composite_ops::execute_transfer_cap_step<SomeCapType>(
-    cap_vault, subdao_vault, cap_payload, cap_req
+    cap_vault, subou_vault, cap_payload, cap_req
 );
 
 // 6. Finalize (aborts if steps remain)
@@ -627,7 +627,7 @@ composite::finalize_pipeline(pipeline);
 ## 8. Effective ProposalConfig Derivation
 
 `submit_composite` computes the effective `ProposalConfig` by taking the component-wise
-maximum across all step configs and the `"Composite"` type's own config from the DAO.
+maximum across all step configs and the `"Composite"` type's own config from the OU.
 
 ```
 effective_quorum           = max(composite_config.quorum,
@@ -671,7 +671,7 @@ handler to its composite-compatible counterpart.
 |---|---|---|
 | Payload source | `proposal.payload()` (from `&Proposal<P>`) | `payload: P` (from `advance_step`) |
 | Request consumption | `proposal::finalize(request, proposal)` | `proposal::consume_execution_request(request)` |
-| DAO ID validation | `assert!(vault.dao_id() == request.req_dao_id())` | same |
+| OU ID validation | `assert!(vault.ou_id() == request.req_ou_id())` | same |
 | Object validation | via `proposal.payload()` accessors | via `payload` accessors (identical) |
 | Event emission | identical | identical |
 
@@ -686,7 +686,7 @@ pub fun execute_send_coin<T>(
     request: ExecutionRequest<SendCoin<T>>,
     ctx: &mut TxContext,
 ) {
-    assert!(vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
+    assert!(vault.ou_id() == request.req_ou_id(), EVaultOUMismatch);
     let payload = proposal.payload();
     let coin = vault.withdraw<T, SendCoin<T>>(payload.amount(), &request, ctx);
     event::emit(CoinSent { ... });
@@ -704,7 +704,7 @@ pub fun execute_send_coin_step<T>(
     request: ExecutionRequest<SendCoin<T>>,
     ctx: &mut TxContext,
 ) {
-    assert!(vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
+    assert!(vault.ou_id() == request.req_ou_id(), EVaultOUMismatch);
     let coin = vault.withdraw<T, SendCoin<T>>(payload.amount(), &request, ctx);
     event::emit(CoinSent { ... });
     transfer::public_transfer(coin, payload.recipient());
@@ -726,12 +726,12 @@ be authored by the third party — the framework cannot produce one automaticall
 
 ---
 
-## 10. DAO Registration and Type Bindings
+## 10. OU Registration and Type Bindings
 
 ### 10.1 Enabling `"Composite"` as a proposal type
 
-`"Composite"` is added to `DEFAULT_PROPOSAL_TYPES` in `dao.move`, so all new DAOs have it
-enabled by default. Existing DAOs must vote to enable it via `EnableProposalType`.
+`"Composite"` is added to `DEFAULT_PROPOSAL_TYPES` in `ou.move`, so all new OUs have it
+enabled by default. Existing OUs must vote to enable it via `EnableProposalType`.
 
 The type binding for `"Composite"` is set to `armature::composite::CompositePayload` in
 `execute_enable_proposal_type` (the same binding mechanism used for all other types).
@@ -741,9 +741,9 @@ The type binding for `"Composite"` is set to `armature::composite::CompositePayl
 `add_step<P>` validates each step before the frame is submitted for voting:
 
 ```
-1. assert type_key ∈ dao.enabled_proposal_types()
-2. if dao.has_type_binding(type_key):
-       assert dao.type_binding_for(type_key) == type_name::with_defining_ids<P>().into_string()
+1. assert type_key ∈ ou.enabled_proposal_types()
+2. if ou.has_type_binding(type_key):
+       assert ou.type_binding_for(type_key) == type_name::with_defining_ids<P>().into_string()
 3. assert type_key ∉ BLOCKED_COMPOSITE_TYPE_KEYS
 4. assert frame.step_types.length() < max_steps
 ```
@@ -754,7 +754,7 @@ different payload type under an approved type_key.
 
 ### 10.3 `max_composite_steps` configuration
 
-The `DAO` gains a `max_composite_steps: u64` field (default `5`). It is passed to `add_step`
+The `OU` gains a `max_composite_steps: u64` field (default `5`). It is passed to `add_step`
 by the caller and enforced there. It is also re-validated in `submit_composite`.
 
 Changing `max_composite_steps` requires an `UpdateProposalConfig` targeting `"Composite"`.
@@ -778,7 +778,7 @@ The following type_keys are forbidden as composite steps. `add_step` aborts with
 | `"TransferFreezeAdmin"` | Administrative safety cap — should require its own deliberate vote. |
 | `"SetBoard"` | Full board replacement in a composite is too high-impact; must be deliberate. |
 | `"SendSmallPayment"` | Epoch-state management is incompatible with composite ordering (see §6.3). |
-| `"SpawnDAO"` | Puts the DAO into Migrating status; subsequent steps in the same composite would operate on a Migrating DAO, which is undefined behavior. |
+| `"SpawnOU"` | Puts the OU into Migrating status; subsequent steps in the same composite would operate on a Migrating OU, which is undefined behavior. |
 
 Types not on this list are composable, including third-party types enabled via
 `EnableProposalType`.
@@ -845,13 +845,13 @@ a step type, making it easier to pass composites containing that type in the fut
 
 **Mitigation**: `UpdateProposalConfig` is on the blocked list. `add_step` rejects it.
 
-### 12.7 Cross-DAO frame injection
+### 12.7 Cross-OU frame injection
 
-**Threat**: Executor passes a `CompositeFrame` from DAO A into a composite proposal for
-DAO B.
+**Threat**: Executor passes a `CompositeFrame` from OU A into a composite proposal for
+OU B.
 
-**Mitigation**: `begin_pipeline` asserts `frame.dao_id == proposal.dao_id()`. Frames are
-created with `new_frame(dao_id)` and the dao_id is set at creation time and never mutable.
+**Mitigation**: `begin_pipeline` asserts `frame.ou_id == proposal.ou_id()`. Frames are
+created with `new_frame(ou_id)` and the ou_id is set at creation time and never mutable.
 
 ### 12.8 `ExecutionRequest<P>` reuse across composites
 
@@ -872,7 +872,7 @@ and reused across transactions.
 
 | Test | Validates |
 |---|---|
-| `test_frame_creation` | `new_frame` sets dao_id, empty step vectors |
+| `test_frame_creation` | `new_frame` sets ou_id, empty step vectors |
 | `test_add_step_validates_type_key` | ETypeNotEnabled on unknown key |
 | `test_add_step_validates_binding` | ETypeMismatch on wrong P for bound key |
 | `test_add_step_blocks_forbidden_type` | EIncomposableType for each blocked key |
@@ -881,14 +881,14 @@ and reused across transactions.
 | `test_finalize_pipeline_incomplete` | EPipelineIncomplete when steps remain |
 | `test_finalize_pipeline_complete` | Success when all steps consumed |
 | `test_begin_pipeline_frame_mismatch` | EFrameProposalMismatch on wrong frame |
-| `test_begin_pipeline_dao_mismatch` | EFrameDAOMismatch on wrong DAO |
+| `test_begin_pipeline_ou_mismatch` | EFrameOUMismatch on wrong OU |
 
 ### 13.2 Integration tests for the full lifecycle
 
 | Test | Scenario |
 |---|---|
-| `test_composite_2step_happy_path` | CreateSubDAO + SendCoinToDAO |
-| `test_composite_3step_happy_path` | CreateSubDAO + SendCoinToDAO + TransferCap |
+| `test_composite_2step_happy_path` | CreateSubOU + SendCoinToOU |
+| `test_composite_3step_happy_path` | CreateSubOU + SendCoinToOU + TransferCap |
 | `test_composite_fails_on_step_abort` | One handler fails → full rollback |
 | `test_composite_effective_config` | Highest threshold across steps is used |
 | `test_composite_execution_delay` | Respects max execution_delay_ms |
@@ -906,7 +906,7 @@ parallel tests that mirror existing test coverage but use the `_step` variants.
 ## 14. Migration Checklist
 
 Changes are additive — no existing on-chain data structures change. Existing proposals
-and DAOs continue to function without modification.
+and OUs continue to function without modification.
 
 ### Phase 1: Framework (`armature_framework`)
 
@@ -914,9 +914,9 @@ and DAOs continue to function without modification.
 - [ ] Implement `new_frame`, `add_step`, `begin_pipeline`, `advance_step`, `finalize_pipeline`
 - [ ] Implement `seal_and_share_frame` (package-internal)
 - [ ] Add `submit_composite` to `board_voting.move`
-- [ ] Add `max_composite_steps: u64` to `DAO` struct with default `5`
+- [ ] Add `max_composite_steps: u64` to `OU` struct with default `5`
 - [ ] Add `"Composite"` to `DEFAULT_PROPOSAL_TYPES` with 66% threshold default
-- [ ] Add `max_composite_steps` accessor to `dao.move`
+- [ ] Add `max_composite_steps` accessor to `ou.move`
 - [ ] Write unit tests for `composite.move`
 
 ### Phase 2: Proposal handlers (`armature_proposals`)
@@ -935,13 +935,13 @@ and DAOs continue to function without modification.
 
 - [ ] Update PTB construction in client SDK to support composite submission flow
 - [ ] Index `CompositeFrame` creation and step consumption events
-- [ ] Display effective ProposalConfig (not the DAO's base Composite config) in proposal UI
+- [ ] Display effective ProposalConfig (not the OU's base Composite config) in proposal UI
 - [ ] Emit per-step execution events for auditability (optional — may add `StepExecuted` event)
 
-### Phase 5: Existing DAO enablement
+### Phase 5: Existing OU enablement
 
-- [ ] Existing DAOs must pass `EnableProposalType { type_key: "Composite", ... }` proposals
-  to opt in. (New DAOs get it by default via `DEFAULT_PROPOSAL_TYPES`.)
+- [ ] Existing OUs must pass `EnableProposalType { type_key: "Composite", ... }` proposals
+  to opt in. (New OUs get it by default via `DEFAULT_PROPOSAL_TYPES`.)
 - [ ] Document the `EnableProposalType` proposal config recommendation (66% threshold minimum)
 
 ---
@@ -951,9 +951,9 @@ and DAOs continue to function without modification.
 | # | Question | Current position | Revisit trigger |
 |---|---|---|---|
 | 1 | **Should `finalize_pipeline` also delete the `CompositeFrame`?** | No — keep as audit record. Frame has no dynamic fields left after execution; storage cost is minimal. | If storage rebates become a significant concern. |
-| 2 | **Should per-step `last_executed_at` cooldowns be enforced?** | No — composite is one governance event; cooldown tracked on `"Composite"` key only. | If a DAO needs per-type rate-limiting within composites. |
-| 3 | **Should `SetBoard` be composable?** | Blocked — too high-impact. | If a clear use case emerges (e.g., board restructure + SubDAO delegation must be atomic). |
+| 2 | **Should per-step `last_executed_at` cooldowns be enforced?** | No — composite is one governance event; cooldown tracked on `"Composite"` key only. | If an OU needs per-type rate-limiting within composites. |
+| 3 | **Should `SetBoard` be composable?** | Blocked — too high-impact. | If a clear use case emerges (e.g., board restructure + SubOU delegation must be atomic). |
 | 4 | **Should a `StepExecuted` event be emitted per step?** | Not in initial design. | If indexers need per-step granularity for audit logs. |
-| 5 | **Can `max_composite_steps` be stored in `ProposalConfig` instead of `DAO` directly?** | No — semantic overloading of ProposalConfig fields is undesirable. | If the DAO struct field count becomes an issue. |
+| 5 | **Can `max_composite_steps` be stored in `ProposalConfig` instead of `OU` directly?** | No — semantic overloading of ProposalConfig fields is undesirable. | If the OU struct field count becomes an issue. |
 | 6 | **What is the correct max_steps upper bound?** | Enforcement via config (default 5). Hard ceiling TBD. | After PTB gas analysis; 10 is likely a practical ceiling given Move call overhead. |
-| 7 | **Should composite submissions require a dedicated `CompositeConfig` object?** | No — the DAO's `ProposalConfig` for `"Composite"` + the `max_composite_steps` field is sufficient. | If new composite-specific config fields are needed beyond step count. |
+| 7 | **Should composite submissions require a dedicated `CompositeConfig` object?** | No — the OU's `ProposalConfig` for `"Composite"` + the `max_composite_steps` field is sufficient. | If new composite-specific config fields are needed beyond step count. |

@@ -21,7 +21,7 @@ The standard vote-path requires at least two programmable transaction blocks (PT
 PTB 1: submit_proposal<P>(...)    → Proposal<P> shared [Active]
        vote<P>(proposal, true, ...)  → Proposal<P> [Passed]
 
-PTB 2: ticket_from_vote<P>(dao, proposal, freeze, clock, ctx) → ExecutionTicket<P>
+PTB 2: ticket_from_vote<P>(ou, proposal, freeze, clock, ctx) → ExecutionTicket<P>
        execute_<op>(ticket, ...)
 ```
 
@@ -32,10 +32,10 @@ pass, the caller must submit two separate transactions.
 
 ### The Use Case
 
-A highly-dynamic organizational unit — for example, a single-operator trading sub-DAO
+A highly-dynamic organizational unit — for example, a single-operator trading sub-OU
 or a fast-action committee on an exchange — needs to place, cancel, and manage trades on
 Triex without the two-PTB overhead. They have sufficient voting weight to unilaterally
-pass proposals under their DAO's configured `quorum` and `approval_threshold`. Forcing
+pass proposals under their OU's configured `quorum` and `approval_threshold`. Forcing
 two separate transactions introduces unnecessary latency and operational complexity for
 time-sensitive trading actions.
 
@@ -87,7 +87,7 @@ Any implementation must preserve:
 
 2. **No new privilege** — A caller using `submit_vote_execute` must not be able to
    execute any proposal that could not also be executed via the standard two-PTB path
-   with the same voter set, config, and DAO state.
+   with the same voter set, config, and OU state.
 
 3. **Floor constant inviolability** — Hardcoded approval floors (`ENABLE_APPROVAL_FLOOR_BPS`,
    `ENABLE_BYPASS_APPROVAL_FLOOR_BPS`) must remain effective. The function must produce
@@ -98,7 +98,7 @@ Any implementation must preserve:
    zero with a clear error, rather than relying on `EDelayNotElapsed` propagating from
    `proposal::execute`.
 
-5. **All DAO safety checks** — Emergency freeze, execution pause, controller pause,
+5. **All OU safety checks** — Emergency freeze, execution pause, controller pause,
    cooldown, and migration-status guards must all be checked in the same order as the
    combined `submit_proposal` + `ticket_from_vote` call sequence.
 
@@ -107,7 +107,7 @@ Any implementation must preserve:
    `AddMember`, `RemoveMember`, `UpdateProposalConfig`, `EnableProposalType`) MUST be
    configured with a non-zero execution delay. This simultaneously preserves the
    inter-PTB freeze-admin window and acts as a firewall against `submit_vote_execute`
-   use. This is a configuration requirement, not a framework enforcement — DAO
+   use. This is a configuration requirement, not a framework enforcement — OU
    deployers are responsible for it. See S4 and the Governance Tooling Blindspot
    section for why this matters.
 
@@ -136,24 +136,24 @@ Any implementation must preserve:
 /// Visibility is public(package) — no external caller can hold an
 /// un-shared Proposal<P> by value.
 public(package) fun create_returning<P: store>(
-    dao_id: ID,
+    ou_id: ID,
     type_key: std::ascii::String,
     proposer: address,
     metadata_ipfs: Option<String>,
     payload: P,
     config: ProposalConfig,
     governance: &GovernanceConfig,
-    is_dao_active: bool,
+    is_ou_active: bool,
     clock: &Clock,
     ctx: &mut TxContext,
 ): Proposal<P> {
-    assert!(is_dao_active, EDAONotActive);
+    assert!(is_ou_active, EOUNotActive);
     let (vote_snapshot, total_snapshot_weight) = governance.board_vote_snapshot();
     let payload_bcs = std::bcs::to_bytes(&payload);
 
     let proposal = Proposal<P> {
         id: object::new(ctx),
-        dao_id,
+        ou_id,
         type_key,
         proposer,
         metadata_ipfs,
@@ -171,8 +171,8 @@ public(package) fun create_returning<P: store>(
 
     let proposal_id = object::id(&proposal);
 
-    event::emit(ProposalCreated { proposal_id, dao_id, type_key, proposer });
-    event::emit(ProposalPayloadCreated { proposal_id, dao_id, payload_bcs });
+    event::emit(ProposalCreated { proposal_id, ou_id, type_key, proposer });
+    event::emit(ProposalPayloadCreated { proposal_id, ou_id, payload_bcs });
 
     proposal
     // NOTE: no transfer::share_object — caller is responsible
@@ -205,7 +205,7 @@ const EInsufficientVotingWeight: u64 = 8;
 /// Executed audit record. Returns a Standalone ExecutionTicket<P>.
 #[allow(lint(share_owned, custom_state_change))]
 public fun submit_vote_execute<P: store>(
-    dao: &mut DAO,
+    ou: &mut OU,
     type_key: std::ascii::String,
     metadata_ipfs: Option<String>,
     payload: P,
@@ -215,22 +215,22 @@ public fun submit_vote_execute<P: store>(
 ): ExecutionTicket<P> {
     // --- submit_proposal checks ---
 
-    let is_active = dao.status().is_active();
+    let is_active = ou.status().is_active();
     let is_migration_ok =
-        dao.status().is_migrating()
-        && dao::is_migration_allowed_type(&type_key);
-    assert!(is_active || is_migration_ok, EDAONotActive);
-    assert!(dao.enabled_proposal_types().contains(&type_key), ETypeNotEnabled);
+        ou.status().is_migrating()
+        && ou::is_migration_allowed_type(&type_key);
+    assert!(is_active || is_migration_ok, EOUNotActive);
+    assert!(ou.enabled_proposal_types().contains(&type_key), ETypeNotEnabled);
 
-    if (dao.has_type_binding(&type_key)) {
+    if (ou.has_type_binding(&type_key)) {
         let actual = type_name::with_defining_ids<P>().into_string();
-        assert!(dao.type_binding_for(&type_key) == actual, ETypeMismatch);
+        assert!(ou.type_binding_for(&type_key) == actual, ETypeMismatch);
     };
 
     let proposer = ctx.sender();
-    dao.governance().assert_board_member(proposer);
+    ou.governance().assert_board_member(proposer);
 
-    let config = *dao.proposal_configs().get(&type_key);
+    let config = *ou.proposal_configs().get(&type_key);
 
     // Submission-time floor for EnableProposalType (mirrors submit_proposal)
     if (type_key == b"EnableProposalType".to_ascii_string()) {
@@ -241,7 +241,7 @@ public fun submit_vote_execute<P: store>(
     };
 
     if (config.propose_threshold() > 0) {
-        let weight = dao.governance().proposer_weight(proposer);
+        let weight = ou.governance().proposer_weight(proposer);
         assert!(weight >= config.propose_threshold(), EProposeThresholdNotMet);
     };
 
@@ -250,11 +250,11 @@ public fun submit_vote_execute<P: store>(
 
     // --- ticket_from_vote checks ---
 
-    assert!(!dao.is_controller_paused(), EControllerPaused);
+    assert!(!ou.is_controller_paused(), EControllerPaused);
     freeze.assert_not_frozen(&type_key, clock);
 
     // Cooldown check (mirrors ticket_from_vote)
-    let last_executed_at = dao.last_executed_at();
+    let last_executed_at = ou.last_executed_at();
     let last_ms = if (last_executed_at.contains(&type_key)) {
         option::some(*last_executed_at.get(&type_key))
     } else {
@@ -265,13 +265,13 @@ public fun submit_vote_execute<P: store>(
 
     let status_ok = true;
     let mut proposal = proposal::create_returning<P>(
-        dao.id(),
+        ou.id(),
         type_key,
         proposer,
         metadata_ipfs,
         payload,
         config,
-        dao.governance(),
+        ou.governance(),
         status_ok,
         clock,
         ctx,
@@ -291,14 +291,14 @@ public fun submit_vote_execute<P: store>(
 
     let (payload_out, req) = proposal::execute(
         &mut proposal,
-        dao.governance(),
+        ou.governance(),
         last_ms,
-        dao.is_execution_paused(),
+        ou.is_execution_paused(),
         clock,
         ctx,
     );
 
-    dao.record_execution(type_key, clock.timestamp_ms());
+    ou.record_execution(type_key, clock.timestamp_ms());
 
     // Share the Executed proposal as the permanent audit record.
     transfer::share_object(proposal);
@@ -312,7 +312,7 @@ public fun submit_vote_execute<P: store>(
 ```
 // Single PTB — submit, vote, and execute atomically:
 let ticket = board_voting::submit_vote_execute<PlaceLimitOrder>(
-    dao,
+    ou,
     b"PlaceLimitOrder",
     option::none(),
     place_limit_order_payload,
@@ -369,7 +369,7 @@ could not also execute via `submit_proposal` + `vote` + `ticket_from_vote` in
 separate PTBs.
 
 **Reasoning:** All checks are identical. The function performs every validation from
-`submit_proposal` (DAO active, type enabled, type binding, board member, propose
+`submit_proposal` (OU active, type enabled, type binding, board member, propose
 threshold, submission-time floor) and every validation from `ticket_from_vote`
 (controller pause, freeze, cooldown). The `proposal::execute` call performs the
 remaining checks (execution pause, board member at execution time, delay, cooldown).
@@ -387,7 +387,7 @@ skipped or weakened.
 
 For `EnableBypassType` with `FLOOR = 8000`:
 - If N=1 (1 member): `gte_bps(1, 1, 8000)` = `10000 >= 8000` = **pass**.
-  A single-member DAO can also pass this in the standard flow; no new attack.
+  A single-member OU can also pass this in the standard flow; no new attack.
 - If N=2 (2 members, quorum=50%): `gte_bps(1, 2, 8000)` = `10000 >= 16000` = **fail**.
   The handler aborts with `EApprovalFloorNotMet` even though the proposal passed the
   vote. This is correct and matches the standard path's behavior.
@@ -444,7 +444,7 @@ interleave. This is strictly tighter than the standard path.
 
 ### S6: Cooldown Enforcement Is Preserved
 
-`dao.record_execution(type_key, clock.timestamp_ms())` is called immediately after
+`ou.record_execution(type_key, clock.timestamp_ms())` is called immediately after
 `proposal::execute`, before the function returns. If the function panics after this
 point (impossible by construction, since only `transfer::share_object` and
 `new_ticket_standalone` follow), the record would be set without a ticket being
@@ -459,15 +459,15 @@ Each call to `submit_vote_execute` creates a new `Proposal<P>` object with a fre
 and `Closeout`. The `discharge()` function asserts `request.proposal_id == proposal_id`.
 Replay is impossible: each ticket is bound to a unique proposal object.
 
-### S8: Cannot Be Used to Bootstrap `EnableBypassType` on a SubDAO
+### S8: Cannot Be Used to Bootstrap `EnableBypassType` on a SubOU
 
-SubDAOs have `EnableBypassType` in `SUBDAO_BLOCKED_TYPES`, so it is not in their
-`enabled_proposal_types`. The `assert!(dao.enabled_proposal_types().contains(&type_key))`
+SubOUs have `EnableBypassType` in `SUBOU_BLOCKED_TYPES`, so it is not in their
+`enabled_proposal_types`. The `assert!(ou.enabled_proposal_types().contains(&type_key))`
 check fires before any state is mutated. No bypass-escalation path exists.
 
 ### S9: Type Binding Anti-Spoofing Preserved
 
-The type binding check — `dao.type_binding_for(type_key) == type_name::with_defining_ids<P>()` —
+The type binding check — `ou.type_binding_for(type_key) == type_name::with_defining_ids<P>()` —
 is replicated verbatim from `submit_proposal`. A caller cannot submit a proposal for
 a bound type key using a different payload type `P`.
 
@@ -493,7 +493,7 @@ invisible to monitoring until after they are committed.
 The mitigation is Constraint 6: governance-sensitive types must use
 `execution_delay_ms > 0`, which prevents `submit_vote_execute` from being called for
 them entirely. There is no framework-level enforcement of which types are "governance-
-sensitive" — this remains a DAO configuration responsibility.
+sensitive" — this remains an OU configuration responsibility.
 
 ### S12: `create_returning` as a Future Misuse Surface
 
@@ -522,8 +522,8 @@ Any future caller must be reviewed against this invariant at the time of the upg
 | Replay attack | High | Fresh `UID` per proposal; `discharge()` cross-checks `proposal_id` |
 | Governance changes invisible to monitoring tools | High | Constraint 6: governance-sensitive types must use `execution_delay_ms > 0` |
 | Floor check divergence from `submit_proposal` | High | Constraint 7: explicit sync obligation on every new submission-time floor |
-| SubDAO bypass-escalation | Medium | `enabled_proposal_types` check; `EnableBypassType` blocked for SubDAOs |
-| Cooldown evasion | Medium | `dao.record_execution` called before ticket returned |
+| SubOU bypass-escalation | Medium | `enabled_proposal_types` check; `EnableBypassType` blocked for SubOUs |
+| Cooldown evasion | Medium | `ou.record_execution` called before ticket returned |
 | Freeze admin window eliminated | Medium | Constraint 6: governance-sensitive types must use `execution_delay_ms > 0` |
 | NO vote window eliminated for other members | Medium | Constraint 6; accepted trade-off for trading use case |
 | `create_returning` future misuse in upgrades | Medium | INVARIANT comment; review obligation at upgrade time |
@@ -614,6 +614,6 @@ an on-chain constraint, not a client-side issue.
 - `armature_framework/sources/board_voting.move` — `submit_proposal`, `ticket_from_vote`
 - `armature_framework/sources/external_execution.move` — `ticket_from_cap`, `assert_approval_floor_ticket`
 - `armature_framework/sources/governance.move` — `board_vote_snapshot`, `is_board_member`
-- `armature_framework/sources/dao.move` — `record_execution`, `SUBDAO_BLOCKED_TYPES`
+- `armature_framework/sources/ou.move` — `record_execution`, `SUBOU_BLOCKED_TYPES`
 - `ADR_SUBMISSION_TIME_FLOOR_ENFORCEMENT.md` — floor constant definitions and submission-time enforcement
 - `ADR_COMPOSABLE_PROPOSALS.md` — composite pipeline design

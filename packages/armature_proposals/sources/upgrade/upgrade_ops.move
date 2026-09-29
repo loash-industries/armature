@@ -2,18 +2,29 @@ module armature_proposals::upgrade_ops;
 
 use armature::capability_vault::{CapabilityVault, CapLoan};
 use armature::proposal::ExecutionTicket;
-use armature_proposals::propose_upgrade::ProposeUpgrade;
+use armature_proposals::propose_upgrade::{Self, ProposeUpgrade};
 use sui::event;
 use sui::package::{Self, UpgradeCap, UpgradeTicket, UpgradeReceipt};
 
 // === Errors ===
 
-const EVaultDaoMismatch: u64 = 0;
+const EVaultOuMismatch: u64 = 0;
+
+// === Structs ===
+
+/// Hot potato holding the loaned UpgradeCap between `execute_propose_upgrade`
+/// and `commit_upgrade`. The cap never reaches the caller, so the executor
+/// cannot restrict its policy, authorize a second digest, or otherwise use it
+/// beyond the approved upgrade.
+public struct PendingUpgrade {
+    cap: UpgradeCap,
+    loan: CapLoan,
+}
 
 // === Events ===
 
 public struct UpgradeAuthorized has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     cap_id: ID,
     package_id: ID,
     policy: u8,
@@ -23,20 +34,20 @@ public struct UpgradeAuthorized has copy, drop {
 
 /// Step 1: Authorize a package upgrade.
 /// Loans the UpgradeCap from the vault, calls `package::authorize_upgrade`,
-/// and returns the ticket, cap, and loan.
+/// and returns the UpgradeTicket plus a PendingUpgrade holding the cap.
 /// The caller must follow with `commit_upgrade` in the same PTB
 /// after the PTB `Upgrade` command.
 public fun execute_propose_upgrade(
     vault: &mut CapabilityVault,
     ticket: ExecutionTicket<ProposeUpgrade>,
-): (UpgradeTicket, UpgradeCap, CapLoan) {
-    assert!(vault.dao_id() == ticket.ticket_dao_id(), EVaultDaoMismatch);
+): (UpgradeTicket, PendingUpgrade) {
+    assert!(vault.ou_id() == ticket.ticket_ou_id(), EVaultOuMismatch);
 
     let payload = ticket.ticket_payload();
 
     let (mut cap, loan) = vault.loan_cap<UpgradeCap, ProposeUpgrade>(
         payload.cap_id(),
-        ticket.ticket_request(),
+        ticket.ticket_request(propose_upgrade::permit()),
     );
 
     let upgrade_ticket = package::authorize_upgrade(
@@ -46,25 +57,25 @@ public fun execute_propose_upgrade(
     );
 
     event::emit(UpgradeAuthorized {
-        dao_id: vault.dao_id(),
+        ou_id: vault.ou_id(),
         cap_id: payload.cap_id(),
         package_id: payload.package_id(),
         policy: payload.policy(),
     });
 
-    ticket.discharge();
+    ticket.discharge(propose_upgrade::permit());
 
-    (upgrade_ticket, cap, loan)
+    (upgrade_ticket, PendingUpgrade { cap, loan })
 }
 
 /// Step 2: Commit the upgrade and return the UpgradeCap to the vault.
 /// Called after the PTB `Upgrade` command produces an UpgradeReceipt.
 public fun commit_upgrade(
     vault: &mut CapabilityVault,
-    mut cap: UpgradeCap,
+    pending: PendingUpgrade,
     receipt: UpgradeReceipt,
-    loan: CapLoan,
 ) {
+    let PendingUpgrade { mut cap, loan } = pending;
     package::commit_upgrade(&mut cap, receipt);
     vault.return_cap(cap, loan);
 }

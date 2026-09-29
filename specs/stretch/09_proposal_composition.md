@@ -12,12 +12,12 @@ Enable bundling multiple proposals into a single **Composite Proposal** that is 
 
 Many real governance operations are inherently multi-step:
 
-- **Create SubDAO + fund it + delegate capability** — 3 separate votes today, with risk of partial completion (SubDAO exists but unfunded)
+- **Create SubOU + fund it + delegate capability** — 3 separate votes today, with risk of partial completion (SubOU exists but unfunded)
 - **Amend charter + allocate treasury for implementation** — meaningless if only half passes
 - **Board restructuring + freeze admin transfer** — dangerous in isolation
 - **Federation formation + initial contribution** — incomplete if done separately
 
-Sequential voting creates **governance overhead** (N vote cycles x voting window) and **consistency risk** (partial execution leaves DAO in intermediate state).
+Sequential voting creates **governance overhead** (N vote cycles x voting window) and **consistency risk** (partial execution leaves OU in intermediate state).
 
 ## Design
 
@@ -35,7 +35,7 @@ struct CompositePayload has store {
 /// Hot potato pipeline — returned when the composite proposal passes vote
 struct Pipeline /* no abilities */ {
     composite_id: ID,
-    dao_id: ID,
+    ou_id: ID,
     current_step: u64,
     total_steps: u64,
 }
@@ -51,7 +51,7 @@ public fun advance_step<P>(pipeline: Pipeline, ...): (ExecutionRequest<P>, Pipel
 /// Consume pipeline after final step — aborts if steps remain
 public fun finalize(pipeline: Pipeline) {
     assert!(pipeline.current_step == pipeline.total_steps);
-    let Pipeline { composite_id: _, dao_id: _, current_step: _, total_steps: _ } = pipeline;
+    let Pipeline { composite_id: _, ou_id: _, current_step: _, total_steps: _ } = pipeline;
 }
 ```
 
@@ -59,10 +59,10 @@ public fun finalize(pipeline: Pipeline) {
 
 ```
 1. execute_composite(proposal)     -> Pipeline
-2. advance_step<CreateSubDAO>(p)   -> (ExecutionRequest<CreateSubDAO>, Pipeline)
-3. handle_create_subdao(req, ...)  -> () [existing handler, unchanged]
-4. advance_step<SendCoinToDAO>(p)  -> (ExecutionRequest<SendCoinToDAO>, Pipeline)
-5. handle_send_coin_to_dao(req,..) -> () [existing handler, unchanged]
+2. advance_step<CreateSubOU>(p)   -> (ExecutionRequest<CreateSubOU>, Pipeline)
+3. handle_create_subou(req, ...)  -> () [existing handler, unchanged]
+4. advance_step<SendCoinToOU>(p)  -> (ExecutionRequest<SendCoinToOU>, Pipeline)
+5. handle_send_coin_to_ou(req,..) -> () [existing handler, unchanged]
 6. finalize(pipeline)              -> () [pipeline consumed, all steps verified]
 ```
 
@@ -70,7 +70,7 @@ If any step fails or `finalize` is not called, the PTB aborts atomically.
 
 ### Composition Rules
 
-DAOs should be able to configure which compositions are valid:
+OUs should be able to configure which compositions are valid:
 
 ```move
 struct CompositionConfig has store, copy, drop {
@@ -84,7 +84,7 @@ Options to explore:
 1. **Unrestricted** — any enabled proposal types can compose (simplest)
 2. **Allowlist** — only pre-approved bundles (safest, least flexible)
 3. **Blocklist** — any combination except incompatible pairs (balanced)
-4. **Template-based** — named recipes like "SubDAO Setup" = [CreateSubDAO, SendCoinToDAO, TransferCapToSubDAO]
+4. **Template-based** — named recipes like "SubOU Setup" = [CreateSubOU, SendCoinToOU, TransferCapToSubOU]
 
 ### Why Hot Potato Is the Right Pattern
 

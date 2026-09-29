@@ -24,13 +24,13 @@ separate proposal with its own vote, quorum, delay, and execution step.
 **Real-world governance frequently needs atomic bundles:**
 
 - "Add Alice to the board **and** remove Bob" (single vote, atomic swap)
-- "Fund SubDAO treasury with 10 000 SUI **and** transfer an `UpgradeCap` to its vault"
+- "Fund SubOU treasury with 10 000 SUI **and** transfer an `UpgradeCap` to its vault"
 - "Update metadata **and** enable a new proposal type **and** adjust config"
-- "Spend from treasury **and** pause a SubDAO's execution"
+- "Spend from treasury **and** pause a SubOU's execution"
 
 Forcing each action into a separate proposal creates UX friction, race-condition
 windows between sequential proposals, and non-atomic state transitions that can
-leave the DAO in an inconsistent intermediate state.
+leave the OU in an inconsistent intermediate state.
 
 This ADR evaluates several approaches to composable, multi-action proposals within
 the constraints of the Move type system and the existing Armature framework.
@@ -48,10 +48,10 @@ Any solution must respect:
    spoofing; new patterns must not weaken this.
 4. **Approval-floor enforcement** — certain action types enforce hardcoded supermajority
    floors at execution time; composable proposals must still honour these.
-5. **Shared-object contention** — `&mut DAO`, `&mut TreasuryVault`, and
+5. **Shared-object contention** — `&mut OU`, `&mut TreasuryVault`, and
    `&mut CapabilityVault` are separate shared objects to reduce lock pressure;
    multi-action execution must not serialize unnecessarily.
-6. **Permissionless finalization** — `proposal::finalize()` validates `dao_id`,
+6. **Permissionless finalization** — `proposal::finalize()` validates `ou_id`,
    `proposal_id`, and status; the consumption path must remain auditable.
 7. **Backwards compatibility** — existing single-action proposal types, their configs,
    and deployed handler modules must continue to work unchanged.
@@ -89,7 +89,7 @@ iterates through the action list and dispatches each one.
 ```
 1.  Proposer builds ComposablePayload with N actions.
     Each action is added as a dynamic field: df::add(&mut cp.action_keys, 0u64, ActionWrapper<AddMember> { … })
-2.  board_voting::submit_proposal<ComposablePayload>(dao, "Composable", payload, …)
+2.  board_voting::submit_proposal<ComposablePayload>(ou, "Composable", payload, …)
 3.  Voting proceeds normally on the single proposal.
 4.  Executor calls authorize_execution → ExecutionRequest<ComposablePayload>
 5.  A new composable_ops::execute_composable() handler:
@@ -107,7 +107,7 @@ enumerated** in the composable handler:
 
 ```move
 public fun execute_composable(
-    dao: &mut DAO,
+    ou: &mut OU,
     treasury: &mut TreasuryVault,
     cap_vault: &mut CapabilityVault,
     proposal: &mut Proposal<ComposablePayload>,
@@ -122,7 +122,7 @@ public fun execute_composable(
         if (type_key == b"AddMember".to_ascii_string()) {
             let wrapper: ActionWrapper<AddMember> = df::remove(&mut cp.action_keys, i);
             // inline execution or call board_ops internally
-            dao.add_member(wrapper.payload.member(), …);
+            ou.add_member(wrapper.payload.member(), …);
         } else if (type_key == b"SendCoin".to_ascii_string()) {
             // …
         }
@@ -155,7 +155,7 @@ public fun execute_composable(
 - **Type-key binding tension** — the proposal's outer type is `ComposablePayload`, but
   inner actions have their own type keys. The existing `type_bindings` map only validates
   the outer type. Inner action validation must be handled separately.
-- **Object contention** — the handler must accept `&mut DAO`, `&mut TreasuryVault`, and
+- **Object contention** — the handler must accept `&mut OU`, `&mut TreasuryVault`, and
   `&mut CapabilityVault` simultaneously, even if only one sub-action needs each. This
   increases shared-object lock contention.
 
@@ -177,7 +177,7 @@ Introduce a new `ComposableBatch` receipt that enforces all-or-nothing semantics
 ```move
 /// Created by the first action in a batch. Must be sealed after the last.
 struct ComposableBatch {
-    dao_id: ID,
+    ou_id: ID,
     expected_count: u64,
     executed_count: u64,
     proposal_ids: vector<ID>,
@@ -188,17 +188,17 @@ struct ComposableBatch {
 
 ```
 PTB:
-  1. batch = composable::begin_batch(dao, expected_count=3)
+  1. batch = composable::begin_batch(ou, expected_count=3)
 
-  2. req_1 = board_voting::authorize_execution(dao, proposal_add_alice, freeze, clock)
-     board_ops::execute_add_member(dao, proposal_add_alice, req_1)
+  2. req_1 = board_voting::authorize_execution(ou, proposal_add_alice, freeze, clock)
+     board_ops::execute_add_member(ou, proposal_add_alice, req_1)
      composable::record(&mut batch, proposal_add_alice.id())
 
-  3. req_2 = board_voting::authorize_execution(dao, proposal_remove_bob, freeze, clock)
-     board_ops::execute_remove_member(dao, proposal_remove_bob, req_2)
+  3. req_2 = board_voting::authorize_execution(ou, proposal_remove_bob, freeze, clock)
+     board_ops::execute_remove_member(ou, proposal_remove_bob, req_2)
      composable::record(&mut batch, proposal_remove_bob.id())
 
-  4. req_3 = board_voting::authorize_execution(dao, proposal_send_coin, freeze, clock)
+  4. req_3 = board_voting::authorize_execution(ou, proposal_send_coin, freeze, clock)
      treasury_ops::execute_send_coin(vault, proposal_send_coin, req_3, ctx)
      composable::record(&mut batch, proposal_send_coin.id())
 
@@ -288,9 +288,9 @@ struct SwapBoardMember has store {
     add_member: address,
 }
 
-/// Fund-and-delegate: send coins to SubDAO treasury + transfer a capability.
+/// Fund-and-delegate: send coins to SubOU treasury + transfer a capability.
 struct FundAndDelegate has store {
-    target_dao_id: ID,
+    target_ou_id: ID,
     coin_amount: u64,
     cap_id: ID,
 }
@@ -306,13 +306,13 @@ Each macro-action gets its own handler in `armature_proposals`:
 
 ```move
 public fun execute_swap_board_member(
-    dao: &mut DAO,
+    ou: &mut OU,
     proposal: &Proposal<SwapBoardMember>,
     request: ExecutionRequest<SwapBoardMember>,
 ) {
     let payload = proposal.payload();
-    dao.remove_member(payload.remove_member, &request);
-    dao.add_member(payload.add_member, &request);
+    ou.remove_member(payload.remove_member, &request);
+    ou.add_member(payload.add_member, &request);
     proposal::finalize(request, proposal);
 }
 ```
@@ -321,8 +321,8 @@ public fun execute_swap_board_member(
 
 This pattern **already exists** in the codebase:
 
-- **`TransferAssets`** — transfers multiple coins and capabilities between DAOs atomically
-- **`SpinOutSubDAO`** — creates a SubDAO, transfers assets, and enables types in one proposal
+- **`TransferAssets`** — transfers multiple coins and capabilities between OUs atomically
+- **`SpinOutSubOU`** — creates a SubOU, transfers assets, and enables types in one proposal
 - **`SendSmallPayment`** — rate-limited spending with epoch tracking
 
 These are effectively "composable" proposals scoped to a specific domain.
@@ -338,7 +338,7 @@ These are effectively "composable" proposals scoped to a specific domain.
 - **Simpler auditing** — auditors review a finite set of well-defined macro-actions rather
   than an open-ended composition framework.
 - **No dispatch table** — each handler is self-contained.
-- **Proven pattern** — `TransferAssets` and `SpinOutSubDAO` demonstrate this works.
+- **Proven pattern** — `TransferAssets` and `SpinOutSubOU` demonstrate this works.
 
 ### Cons
 
@@ -370,7 +370,7 @@ can use them in any order to authorize framework operations.
 /// Issued during proposal execution. One per authorized action.
 /// Has `store` so it can live in a vector or be passed between calls in a PTB.
 struct ActionCap<phantom P> has store {
-    dao_id: ID,
+    ou_id: ID,
     proposal_id: ID,
 }
 
@@ -390,14 +390,14 @@ struct ActionDescriptor has store, copy, drop {
 
 ```move
 // 1. Execute the proposal → get a PlanReceipt (hot potato)
-let receipt: PlanReceipt = composable::begin_execution(dao, proposal, request);
+let receipt: PlanReceipt = composable::begin_execution(ou, proposal, request);
 
 // 2. Claim individual action caps from the receipt
 let cap_1: ActionCap<AddMember> = composable::claim_action<AddMember>(&mut receipt, 0);
 let cap_2: ActionCap<SendCoin<SUI>> = composable::claim_action<SendCoin<SUI>>(&mut receipt, 1);
 
 // 3. Use each cap to authorize its action (existing handlers adapted to accept ActionCap)
-board_ops::execute_add_member_with_cap(dao, cap_1, member_addr);
+board_ops::execute_add_member_with_cap(ou, cap_1, member_addr);
 treasury_ops::execute_send_coin_with_cap<SUI>(vault, cap_2, amount, recipient, ctx);
 
 // 4. Finalize — asserts all actions were claimed and consumed
@@ -408,7 +408,7 @@ composable::finalize_plan(receipt);
 
 ```move
 struct PlanReceipt {
-    dao_id: ID,
+    ou_id: ID,
     proposal_id: ID,
     total_actions: u64,
     claimed_actions: u64,
@@ -430,20 +430,20 @@ Existing handlers gain a parallel entry point:
 ```move
 /// Original handler (unchanged)
 public fun execute_add_member(
-    dao: &mut DAO,
+    ou: &mut OU,
     proposal: &Proposal<AddMember>,
     request: ExecutionRequest<AddMember>,
 ) { … }
 
 /// New composable entry point
 public fun execute_add_member_composable(
-    dao: &mut DAO,
+    ou: &mut OU,
     cap: ActionCap<AddMember>,
     member: address,
     receipt: &mut PlanReceipt,
 ) {
-    assert!(dao.id() == cap.dao_id);
-    dao.add_member(member, …);
+    assert!(ou.id() == cap.ou_id);
+    ou.add_member(member, …);
     composable::consume_action(receipt, cap);
 }
 ```
@@ -512,13 +512,13 @@ potato. **There is no dispatch loop in Move** — the PTB is the dispatcher.
 ```
 Submission PTB                                Execution PTB
 ─────────────────────────────────────         ─────────────────────────────────────────────
-frame = new_frame(dao_id, ctx)                req = authorize_execution<CompositePayload>(...)
-add_step<A>(frame, dao, key_a, payload_a)     pipeline = begin_pipeline(proposal, req, frame)
-add_step<B>(frame, dao, key_b, payload_b)     (a, req_a, pipeline) = advance_step<A>(dao, frame, pipeline, freeze, clock)
-add_step<C>(frame, dao, key_c, payload_c)     execute_a_step(a, req_a, ...)
-submit_composite(dao, frame, ...)             (b, req_b, pipeline) = advance_step<B>(dao, frame, pipeline, freeze, clock)
+frame = new_frame(ou_id, ctx)                req = authorize_execution<CompositePayload>(...)
+add_step<A>(frame, ou, key_a, payload_a)     pipeline = begin_pipeline(proposal, req, frame)
+add_step<B>(frame, ou, key_b, payload_b)     (a, req_a, pipeline) = advance_step<A>(ou, frame, pipeline, freeze, clock)
+add_step<C>(frame, ou, key_c, payload_c)     execute_a_step(a, req_a, ...)
+submit_composite(ou, frame, ...)             (b, req_b, pipeline) = advance_step<B>(ou, frame, pipeline, freeze, clock)
   → CompositeFrame (shared)                   execute_b_step(b, req_b, ...)
-  → Proposal<CompositePayload> (shared)       (c, req_c, pipeline) = advance_step<C>(dao, frame, pipeline, freeze, clock)
+  → Proposal<CompositePayload> (shared)       (c, req_c, pipeline) = advance_step<C>(ou, frame, pipeline, freeze, clock)
                                               execute_c_step(c, req_c, ...)
 Voting: vote() × N on Proposal<CompositePayload>
                                               finalize_pipeline(pipeline)
@@ -531,7 +531,7 @@ Voting: vote() × N on Proposal<CompositePayload>
 /// Holds per-step payloads as dynamic fields keyed by StepKey { index }.
 public struct CompositeFrame has key {
     id: UID,
-    dao_id: ID,
+    ou_id: ID,
     step_type_keys: vector<ascii::String>,
     step_types: vector<TypeName>,           // validated at advance_step
 }
@@ -547,7 +547,7 @@ public struct CompositePayload has store {
 /// Hot-potato step sequencer. No abilities — must be consumed in same PTB.
 public struct Pipeline {
     frame_id: ID,
-    dao_id: ID,
+    ou_id: ID,
     composite_proposal_id: ID,
     current_step: u64,
     total_steps: u64,
@@ -557,7 +557,7 @@ public struct Pipeline {
 ### Effective Config
 
 `submit_composite` computes the effective `ProposalConfig` as the component-wise `max()`
-across all step configs and the `"Composite"` type's own DAO config:
+across all step configs and the `"Composite"` type's own OU config:
 
 ```
 effective_quorum           = max(composite_config.quorum,        step_1.quorum, ...)
@@ -574,15 +574,15 @@ than any constituent step would individually require.
 Whether a proposal type may appear as a step in a composite is controlled by the
 `composable_allowed` field on its `ProposalConfig` — a **deny-by-default** boolean
 that defaults to `false` for all types. `add_step<P>` checks
-`dao.proposal_configs().get(&type_key).composable_allowed` and aborts if `false`.
+`ou.proposal_configs().get(&type_key).composable_allowed` and aborts if `false`.
 The `"Composite"` type itself is unconditionally blocked from self-nesting
 (hardcoded check, independent of config).
 
 Factory defaults set `composable_allowed = false` for all floor-gated types
 (`UpdateProposalConfig`, `EnableProposalType`), governance-surface-modifying types
 (`DisableProposalType`, `UnfreezeProposalType`, `TransferFreezeAdmin`, `SetBoard`),
-stateful types (`SendSmallPayment`), and hierarchy-critical types (`SpawnDAO`,
-`CreateSubDAO`, `SpinOutSubDAO`). Safe operational types (`SendCoin`, `AddMember`,
+stateful types (`SendSmallPayment`), and hierarchy-critical types (`SpawnOU`,
+`CreateSubOU`, `SpinOutSubOU`). Safe operational types (`SendCoin`, `AddMember`,
 `RemoveMember`, `UpdateMetadata`, `TransferAssets`, `ProposeUpgrade`, etc.) default
 to `true`.
 
@@ -606,7 +606,7 @@ own type key before extracting the payload:
 
 ```move
 pub fun advance_step<P: store>(
-    dao: &mut DAO,
+    ou: &mut OU,
     frame: &mut CompositeFrame,
     pipeline: Pipeline,
     freeze: &EmergencyFreeze,
@@ -624,7 +624,7 @@ pub fun advance_step<P: store>(
     let step_type_key = frame.step_type_keys[step_idx];
 
     // Composability check — deny-by-default via ProposalConfig.
-    let step_config = dao.proposal_configs().get(&step_type_key);
+    let step_config = ou.proposal_configs().get(&step_type_key);
     assert!(step_config.composable_allowed(), ETypeNotComposable);
 
     // Per-step freeze check — mirrors authorize_execution's freeze guard.
@@ -632,7 +632,7 @@ pub fun advance_step<P: store>(
 
     // Per-step cooldown check — mirrors proposal::execute's cooldown guard.
     if (step_config.cooldown_ms() > 0) {
-        let last_at = dao.last_executed_at();
+        let last_at = ou.last_executed_at();
         if (last_at.contains(&step_type_key)) {
             let last = *last_at.get(&step_type_key);
             assert!(clock.timestamp_ms() >= last + step_config.cooldown_ms(), ECooldownActive);
@@ -641,11 +641,11 @@ pub fun advance_step<P: store>(
 
     // Record the execution timestamp under the step's own type key so standalone
     // proposals of the same type see the correct cooldown state afterwards.
-    dao.record_execution(step_type_key, clock.timestamp_ms());
+    ou.record_execution(step_type_key, clock.timestamp_ms());
 
     // Extract payload and issue a scoped ExecutionRequest.
     let payload: P = df::remove(&mut frame.id, StepKey { index: step_idx });
-    let req = proposal::new_execution_request<P>(pipeline.dao_id, pipeline.composite_proposal_id);
+    let req = proposal::new_execution_request<P>(pipeline.ou_id, pipeline.composite_proposal_id);
 
     let next_pipeline = Pipeline {
         current_step: step_idx + 1,
@@ -658,8 +658,8 @@ pub fun advance_step<P: store>(
 
 Two notes:
 
-- `freeze.assert_not_frozen`, `dao.proposal_configs()`, `dao.last_executed_at()`, and
-  `dao.record_execution()` are all accessible from `composite.move` because both modules
+- `freeze.assert_not_frozen`, `ou.proposal_configs()`, `ou.last_executed_at()`, and
+  `ou.record_execution()` are all accessible from `composite.move` because both modules
   live in `armature_framework`.
 - The max()-derived effective config still governs the composite proposal's own cooldown
   (tracked under the `"Composite"` type key in `last_executed_at`), providing an additional
@@ -769,7 +769,7 @@ requires touching exactly one function. Third-party handlers that already call
 ### Cons
 
 - **Framework changes required** — `composite.move` is a new module in
-  `armature_framework`; `board_voting.move` gains `submit_composite`; `dao.move`
+  `armature_framework`; `board_voting.move` gains `submit_composite`; `ou.move`
   gains `max_composite_steps` and the `"Composite"` default type.
 - **New `_step` handler variants** — every composable proposal type needs a companion
   step handler, but logic duplication is eliminated by the canonical-impl pattern: one
@@ -785,8 +785,8 @@ requires touching exactly one function. Third-party handlers that already call
 - **PTB construction is more complex** — the client must call `advance_step<P>` and the
   step handler in sequence for each step, correctly threading the `Pipeline` value
   between calls.
-- **`advance_step` requires `&mut DAO` and `&EmergencyFreeze`** — per-step freeze and
-  cooldown enforcement (see above) means the execution PTB must pass `dao`, `freeze`, and
+- **`advance_step` requires `&mut OU` and `&EmergencyFreeze`** — per-step freeze and
+  cooldown enforcement (see above) means the execution PTB must pass `ou`, `freeze`, and
   `clock` to every `advance_step` call. This slightly increases PTB verbosity but is
   mechanically equivalent to what `authorize_execution` already requires for single-action
   proposals.
@@ -839,7 +839,7 @@ Option E resolves the core failure modes of all other options:
 - Provides stronger type safety and approval-floor guarantees than any other option.
 
 The framework changes are bounded and additive: one new module (`composite.move`),
-two extended modules (`board_voting.move`, `dao.move`), and `_step` handler variants
+two extended modules (`board_voting.move`, `ou.move`), and `_step` handler variants
 that are a mechanical transformation of existing handlers. No existing code changes.
 
 See `specs/stretch/09_proposal_composition_design.md` for the full module contracts,
@@ -854,10 +854,10 @@ and are maximally auditable. Ship these alongside Option E, not instead of it:
 | Macro-Action          | Bundled Actions                              |
 | --------------------- | -------------------------------------------- |
 | `SwapBoardMember`     | Remove member + Add member                   |
-| `FundSubDAO<T>`       | Send coins to SubDAO + Transfer capability   |
+| `FundSubOU<T>`       | Send coins to SubOU + Transfer capability   |
 | `BatchSend<T>`        | Send coins to multiple recipients            |
 | `ReconfigureGovernance` | Update config + Update metadata            |
-| `BootstrapSubDAO`     | Create SubDAO + Fund + Transfer caps + Enable types |
+| `BootstrapSubOU`     | Create SubOU + Fund + Transfer caps + Enable types |
 
 ### Why Not Option B?
 
@@ -913,20 +913,20 @@ public fun add_member(self: &SwapBoardMember): address { self.add_member }
 ```move
 // In board_ops.move (or a new swap_board_ops.move)
 public fun execute_swap_board_member(
-    dao: &mut DAO,
+    ou: &mut OU,
     proposal: &Proposal<SwapBoardMember>,
     request: ExecutionRequest<SwapBoardMember>,
 ) {
-    assert!(dao.id() == request.req_dao_id(), EDaoMismatch);
+    assert!(ou.id() == request.req_ou_id(), EOuMismatch);
     let payload = proposal.payload();
 
     // Remove first, then add — order matters if same address (no-op guard).
     assert!(payload.remove_member() != payload.add_member(), ESameAddress);
-    dao.remove_member(payload.remove_member(), &request);
-    dao.add_member(payload.add_member(), &request);
+    ou.remove_member(payload.remove_member(), &request);
+    ou.add_member(payload.add_member(), &request);
 
     event::emit(BoardSwapped {
-        dao_id: dao.id(),
+        ou_id: ou.id(),
         removed: payload.remove_member(),
         added: payload.add_member(),
     });
@@ -937,7 +937,7 @@ public fun execute_swap_board_member(
 
 ### Registration
 
-The DAO enables `SwapBoardMember` via an `EnableProposalType` proposal with an
+The OU enables `SwapBoardMember` via an `EnableProposalType` proposal with an
 appropriate config (e.g., same quorum/threshold as `SetBoard`).
 
 ---
@@ -952,17 +952,17 @@ module armature::composable;
 
 /// Hot-potato batch receipt. Must be sealed in the same PTB.
 public struct ComposableBatch {
-    dao_id: ID,
+    ou_id: ID,
     batch_id: ID,
     expected_count: u64,
     executed_ids: vector<ID>,
 }
 
 /// Begin a batch. Returns a hot-potato receipt.
-public fun begin_batch(dao: &DAO, expected_count: u64, ctx: &mut TxContext): ComposableBatch {
+public fun begin_batch(ou: &OU, expected_count: u64, ctx: &mut TxContext): ComposableBatch {
     assert!(expected_count > 1, EBatchTooSmall);
     ComposableBatch {
-        dao_id: dao.id(),
+        ou_id: ou.id(),
         batch_id: object::id_from_address(ctx.fresh_object_address()),
         expected_count,
         executed_ids: vector::empty(),
@@ -970,15 +970,15 @@ public fun begin_batch(dao: &DAO, expected_count: u64, ctx: &mut TxContext): Com
 }
 
 /// Record a completed action in the batch.
-public fun record(batch: &mut ComposableBatch, proposal_id: ID, dao_id: ID) {
-    assert!(dao_id == batch.dao_id, EDaoMismatch);
+public fun record(batch: &mut ComposableBatch, proposal_id: ID, ou_id: ID) {
+    assert!(ou_id == batch.ou_id, EOuMismatch);
     assert!(!batch.executed_ids.contains(&proposal_id), EDuplicateProposal);
     batch.executed_ids.push_back(proposal_id);
 }
 
 /// Seal the batch. Aborts if not all actions executed.
 public fun seal_batch(batch: ComposableBatch) {
-    let ComposableBatch { dao_id: _, batch_id: _, expected_count, executed_ids } = batch;
+    let ComposableBatch { ou_id: _, batch_id: _, expected_count, executed_ids } = batch;
     assert!(executed_ids.length() == expected_count, EBatchIncomplete);
 }
 ```
@@ -987,15 +987,15 @@ public fun seal_batch(batch: ComposableBatch) {
 
 ```
 // Client constructs a PTB:
-let batch = composable::begin_batch(dao, 2);
+let batch = composable::begin_batch(ou, 2);
 
-let req1 = board_voting::authorize_execution(dao, proposal_1, freeze, clock);
-board_ops::execute_add_member(dao, proposal_1, req1);
-composable::record(&mut batch, proposal_1.id(), dao.id());
+let req1 = board_voting::authorize_execution(ou, proposal_1, freeze, clock);
+board_ops::execute_add_member(ou, proposal_1, req1);
+composable::record(&mut batch, proposal_1.id(), ou.id());
 
-let req2 = board_voting::authorize_execution(dao, proposal_2, freeze, clock);
+let req2 = board_voting::authorize_execution(ou, proposal_2, freeze, clock);
 treasury_ops::execute_send_coin(vault, proposal_2, req2, ctx);
-composable::record(&mut batch, proposal_2.id(), dao.id());
+composable::record(&mut batch, proposal_2.id(), ou.id());
 
 composable::seal_batch(batch);
 ```
@@ -1024,7 +1024,7 @@ giving atomic multi-proposal execution without changing any existing handlers.
 2. ~~**Per-step cooldown enforcement** — Should individual step type cooldowns be checked
    during composite execution, or only the `"Composite"` type's own cooldown?~~ **Resolved.**
    `advance_step<P>` checks per-step cooldowns using the step type key's `cooldown_ms` from
-   `dao.proposal_configs()` and records execution via `dao.record_execution(step_type_key, ...)`.
+   `ou.proposal_configs()` and records execution via `ou.record_execution(step_type_key, ...)`.
    The max()-derived composite cooldown continues to apply as a separate global limit.
    Per-step freeze enforcement (which was not in the original design) is resolved identically:
    `advance_step<P>` calls `freeze.assert_not_frozen(&step_type_key, clock)` before
@@ -1036,7 +1036,7 @@ giving atomic multi-proposal execution without changing any existing handlers.
    regardless of threshold?
 
 4. **`max_composite_steps` upper bound** — Default is 5. Should a hard ceiling be enforced
-   in the framework (e.g., 10) to bound PTB gas costs, or left entirely to per-DAO config?
+   in the framework (e.g., 10) to bound PTB gas costs, or left entirely to per-OU config?
 
 5. **`StepExecuted` event** — Should `advance_step` emit a per-step event for indexer
    auditability, or is a single `CompositeExecuted` event at `finalize_pipeline` sufficient?
@@ -1054,7 +1054,7 @@ giving atomic multi-proposal execution without changing any existing handlers.
 
 ## References
 
-- Existing multi-action precedents: `TransferAssets`, `SpinOutSubDAO`, `SendSmallPayment`
+- Existing multi-action precedents: `TransferAssets`, `SpinOutSubOU`, `SendSmallPayment`
 - Hot-potato pattern: `ExecutionRequest<P>`, `CapLoan`
 - Privileged cascading: `controller::privileged_submit`
 - Sui PTB documentation: https://docs.sui.io/concepts/transactions/prog-txn-blocks

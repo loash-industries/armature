@@ -39,7 +39,7 @@ always available in the handler.
 
 ```rust
 pub fun execute_enable_proposal_type_step(
-    dao: &mut DAO,
+    ou: &mut OU,
     payload: EnableProposalType,          // payload by value — no &Proposal<P>
     request: ExecutionRequest<EnableProposalType>,
     clock: &Clock,
@@ -148,23 +148,23 @@ check at the same point:
 
 ```rust
 public fun submit_composite(
-    dao: &mut DAO,
+    ou: &mut OU,
     frame: &CompositeFrame,
     config: ProposalConfig,
     clock: &Clock,
     ctx: &mut TxContext,
 ): Proposal<CompositePayload> {
     // Existing: effective approval_threshold = max over all step configs
-    let effective_threshold = compute_effective_threshold(dao, frame, &config);
+    let effective_threshold = compute_effective_threshold(ou, frame, &config);
 
     // NEW: for each step type in the frame, assert the effective threshold
     // meets that step's hardcoded floor.
-    assert_composite_floors(dao, frame, effective_threshold);
+    assert_composite_floors(ou, frame, effective_threshold);
 
     // ... construct Proposal<CompositePayload> ...
 }
 
-fun assert_composite_floors(dao: &DAO, frame: &CompositeFrame, effective_threshold: u16) {
+fun assert_composite_floors(ou: &OU, frame: &CompositeFrame, effective_threshold: u16) {
     let i = 0;
     while (i < frame.step_count()) {
         let step_type = frame.step_type_at(i);
@@ -274,7 +274,7 @@ are pure code, not state.
 
 No. `ProposalConfig` has `copy, drop, store` but is snapshotted into the `Proposal<P>`
 object at creation. The `Proposal<P>` object's config is immutable. Even if governance
-lowers `approval_threshold` in `dao.proposal_configs()` after a proposal is created,
+lowers `approval_threshold` in `ou.proposal_configs()` after a proposal is created,
 the in-flight proposal retains its original snapshotted config and its own passing
 condition is unchanged.
 
@@ -366,13 +366,13 @@ floors as constants, which are provably unmodifiable.
    enforcement at submission, the "enable and immediately exploit in same composite"
    risk remains: step 1 enables type T, step 2 is type T. Voters agreed to both steps,
    but type T's handler was not enabled when the composite was reviewed. **Proposal:**
-   `add_step<P>()` asserts `P` is already in `dao.enabled_proposals`. `EnableProposalType`
+   `add_step<P>()` asserts `P` is already in `ou.enabled_proposals`. `EnableProposalType`
    steps can enable types, but those types cannot also appear as steps in the same
    composite.
 
 3. **`_step` variant for `UpdateProposalConfig` and `EnableProposalType`** — Do these
    types even need `_step` variants in practice? The main composability use case is
-   "enable multiple types and set their configs" in a DAO bootstrapping composite. If
+   "enable multiple types and set their configs" in an OU bootstrapping composite. If
    both types can appear as steps with floor enforcement at submission, the ergonomic
    goal is met.
 
@@ -382,7 +382,7 @@ floors as constants, which are provably unmodifiable.
 
 - `ADR_COMPOSABLE_PROPOSALS.md` — Option E Frame + Pipeline design
 - `ADR_MONOTONIC_EXECUTION_FLOORS.md` — alternative (configurable floors; superseded by this ADR)
-- `notes/dao/security/guide_composable_blocking_audit.md` — Category 1 floor-gated type analysis
-- `notes/dao/03_proposal_system.md` §7.3 — `advance_step` choke point
-- `notes/dao/01_core_architecture.md` §5.10a, §5.10b — floor invariants
-- `notes/dao/security/security_review.md` #13 — ProposalConfig downgrade attack
+- `notes/ou/security/guide_composable_blocking_audit.md` — Category 1 floor-gated type analysis
+- `notes/ou/03_proposal_system.md` §7.3 — `advance_step` choke point
+- `notes/ou/01_core_architecture.md` §5.10a, §5.10b — floor invariants
+- `notes/ou/security/security_review.md` #13 — ProposalConfig downgrade attack

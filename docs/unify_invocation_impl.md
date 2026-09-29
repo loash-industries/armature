@@ -18,7 +18,7 @@ receive or pass it.
 
 The chosen API instead is:
 - `ticket.ticket_payload()` → `&P` (borrow the payload from the ticket)
-- `ticket.ticket_request()` → `&ExecutionRequest<P>` (borrow the request for vault/DAO auth)
+- `ticket.ticket_request()` → `&ExecutionRequest<P>` (borrow the request for vault/OU auth)
 - `ticket.discharge()` (consume the ticket, run the closeout logic)
 
 In Move 2024, borrows end at last use. A simple handler that calls the two borrow methods,
@@ -27,9 +27,9 @@ handful of handlers with per-branch logic, the same rule applies as long as the 
 not live across the `discharge` call — which is true for every existing handler and should be
 enforced as a convention.
 
-**`req_dao_id` and `req_proposal_id` visibility.** The review recommended narrowing these to
+**`req_ou_id` and `req_proposal_id` visibility.** The review recommended narrowing these to
 `public(package)`. This is deferred: the `_impl` functions in `armature_proposals` still call
-`request.req_dao_id()` for their DAO ID assertion, and changing every `_impl` to use a
+`request.req_ou_id()` for their OU ID assertion, and changing every `_impl` to use a
 different accessor adds noise without a concrete security benefit. The key surface reduction —
 removing `consume_execution_request` — is carried regardless.
 
@@ -42,7 +42,7 @@ removing `consume_execution_request` — is carried regardless.
 ```move
 public struct Proposal<P: store> has key {
     id: UID,
-    dao_id: ID,
+    ou_id: ID,
     type_key: std::ascii::String,
     proposer: address,
     metadata_ipfs: Option<String>,
@@ -78,7 +78,7 @@ permanently queryable even after execution sets `Proposal.payload` to `None`.
 ```move
 public struct ProposalPayloadCreated has copy, drop {
     proposal_id: ID,
-    dao_id: ID,
+    ou_id: ID,
     payload_bcs: vector<u8>,   // std::bcs::to_bytes(&payload)
 }
 ```
@@ -122,14 +122,14 @@ public fun ticket_payload<P>(ticket: &ExecutionTicket<P>): &P {
     &ticket.payload
 }
 
-/// Borrow the request for vault/DAO auth calls.
+/// Borrow the request for vault/OU auth calls.
 public fun ticket_request<P>(ticket: &ExecutionTicket<P>): &ExecutionRequest<P> {
     &ticket.request
 }
 
-/// Shortcut: DAO ID from the embedded request.
-public fun ticket_dao_id<P>(ticket: &ExecutionTicket<P>): ID {
-    ticket.request.dao_id
+/// Shortcut: OU ID from the embedded request.
+public fun ticket_ou_id<P>(ticket: &ExecutionTicket<P>): ID {
+    ticket.request.ou_id
 }
 
 /// Returns true iff the ticket was minted via the vote path (Closeout::Standalone).
@@ -167,10 +167,10 @@ public fun discharge<P: store + drop>(ticket: ExecutionTicket<P>) {
     match (closeout) {
         Closeout::Standalone { proposal_id, .. } => {
             assert!(request.proposal_id == proposal_id, ERequestMismatch);
-            let ExecutionRequest { dao_id: _, proposal_id: _ } = request;
+            let ExecutionRequest { ou_id: _, proposal_id: _ } = request;
         },
         Closeout::Composite | Closeout::External => {
-            let ExecutionRequest { dao_id: _, proposal_id: _ } = request;
+            let ExecutionRequest { ou_id: _, proposal_id: _ } = request;
         },
     }
 }
@@ -206,12 +206,12 @@ public(package) fun new_ticket_standalone<P: store>(
 
 /// Called by composite::advance_step.
 public(package) fun new_ticket_composite<P>(
-    dao_id: ID,
+    ou_id: ID,
     composite_proposal_id: ID,
     payload: P,
 ): ExecutionTicket<P> {
     ExecutionTicket {
-        request: new_execution_request<P>(dao_id, composite_proposal_id),
+        request: new_execution_request<P>(ou_id, composite_proposal_id),
         payload,
         closeout: Closeout::Composite,
     }
@@ -263,13 +263,13 @@ public(package) fun execute<P: store>(
     self.status = ProposalStatus::Executed;
 
     let proposal_id = object::id(self);
-    let dao_id = self.dao_id;
+    let ou_id = self.ou_id;
 
-    event::emit(ProposalExecuted { proposal_id, dao_id, executor });
+    event::emit(ProposalExecuted { proposal_id, ou_id, executor });
 
     let payload = self.payload.extract();   // leaves None; unforgeable replay protection
 
-    (payload, ExecutionRequest<P> { dao_id, proposal_id })
+    (payload, ExecutionRequest<P> { ou_id, proposal_id })
 }
 ```
 
@@ -280,25 +280,25 @@ Emit `ProposalPayloadCreated` using BCS-serialised bytes before moving the paylo
 
 ```move
 public(package) fun create<P: store>(
-    dao_id: ID,
+    ou_id: ID,
     type_key: std::ascii::String,
     proposer: address,
     metadata_ipfs: Option<String>,
     payload: P,
     config: ProposalConfig,
     governance: &GovernanceConfig,
-    is_dao_active: bool,
+    is_ou_active: bool,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    assert!(is_dao_active, EDAONotActive);
+    assert!(is_ou_active, EOUNotActive);
     let (vote_snapshot, total_snapshot_weight) = governance.board_vote_snapshot();
 
     let payload_bcs = std::bcs::to_bytes(&payload);   // serialize before move
 
     let proposal = Proposal<P> {
         id: object::new(ctx),
-        dao_id,
+        ou_id,
         type_key,
         proposer,
         metadata_ipfs,
@@ -316,8 +316,8 @@ public(package) fun create<P: store>(
 
     let proposal_id = object::id(&proposal);
 
-    event::emit(ProposalCreated { proposal_id, dao_id, type_key, proposer });
-    event::emit(ProposalPayloadCreated { proposal_id, dao_id, payload_bcs });
+    event::emit(ProposalCreated { proposal_id, ou_id, type_key, proposer });
+    event::emit(ProposalPayloadCreated { proposal_id, ou_id, payload_bcs });
 
     transfer::share_object(proposal);
 }
@@ -335,7 +335,7 @@ the payload is moved into the ticket, so the payload is still serialisable at th
 ```move
 #[allow(lint(share_owned, custom_state_change))]
 public(package) fun privileged_create<P: store>(
-    dao_id: ID,
+    ou_id: ID,
     type_key: std::ascii::String,
     proposer: address,
     metadata_ipfs: Option<String>,
@@ -346,7 +346,7 @@ public(package) fun privileged_create<P: store>(
 
     let proposal = Proposal<P> {
         id: object::new(ctx),
-        dao_id,
+        ou_id,
         type_key,
         proposer,
         metadata_ipfs,
@@ -364,12 +364,12 @@ public(package) fun privileged_create<P: store>(
 
     let proposal_id = object::id(&proposal);
 
-    event::emit(ProposalCreated { proposal_id, dao_id, type_key, proposer });
-    event::emit(ProposalExecuted { proposal_id, dao_id, executor: proposer });
+    event::emit(ProposalCreated { proposal_id, ou_id, type_key, proposer });
+    event::emit(ProposalExecuted { proposal_id, ou_id, executor: proposer });
 
     transfer::share_object(proposal);
 
-    ExecutionRequest<P> { dao_id, proposal_id }
+    ExecutionRequest<P> { ou_id, proposal_id }
 }
 ```
 
@@ -405,7 +405,7 @@ public fun delete_executed_proposal<P: store + drop>(proposal: Proposal<P>) {
         id,
         status,
         payload,
-        dao_id: _,
+        ou_id: _,
         type_key: _,
         proposer: _,
         metadata_ipfs: _,
@@ -435,7 +435,7 @@ For the external path the typical PTB is:
 
 ```move
 // 1. execute the action — ticket.discharge() called inside the handler
-execute_autojoin_dao(&mut dao, ticket);
+execute_autojoin_ou(&mut ou, ticket);
 // 2. optional same-PTB cleanup — caller collects storage rebate
 delete_executed_proposal(audit_proposal);
 ```
@@ -454,22 +454,22 @@ Replace `authorize_execution` with `ticket_from_vote`. The return type changes f
 /// Replace authorize_execution with this function.
 /// All board-voted proposals use this to enter the execution phase.
 public fun ticket_from_vote<P: store>(
-    dao: &mut DAO,
+    ou: &mut OU,
     prop: &mut Proposal<P>,
     freeze: &EmergencyFreeze,
     clock: &Clock,
     ctx: &TxContext,
 ): ExecutionTicket<P> {
     let type_key = prop.type_key();
-    let is_active = dao.status().is_active();
+    let is_active = ou.status().is_active();
     let is_migration_ok =
-        dao.status().is_migrating() && dao::is_migration_allowed_type(&type_key);
-    assert!(is_active || is_migration_ok, EDAONotActive);
-    assert!(prop.dao_id() == dao.id(), EDAOIdMismatch);
-    assert!(!dao.is_controller_paused(), EControllerPaused);
+        ou.status().is_migrating() && ou::is_migration_allowed_type(&type_key);
+    assert!(is_active || is_migration_ok, EOUNotActive);
+    assert!(prop.ou_id() == ou.id(), EOUIdMismatch);
+    assert!(!ou.is_controller_paused(), EControllerPaused);
     freeze.assert_not_frozen(&type_key, clock);
 
-    let last_executed_at = dao.last_executed_at();
+    let last_executed_at = ou.last_executed_at();
     let last_ms = if (last_executed_at.contains(&type_key)) {
         option::some(*last_executed_at.get(&type_key))
     } else {
@@ -481,14 +481,14 @@ public fun ticket_from_vote<P: store>(
 
     let (payload, req) = proposal::execute(
         prop,
-        dao.governance(),
+        ou.governance(),
         last_ms,
-        dao.is_execution_paused(),
+        ou.is_execution_paused(),
         clock,
         ctx,
     );
 
-    dao.record_execution(type_key, clock.timestamp_ms());
+    ou.record_execution(type_key, clock.timestamp_ms());
 
     proposal::new_ticket_standalone(req, payload, yes_weight, total_snapshot_weight)
 }
@@ -510,7 +510,7 @@ payload is permanently recorded.
 /// Replace external_executed_create with this function.
 pub fun ticket_from_cap<P: store>(
     cap: &ExternalExecutionCap<P>,
-    dao: &mut DAO,
+    ou: &mut OU,
     freeze: &EmergencyFreeze,
     type_key: std::ascii::String,
     metadata_ipfs: Option<String>,
@@ -518,11 +518,11 @@ pub fun ticket_from_cap<P: store>(
     clock: &Clock,
     ctx: &mut TxContext,
 ): ExecutionTicket<P> {
-    proposal::assert_cap_for_dao(cap, dao.id());
-    assert!(dao.status().is_active(), EDAONotActive);
-    assert!(dao.enabled_proposal_types().contains(&type_key), ETypeNotEnabled);
-    assert!(!dao.is_execution_paused(), EExecutionPaused);
-    assert!(!dao.is_controller_paused(), EControllerPaused);
+    proposal::assert_cap_for_ou(cap, ou.id());
+    assert!(ou.status().is_active(), EOUNotActive);
+    assert!(ou.enabled_proposal_types().contains(&type_key), ETypeNotEnabled);
+    assert!(!ou.is_execution_paused(), EExecutionPaused);
+    assert!(!ou.is_controller_paused(), EControllerPaused);
     freeze.assert_not_frozen(&type_key, clock);
 
     // Type binding is mandatory for all external-path types: every type accessible via
@@ -531,23 +531,23 @@ pub fun ticket_from_cap<P: store>(
     // even if a cap were somehow fabricated, and a missing binding is a hard error rather
     // than a silently skipped check.
     let actual = type_name::with_defining_ids<P>().into_string();
-    assert!(dao.has_type_binding(&type_key), ETypeBindingRequired);
-    assert!(dao.type_binding_for(&type_key) == actual, ETypeMismatch);
+    assert!(ou.has_type_binding(&type_key), ETypeBindingRequired);
+    assert!(ou.type_binding_for(&type_key) == actual, ETypeMismatch);
 
     let now = clock.timestamp_ms();
-    let cooldown_ms = dao.proposal_configs().get(&type_key).cooldown_ms();
+    let cooldown_ms = ou.proposal_configs().get(&type_key).cooldown_ms();
     if (cooldown_ms > 0) {
-        let last_executed_at = dao.last_executed_at();
+        let last_executed_at = ou.last_executed_at();
         if (last_executed_at.contains(&type_key)) {
             let last = *last_executed_at.get(&type_key);
             assert!(now >= last + cooldown_ms, ECooldownActive);
         };
     };
 
-    dao.record_execution(type_key, now);
+    ou.record_execution(type_key, now);
 
     event::emit(ExternalExecutionCreated {
-        dao_id: dao.id(),
+        ou_id: ou.id(),
         type_key,
         submitter: ctx.sender(),
     });
@@ -556,7 +556,7 @@ pub fun ticket_from_cap<P: store>(
     let payload_bcs = std::bcs::to_bytes(&payload);
 
     let req = proposal::privileged_create<P>(
-        dao.id(),
+        ou.id(),
         type_key,
         ctx.sender(),
         metadata_ipfs,
@@ -566,7 +566,7 @@ pub fun ticket_from_cap<P: store>(
 
     event::emit(proposal::ProposalPayloadCreated {
         proposal_id: req.req_proposal_id(),
-        dao_id: dao.id(),
+        ou_id: ou.id(),
         payload_bcs,
     });
 
@@ -585,13 +585,13 @@ reads vote weights from the ticket for the approval floor check.
 
 ```move
 pub fun execute_enable_bypass_type<NewType: store>(
-    dao: &mut DAO,
+    ou: &mut OU,
     vault: &mut CapabilityVault,
     ticket: ExecutionTicket<EnableBypassType>,
     ctx: &mut TxContext,
 ) {
-    assert!(dao.id() == ticket.ticket_dao_id(), EDAOIdMismatch);
-    assert!(vault.dao_id() == dao.id(), EVaultDAOMismatch);
+    assert!(ou.id() == ticket.ticket_ou_id(), EOUIdMismatch);
+    assert!(vault.ou_id() == ou.id(), EVaultOUMismatch);
 
     assert_not_bypass_forbidden<NewType>();
     assert_approval_floor_ticket(&ticket, ENABLE_BYPASS_APPROVAL_FLOOR_BPS);
@@ -609,38 +609,38 @@ pub fun execute_enable_bypass_type<NewType: store>(
         EComposableCooldownConflict,
     );
 
-    if (dao.controller_cap_id().is_some()) {
-        assert!(!dao::is_subdao_blocked_type(&type_key), ESubDAOBlockedType);
+    if (ou.controller_cap_id().is_some()) {
+        assert!(!ou::is_subou_blocked_type(&type_key), ESubOUBlockedType);
     };
 
     let req = ticket.ticket_request();
-    dao.enable_proposal_type(type_key, config, req);
-    dao.bind_type_key<NewType, EnableBypassType>(type_key, req);
+    ou.enable_proposal_type(type_key, config, req);
+    ou.bind_type_key<NewType, EnableBypassType>(type_key, req);
 
     let cap = proposal::new_external_execution_cap<EnableBypassType, NewType>(req, ctx);
     let cap_id = object::id(&cap);
     vault.store_cap(cap, req);
 
-    event::emit(BypassEnabled { dao_id: dao.id(), type_key, cap_id });
+    event::emit(BypassEnabled { ou_id: ou.id(), type_key, cap_id });
 
     ticket.discharge();
 }
 
 pub fun execute_disable_bypass_type<NewType: store>(
-    dao: &mut DAO,
+    ou: &mut OU,
     vault: &mut CapabilityVault,
     ticket: ExecutionTicket<DisableBypassType>,
 ) {
-    assert!(dao.id() == ticket.ticket_dao_id(), EDAOIdMismatch);
-    assert!(vault.dao_id() == dao.id(), EVaultDAOMismatch);
+    assert!(ou.id() == ticket.ticket_ou_id(), EOUIdMismatch);
+    assert!(vault.ou_id() == ou.id(), EVaultOUMismatch);
 
     let payload = ticket.ticket_payload();
     let type_key = payload.type_key;
     let cap_id = payload.cap_id;
 
-    assert!(dao.has_type_binding(&type_key), ETypeNotEnabled);
+    assert!(ou.has_type_binding(&type_key), ETypeNotEnabled);
     let expected = type_name::with_defining_ids<NewType>().into_string();
-    assert!(dao.type_binding_for(&type_key) == expected, ETypeMismatch);
+    assert!(ou.type_binding_for(&type_key) == expected, ETypeMismatch);
 
     let cap_ids = vault.ids_for_type<ExternalExecutionCap<NewType>>();
     assert!(cap_ids.contains(&cap_id), ECapNotFound);
@@ -649,9 +649,9 @@ pub fun execute_disable_bypass_type<NewType: store>(
     let cap: ExternalExecutionCap<NewType> = vault.extract_cap(cap_id, req);
     proposal::destroy_external_execution_cap(cap, req);
 
-    dao.disable_proposal_type(type_key, req);
+    ou.disable_proposal_type(type_key, req);
 
-    event::emit(BypassDisabled { dao_id: dao.id(), type_key, cap_id });
+    event::emit(BypassDisabled { ou_id: ou.id(), type_key, cap_id });
 
     ticket.discharge();
 }
@@ -676,7 +676,7 @@ The old `assert_approval_floor(proposal: &Proposal<P>, ...)` is removed.
 
 ```move
 pub fun advance_step<P: store>(
-    dao: &mut DAO,
+    ou: &mut OU,
     frame: &mut CompositeFrame,
     pipeline: Pipeline,
     freeze: &EmergencyFreeze,
@@ -693,7 +693,7 @@ pub fun advance_step<P: store>(
 
     freeze.assert_not_frozen(&step_type_key, clock);
 
-    let step_config = *dao.proposal_configs().get(&step_type_key);
+    let step_config = *ou.proposal_configs().get(&step_type_key);
 
     // Cooldown-bearing types are prohibited from composites (enforced at config-write time
     // by assert_config_composability). Assert here as defence-in-depth: if a config with
@@ -701,22 +701,22 @@ pub fun advance_step<P: store>(
     // rate limit via the frozen snapshot.
     assert!(step_config.cooldown_ms() == 0, ECooldownTypeNotComposable);
 
-    dao.record_execution(step_type_key, clock.timestamp_ms());
+    ou.record_execution(step_type_key, clock.timestamp_ms());
 
     let payload: P = df::remove(&mut frame.id, StepKey { index: step_idx });
 
     let ticket = proposal::new_ticket_composite<P>(
-        pipeline.dao_id,
+        pipeline.ou_id,
         pipeline.composite_proposal_id,
         payload,
     );
 
     let Pipeline {
-        frame_id, dao_id, composite_proposal_id, current_step: _, total_steps, last_executed_snapshot,
+        frame_id, ou_id, composite_proposal_id, current_step: _, total_steps, last_executed_snapshot,
     } = pipeline;
 
     let next = Pipeline {
-        frame_id, dao_id, composite_proposal_id,
+        frame_id, ou_id, composite_proposal_id,
         current_step: step_idx + 1,
         total_steps,
         last_executed_snapshot,
@@ -729,7 +729,7 @@ pub fun advance_step<P: store>(
 ### 4.2 `begin_pipeline` no longer receives `&Proposal<CompositePayload>`
 
 The `CompositePayload` now lives in the ticket after `ticket_from_vote` extracts it.
-`begin_pipeline` takes the ticket and reads `frame_id`, step counts, and DAO ID from it.
+`begin_pipeline` takes the ticket and reads `frame_id`, step counts, and OU ID from it.
 
 Two new assertions guard against frame substitution or post-approval mutation (see §4.3):
 - `frame.is_sealed()` — the frame was locked at composite proposal creation time.
@@ -737,9 +737,9 @@ Two new assertions guard against frame substitution or post-approval mutation (s
 
 ```move
 pub fun begin_pipeline(
-    dao: &DAO,
+    ou: &OU,
     frame: &CompositeFrame,
-    ticket: ExecutionTicket<CompositePayload>,  // was: (dao, &proposal, &frame, req)
+    ticket: ExecutionTicket<CompositePayload>,  // was: (ou, &proposal, &frame, req)
 ): Pipeline {
     let payload = ticket.ticket_payload();
     assert!(payload.frame_id == object::id(frame), EFrameMismatch);
@@ -750,15 +750,15 @@ pub fun begin_pipeline(
     assert!(payload.step_types == frame.step_types(), EFrameContentsMismatch);
 
     let total_steps = payload.step_type_keys.length();
-    let last_executed_snapshot = *dao.last_executed_at();
-    let dao_id = ticket.ticket_dao_id();
+    let last_executed_snapshot = *ou.last_executed_at();
+    let ou_id = ticket.ticket_ou_id();
     let composite_proposal_id = ticket.ticket_request().req_proposal_id();
 
     ticket.discharge();    // consume the composite-level ticket
 
     Pipeline {
         frame_id: object::id(frame),
-        dao_id,
+        ou_id,
         composite_proposal_id,
         current_step: 0,
         total_steps,
@@ -831,7 +831,7 @@ The required creation sequence is:
 3. Call composite::seal_frame(&mut frame)                 ← frame is now immutable to callers
 4. Create the CompositeProposal referencing frame.id
 5. board members vote; proposal passes
-6. begin_pipeline(&dao, &frame, ticket)                  ← asserts is_sealed()
+6. begin_pipeline(&ou, &frame, ticket)                  ← asserts is_sealed()
 7. N × advance_step + handler (increments steps_extracted each time)
 8. finalize_pipeline(pipeline)
 9. delete_exhausted_frame(frame)                          ← asserts steps_extracted == step_type_keys.length()
@@ -850,24 +850,24 @@ Every handler follows the same mechanical pattern:
 **Before:**
 ```move
 pub fun execute_foo(
-    dao: &mut DAO,
+    ou: &mut OU,
     proposal: &Proposal<Foo>,
     request: ExecutionRequest<Foo>,
 ) {
-    foo_impl(dao, proposal.payload(), &request);
+    foo_impl(ou, proposal.payload(), &request);
     proposal::finalize(request, proposal);
 }
 
-pub fun execute_foo_step(dao: &mut DAO, payload: Foo, request: ExecutionRequest<Foo>) {
-    foo_impl(dao, &payload, &request);
+pub fun execute_foo_step(ou: &mut OU, payload: Foo, request: ExecutionRequest<Foo>) {
+    foo_impl(ou, &payload, &request);
     proposal::consume_execution_request(request);
 }
 ```
 
 **After (unified):**
 ```move
-pub fun execute_foo(dao: &mut DAO, ticket: ExecutionTicket<Foo>) {
-    foo_impl(dao, ticket.ticket_payload(), ticket.ticket_request());
+pub fun execute_foo(ou: &mut OU, ticket: ExecutionTicket<Foo>) {
+    foo_impl(ou, ticket.ticket_payload(), ticket.ticket_request());
     ticket.discharge();
 }
 // execute_foo_step is deleted.
@@ -881,26 +881,26 @@ live borrows.
 ### 5.1 `member_ops.move`
 
 ```move
-pub fun execute_add_member(dao: &mut DAO, ticket: ExecutionTicket<AddMember>) {
-    add_member_impl(dao, ticket.ticket_payload(), ticket.ticket_request());
+pub fun execute_add_member(ou: &mut OU, ticket: ExecutionTicket<AddMember>) {
+    add_member_impl(ou, ticket.ticket_payload(), ticket.ticket_request());
     ticket.discharge();
 }
 // execute_add_member_step — DELETE
 
-pub fun execute_batch_add_members(dao: &mut DAO, ticket: ExecutionTicket<BatchAddMembers>) {
-    assert!(dao.id() == ticket.ticket_dao_id(), EDaoMismatch);
+pub fun execute_batch_add_members(ou: &mut OU, ticket: ExecutionTicket<BatchAddMembers>) {
+    assert!(ou.id() == ticket.ticket_ou_id(), EOuMismatch);
     let payload = ticket.ticket_payload();
     let members = payload.members();
     let len = members.length();
     assert!(len > 0, EEmptyBatch);
     assert!(len <= MAX_BATCH_SIZE, EBatchTooLarge);
-    let (added, skipped) = dao.add_board_members_governance(*members, ticket.ticket_request());
-    event::emit(MembersBatchAdded { dao_id: dao.id(), added, skipped });
+    let (added, skipped) = ou.add_board_members_governance(*members, ticket.ticket_request());
+    event::emit(MembersBatchAdded { ou_id: ou.id(), added, skipped });
     ticket.discharge();
 }
 
-pub fun execute_remove_member(dao: &mut DAO, ticket: ExecutionTicket<RemoveMember>) {
-    remove_member_impl(dao, ticket.ticket_payload(), ticket.ticket_request());
+pub fun execute_remove_member(ou: &mut OU, ticket: ExecutionTicket<RemoveMember>) {
+    remove_member_impl(ou, ticket.ticket_payload(), ticket.ticket_request());
     ticket.discharge();
 }
 // execute_remove_member_step — DELETE
@@ -911,8 +911,8 @@ pub fun execute_remove_member(dao: &mut DAO, ticket: ExecutionTicket<RemoveMembe
 ### 5.2 `board_ops.move`
 
 ```move
-pub fun execute_set_board(dao: &mut DAO, ticket: ExecutionTicket<SetBoard>) {
-    set_board_impl(dao, ticket.ticket_payload(), ticket.ticket_request());
+pub fun execute_set_board(ou: &mut OU, ticket: ExecutionTicket<SetBoard>) {
+    set_board_impl(ou, ticket.ticket_payload(), ticket.ticket_request());
     ticket.discharge();
 }
 // execute_set_board_step — DELETE
@@ -924,7 +924,7 @@ pub fun execute_set_board(dao: &mut DAO, ticket: ExecutionTicket<SetBoard>) {
 
 `assert_config_composability` is a new private helper that enforces the invariant:
 a config with `cooldown_ms > 0` must not be composable. It is called at every point a
-`ProposalConfig` is written to DAO state. The same rule is enforced in
+`ProposalConfig` is written to OU state. The same rule is enforced in
 `external_execution::execute_enable_bypass_type` (§3.1) and as defence-in-depth in
 `composite::advance_step` (§4.1).
 
@@ -939,36 +939,36 @@ fun assert_config_composability(config: &ProposalConfig) {
 }
 
 pub fun execute_disable_proposal_type(
-    dao: &mut DAO,
+    ou: &mut OU,
     ticket: ExecutionTicket<DisableProposalType>,
 ) {
-    assert!(dao.id() == ticket.ticket_dao_id(), EDaoMismatch);
+    assert!(ou.id() == ticket.ticket_ou_id(), EOuMismatch);
     let type_key = ticket.ticket_payload().type_key();
     assert_disableable(&type_key);
-    dao.disable_proposal_type(type_key, ticket.ticket_request());
-    event::emit(ProposalTypeDisabled { dao_id: dao.id(), type_key });
+    ou.disable_proposal_type(type_key, ticket.ticket_request());
+    event::emit(ProposalTypeDisabled { ou_id: ou.id(), type_key });
     ticket.discharge();
 }
 
 pub fun execute_enable_proposal_type<NewType: store>(
-    dao: &mut DAO,
+    ou: &mut OU,
     ticket: ExecutionTicket<EnableProposalType>,
 ) {
     // assert_config_composability is called inside enable_proposal_type_impl before
-    // the config is committed to DAO state.
-    enable_proposal_type_impl<NewType>(dao, ticket.ticket_payload(), ticket.ticket_request());
+    // the config is committed to OU state.
+    enable_proposal_type_impl<NewType>(ou, ticket.ticket_payload(), ticket.ticket_request());
     ticket.discharge();
 }
 // execute_enable_proposal_type_step — DELETE
 
 pub fun execute_update_proposal_config(
-    dao: &mut DAO,
+    ou: &mut OU,
     ticket: ExecutionTicket<UpdateProposalConfig>,
 ) {
-    assert!(dao.id() == ticket.ticket_dao_id(), EDaoMismatch);
+    assert!(ou.id() == ticket.ticket_ou_id(), EOuMismatch);
     let payload = ticket.ticket_payload();
     let target_key = payload.target_type_key();
-    let existing = dao.proposal_configs().get(&target_key);
+    let existing = ou.proposal_configs().get(&target_key);
     let new_config = proposal::new_config(
         payload.quorum().destroy_with_default(existing.quorum()),
         payload.approval_threshold().destroy_with_default(existing.approval_threshold()),
@@ -981,8 +981,8 @@ pub fun execute_update_proposal_config(
     );
     assert_threshold_meets_floor(&target_key, &new_config);
     assert_config_composability(&new_config);
-    dao.update_proposal_config(target_key, new_config, ticket.ticket_request());
-    event::emit(ProposalConfigUpdated { dao_id: dao.id(), target_type_key: target_key });
+    ou.update_proposal_config(target_key, new_config, ticket.ticket_request());
+    event::emit(ProposalConfigUpdated { ou_id: ou.id(), target_type_key: target_key });
     ticket.discharge();
 }
 
@@ -1012,36 +1012,36 @@ pub fun execute_send_coin<T>(
 }
 // execute_send_coin_step — DELETE
 
-pub fun execute_send_coin_to_dao<T>(
+pub fun execute_send_coin_to_ou<T>(
     source_vault: &mut TreasuryVault,
     target_vault: &mut TreasuryVault,
-    ticket: ExecutionTicket<SendCoinToDAO<T>>,
+    ticket: ExecutionTicket<SendCoinToOU<T>>,
     ctx: &mut TxContext,
 ) {
-    send_coin_to_dao_impl(
+    send_coin_to_ou_impl(
         source_vault, target_vault,
         ticket.ticket_payload(), ticket.ticket_request(), ctx,
     );
     ticket.discharge();
 }
-// execute_send_coin_to_dao_step — DELETE
+// execute_send_coin_to_ou_step — DELETE
 
 pub fun execute_send_small_payment<T>(
-    dao: &mut DAO,
+    ou: &mut OU,
     vault: &mut TreasuryVault,
     ticket: ExecutionTicket<SendSmallPayment<T>>,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
-    assert!(vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
+    assert!(vault.ou_id() == ticket.ticket_ou_id(), EVaultOUMismatch);
     let payload = ticket.ticket_payload();
     let req = ticket.ticket_request();
     let now = clock.timestamp_ms();
 
-    if (!dao.has_type_state<SendSmallPayment<T>>()) {
+    if (!ou.has_type_state<SendSmallPayment<T>>()) {
         let balance = vault.balance<T>();
         let max_spend = utils::mul_bps(balance, send_small_payment::default_spend_limit_bps());
-        dao.init_type_state(
+        ou.init_type_state(
             send_small_payment::new_state(
                 now, 0, max_spend,
                 send_small_payment::default_epoch_duration_ms(),
@@ -1051,7 +1051,7 @@ pub fun execute_send_small_payment<T>(
         );
     };
 
-    let state: &mut SmallPaymentState = dao.borrow_type_state_mut(req);
+    let state: &mut SmallPaymentState = ou.borrow_type_state_mut(req);
 
     if (now >= state.epoch_start_ms() + state.epoch_duration_ms()) {
         let balance = vault.balance<T>();
@@ -1065,7 +1065,7 @@ pub fun execute_send_small_payment<T>(
     let coin = vault.withdraw<T, SendSmallPayment<T>>(payload.amount(), req, ctx);
 
     event::emit(SmallPaymentSent {
-        dao_id: vault.dao_id(),
+        ou_id: vault.ou_id(),
         coin_type: std::type_name::with_original_ids<T>().into_string(),
         amount: payload.amount(),
         recipient: payload.recipient(),
@@ -1079,9 +1079,9 @@ pub fun execute_send_small_payment<T>(
 }
 ```
 
-`send_coin_impl` and `send_coin_to_dao_impl` are unchanged.
+`send_coin_impl` and `send_coin_to_ou_impl` are unchanged.
 
-### 5.5 `currency_ops.move`, `security_ops.move`, `upgrade_ops.move`, `subdao_ops.move`
+### 5.5 `currency_ops.move`, `security_ops.move`, `upgrade_ops.move`, `subou_ops.move`
 
 All follow the identical mechanical transformation. For each handler:
 1. Replace `(proposal: &Proposal<P>, request: ExecutionRequest<P>)` with
@@ -1090,7 +1090,7 @@ All follow the identical mechanical transformation. For each handler:
 3. Replace `&request` with `ticket.ticket_request()`.
 4. Replace `proposal::finalize(request, proposal)` with `ticket.discharge()`.
 
-### 5.6 `subdao_ops.move`: `validate_transfer_assets` / `finalize_transfer_assets`
+### 5.6 `subou_ops.move`: `validate_transfer_assets` / `finalize_transfer_assets`
 
 `TransferAssets` has a multi-step PTB pattern where the ticket must stay live across
 several typed vault operations between `validate_transfer_assets` and
@@ -1102,7 +1102,7 @@ several typed vault operations between `validate_transfer_assets` and
 /// before calling finalize_transfer_assets to consume the ticket.
 ///
 /// PTB flow:
-///   1. ticket_from_vote(dao, &mut proposal, freeze, clock, ctx) → ExecutionTicket<TransferAssets>
+///   1. ticket_from_vote(ou, &mut proposal, freeze, clock, ctx) → ExecutionTicket<TransferAssets>
 ///   2. validate_transfer_assets(..., &ticket)
 ///   3. N × source_treasury.withdraw<T>(amount, ticket.ticket_request(), ctx)
 ///   4. N × source_vault.extract_cap<T>(cap_id, ticket.ticket_request())
@@ -1117,20 +1117,20 @@ pub fun validate_transfer_assets(
     let request = ticket.ticket_request();
     let payload = ticket.ticket_payload();
 
-    assert!(source_treasury.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
-    assert!(source_cap_vault.dao_id() == request.req_dao_id(), EVaultDAOMismatch);
+    assert!(source_treasury.ou_id() == request.req_ou_id(), EVaultOUMismatch);
+    assert!(source_cap_vault.ou_id() == request.req_ou_id(), EVaultOUMismatch);
     assert!(object::id(target_treasury) == payload.target_treasury_id(), ETargetTreasuryMismatch);
     assert!(object::id(target_cap_vault) == payload.target_vault_id(), ETargetVaultMismatch);
-    assert!(target_treasury.dao_id() == payload.target_dao_id(), ETargetDAOMismatch);
-    assert!(target_cap_vault.dao_id() == payload.target_dao_id(), ETargetDAOMismatch);
+    assert!(target_treasury.ou_id() == payload.target_ou_id(), ETargetOUMismatch);
+    assert!(target_cap_vault.ou_id() == payload.target_ou_id(), ETargetOUMismatch);
     assert!(
         payload.coin_types().length() + payload.cap_ids().length() <= MAX_TRANSFER_ASSETS,
         EAssetLimitExceeded,
     );
 
     event::emit(AssetsTransferInitiated {
-        dao_id: source_treasury.dao_id(),
-        target_dao_id: payload.target_dao_id(),
+        ou_id: source_treasury.ou_id(),
+        target_ou_id: payload.target_ou_id(),
         coin_count: payload.coin_types().length(),
         cap_count: payload.cap_ids().length(),
     });
@@ -1153,27 +1153,27 @@ ticket survives into `discharge`.
 
 ### 6.1 `submit_autojoin`
 
-Returns `ExecutionTicket<AutojoinDAO>` instead of `ExecutionRequest<AutojoinDAO>`.
+Returns `ExecutionTicket<AutojoinOU>` instead of `ExecutionRequest<AutojoinOU>`.
 
 ```move
 pub fun submit_autojoin(
-    members_dao: &mut DAO,
+    members_ou: &mut OU,
     members_vault: &CapabilityVault,
     freeze: &EmergencyFreeze,
     cap_id: ID,
     character: &Character,
     clock: &Clock,
     ctx: &mut TxContext,
-): ExecutionTicket<AutojoinDAO> {    // was: ExecutionRequest<AutojoinDAO>
+): ExecutionTicket<AutojoinOU> {    // was: ExecutionRequest<AutojoinOU>
     // ... all existing validation unchanged ...
 
-    external_execution::ticket_from_cap<AutojoinDAO>(
+    external_execution::ticket_from_cap<AutojoinOU>(
         cap,
-        members_dao,
+        members_ou,
         freeze,
-        b"AutojoinDAO".to_ascii_string(),
+        b"AutojoinOU".to_ascii_string(),
         option::none(),
-        AutojoinDAO {
+        AutojoinOU {
             character_id: object::id(character),
             tribe_id,
             joining_address: sender,
@@ -1184,26 +1184,26 @@ pub fun submit_autojoin(
 }
 ```
 
-### 6.2 `execute_autojoin_dao`
+### 6.2 `execute_autojoin_ou`
 
 ```move
-pub fun execute_autojoin_dao(
-    dao: &mut DAO,
-    ticket: ExecutionTicket<AutojoinDAO>,    // was: &Proposal + ExecutionRequest
+pub fun execute_autojoin_ou(
+    ou: &mut OU,
+    ticket: ExecutionTicket<AutojoinOU>,    // was: &Proposal + ExecutionRequest
 ) {
-    assert!(dao.id() == ticket.ticket_dao_id(), EDaoMismatch);
+    assert!(ou.id() == ticket.ticket_ou_id(), EOuMismatch);
     let payload = ticket.ticket_payload();
 
-    assert!(dao.has_type_state<ConfigureAutojoin>(), EAllowlistNotInitialized);
+    assert!(ou.has_type_state<ConfigureAutojoin>(), EAllowlistNotInitialized);
     let allowlist: &TribeIdAllowlist =
-        dao.borrow_type_state<ConfigureAutojoin, TribeIdAllowlist>();
+        ou.borrow_type_state<ConfigureAutojoin, TribeIdAllowlist>();
     assert!(allowlist.is_enabled(), EAutojoinDisabled);
     assert!(allowlist.contains(payload.tribe_id), ETribeIdNotAllowed);
 
-    dao.add_board_member_governance(payload.joining_address, ticket.ticket_request());
+    ou.add_board_member_governance(payload.joining_address, ticket.ticket_request());
 
     event::emit(MemberAutojoined {
-        dao_id: dao.id(),
+        ou_id: ou.id(),
         member: payload.joining_address,
         tribe_id: payload.tribe_id,
         character_id: payload.character_id,
@@ -1213,30 +1213,30 @@ pub fun execute_autojoin_dao(
 }
 ```
 
-The `&Proposal<AutojoinDAO>` parameter is gone. The payload was moved into the ticket by
-`ticket_from_cap`; `execute_autojoin_dao` reads it from there.
+The `&Proposal<AutojoinOU>` parameter is gone. The payload was moved into the ticket by
+`ticket_from_cap`; `execute_autojoin_ou` reads it from there.
 
 ### 6.3 Autojoin PTB with audit proposal cleanup
 
-Every autojoin creates a shared audit `Proposal<AutojoinDAO>` via `privileged_create`. For
-DAOs with high autojoin volume this accumulates unbounded chain state. The canonical PTB
+Every autojoin creates a shared audit `Proposal<AutojoinOU>` via `privileged_create`. For
+OUs with high autojoin volume this accumulates unbounded chain state. The canonical PTB
 includes an optional same-transaction cleanup step that reclaims the storage rebate:
 
 ```move
 // 1. Mint the ticket (creates the audit proposal as a side-effect).
 let ticket = autojoin_ops::submit_autojoin(
-    &mut members_dao, &members_vault, &freeze, cap_id, &character, &clock, ctx,
+    &mut members_ou, &members_vault, &freeze, cap_id, &character, &clock, ctx,
 );
 
 // 2. Execute — ticket.discharge() called internally.
-autojoin_ops::execute_autojoin_dao(&mut members_dao, ticket);
+autojoin_ops::execute_autojoin_ou(&mut members_ou, ticket);
 
 // 3. Delete the now-empty audit proposal; caller collects storage rebate.
 // Omitting this is safe but accumulates storage debt — include it as standard practice.
 proposal::delete_executed_proposal(audit_proposal);
 ```
 
-`audit_proposal` is the shared `Proposal<AutojoinDAO>` object created by step 1. The caller
+`audit_proposal` is the shared `Proposal<AutojoinOU>` object created by step 1. The caller
 passes it by value in the same PTB. This deletion is the **canonical pattern**: not including
 it leaves a permanently-executed proposal object on-chain. While nothing breaks, the storage
 debt accumulates and the pattern is considered incomplete.
@@ -1263,7 +1263,7 @@ debt accumulates and the pattern is considered incomplete.
 | `proposal::ProposalPayloadCreated` | `armature` | Payload-recording event |
 | `proposal::ticket_payload` | `armature` | Borrow payload from ticket |
 | `proposal::ticket_request` | `armature` | Borrow request from ticket |
-| `proposal::ticket_dao_id` | `armature` | DAO ID shortcut |
+| `proposal::ticket_ou_id` | `armature` | OU ID shortcut |
 | `proposal::ticket_yes_weight` | `armature` | Vote weight for floor checks |
 | `proposal::ticket_total_snapshot_weight` | `armature` | Vote weight for floor checks |
 | `proposal::discharge` | `armature` | Consume ticket, enforce closeout |
@@ -1310,13 +1310,13 @@ PTB surface for composite execution.
 
 Replace every occurrence of:
 ```move
-let request = board_voting::authorize_execution(&mut dao, &mut proposal, &freeze, &clock, &ctx);
-handler::execute_foo(&mut dao, &proposal, request);
+let request = board_voting::authorize_execution(&mut ou, &mut proposal, &freeze, &clock, &ctx);
+handler::execute_foo(&mut ou, &proposal, request);
 ```
 with:
 ```move
-let ticket = board_voting::ticket_from_vote(&mut dao, &mut proposal, &freeze, &clock, &ctx);
-handler::execute_foo(&mut dao, ticket);
+let ticket = board_voting::ticket_from_vote(&mut ou, &mut proposal, &freeze, &clock, &ctx);
+handler::execute_foo(&mut ou, ticket);
 ```
 
 ### 8.2 Composite-path tests
@@ -1324,17 +1324,17 @@ handler::execute_foo(&mut dao, ticket);
 Replace:
 ```move
 let request = board_voting::authorize_execution(...);
-let pipeline = composite::begin_pipeline(&dao, &proposal, &frame, request);
+let pipeline = composite::begin_pipeline(&ou, &proposal, &frame, request);
 let (payload, req, pipeline) = composite::advance_step<AddMember>(..., pipeline, ...);
-member_ops::execute_add_member_step(&mut dao, payload, req);
+member_ops::execute_add_member_step(&mut ou, payload, req);
 composite::finalize_pipeline(pipeline);
 ```
 with:
 ```move
 let ticket = board_voting::ticket_from_vote(...);
-let pipeline = composite::begin_pipeline(&dao, &frame, ticket);   // no &proposal
+let pipeline = composite::begin_pipeline(&ou, &frame, ticket);   // no &proposal
 let (step_ticket, pipeline) = composite::advance_step<AddMember>(..., pipeline, ...);
-member_ops::execute_add_member(&mut dao, step_ticket);
+member_ops::execute_add_member(&mut ou, step_ticket);
 composite::finalize_pipeline(pipeline);
 ```
 
@@ -1343,12 +1343,12 @@ composite::finalize_pipeline(pipeline);
 Replace:
 ```move
 let request = external_execution::external_executed_create(cap, ...);
-handler::execute_foo(&mut dao, &proposal, request);
+handler::execute_foo(&mut ou, &proposal, request);
 ```
 with:
 ```move
 let ticket = external_execution::ticket_from_cap(cap, ...);
-handler::execute_foo(&mut dao, ticket);
+handler::execute_foo(&mut ou, ticket);
 ```
 
 ### 8.4 New tests to add
@@ -1359,15 +1359,15 @@ using the same `execute_*` handler. The canonical form:
 ```move
 // 1. Vote path
 let ticket = board_voting::ticket_from_vote(...);
-handler::execute_foo(&mut dao, ticket);
+handler::execute_foo(&mut ou, ticket);
 
 // 2. Composite path (in a separate composite test)
 let (step_ticket, pipeline) = composite::advance_step<Foo>(...);
-handler::execute_foo(&mut dao, step_ticket);
+handler::execute_foo(&mut ou, step_ticket);
 
 // 3. External path (where applicable)
 let ticket = external_execution::ticket_from_cap(cap, ..., payload, ...);
-handler::execute_foo(&mut dao, ticket);
+handler::execute_foo(&mut ou, ticket);
 ```
 
 Verify that the same `execute_foo` function is called in all three cases.
@@ -1420,11 +1420,11 @@ call sites are updated.
 - [x] `composite::begin_pipeline` takes `ExecutionTicket<CompositePayload>` with no `&Proposal<CompositePayload>`.
 - [x] `ProposalPayloadCreated` event is emitted for every proposal creation path (vote and external).
 - [x] A newly added proposal type with only `execute_*` is immediately usable in all three paths with zero composition-specific code (subject to `composable_allowed = true`).
-- [x] Pre-migration config audit (§9 step 0) completed: no live DAO has a stored config with `cooldown_ms > 0` and `composable_allowed = true`.
+- [x] Pre-migration config audit (§9 step 0) completed: no live OU has a stored config with `cooldown_ms > 0` and `composable_allowed = true`.
 - [x] `assert_config_composability` is called in `enable_proposal_type_impl`, `execute_update_proposal_config`, and `execute_enable_bypass_type`; no config with `cooldown_ms > 0` and `composable_allowed = true` can be stored.
 - [x] `composite::advance_step` asserts `step_config.cooldown_ms() == 0` with `ECooldownTypeNotComposable`; the old snapshot-based cooldown block is removed.
 - [x] `proposal::delete_executed_proposal` exists and is covered by tests confirming it (a) succeeds for `Executed + None` proposals, (b) aborts for non-executed proposals, and (c) aborts when `payload.is_some()`.
-- [x] `ticket_from_cap` checks `dao.has_type_binding` unconditionally before the type-name comparison; `ETypeBindingRequired` aborts if no binding exists.
+- [x] `ticket_from_cap` checks `ou.has_type_binding` unconditionally before the type-name comparison; `ETypeBindingRequired` aborts if no binding exists.
 - [x] `ticket_yes_weight` and `ticket_total_snapshot_weight` abort with `ENotStandaloneTicket` for non-Standalone tickets (no longer return 0).
 - [x] `ticket_is_standalone` accessor exists and is used as the first guard in `assert_approval_floor_ticket`.
 - [x] `CompositeFrame` has a `sealed: bool` field; `seal_frame` is `public(package)`; all frame write operations assert `!frame.sealed`.

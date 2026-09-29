@@ -1,9 +1,11 @@
 module armature_proposals::return_currency_cap;
 
-/// Relinquish custody of a `TreasuryCap<T>`: extract it from the DAO's
+use std::internal::{Self, Permit};
+
+/// Relinquish custody of a `TreasuryCap<T>`: extract it from the OU's
 /// `CapabilityVault` and transfer it to `recipient`, dropping the currency
-/// from the DAO's custody. The escape hatch / handoff path — without it a cap
-/// would be locked in the vault forever, blocking sub-DAO spin-outs and
+/// from the OU's custody. The escape hatch / handoff path — without it a cap
+/// would be locked in the vault forever, blocking sub-OU spin-outs and
 /// migrations. Vote-gated, symmetric to `AdoptCurrency`.
 public struct ReturnCurrencyCap<phantom T> has drop, store {
     treasury_cap_id: ID,
@@ -25,3 +27,9 @@ public fun recipient<T>(self: &ReturnCurrencyCap<T>): address { self.recipient }
 public fun destroy<T>(self: ReturnCurrencyCap<T>) {
     let ReturnCurrencyCap { treasury_cap_id: _, recipient: _ } = self;
 }
+
+// === Handler authority ===
+
+/// `Permit<ReturnCurrencyCap>` for this package's handler: the only way to spend or close
+/// an `ExecutionTicket<ReturnCurrencyCap>` (see `proposal::ticket_request`).
+public(package) fun permit<T>(): Permit<ReturnCurrencyCap<T>> { internal::permit() }

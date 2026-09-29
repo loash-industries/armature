@@ -1,16 +1,16 @@
 #[test_only]
 module armature_proposals::member_ops_tests;
 
+use armature::add_member::{Self, AddMember};
+use armature::batch_add_members::{Self, BatchAddMembers};
+use armature::batch_remove_members::{Self, BatchRemoveMembers};
 use armature::board_voting;
-use armature::dao::{Self, DAO};
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
+use armature::member_ops;
+use armature::ou::{Self, OU};
 use armature::proposal::Proposal;
-use armature_proposals::add_member::{Self, AddMember};
-use armature_proposals::batch_add_members::{Self, BatchAddMembers};
-use armature_proposals::batch_remove_members::{Self, BatchRemoveMembers};
-use armature_proposals::member_ops;
-use armature_proposals::remove_member::{Self, RemoveMember};
+use armature::remove_member::{Self, RemoveMember};
 use std::string;
 use sui::clock;
 use sui::test_scenario;
@@ -27,18 +27,18 @@ const BATCH_MEMBER_3: address = @0xF;
 // =========================================================================
 
 #[test]
-/// E2E: Create DAO → create AddMember proposal → vote → execute → verify member added.
+/// E2E: Create OU → create AddMember proposal → vote → execute → verify member added.
 fun test_add_member_e2e() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    // 1. Create a DAO with Board governance (CREATOR + MEMBER_B)
+    // 1. Create an OU with Board governance (CREATOR + MEMBER_B)
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR, MEMBER_B]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -47,20 +47,19 @@ fun test_add_member_e2e() {
     // 2. Create a Proposal<AddMember> to add NEW_MEMBER
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
 
         let payload = add_member::new(NEW_MEMBER);
         board_voting::submit_proposal(
-            &dao,
-            b"AddMember".to_ascii_string(),
+            &ou,
             option::some(string::utf8(b"Add NEW_MEMBER to board")),
             payload,
             &clock,
             scenario.ctx(),
         );
 
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // 3. Vote yes (CREATOR)
@@ -69,7 +68,9 @@ fun test_add_member_e2e() {
         let mut proposal = scenario.take_shared<Proposal<AddMember>>();
         clock.set_for_testing(2000);
 
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
 
         test_scenario::return_shared(proposal);
     };
@@ -77,32 +78,31 @@ fun test_add_member_e2e() {
     // 4. Execute the proposal
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<AddMember>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
-            &mut proposal,
+            &mut ou,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
 
-        member_ops::execute_add_member(&mut dao, ticket);
+        member_ops::execute_add_member(&mut ou, ticket);
 
         // 5. Verify the member was added
-        let gov = dao.governance();
+        let gov = ou.governance();
         assert!(gov.is_board_member(CREATOR));
         assert!(gov.is_board_member(MEMBER_B));
         assert!(gov.is_board_member(NEW_MEMBER));
         // encrypt_epoch should not change on add
-        assert!(dao.encrypt_epoch() == 0);
+        assert!(ou.encrypt_epoch() == 0);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -118,9 +118,9 @@ fun test_add_member_duplicate_aborts() {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR, MEMBER_B]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -129,50 +129,50 @@ fun test_add_member_duplicate_aborts() {
     // Propose adding MEMBER_B who is already on the board
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
 
         let payload = add_member::new(MEMBER_B);
         board_voting::submit_proposal(
-            &dao,
-            b"AddMember".to_ascii_string(),
+            &ou,
             option::some(string::utf8(b"Duplicate add")),
             payload,
             &clock,
             scenario.ctx(),
         );
 
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<AddMember>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<AddMember>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
-            &mut proposal,
+            &mut ou,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
 
-        member_ops::execute_add_member(&mut dao, ticket);
+        member_ops::execute_add_member(&mut ou, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -184,18 +184,18 @@ fun test_add_member_duplicate_aborts() {
 // =========================================================================
 
 #[test]
-/// E2E: Create DAO → create RemoveMember proposal → vote → execute → verify member removed.
+/// E2E: Create OU → create RemoveMember proposal → vote → execute → verify member removed.
 fun test_remove_member_e2e() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    // 1. Create a DAO with Board governance (CREATOR + MEMBER_B + NEW_MEMBER)
+    // 1. Create an OU with Board governance (CREATOR + MEMBER_B + NEW_MEMBER)
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR, MEMBER_B, NEW_MEMBER]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -204,20 +204,19 @@ fun test_remove_member_e2e() {
     // 2. Create a Proposal<RemoveMember> to remove MEMBER_B
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
 
         let payload = remove_member::new(MEMBER_B);
         board_voting::submit_proposal(
-            &dao,
-            b"RemoveMember".to_ascii_string(),
+            &ou,
             option::some(string::utf8(b"Remove MEMBER_B from board")),
             payload,
             &clock,
             scenario.ctx(),
         );
 
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // 3. Vote yes (CREATOR + NEW_MEMBER — need 2/3 for quorum)
@@ -225,7 +224,9 @@ fun test_remove_member_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<RemoveMember>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
@@ -233,39 +234,40 @@ fun test_remove_member_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<RemoveMember>>();
         clock.set_for_testing(2500);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     // 4. Execute the proposal
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<RemoveMember>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
-            &mut proposal,
+            &mut ou,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
 
-        member_ops::execute_remove_member(&mut dao, ticket);
+        member_ops::execute_remove_member(&mut ou, ticket);
 
         // 5. Verify the member was removed
-        let gov = dao.governance();
+        let gov = ou.governance();
         assert!(gov.is_board_member(CREATOR));
         assert!(!gov.is_board_member(MEMBER_B));
         assert!(gov.is_board_member(NEW_MEMBER));
         // encrypt_epoch should increment on removal
-        assert!(dao.encrypt_epoch() == 1);
+        assert!(ou.encrypt_epoch() == 1);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -281,9 +283,9 @@ fun test_remove_nonmember_aborts() {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR, MEMBER_B]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -292,50 +294,50 @@ fun test_remove_nonmember_aborts() {
     // Propose removing NEW_MEMBER who is not on the board
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
 
         let payload = remove_member::new(NEW_MEMBER);
         board_voting::submit_proposal(
-            &dao,
-            b"RemoveMember".to_ascii_string(),
+            &ou,
             option::some(string::utf8(b"Remove non-member")),
             payload,
             &clock,
             scenario.ctx(),
         );
 
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<RemoveMember>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<RemoveMember>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
-            &mut proposal,
+            &mut ou,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
 
-        member_ops::execute_remove_member(&mut dao, ticket);
+        member_ops::execute_remove_member(&mut ou, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -348,13 +350,13 @@ fun test_remove_last_member_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    // Create DAO with single member
+    // Create OU with single member
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -363,50 +365,50 @@ fun test_remove_last_member_aborts() {
     // Propose removing the only member
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
 
         let payload = remove_member::new(CREATOR);
         board_voting::submit_proposal(
-            &dao,
-            b"RemoveMember".to_ascii_string(),
+            &ou,
             option::some(string::utf8(b"Remove last member")),
             payload,
             &clock,
             scenario.ctx(),
         );
 
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<RemoveMember>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<RemoveMember>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
-            &mut proposal,
+            &mut ou,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
 
-        member_ops::execute_remove_member(&mut dao, ticket);
+        member_ops::execute_remove_member(&mut ou, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -418,7 +420,7 @@ fun test_remove_last_member_aborts() {
 // =========================================================================
 
 #[test]
-/// E2E: Create DAO → BatchAddMembers proposal → vote → execute → verify all added.
+/// E2E: Create OU → BatchAddMembers proposal → vote → execute → verify all added.
 fun test_batch_add_members_e2e() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
@@ -426,9 +428,9 @@ fun test_batch_add_members_e2e() {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR, MEMBER_B]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -436,7 +438,7 @@ fun test_batch_add_members_e2e() {
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
 
         let payload = batch_add_members::new(vector[
@@ -445,54 +447,54 @@ fun test_batch_add_members_e2e() {
             BATCH_MEMBER_3,
         ]);
         board_voting::submit_proposal(
-            &dao,
-            b"BatchAddMembers".to_ascii_string(),
+            &ou,
             option::some(string::utf8(b"Add three at once")),
             payload,
             &clock,
             scenario.ctx(),
         );
 
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<BatchAddMembers>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<BatchAddMembers>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
-            &mut proposal,
+            &mut ou,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
 
-        member_ops::execute_batch_add_members(&mut dao, ticket);
+        member_ops::execute_batch_add_members(&mut ou, ticket);
 
-        let gov = dao.governance();
+        let gov = ou.governance();
         assert!(gov.is_board_member(CREATOR));
         assert!(gov.is_board_member(MEMBER_B));
         assert!(gov.is_board_member(BATCH_MEMBER_1));
         assert!(gov.is_board_member(BATCH_MEMBER_2));
         assert!(gov.is_board_member(BATCH_MEMBER_3));
         // encrypt_epoch should not change on add
-        assert!(dao.encrypt_epoch() == 0);
+        assert!(ou.encrypt_epoch() == 0);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -510,9 +512,9 @@ fun test_batch_add_members_existing_member_skipped() {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR, MEMBER_B]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -520,57 +522,57 @@ fun test_batch_add_members_existing_member_skipped() {
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
 
         // MEMBER_B is already on the board; BATCH_MEMBER_1 is new.
         let payload = batch_add_members::new(vector[BATCH_MEMBER_1, MEMBER_B]);
         board_voting::submit_proposal(
-            &dao,
-            b"BatchAddMembers".to_ascii_string(),
+            &ou,
             option::some(string::utf8(b"Batch with one existing")),
             payload,
             &clock,
             scenario.ctx(),
         );
 
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<BatchAddMembers>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<BatchAddMembers>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
-            &mut proposal,
+            &mut ou,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
 
-        member_ops::execute_batch_add_members(&mut dao, ticket);
+        member_ops::execute_batch_add_members(&mut ou, ticket);
 
         // New member was added, existing member untouched.
-        let gov = dao.governance();
+        let gov = ou.governance();
         assert!(gov.is_board_member(CREATOR));
         assert!(gov.is_board_member(MEMBER_B));
         assert!(gov.is_board_member(BATCH_MEMBER_1));
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -586,9 +588,9 @@ fun test_batch_add_members_internal_duplicate_aborts() {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR, MEMBER_B]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -596,7 +598,7 @@ fun test_batch_add_members_internal_duplicate_aborts() {
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
 
         // BATCH_MEMBER_1 appears twice within the batch itself
@@ -606,52 +608,52 @@ fun test_batch_add_members_internal_duplicate_aborts() {
             BATCH_MEMBER_1,
         ]);
         board_voting::submit_proposal(
-            &dao,
-            b"BatchAddMembers".to_ascii_string(),
+            &ou,
             option::some(string::utf8(b"Internal dup")),
             payload,
             &clock,
             scenario.ctx(),
         );
 
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<BatchAddMembers>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<BatchAddMembers>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
-            &mut proposal,
+            &mut ou,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
 
-        member_ops::execute_batch_add_members(&mut dao, ticket);
+        member_ops::execute_batch_add_members(&mut ou, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = armature_proposals::member_ops::EEmptyBatch)]
+#[test, expected_failure(abort_code = armature::member_ops::EEmptyBatch)]
 /// Empty batch should abort with EEmptyBatch.
 fun test_batch_add_members_empty_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -660,9 +662,9 @@ fun test_batch_add_members_empty_aborts() {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR, MEMBER_B]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -670,50 +672,50 @@ fun test_batch_add_members_empty_aborts() {
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
 
         let payload = batch_add_members::new(vector[]);
         board_voting::submit_proposal(
-            &dao,
-            b"BatchAddMembers".to_ascii_string(),
+            &ou,
             option::some(string::utf8(b"Empty")),
             payload,
             &clock,
             scenario.ctx(),
         );
 
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<BatchAddMembers>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<BatchAddMembers>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
-            &mut proposal,
+            &mut ou,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
 
-        member_ops::execute_batch_add_members(&mut dao, ticket);
+        member_ops::execute_batch_add_members(&mut ou, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -725,7 +727,7 @@ fun test_batch_add_members_empty_aborts() {
 // =========================================================================
 
 #[test]
-/// E2E: Create DAO → BatchRemoveMembers proposal → vote → execute → verify removed.
+/// E2E: Create OU → BatchRemoveMembers proposal → vote → execute → verify removed.
 fun test_batch_remove_members_e2e() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
@@ -739,9 +741,9 @@ fun test_batch_remove_members_e2e() {
             BATCH_MEMBER_1,
             BATCH_MEMBER_2,
         ]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -749,24 +751,25 @@ fun test_batch_remove_members_e2e() {
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
         board_voting::submit_proposal(
-            &dao,
-            b"BatchRemoveMembers".to_ascii_string(),
+            &ou,
             option::some(string::utf8(b"Remove two members")),
             batch_remove_members::new(vector[BATCH_MEMBER_1, BATCH_MEMBER_2]),
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<BatchRemoveMembers>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
@@ -774,38 +777,39 @@ fun test_batch_remove_members_e2e() {
     {
         let mut proposal = scenario.take_shared<Proposal<BatchRemoveMembers>>();
         clock.set_for_testing(2500);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<BatchRemoveMembers>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
-            &mut proposal,
+            &mut ou,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
 
-        member_ops::execute_batch_remove_members(&mut dao, ticket);
+        member_ops::execute_batch_remove_members(&mut ou, ticket);
 
-        let gov = dao.governance();
+        let gov = ou.governance();
         assert!(gov.is_board_member(CREATOR));
         assert!(gov.is_board_member(MEMBER_B));
         assert!(!gov.is_board_member(BATCH_MEMBER_1));
         assert!(!gov.is_board_member(BATCH_MEMBER_2));
         // encrypt_epoch increments once for the batch
-        assert!(dao.encrypt_epoch() == 1);
+        assert!(ou.encrypt_epoch() == 1);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -821,9 +825,9 @@ fun test_batch_remove_members_nonmember_aborts() {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR, MEMBER_B]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -831,48 +835,48 @@ fun test_batch_remove_members_nonmember_aborts() {
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
         // NEW_MEMBER is not on the board
         board_voting::submit_proposal(
-            &dao,
-            b"BatchRemoveMembers".to_ascii_string(),
+            &ou,
             option::some(string::utf8(b"Remove non-member")),
             batch_remove_members::new(vector[NEW_MEMBER]),
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<BatchRemoveMembers>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<BatchRemoveMembers>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
-            &mut proposal,
+            &mut ou,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
 
-        member_ops::execute_batch_remove_members(&mut dao, ticket);
+        member_ops::execute_batch_remove_members(&mut ou, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -888,9 +892,9 @@ fun test_batch_remove_members_internal_duplicate_aborts() {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR, MEMBER_B, NEW_MEMBER]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -898,25 +902,26 @@ fun test_batch_remove_members_internal_duplicate_aborts() {
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
         // MEMBER_B listed twice in the batch
         board_voting::submit_proposal(
-            &dao,
-            b"BatchRemoveMembers".to_ascii_string(),
+            &ou,
             option::some(string::utf8(b"Dup in batch")),
             batch_remove_members::new(vector[MEMBER_B, MEMBER_B]),
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<BatchRemoveMembers>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
@@ -924,30 +929,31 @@ fun test_batch_remove_members_internal_duplicate_aborts() {
     {
         let mut proposal = scenario.take_shared<Proposal<BatchRemoveMembers>>();
         clock.set_for_testing(2500);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<BatchRemoveMembers>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
-            &mut proposal,
+            &mut ou,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
 
-        member_ops::execute_batch_remove_members(&mut dao, ticket);
+        member_ops::execute_batch_remove_members(&mut ou, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -965,9 +971,9 @@ fun test_batch_remove_members_would_empty_aborts() {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR, MEMBER_B, NEW_MEMBER]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -975,25 +981,26 @@ fun test_batch_remove_members_would_empty_aborts() {
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
         // Removing all three members would leave the board empty
         board_voting::submit_proposal(
-            &dao,
-            b"BatchRemoveMembers".to_ascii_string(),
+            &ou,
             option::some(string::utf8(b"Remove all")),
             batch_remove_members::new(vector[CREATOR, MEMBER_B, NEW_MEMBER]),
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<BatchRemoveMembers>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
@@ -1001,37 +1008,38 @@ fun test_batch_remove_members_would_empty_aborts() {
     {
         let mut proposal = scenario.take_shared<Proposal<BatchRemoveMembers>>();
         clock.set_for_testing(2500);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<BatchRemoveMembers>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
-            &mut proposal,
+            &mut ou,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
 
-        member_ops::execute_batch_remove_members(&mut dao, ticket);
+        member_ops::execute_batch_remove_members(&mut ou, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = armature_proposals::member_ops::EEmptyBatch)]
+#[test, expected_failure(abort_code = armature::member_ops::EEmptyBatch)]
 /// Empty BatchRemoveMembers aborts with EEmptyBatch.
 fun test_batch_remove_members_empty_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -1040,9 +1048,9 @@ fun test_batch_remove_members_empty_aborts() {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR, MEMBER_B]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -1050,54 +1058,54 @@ fun test_batch_remove_members_empty_aborts() {
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
         board_voting::submit_proposal(
-            &dao,
-            b"BatchRemoveMembers".to_ascii_string(),
+            &ou,
             option::some(string::utf8(b"Empty")),
             batch_remove_members::new(vector[]),
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<BatchRemoveMembers>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<BatchRemoveMembers>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
-            &mut proposal,
+            &mut ou,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
 
-        member_ops::execute_batch_remove_members(&mut dao, ticket);
+        member_ops::execute_batch_remove_members(&mut ou, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = armature_proposals::member_ops::EBatchTooLarge)]
+#[test, expected_failure(abort_code = armature::member_ops::EBatchTooLarge)]
 /// Batch exceeding MAX_BATCH_SIZE (100) should abort with EBatchTooLarge.
 fun test_batch_add_members_oversize_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
@@ -1106,9 +1114,9 @@ fun test_batch_add_members_oversize_aborts() {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR, MEMBER_B]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -1116,7 +1124,7 @@ fun test_batch_add_members_oversize_aborts() {
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
 
         // Build a batch of 101 distinct addresses: 31 zero bytes + 1 byte i,
@@ -1164,45 +1172,45 @@ fun test_batch_add_members_oversize_aborts() {
 
         let payload = batch_add_members::new(addrs);
         board_voting::submit_proposal(
-            &dao,
-            b"BatchAddMembers".to_ascii_string(),
+            &ou,
             option::some(string::utf8(b"Too many")),
             payload,
             &clock,
             scenario.ctx(),
         );
 
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<BatchAddMembers>>();
         clock.set_for_testing(2000);
-        proposal.vote(true, &clock, scenario.ctx());
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<BatchAddMembers>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
-            &mut proposal,
+            &mut ou,
+            proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
 
-        member_ops::execute_batch_add_members(&mut dao, ticket);
+        member_ops::execute_batch_add_members(&mut ou, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(proposal);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();

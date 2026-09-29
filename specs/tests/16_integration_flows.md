@@ -2,7 +2,26 @@
 
 ## Summary
 
-These tests map directly to the 21 demo steps across three flows from `02_demo_flows.md`. Each test validates a full step (or multi-step sequence) end-to-end, simulating what a user would do via PTBs on testnet.
+This file maps the demo steps of `02_demo_flows.md` (Flows A, B and C) to the current API and to the end-to-end tests that exercise them. There is no dedicated `test_flow_*` suite. Flow coverage comes from scenario tests that run whole governance sequences:
+
+| Suite | End-to-end tests |
+|-------|------------------|
+| `armature_proposals/tests/lifecycle_tests.move` | `small_startup_lifecycle` (3-member OU, small payments, board change, new board operates), `medium_enterprise_lifecycle` (5-member OU, two SubOUs, controller board change and freeze in one PTB, governance unfreeze, parent-to-SubOU funding, SubOU payroll) |
+| `armature_proposals/tests/migration_tests.move` | `create_subou_and_spin_out_e2e`, `controller_set_board_via_privileged_submit`, `spawn_ou_and_destroy_origin_e2e`, `migration_with_transfer_assets_e2e` |
+| `armature_proposals/tests/subou_ops_tests.move` | SubOU creation, cap delegation and reclaim, pause/unpause, controller membership changes |
+| `armature_framework/tests/tribe_tests.move` | Tribe → Officers → Members built in one transaction |
+| `armature_world_bridge/tests/autojoin_e2e_tests.move` | EVE Frontier `Character` → tribe allowlist → board membership, no vote |
+| `armature_external_type_tests/tests/external_type_lifecycle_tests.move` | A third-party type enabled by vote and by bypass, executed on every path, frozen and unfrozen |
+| `armature_proposals/tests/composite_tests.move` | Several typed steps under one vote |
+
+Conventions used in the sequences below:
+
+- **Two-PTB vote.** `board_voting::submit_proposal<P>(&ou, metadata_ipfs, payload, &clock)` shares a `Proposal<P>`; members at its snapshot vote with `board_voting::vote(&mut proposal, &ou, approve, &clock)`; a current member executes with `board_voting::ticket_from_vote(&mut ou, proposal, &freeze, &clock)`, which deletes the proposal and returns an `ExecutionTicket<P>` for `P`'s handler.
+- **Atomic single vote.** When one member's YES passes the type's config and its `execution_delay_ms` is 0, `board_voting::submit_vote_execute<P>(&mut ou, metadata_ipfs, payload, &freeze, &clock)` does all of that in one PTB and creates no object (`09_board_voting.md`).
+- **Opt-in types** are enabled first by an `EnableProposalType` vote (80%) executed with `admin_ops::execute_enable_proposal_type<P>`. The config in the payload must carry the bits `P`'s handler needs (`armature_proposals::type_permissions`; framework types get fixed bits) and meet their floor.
+- The real tests set up opt-in types with the `ou.test_enable_type` seam, which skips that vote and the floors.
+
+Status values: **Covered** (a real test exercises the step), **Partial** (the mechanism is tested but not the demo's exact scenario), **Planned** (buildable with the current API, no test yet), **Not implemented** (needs code that does not exist).
 
 ---
 
@@ -10,285 +29,131 @@ These tests map directly to the 21 demo steps across three flows from `02_demo_f
 
 ### Test Matrix
 
-| Step | Test | What it validates |
-|------|------|-------------------|
-| A-1 | `test_flow_a__step1_alice_creates_dao` | Solo founder creates DAO with charter |
-| A-2 | `test_flow_a__step2_recruit_via_set_board` | SetBoard adds Bob and Carol |
-| A-3 | `test_flow_a__step3_pool_resources` | Permissionless deposits from all members |
-| A-4 | `test_flow_a__step4_create_logistics_subdao` | CreateSubDAO proposal, child DAO created |
-| A-5 | `test_flow_a__step5_subdao_structure_correct` | Parent holds SubDAOControl, child has board |
-| A-6 | `test_flow_a__step6_subdao_sends_coin_autonomously` | SubDAO executes SendCoin without parent |
-| A-7 | `test_flow_a__step7_parent_overrides_subdao_board` | privileged_submit replaces child board |
-| — | `test_flow_a__full_sequence` | All 7 steps in order |
+| Step | Current API | Covered by | Status |
+|------|-------------|------------|--------|
+| A-1 Alice creates "Iron Haulers" | `ou::create(&governance::init_board(vector[ALICE]), name, metadata_uri, ctx)` | `ou_tests::test_create_ou`, `test_ou_created_event`, `test_default_proposal_types` | Covered |
+| A-2 Recruit Bob and Carol | `set_board::new(vector[BOB, CAROL], vector[])` (or `batch_add_members::new`); Alice alone can use `submit_vote_execute<SetBoard>` | `board_ops_tests::test_grow_board_from_single`, `test_set_board_e2e`, `member_ops_tests::test_batch_add_members_e2e` | Covered |
+| A-3 Pool resources | `treasury_vault::deposit<SUI>(&mut vault, coin, ctx)` × 3, permissionless | `treasury_vault_tests::test_deposit_permissionless`, `test_deposit_same_type_joins_balance` | Covered |
+| A-4 Create Logistics SubOU | Enable `CreateSubOU` (EnableProposalType, 80%), then `create_subou::new(name, vector[BOB, DAVE], metadata_uri)` → `lifecycle_ops::execute_create_subou`; fund with a separate `SendCoinToOU<SUI>` | `subou_ops_tests::create_subou_e2e`, `lifecycle_tests::medium_enterprise_lifecycle` (steps 4, 5, 9), `admin_ops_tests::enable_blocked_type_succeeds_for_independent_ou` | Covered |
+| A-5 Structure | Parent vault holds the `SubOUControl` and the SubOU's `FreezeAdminCap`; SubOU `controller_cap_id` set; no hierarchy or bypass meta-types on the SubOU | `migration_tests::create_subou_and_spin_out_e2e` (create phase), `ou_tests::test_subou_default_types_omit_bypass_meta` | Covered |
+| A-6 SubOU pays Eve on its own | Logistics enables `SendCoin<SUI>` (80%), then `send_coin::new<SUI>(EVE, 10)` → `treasury_ops::execute_send_coin<SUI>` | `lifecycle_tests::medium_enterprise_lifecycle` (step 10), `treasury_ops_tests::send_coin_e2e` | Covered |
+| A-7 Parent replaces Dave with Frank | Parent votes `ControllerBatchAddMembers` and `ControllerBatchRemoveMembers` and executes both in one PTB | `subou_ops_tests::controller_batch_add_members_e2e`, `controller_batch_remove_members_e2e`, `migration_tests::controller_set_board_via_privileged_submit`, `lifecycle_tests::medium_enterprise_lifecycle` (step 7) | Covered |
+| — | `test_flow_a__full_sequence` (planned): A-1 to A-7 in one scenario | closest: `lifecycle_tests::medium_enterprise_lifecycle`, `small_startup_lifecycle` | Planned |
 
 ### Tests
 
 ---
 
-#### A-1: Alice creates DAO
+#### A-1: Alice creates the OU
 
-**Step:** Alice creates "Iron Haulers" with herself as sole board member and a charter on Walrus.
+**Step:** Alice creates "Iron Haulers" with herself as the sole board member. The charter is the OU's name plus a metadata URI (an IPFS CID of the document describing the tribe); there is no Walrus blob, hash or version on-chain.
 
-**Why it matters:** This is the entry point for the entire protocol. If DAO creation fails, nothing else works.
+**Why it matters:** This is the entry point for the protocol. Creation shares the `OU`, `TreasuryVault`, `CapabilityVault`, `Charter` and `EmergencyFreeze`, transfers the `FreezeAdminCap` to Alice, and seeds the 14 default proposal types.
 
 ```move
-#[test]
-fun test_flow_a__step1_alice_creates_dao() {
-    let mut scenario = test_scenario::begin(ALICE);
-
-    // Create DAO with Alice as sole member
-    scenario.next_tx(ALICE);
-    {
-        let clock = clock::create_for_testing(scenario.ctx());
-        dao::create_dao(
-            vector[ALICE],
-            b"Iron Haulers - mining and logistics tribe",
-            b"walrus://ironhaulers_v1",
-            b"sha256-of-iron-haulers-charter",
-            &clock,
-            scenario.ctx(),
-        );
-        clock::destroy_for_testing(clock);
-    };
-
-    // Verify: DAO exists with correct state
-    scenario.next_tx(ALICE);
-    {
-        let dao = test_scenario::take_shared<DAO>(&scenario);
-        assert!(dao::status(&dao) == dao::status_active());
-
-        let gov = dao::governance(&dao);
-        assert!(governance::is_member(gov, ALICE));
-        assert!(governance::seat_count(gov) == 1);
-
-        // Charter exists with v1
-        let charter = test_scenario::take_shared<Charter>(&scenario);
-        assert!(charter::version(&charter) == 1);
-        assert!(charter::current_blob_id(&charter) == b"walrus://ironhaulers_v1");
-
-        test_scenario::return_shared(dao);
-        test_scenario::return_shared(charter);
-    };
-    test_scenario::end(scenario);
-}
+let init = governance::init_board(vector[ALICE]);
+let ou_id = ou::create(
+    &init,
+    string::utf8(b"Iron Haulers"),
+    string::utf8(b"ipfs://<iron haulers metadata CID>"),
+    scenario.ctx(),
+);
+// ou.status().is_active(); ou.governance().is_board_member(ALICE); member_count() == 1
+// charter.name() == "Iron Haulers"; charter.metadata_uri() == the CID
 ```
 
 ---
 
 #### A-2: Recruit via SetBoard
 
-**Step:** Alice proposes SetBoard to add Bob and Carol. As sole member, her YES vote passes it.
+**Step:** Alice proposes adding Bob and Carol. As sole member her YES passes it; SetBoard's default config (quorum 5000, threshold 5000, delay 0) also allows the atomic path.
 
 ```move
-#[test]
-fun test_flow_a__step2_recruit_via_set_board() {
-    let mut scenario = test_scenario::begin(ALICE);
-    let dao_id = test_helpers::setup_dao(&mut scenario, vector[ALICE]);
-
-    // Propose SetBoard: [Alice] → [Alice, Bob, Carol]
-    let prop_id = test_helpers::create_proposal(
-        &mut scenario, dao_id,
-        board_ops::new_set_board(vector[ALICE, BOB, CAROL], 3),
-    );
-
-    // Alice votes YES (sole member → instant pass)
-    test_helpers::pass_proposal<board_ops::SetBoard>(
-        &mut scenario, prop_id, vector[ALICE],
-    );
-    // Execute + handle SetBoard
-
-    // Verify: board is now [Alice, Bob, Carol]
-    scenario.next_tx(BOB);
-    {
-        let dao = test_scenario::take_shared<DAO>(&scenario);
-        let gov = dao::governance(&dao);
-        assert!(governance::is_member(gov, ALICE));
-        assert!(governance::is_member(gov, BOB));
-        assert!(governance::is_member(gov, CAROL));
-        assert!(governance::seat_count(gov) == 3);
-        test_scenario::return_shared(dao);
-    };
-    test_scenario::end(scenario);
-}
+let ticket = board_voting::submit_vote_execute<SetBoard>(
+    &mut ou,
+    option::some(string::utf8(b"Recruit Bob and Carol")),
+    set_board::new(vector[BOB, CAROL], vector[]),
+    &freeze,
+    &clock,
+    scenario.ctx(),
+);
+board_ops::execute_set_board(&mut ou, ticket);
+// board: [ALICE, BOB, CAROL]; member_count() == 3
 ```
+
+`board_ops_tests::test_grow_board_from_single` runs the same change ([A] → [A, B, C, D, E]) on the two-PTB path. Governance-sensitive types such as SetBoard should be given a non-zero `execution_delay_ms` once the board has more than one member, so they cannot use the atomic path (`09_board_voting.md`).
 
 ---
 
-#### A-3: Pool resources
+#### A-4 / A-5: Create and fund the Logistics SubOU
 
-**Step:** All three members deposit SUI. No proposal needed.
+**Step:** Bob proposes a Logistics department with board [Bob, Dave]. Alice and Bob vote YES, Carol abstains. `CreateSubOU` carries no funding, so the parent funds the SubOU with a second proposal.
 
-```move
-#[test]
-fun test_flow_a__step3_pool_resources() {
-    let mut scenario = test_scenario::begin(ALICE);
-    let dao_id = test_helpers::setup_dao(&mut scenario, vector[ALICE, BOB, CAROL]);
+```text
+1. Enable CreateSubOU (opt-in; framework type with fixed VAULT_STORE + VAULT_EXTRACT, floor 8000):
+   enable_proposal_type::new(b"CreateSubOU", type_name::with_defining_ids<CreateSubOU>(),
+                             proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0))
+   → vote → admin_ops::execute_enable_proposal_type<CreateSubOU>(&mut iron_haulers, ticket)
 
-    // Each member deposits 100 SUI
-    let depositors = vector[ALICE, BOB, CAROL];
-    let mut i = 0;
-    while (i < 3) {
-        scenario.next_tx(*vector::borrow(&depositors, i));
-        {
-            let mut vault = test_scenario::take_shared<TreasuryVault>(&scenario);
-            let coin = coin::mint_for_testing<SUI>(100, scenario.ctx());
-            treasury::deposit(&mut vault, coin);
-            test_scenario::return_shared(vault);
-        };
-        i = i + 1;
-    };
+2. create_subou::new(string::utf8(b"Logistics Dept"), vector[BOB, DAVE], string::utf8(b"ipfs://<logistics>"))
+   Alice YES, Bob YES, Carol abstains: quorum 2 × 10000 ≥ 5000 × 3; threshold 2/2 ≥ 80% → Passed
+   → lifecycle_ops::execute_create_subou(&mut iron_haulers_vault, ticket, ctx)
 
-    // Verify: treasury has 300 SUI
-    scenario.next_tx(ALICE);
-    {
-        let vault = test_scenario::take_shared<TreasuryVault>(&scenario);
-        assert!(treasury::balance<SUI>(&vault) == 300);
-        test_scenario::return_shared(vault);
-    };
-    test_scenario::end(scenario);
-}
+3. Enable SendCoinToOU<SUI> with type_permissions::treasury_spend() at ≥ 8000, then
+   send_coin_to_ou::new<SUI>(logistics_treasury_id, 50)
+   → treasury_ops::execute_send_coin_to_ou<SUI>(&mut iron_haulers_treasury, &mut logistics_treasury, ticket, ctx)
 ```
+
+Resulting structure (A-5):
+
+```
+OU Iron Haulers (independent)
+├── TreasuryVault: 250 SUI
+├── CapabilityVault: [SubOUControl(Logistics), FreezeAdminCap(Logistics)]
+└── Board: [Alice, Bob, Carol]
+     └──► OU Logistics Dept   controller_cap_id = some(SubOUControl)
+          ├── TreasuryVault: 50 SUI
+          └── Board: [Bob, Dave]
+```
+
+`subou_ops_tests::create_subou_e2e` and `migration_tests::create_subou_and_spin_out_e2e` check the vault contents and the SubOU's `controller_cap_id`; `lifecycle_tests::medium_enterprise_lifecycle` creates two SubOUs and funds one with `SendCoinToOU<USDC>` (step 9).
 
 ---
 
-#### A-4/A-5: Create Logistics SubDAO
+#### A-6: SubOU operates autonomously
 
-**Step:** Bob proposes CreateSubDAO. Alice and Bob vote YES, Carol abstains.
+**Step:** The Logistics board enables `SendCoin<SUI>` on its own OU and pays Eve 10 SUI. The parent is not involved.
 
-```move
-#[test]
-fun test_flow_a__step4_create_logistics_subdao() {
-    let mut scenario = test_scenario::begin(ALICE);
-    let dao_id = test_helpers::setup_funded_dao(&mut scenario, 300);
-
-    // Enable CreateSubDAO
-    test_helpers::enable_proposal_type<subdao_ops::CreateSubDAO>(&mut scenario, dao_id);
-
-    // Bob proposes CreateSubDAO
-    scenario.next_tx(BOB);
-    {
-        let dao = test_scenario::take_shared<DAO>(&scenario);
-        let clock = clock::create_for_testing(scenario.ctx());
-        proposal::create(
-            &dao,
-            subdao_ops::new_create_subdao(
-                vector[BOB, DAVE],     // initial board
-                2,                       // seat_count
-                b"Logistics Dept",       // metadata
-                vector[],                // enabled_proposals (defaults)
-                b"walrus://logistics_charter_v1",
-                b"logistics-charter-hash",
-            ),
-            b"Create Logistics department",
-            &clock,
-            scenario.ctx(),
-        );
-        clock::destroy_for_testing(clock);
-        test_scenario::return_shared(dao);
-    };
-
-    // Alice: YES, Bob: YES (Carol abstains)
-    // ... vote sequence
-
-    // Execute + handle CreateSubDAO (includes 50 SUI funding)
-
-    // Verify structure
-    scenario.next_tx(ALICE);
-    {
-        // Parent treasury reduced by funding amount
-        let parent_vault = test_scenario::take_shared<TreasuryVault>(&scenario);
-        assert!(treasury::balance<SUI>(&parent_vault) == 250);
-        test_scenario::return_shared(parent_vault);
-
-        // SubDAOControl in parent's cap vault
-        let parent_cap_vault = test_scenario::take_shared<CapabilityVault>(&scenario);
-        assert!(capability_vault::has_type<SubDAOControl>(&parent_cap_vault));
-        test_scenario::return_shared(parent_cap_vault);
-    };
-    test_scenario::end(scenario);
-}
+```text
+Logistics: EnableProposalType for SendCoin<SUI> with type_permissions::treasury_spend() at ≥ 8000
+Logistics: send_coin::new<SUI>(EVE, 10); Bob YES, Dave YES
+           → treasury_ops::execute_send_coin<SUI>(&mut logistics_treasury, ticket, ctx)
 ```
+
+`SendCoin<SUI>` is not SubOU-blocked, so a controlled SubOU may enable it. `lifecycle_tests::medium_enterprise_lifecycle` (step 10) has a Finance SubOU enable `SendCoin<USDC>` and pay an employee.
 
 ---
 
-#### A-6: SubDAO operates autonomously
+#### A-7: Parent overrides the SubOU board
 
-**Step:** Bob proposes SendCoin on the Logistics SubDAO to pay Eve. No parent approval needed.
+**Step:** Dave goes inactive. The parent replaces him with Frank without a vote on the SubOU.
 
-```move
-#[test]
-fun test_flow_a__step6_subdao_sends_coin_autonomously() {
-    let mut scenario = test_scenario::begin(ALICE);
-    let (parent_id, child_id) = test_helpers::setup_dao_with_subdao(&mut scenario);
+```text
+Iron Haulers enables ControllerBatchAddMembers and ControllerBatchRemoveMembers with
+type_permissions::subou_control() and subou_control_scope() at ≥ 8000, then passes:
+  controller_batch_add_members::new(control_id, vector[FRANK])
+  controller_batch_remove_members::new(control_id, vector[DAVE])
 
-    // Fund child treasury
-    // ...
+One PTB, executed by a current Iron Haulers member:
+  t1 = board_voting::ticket_from_vote(&mut iron_haulers, add_proposal, &freeze, &clock)
+  subou_ops::execute_controller_batch_add_members(&mut iron_haulers_vault, &mut logistics, t1, ctx)
+  t2 = board_voting::ticket_from_vote(&mut iron_haulers, remove_proposal, &freeze, &clock)
+  subou_ops::execute_controller_batch_remove_members(&mut iron_haulers_vault, &mut logistics, t2, ctx)
 
-    // On child DAO: Bob proposes SendCoin to Eve
-    scenario.next_tx(BOB);
-    {
-        let child_dao = test_scenario::take_shared_by_id<DAO>(&scenario, child_id);
-        let clock = clock::create_for_testing(scenario.ctx());
-        proposal::create(
-            &child_dao,
-            treasury_ops::new_send_coin<SUI>(EVE, 10),
-            b"Pay hauler Eve",
-            &clock,
-            scenario.ctx(),
-        );
-        clock::destroy_for_testing(clock);
-        test_scenario::return_shared(child_dao);
-    };
-
-    // Bob and Dave (child board) vote YES
-    // ...
-
-    // Execute — no parent involvement
-    // ...
-
-    // Eve receives 10 SUI
-    scenario.next_tx(EVE);
-    {
-        let coin = test_scenario::take_from_sender<Coin<SUI>>(&scenario);
-        assert!(coin::value(&coin) == 10);
-        test_scenario::return_to_sender(&scenario, coin);
-    };
-    test_scenario::end(scenario);
-}
+Logistics board: [Bob, Frank]
 ```
 
----
-
-#### A-7: Parent overrides SubDAO board
-
-**Step:** Dave goes inactive. Parent uses privileged_submit to replace Logistics board.
-
-```move
-#[test]
-fun test_flow_a__step7_parent_overrides_subdao_board() {
-    let mut scenario = test_scenario::begin(ALICE);
-    let (parent_id, child_id) = test_helpers::setup_dao_with_subdao(&mut scenario);
-
-    // Parent proposes "replace child board" (internal proposal type)
-    // ... create, pass on parent board
-
-    // Execute: privileged_submit SetBoard on child
-    // SetBoard payload: [Bob, Frank] (Dave removed, Frank added)
-    // ...
-
-    // Verify: child board is now [Bob, Frank]
-    scenario.next_tx(ALICE);
-    {
-        let child_dao = test_scenario::take_shared_by_id<DAO>(&scenario, child_id);
-        let gov = dao::governance(&child_dao);
-        assert!(governance::is_member(gov, BOB));
-        assert!(governance::is_member(gov, FRANK));
-        assert!(!governance::is_member(gov, DAVE));
-        test_scenario::return_shared(child_dao);
-    };
-    test_scenario::end(scenario);
-}
-```
+Each handler loans the `SubOUControl`, applies the change through a privileged request (`15_privileged_submit.md`) and returns the control. A single "replace the board" proposal needs a custom controller type or a composite of the two steps; `migration_tests::controller_set_board_via_privileged_submit` shows a SetBoard diff applied through a test controller type.
 
 ---
 
@@ -296,101 +161,54 @@ fun test_flow_a__step7_parent_overrides_subdao_board() {
 
 ### Test Matrix
 
-| Step | Test | What it validates |
-|------|------|-------------------|
-| B-1 | `test_flow_b__step1_propose_gate_builders_subdao` | CreateSubDAO with charter describing revenue split |
-| B-2 | `test_flow_b__step2_subdao_materializes` | Child created with 100 SUI funding |
-| B-3 | `test_flow_b__step3_deploy_gate_caps_to_vault` | GateOwnerCaps stored in child CapVault |
-| B-4 | `test_flow_b__step4_configure_gates_via_loan` | Caps loaned, configured, returned |
-| B-5 | `test_flow_b__step5_tolls_accumulate` | Treasury balance increases from revenue |
-| B-6 | `test_flow_b__step6_revenue_share_to_parent` | SendCoin transfers 80% to parent |
-| B-7 | `test_flow_b__step7_charter_amendment_and_override` | AmendCharter on child, parent override via privileged_submit |
-| — | `test_flow_b__full_sequence` | All 7 steps in order |
+| Step | Current API | Covered by | Status |
+|------|-------------|------------|--------|
+| B-1 Dave pitches the project | `create_subou::new(string::utf8(b"Gate Builders"), vector[DAVE, EVE], metadata_uri)`; the project charter is the SubOU's `metadata_uri` | as A-4 | Covered |
+| B-2 SubOU materialises with 100 SUI | `execute_create_subou`, then `SendCoinToOU<SUI>` of 100 | as A-4 / A-5 | Covered |
+| B-3 Gate caps deposited in the SubOU vault | Needs a gate integration type (see below) | — | Not implemented |
+| B-4 Configure gates by cap loan | A custom type with `VAULT_BORROW` scoped to the gate cap type; handler `loan_cap` → world call → `return_cap` | pattern: `upgrade_ops_tests::upgrade_e2e`, `borrow_scope_tests::request_carries_slot_scope_and_borrows_in_scope`, `capability_vault_tests::test_loan_and_return_restores_capability` | Partial (gate type not implemented) |
+| B-5 Tolls accumulate | Revenue deposited with `treasury_vault::deposit` (permissionless) or recovered with `claim_coin` | `treasury_vault_tests::test_deposit_permissionless`, `test_claim_coin_recovers_direct_transfer` | Partial (no gate) |
+| B-6 Revenue share to the parent | `SendCoinToOU<SUI>` on Gate Builders: `send_coin_to_ou::new<SUI>(iron_haulers_treasury_id, 40)` | `treasury_ops_tests::send_coin_to_ou_e2e`, `composite_tests::composite_send_coin_to_ou_step_e2e` | Covered |
+| B-6 On-chain revenue split (`RevenuePolicy`, split-on-deposit) | — | — | Not implemented |
+| B-7 Charter change on the SubOU | `UpdateMetadata` ("CharterUpdate", default on SubOUs): `update_metadata::new(new_cid)` → `admin_ops::execute_update_metadata` | `charter_tests::charter_update_lifecycle` | Covered |
+| B-7 Parent override of the charter | A custom controller type: loan the control, `privileged_submit` on Gate Builders, `charter::update_metadata(&mut charter, uri, &priv_req)` | `14_charter_ops.md`: `test_update_metadata__privileged_request_updates_subou_charter` | Planned |
+| B-7 Versioned amendment (`AmendCharter`) | — | `14_charter_ops.md`, "Planned (not implemented)" | Not implemented |
+| — | `test_flow_b__full_sequence` | — | Not implemented (needs the gate type) |
 
 ### Tests
 
 ---
 
-#### B-3: Deploy gate caps to vault
+#### B-3 / B-4: Gate caps in an OU vault
 
-**Step:** Dave deploys 3 gates and deposits ownership caps into Gate Builders' CapVault.
+**Status:** No gate or SSU module exists in this repository. The original plan noted that the EVE Frontier world contracts let only a `Character` hold an assembly `OwnerCap`, and planned mock `gate` / `ssu` modules to work around it; those mocks were never written.
 
-```move
-#[test]
-fun test_flow_b__step3_deploy_gate_caps_to_vault() {
-    let mut scenario = test_scenario::begin(ALICE);
-    let (parent_id, child_id) = test_helpers::setup_dao_with_subdao(&mut scenario);
+Two current constraints shape any future integration:
 
-    // Dave creates 3 mock GateOwnerCaps and stores them in child vault
-    scenario.next_tx(DAVE);
-    {
-        let mut vault = test_scenario::take_shared_by_id<CapabilityVault>(
-            &scenario, /* child_vault_id */,
-        );
-
-        let cap1 = mock_gate::deploy(b"system_a", b"system_b", scenario.ctx());
-        let cap1_id = object::id(&cap1);
-        capability_vault::store_cap_init(&mut vault, cap1);
-
-        let cap2 = mock_gate::deploy(b"system_b", b"system_c", scenario.ctx());
-        capability_vault::store_cap_init(&mut vault, cap2);
-
-        let cap3 = mock_gate::deploy(b"system_c", b"system_a", scenario.ctx());
-        capability_vault::store_cap_init(&mut vault, cap3);
-
-        // 3 GateOwnerCaps stored
-        let ids = capability_vault::ids_for_type<mock_gate::GateOwnerCap>(&vault);
-        assert!(vector::length(ids) == 3);
-
-        test_scenario::return_shared(vault);
-    };
-    test_scenario::end(scenario);
-}
-```
+- **A cap enters a vault only through a handler.** `capability_vault::store_cap<T, P>` needs a request carrying `VAULT_STORE`, and `store_cap_init` is framework-internal. Today caps enter vaults through `AdoptCurrency<T>` (a `TreasuryCap<T>` passed by value to its handler), `TransferCapToSubOU` / `ReclaimCapFromSubOU` between OUs, `TransferAssets` during migration, or an integrator type holding `VAULT_STORE`.
+- **Loans are scoped.** A `ConfigureGateAccess` type would hold `VAULT_BORROW` with `borrow_scope = [GateOwnerCap]` at ≥ 8000, and its handler would `loan_cap<GateOwnerCap, ConfigureGateAccess>`, call the world contract, and `return_cap`. It could not reach any other cap in the vault (`proposal::EBorrowScopeDenied`). `upgrade_ops::execute_propose_upgrade` is the in-repo example: it loans the `UpgradeCap` under scope [`UpgradeCap`] and keeps it inside a `PendingUpgrade` hot potato.
 
 ---
 
-#### B-6: Revenue share to parent
+#### B-6: Revenue share to the parent
 
-**Step:** Eve proposes SendCoin to transfer 80% of tolls to parent treasury.
+**Step:** Eve proposes, on Gate Builders, to send 40 SUI (80% of 50 SUI of tolls) into the Iron Haulers treasury. The old plan used `SendCoin`, which pays an address; a treasury is reached with `SendCoinToOU<T>`, which deposits into the `TreasuryVault` named in the payload.
 
-```move
-#[test]
-fun test_flow_b__step6_revenue_share_to_parent() {
-    let mut scenario = test_scenario::begin(ALICE);
-    let (parent_id, child_id) = test_helpers::setup_dao_with_subdao(&mut scenario);
-
-    // Fund child treasury (simulating toll revenue)
-    scenario.next_tx(ALICE);
-    {
-        let mut child_vault = test_scenario::take_shared_by_id<TreasuryVault>(
-            &scenario, /* child_vault_id */,
-        );
-        let coin = coin::mint_for_testing<SUI>(50, scenario.ctx());
-        treasury::deposit(&mut child_vault, coin);
-        test_scenario::return_shared(child_vault);
-    };
-
-    // Eve proposes SendCoin: 40 SUI (80% of 50) to parent treasury
-    // ... create, pass, execute on child DAO
-
-    // Verify: parent treasury increased, child treasury decreased
-    scenario.next_tx(ALICE);
-    {
-        let parent_vault = test_scenario::take_shared<TreasuryVault>(&scenario);
-        // Parent received 40 SUI (on top of existing balance)
-        // ...
-        test_scenario::return_shared(parent_vault);
-
-        let child_vault = test_scenario::take_shared_by_id<TreasuryVault>(
-            &scenario, /* child_vault_id */,
-        );
-        assert!(treasury::balance<SUI>(&child_vault) == 10); // 50 - 40
-        test_scenario::return_shared(child_vault);
-    };
-    test_scenario::end(scenario);
-}
+```text
+Gate Builders enables SendCoinToOU<SUI> (TREASURY_WITHDRAW, ≥ 8000), then:
+  send_coin_to_ou::new<SUI>(iron_haulers_treasury_id, 40); Dave YES, Eve YES
+  → treasury_ops::execute_send_coin_to_ou<SUI>(&mut gate_builders_treasury, &mut iron_haulers_treasury, ticket, ctx)
 ```
+
+Nothing enforces the 80% split: the framework has no `RevenuePolicy` object and `deposit` never splits. The share is paid by the SubOU's own vote; the parent's recourse is the controller types (board change, pause, reclaim).
+
+---
+
+#### B-7: Charter change and parent override
+
+**Step:** Dave proposes moving the revenue split to 70/30 by publishing a new charter document and updating the SubOU's metadata URI. The Gate Builders board passes it with `UpdateMetadata`.
+
+Alice then proposes, on Iron Haulers, to revert it. No first-party controller type rewrites a SubOU's metadata, so this needs a custom type holding `VAULT_BORROW` scoped to `SubOUControl` (≥ 8000). The vote is split: Alice YES, Bob NO, Carol abstains. Quorum is met (2 of 3 voted) but YES is 1 of 2 votes cast, 50% < 80%, so the proposal stays Active; if no further votes arrive it expires and anyone can delete it with `proposal::delete_expired_proposal`. The amendment stands.
 
 ---
 
@@ -398,146 +216,65 @@ fun test_flow_b__step6_revenue_share_to_parent() {
 
 ### Test Matrix
 
-| Step | Test | What it validates |
-|------|------|-------------------|
-| 1 | `test_flow_c__step1_acquire_gate_caps` | GateOwnerCaps deposited in DAO vault |
-| 2 | `test_flow_c__step2_propose_gate_config` | ConfigureGateAccess proposal created |
-| 3 | `test_flow_c__step3_execute_gate_config_via_loan` | Caps loaned, hook set, caps returned |
-| 4 | `test_flow_c__step4_toll_revenue_flows` | Revenue deposited into treasury |
-| 5 | `test_flow_c__step5_third_party_reads` | On-chain state readable by external DApps |
-| 6 | `test_flow_c__step6_delegate_gate_to_subdao` | TransferCapToSubDAO moves GateOwnerCap |
-| 7 | `test_flow_c__step7_ssu_integration` | SSUOwnerCap stored, access controlled by membership |
-| — | `test_flow_c__full_sequence` | All 7 steps in order |
+| Step | Current API | Covered by | Status |
+|------|-------------|------------|--------|
+| C-1 Gate caps into the OU vault | See B-3 | — | Not implemented |
+| C-2 Propose `ConfigureGateAccess` | Enable a custom type (`VAULT_BORROW`, scope [`GateOwnerCap`], ≥ 8000) | pattern: `permissions_tests::enable_proposal_type_grants_high_bits`, `borrow_scope_tests::meta_type_may_change_scope` | Not implemented |
+| C-3 Execute via cap loan | See B-4 | pattern tests as B-4 | Partial |
+| C-4 Toll revenue into the treasury | See B-5 | as B-5 | Partial |
+| C-5 Third-party reads | `ou.governance().is_board_member(addr)`, `ou.is_governance_member(addr)`, `member_count()`, `ou.is_type_enabled<P>()`, `ou.type_config<P>()`, `vault.ids_for_type<T>()`, `treasury.balance<T>()` | `encrypted_entry_tests::test_is_governance_member_distinguishes_members`, `ou_tests::test_default_proposal_types` | Covered (reads) |
+| C-6 Delegate a gate to Logistics | `transfer_cap_to_subou::new(cap_id, logistics_id)` → `subou_ops::execute_transfer_cap<T>`; reclaim with `ReclaimCapFromSubOU` | `subou_ops_tests::transfer_cap_to_subou_e2e`, `reclaim_cap_from_subou_e2e` (with a test cap type) | Covered |
+| C-7 SSU supply depot | — | — | Not implemented |
+| C-alt EVE membership integration (autojoin) | On an independent OU: `ConfigureAutojoin` vote + `EnableBypassType` for `AutojoinOU`; players call `autojoin_ops::autojoin` | `autojoin_e2e_tests` (8 tests; the bypass enable is set up with test seams) | Covered (autojoin); Partial (enabling vote) |
+| C-alt Third-party type on every path | `Rebalance<T>` enabled by vote and by bypass | `external_type_lifecycle_tests::enabled_type_executes_on_every_path` | Covered |
+| — | `test_flow_c__full_sequence` | — | Not implemented (needs gate / SSU types) |
 
 ### Tests
 
 ---
 
-#### Step 3: Execute gate config via cap loan
+#### C-5: Third-party reads
 
-**Step:** Execution loans GateOwnerCaps, calls gate::set_access_hook, returns caps.
+**Step:** A route-planning DApp checks whether a pilot is a member of the OU that runs a gate network.
 
-**Why it matters:** Demonstrates the cap loan round-trip with a real (mocked) external contract call — the core value proposition of DAO-held capabilities.
-
-```move
-#[test]
-fun test_flow_c__step3_execute_gate_config_via_loan() {
-    let mut scenario = test_scenario::begin(ALICE);
-    let dao_id = test_helpers::setup_dao(&mut scenario, vector[ALICE, BOB, CAROL]);
-
-    // Store a GateOwnerCap in vault
-    // ... let gate_cap_id = ...
-
-    // Enable a custom ConfigureGateAccess proposal type
-    // ... (or use a generic "use cap" proposal pattern)
-
-    // Create, pass, execute proposal
-    // ...
-
-    // In the handler PTB:
-    scenario.next_tx(ALICE);
-    {
-        let mut vault = test_scenario::take_shared<CapabilityVault>(&scenario);
-
-        // Loan the gate cap
-        let (gate_cap, loan) = capability_vault::loan_cap<mock_gate::GateOwnerCap, SomeType>(
-            &mut vault, gate_cap_id, &req,
-        );
-
-        // Use it: configure the gate
-        mock_gate::set_access_hook(&gate_cap, /* policy params */);
-
-        // Return it
-        capability_vault::return_cap(&mut vault, gate_cap, loan);
-
-        // Cap is back in vault
-        assert!(capability_vault::contains(&vault, gate_cap_id));
-
-        test_scenario::return_shared(vault);
-    };
-    test_scenario::end(scenario);
-}
-```
+Membership is readable per address: `governance::is_board_member(ou.governance(), addr)` (open tenure) and `ou::is_governance_member(&ou, addr)`. The roster is a `Table`, so there is no on-chain member list to fetch; an indexer rebuilds the list from `OUBoardInitialized`, `BoardUpdated`, `MemberAdded` / `MemberRemoved`, `MembersBatchAdded` / `MembersBatchRemoved`, `ControllerMembersBatchAdded` / `ControllerMembersBatchRemoved` and `MemberAutojoined`. Proposal history comes from the proposal events, since executed and expired proposals are deleted.
 
 ---
 
-#### Step 6: Delegate gate to SubDAO
+#### C-6: Delegate a gate to the Logistics SubOU
 
-**Step:** Parent transfers GateOwnerCap to Logistics SubDAO via TransferCapToSubDAO.
+**Step:** Iron Haulers moves one gate's cap into the Logistics vault; it can take it back later.
 
 ```move
-#[test]
-fun test_flow_c__step6_delegate_gate_to_subdao() {
-    let mut scenario = test_scenario::begin(ALICE);
-    let (parent_id, child_id) = test_helpers::setup_dao_with_subdao(&mut scenario);
-
-    // Store GateOwnerCap in parent vault
-    // ... let gate_cap_id = ...
-
-    // Enable TransferCapToSubDAO on parent, propose, pass, execute
-    // ...
-
-    // Verify: cap moved from parent to child
-    scenario.next_tx(ALICE);
-    {
-        let parent_vault = test_scenario::take_shared<CapabilityVault>(&scenario);
-        assert!(!capability_vault::contains(&parent_vault, gate_cap_id));
-        test_scenario::return_shared(parent_vault);
-
-        let child_vault = test_scenario::take_shared_by_id<CapabilityVault>(
-            &scenario, /* child_vault_id */,
-        );
-        assert!(capability_vault::contains(&child_vault, gate_cap_id));
-        test_scenario::return_shared(child_vault);
-    };
-
-    // Parent can still reclaim via SubDAOControl
-    // (verified in atomic reclaim test)
-    test_scenario::end(scenario);
-}
+// subou_ops_tests::transfer_cap_to_subou_e2e (with a TestCap standing in for the gate cap)
+let payload = transfer_cap_to_subou::new(test_cap_id, subou_id);
+// ... submit, vote, ticket_from_vote on the parent ...
+subou_ops::execute_transfer_cap<TestCap>(&mut parent_vault, &mut subou_vault, &subou, ticket);
+assert!(!parent_vault.contains(test_cap_id));
+assert!(subou_vault.contains(test_cap_id));
 ```
+
+Reclaim is `ReclaimCapFromSubOU` (`subou_ops_tests::reclaim_cap_from_subou_e2e`), which uses the parent's `SubOUControl` and needs no action from the SubOU (`13_subou_ops.md`).
 
 ---
 
-#### Step 7: SSU integration
+#### C-alt: EVE Frontier membership through autojoin
 
-**Step:** DAO deploys an SSU and stores its ownership cap. Access is controlled by membership.
+**Step:** Instead of gate mocks, the shipped world integration lets a pilot whose `Character` belongs to an approved tribe join an OU's board without a vote.
 
-```move
-#[test]
-fun test_flow_c__step7_ssu_integration() {
-    let mut scenario = test_scenario::begin(ALICE);
-    let dao_id = test_helpers::setup_dao(&mut scenario, vector[ALICE, BOB, CAROL]);
+```text
+Board of an independent OU:
+  EnableProposalType for ConfigureAutojoin (opt-in type, no bits), then
+  ConfigureAutojoin: configure_autojoin::new(vector[42], vector[], option::some(true))
+    → configure_autojoin::execute_configure_autojoin(&mut ou, ticket)
+  EnableBypassType for AutojoinOU (config with autojoin_ops::autojoin_permissions() = BOARD_ADD;
+  the vote must reach 80% of the whole board)
+    → external_execution::execute_enable_bypass_type<AutojoinOU>(&mut ou, &mut vault, ticket, ctx)
 
-    // Deploy mock SSU
-    scenario.next_tx(ALICE);
-    {
-        let mut vault = test_scenario::take_shared<CapabilityVault>(&scenario);
-
-        let ssu_cap = mock_ssu::deploy(b"base_station_1", scenario.ctx());
-        let ssu_cap_id = object::id(&ssu_cap);
-        capability_vault::store_cap_init(&mut vault, ssu_cap);
-
-        assert!(capability_vault::contains(&vault, ssu_cap_id));
-        assert!(capability_vault::has_type<mock_ssu::SSUOwnerCap>(&vault));
-
-        test_scenario::return_shared(vault);
-    };
-
-    // SSU access hook checks DAO membership
-    // (mocked — in production this would be an on-chain callback)
-    scenario.next_tx(BOB);
-    {
-        let dao = test_scenario::take_shared<DAO>(&scenario);
-        let gov = dao::governance(&dao);
-
-        // BOB is a member → access allowed
-        assert!(governance::is_member(gov, BOB));
-        // EVE is not a member → access denied
-        assert!(!governance::is_member(gov, EVE));
-
-        test_scenario::return_shared(dao);
-    };
-    test_scenario::end(scenario);
-}
+Pilot (no vote):
+  autojoin_ops::autojoin(&mut ou, &vault, cap_id, &character, &freeze, &clock, ctx)
 ```
+
+`EnableBypassType` is SubOU-blocked and not seeded on SubOUs, so with first-party types autojoin can be enabled only on an independent OU; a controlled SubOU (such as a tribe's Members SubOU) cannot vote it in. The e2e tests do not run the enabling vote: `setup_ou_with_autojoin` creates an independent OU with `ou::create`, enables `AutojoinOU` and `ConfigureAutojoin` with the `ou.test_enable_type` seam and stores a cap made by `proposal::new_external_execution_cap_for_testing<AutojoinOU>`; only `ConfigureAutojoin` goes through a real vote.
+
+`autojoin` checks that the sender is the character's address (`autojoin_ops::ESenderNotCharacterOwner`), that the allowlist exists (`EAllowlistNotInitialized`), is enabled (`EAutojoinDisabled`) and contains the character's tribe (`ETribeIdNotAllowed`), then mints the bypass ticket itself and adds exactly the sender (`autojoin_adds_only_the_sender`). Joining twice aborts `governance::EDuplicateBoardMember` (`autojoin_double_join_aborts`).

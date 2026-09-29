@@ -4,7 +4,7 @@
 #
 # Stands up:
 #   1. sui-localnet        — Sui node with faucet (port 9000/9123)
-#   2. armature-deploy     — Init: publishes Armature packages + creates test DAO
+#   2. armature-deploy     — Init: publishes Armature packages + creates test OU
 #
 # Optional (requires upstream world-contracts version alignment):
 #   - world-deploy         — Init: deploys EVE Frontier world-contracts

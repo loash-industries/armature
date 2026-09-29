@@ -2,201 +2,200 @@
 
 ## Summary
 
-`privileged_submit` allows a controller DAO to bypass the SubDAO's governance and create proposals in `Passed` status directly. This is the mechanism behind board replacement, pause/unpause, and forced charter amendments. These tests verify the dual hot-potato pattern, access control, and status behavior.
+`controller::privileged_submit` is the controller override: it lets the holder of a SubOU's `SubOUControl` act on that SubOU without the SubOU's vote.
+
+```move
+public fun privileged_submit<P: store + drop>(
+    control: &SubOUControl,
+    subou: &OU,
+    type_key: std::ascii::String,   // free-form label recorded in the events
+    metadata_ipfs: Option<String>,
+    payload: P,
+    ctx: &mut TxContext,
+): ExecutionRequest<P>
+
+public fun privileged_consume<P>(req: ExecutionRequest<P>, control: &SubOUControl)
+```
+
+- **Checks:** `controller::assert_registered_control` — `control.subou_id() == subou.id()` (`controller::EControlMismatch`) and `subou.controller_cap_id() == some(object::id(control))` (`controller::ENotController`), so a control minted elsewhere or retired by `clear_controller` is refused — and the SubOU is Active (`controller::EOUNotActive`). Nothing else is checked: not `controller_paused`, not the SubOU's freezes, and not whether `P` has a slot on the SubOU.
+- **No `Proposal` object.** The proposal ID is minted from `ctx.fresh_object_address()`. The call emits `ProposalCreated`, `ProposalPayloadCreated` (the payload's BCS) and `ProposalExecuted`, with no `VoteCast` or `ProposalPassed`; these events are the audit record. The payload is dropped after serialisation (hence `P: drop`). There is no clock argument.
+- **Privileged request.** The returned `ExecutionRequest<P>` carries `permissions = 0`, an empty borrow scope and `privileged = true`. It passes every permission-bit check (`proposal::req_has_permission`) and every borrow-scope check (`proposal::req_may_borrow`), and it may change a type's bits or scope without the grant rules. Mutators that act on an OU's objects check the request's OU first, so it works only on that SubOU's objects; the exception is the sending request of `receive_cap_authorized`, which checks only the bit (`capability_vault::receive_cap` is `public(package)`, and its public wrapper `controller::receive_cap_from_controller` ties the request's OU to the controller vault). Floors and fixed framework bits still apply. `ou::set_controller_paused` and `ou::clear_controller` accept only privileged requests (`ou::assert_controller`, `ou::ENotPrivileged`).
+- **Closing.** A privileged request is a bare hot potato, not a ticket. `privileged_consume(req, &control)` destroys it after checking `req`'s OU against `control.subou_id()` (`controller::EControlMismatch`).
+
+The `SubOUControl` sits in the controller's `CapabilityVault`, so a controller-side handler first spends its own ticket to loan it: `capability_vault::loan_cap<SubOUControl, P>` needs `VAULT_BORROW` and `SubOUControl` in the ticket type's borrow scope, and returns the control with a `CapLoan` hot potato that only `return_cap` (cap and vault IDs checked: `capability_vault::ECapIdMismatch`, `EVaultIdMismatch`) can close. The PTB therefore holds three hot potatoes at once, the controller's ticket, the `CapLoan` and the SubOU's privileged request, and cannot complete until each is closed.
+
+First-party users, all proposed and voted on the controller: `SpinOutSubOU` (framework `lifecycle_ops`), `PauseSubOUExecution` / `UnpauseSubOUExecution` and `ControllerBatchAddMembers` / `ControllerBatchRemoveMembers` (`armature_proposals::subou_ops`). `ReclaimCapFromSubOU` uses `controller::privileged_extract` instead, which applies the same `assert_registered_control` (`13_subou_ops.md`).
+
+Real suites: `packages/armature_framework/tests/controller_tests.move` (5), plus tests cited from `cross_ou_auth_tests.move`, `permissions_tests.move`, `borrow_scope_tests.move`, `gate_tests.move`, `migration_tests.move`, `subou_ops_tests.move` and `lifecycle_tests.move`.
 
 ## Test Matrix
 
 | Test | Expected |
 |------|----------|
-| `test_privileged_submit__creates_proposal_in_passed_status` | Proposal status is Passed immediately |
-| `test_privileged_submit__requires_subdao_control` | Abort without valid `SubDAOControl` |
-| `test_privileged_submit__wrong_subdao_control_aborts` | Abort if `control.subdao_id != subdao.id` |
-| `test_privileged_submit__dual_hot_potato_consumed` | Both controller's and child's `ExecutionRequest` consumed |
-| `test_privileged_submit__can_set_board_on_subdao` | Board replaced instantly via privileged path |
-| `test_privileged_submit__can_pause_subdao` | `controller_paused` set to true |
-| `test_privileged_submit__control_returned_via_cap_loan` | `SubDAOControl` returned to parent vault |
+| `controller_tests::privileged_submit_records_execution_in_events` | Request bound to the SubOU; no object created; exactly 3 events (`ProposalCreated` with the metadata, `ProposalPayloadCreated` with the payload BCS, `ProposalExecuted`) under the request's proposal ID |
+| `controller_tests::privileged_submit_rejects_wrong_control` | Control for another OU: Abort `controller::EControlMismatch` |
+| `cross_ou_auth_tests::forged_control_cannot_privileged_submit` | Another OU mints a control naming the SubOU (`create_subou_control`) and calls `privileged_submit`: Abort `controller::ENotController` |
+| `cross_ou_auth_tests::cleared_controller_rejects_old_control` | After `clear_controller`, the old control: Abort `controller::ENotController` |
+| `controller_tests::privileged_consume_rejects_wrong_control` | Request closed with a control for another OU: Abort `controller::EControlMismatch` |
+| `controller_tests::privileged_submit_rejects_inactive_subou` | SubOU Migrating: Abort `controller::EOUNotActive` |
+| `controller_tests::authorize_execution_blocks_when_controller_paused` | The SubOU's own vote path is blocked while paused: Abort `board_voting::EControllerPaused` |
+| `permissions_tests::only_controller_requests_are_privileged` | `privileged_submit` mints a privileged request; the vote and bypass paths do not |
+| `permissions_tests::assert_permitted_passes_privileged_request` | A privileged request passes every bit, even for a type with no slot |
+| `permissions_tests::assert_permitted_privileged_request_is_ou_scoped` | Used on another OU: Abort `ou::EOUIdMismatch` |
+| `permissions_tests::privileged_request_may_change_bits` | May change a type's bits without the grant rules |
+| `permissions_tests::composite_payload_cannot_hold_bits` | Fixed framework bits hold even for a privileged request: Abort `ou::EFixedPermissions` |
+| `borrow_scope_tests::privileged_request_ignores_scope` | Passes the borrow-scope check |
+| `gate_tests::set_controller_paused_needs_privileged_request` | Unprivileged request with every bit: Abort `ou::ENotPrivileged` |
+| `gate_tests::clear_controller_needs_privileged_request` | Abort `ou::ENotPrivileged` |
+| `gate_tests::loan_cap_needs_vault_borrow` | Controller ticket without VAULT_BORROW cannot loan the control: Abort `proposal::EPermissionDenied` |
+| `gate_tests::loan_cap_scope_denied_with_all_bits` | Cap type not in scope: Abort `proposal::EBorrowScopeDenied` |
+| `migration_tests::controller_set_board_via_privileged_submit` | Dual hot potato: loan control, privileged SetBoard diff on the SubOU, consume, return, discharge; SubOU board now includes CREATOR |
+| `subou_ops_tests::pause_and_unpause_subou_e2e` | Pause, then unpause, each through a privileged request; the unpause runs while the SubOU is paused |
+| `subou_ops_tests::controller_batch_add_members_e2e` / `controller_batch_remove_members_e2e` | SubOU board changed through privileged requests |
+| `migration_tests::create_subou_and_spin_out_e2e` | SpinOutSubOU: privileged `clear_controller` and three `enable_proposal_type` calls on the SubOU |
+| `lifecycle_tests::medium_enterprise_lifecycle` (step 7) | Privileged SetBoard diff removes a member from a SubOU in the same PTB as a freeze |
+| `test_privileged_request__floors_still_apply` (planned) | `subou.enable_proposal_type<SpawnOU, P>(key, config_below_8000, &priv_req)`: Abort `ou::EThresholdBelowMinimum` |
+| `test_privileged_submit__ignores_subou_freeze` (planned) | `P` frozen on the SubOU's `EmergencyFreeze`: `privileged_submit<P>` still returns a request (no freeze check on this path) |
 
 ## Tests
 
 ---
 
-### Creates proposal in Passed status
+### Records the execution in events only
 
-**Requirement:** `privileged_submit` creates proposal in `Passed` status directly.
+**Requirement:** `privileged_submit` creates no object and emits exactly `ProposalCreated`, `ProposalPayloadCreated` and `ProposalExecuted` under a fresh proposal ID, which is also the request's `req_proposal_id()`.
 
-**Why it matters:** The controller's governance already approved the action. Requiring a second vote on the SubDAO would defeat the purpose of hierarchical control.
+**Why it matters:** The controller's own vote already approved the action; a second vote on the SubOU would defeat hierarchical control. The events keep the override auditable on the SubOU without leaving an object whose storage deposit nobody reclaims.
 
 ```move
-#[test]
-fun test_privileged_submit__creates_proposal_in_passed_status() {
-    let mut scenario = test_scenario::begin(ALICE);
-    let (parent_id, child_id) = test_helpers::setup_dao_with_subdao(&mut scenario);
+// controller_tests::privileged_submit_records_execution_in_events
+let req = controller::privileged_submit(
+    &control,
+    &subou,
+    b"TestPayload".to_ascii_string(),
+    option::some(string::utf8(b"Privileged test")),
+    TestPayload { value: 42 },
+    scenario.ctx(),
+);
+assert!(req.req_ou_id() == subou_id);
 
-    // Parent creates a proposal to SetBoard on the child via privileged_submit
-    // Step 1: Parent proposal (e.g., "override child board") passes on parent
-    // Step 2: Parent handler loans SubDAOControl
-    // Step 3: privileged_submit creates a Passed proposal on child
+let created = event::events_by_type<ProposalCreated>();
+assert!(created.length() == 1);
+assert!(created[0].created_event_proposal_id() == req.req_proposal_id());
+let payloads = event::events_by_type<ProposalPayloadCreated>();
+assert!(payloads[0].payload_event_bcs() == std::bcs::to_bytes(&TestPayload { value: 42 }));
+let executed = event::events_by_type<ProposalExecuted>();
+assert!(executed[0].executed_event_proposal_id() == req.req_proposal_id());
 
-    scenario.next_tx(ALICE);
-    {
-        // After privileged_submit:
-        let child_prop = test_scenario::take_shared<Proposal<board_ops::SetBoard>>(&scenario);
+controller::privileged_consume(req, &control);
+...
+let effects = scenario.next_tx(CREATOR);
+assert!(effects.created().is_empty());
+assert!(effects.num_user_events() == 3);
+```
 
-        // Status is Passed (not Active — no voting needed)
-        assert!(proposal::status(&child_prop) == proposal::status_passed());
+`TestPayload` has no slot on the SubOU: the type key is only a label.
 
-        test_scenario::return_shared(child_prop);
-    };
-    test_scenario::end(scenario);
+---
+
+### Requires the SubOU's registered control and an Active SubOU
+
+**Requirement:** `privileged_submit` aborts with `controller::EControlMismatch` unless `control.subou_id() == subou.id()`, with `controller::ENotController` unless `control` is the SubOU's `controller_cap_id`, and with `controller::EOUNotActive` if the SubOU is Migrating. `privileged_consume` aborts with `controller::EControlMismatch` unless the request is for the control's SubOU.
+
+**Why it matters:** The `SubOUControl` is the proof of authority over one SubOU. Without the checks, any OU holding any control could act on any other OU, or mint a control naming an OU it does not control.
+
+```move
+#[test, expected_failure(abort_code = controller::EControlMismatch)]
+fun privileged_submit_rejects_wrong_control() {
+    // A SubOU, and a control created for a different ID
+    // (capability_vault::new_subou_control_for_testing).
+    let req = controller::privileged_submit(&wrong_control, &subou, key, option::none(), payload, ctx);
+    ...
 }
 ```
 
 ---
 
-### Requires valid SubDAOControl
+### The privileged request passes bits and scope, confined to its SubOU by OU checks
 
-**Why it matters:** Without this check, any DAO could inject proposals into any other DAO. The `SubDAOControl` is the proof of authority.
+**Requirement:** A privileged request passes `proposal::assert_permitted` for any bits and `proposal::assert_may_borrow` for any cap type. OU-ID checks still run: using it on another OU's objects aborts (`ou::EOUIdMismatch` in `ou`; the treasury, capability vault, charter and freeze each check their own OU). `capability_vault::receive_cap` is the exception: it checks no OU, only that the request carries VAULT_EXTRACT, which a privileged request does. Config writes through it skip the grant rules but not the floors or the fixed framework bits.
 
-```move
-#[test]
-#[expected_failure(abort_code = capability_vault::ENotController)]
-fun test_privileged_submit__wrong_subdao_control_aborts() {
-    let mut scenario = test_scenario::begin(ALICE);
+**Why it matters:** The controller's authority over a SubOU is complete but confined to that SubOU. The permission and borrow-scope model otherwise applies unchanged.
 
-    // Setup: parent_A controls child_A. parent_B controls child_B.
-    // parent_A tries to privileged_submit on child_B using control_A
-    // → abort because control_A.subdao_id != child_B.id
-
-    test_scenario::end(scenario);
-}
-```
+`permissions_tests::assert_permitted_passes_privileged_request`, `assert_permitted_privileged_request_is_ou_scoped`, `privileged_request_may_change_bits`, `composite_payload_cannot_hold_bits`, `only_controller_requests_are_privileged`, and `borrow_scope_tests::privileged_request_ignores_scope`. The floor case is planned (`test_privileged_request__floors_still_apply`); `SpinOutSubOU` relies on it, since the configs in its payload must meet 8000 for the three types it enables.
 
 ---
 
-### Dual hot potato pattern
+### Controller-only mutators
 
-**Why it matters:** Two hot potatoes are alive simultaneously — the controller's `ExecutionRequest` and the child's `ExecutionRequest`. Both must be consumed in the same PTB for the transaction to succeed. This is the most complex transaction pattern in the protocol.
+**Requirement:** `ou::set_controller_paused` and `ou::clear_controller` require a privileged request (`ou::ENotPrivileged` for any other request, whatever its bits).
 
-```move
-#[test]
-fun test_privileged_submit__dual_hot_potato_consumed() {
-    let mut scenario = test_scenario::begin(ALICE);
-    let (parent_id, child_id) = test_helpers::setup_dao_with_subdao(&mut scenario);
+**Why it matters:** No permission bit can grant pause or release of a SubOU: only its controller can, through a vote on the controller.
 
-    // Full PTB sequence:
-    scenario.next_tx(ALICE);
-    {
-        // 1. Execute parent's proposal → controller_req (hot potato #1)
-        let mut parent_prop = test_scenario::take_shared<Proposal<SomeParentType>>(&scenario);
-        let parent_dao = test_scenario::take_shared_by_id<DAO>(&scenario, parent_id);
-        let parent_freeze = test_scenario::take_shared<EmergencyFreeze>(&scenario);
-        let clock = clock::create_for_testing(scenario.ctx());
-
-        let controller_req = proposal::execute(
-            &mut parent_prop, &parent_dao, &parent_freeze, &clock, scenario.ctx(),
-        );
-
-        // 2. Loan SubDAOControl from parent vault
-        let mut parent_vault = test_scenario::take_shared<CapabilityVault>(&scenario);
-        let (control, cap_loan) = capability_vault::loan_cap<SubDAOControl, SomeParentType>(
-            &mut parent_vault, control_id, &controller_req,
-        );
-
-        // 3. privileged_submit on child → creates Passed proposal
-        let child_dao = test_scenario::take_shared_by_id<DAO>(&scenario, child_id);
-        proposal::privileged_submit(
-            &control,
-            &child_dao,
-            board_ops::new_set_board(vector[FRANK], 1),
-            scenario.ctx(),
-        );
-
-        // 4. Execute child's auto-passed proposal → child_req (hot potato #2)
-        let mut child_prop = test_scenario::take_shared<Proposal<board_ops::SetBoard>>(&scenario);
-        let child_freeze = test_scenario::take_shared<EmergencyFreeze>(&scenario);
-        let child_req = proposal::execute(
-            &mut child_prop, &child_dao, &child_freeze, &clock, scenario.ctx(),
-        );
-
-        // 5. Handle child's proposal (SetBoard)
-        board_ops::handle_set_board(child_req, &mut child_dao);
-        // child_req consumed (hot potato #2 gone)
-
-        // 6. Return SubDAOControl to parent vault
-        capability_vault::return_cap(&mut parent_vault, control, cap_loan);
-
-        // 7. Consume controller_req
-        // (parent handler's consume function)
-        // controller_req consumed (hot potato #1 gone)
-
-        // Cleanup
-        clock::destroy_for_testing(clock);
-        test_scenario::return_shared(parent_prop);
-        test_scenario::return_shared(parent_dao);
-        test_scenario::return_shared(parent_freeze);
-        test_scenario::return_shared(parent_vault);
-        test_scenario::return_shared(child_prop);
-        test_scenario::return_shared(child_dao);
-        test_scenario::return_shared(child_freeze);
-    };
-    test_scenario::end(scenario);
-}
-```
+`gate_tests::set_controller_paused_needs_privileged_request` and `clear_controller_needs_privileged_request` pass a request holding every bit and expect `ou::ENotPrivileged`.
 
 ---
 
-### Can set board on SubDAO
+### Dual hot potato
 
-**Why it matters:** This is the most common use of `privileged_submit` — replacing a compromised or inactive SubDAO board.
+**Why it matters:** The controller-side PTB holds its own ticket, the `CapLoan` and the SubOU's privileged request at once. All three are hot potatoes, so the transaction succeeds only if the handler spends and closes each one; the control cannot be kept and the SubOU request cannot leak.
 
 ```move
-#[test]
-fun test_privileged_submit__can_set_board_on_subdao() {
-    let mut scenario = test_scenario::begin(ALICE);
-    let (parent_id, child_id) = test_helpers::setup_dao_with_subdao(&mut scenario);
+// migration_tests::controller_set_board_via_privileged_submit (execution step)
+// ControllerOp is a test type enabled on the parent with
+// type_permissions::subou_control() and type_permissions::subou_control_scope().
+let parent_req = board_voting::ticket_from_vote(&mut parent_ou, parent_proposal, &parent_freeze, &clock, scenario.ctx());
 
-    // Parent uses privileged_submit to replace child board [DAVE, EVE] → [FRANK]
-    // ... (full privileged_submit sequence as above)
+// 1. Loan the SubOUControl (VAULT_BORROW, SubOUControl in scope)
+let (control, loan) = vault.loan_cap<SubOUControl, ControllerOp>(
+    control_cap_id,
+    parent_req.ticket_request(internal::permit()), // the test module defines ControllerOp
+);
 
-    scenario.next_tx(FRANK);
-    {
-        let child_dao = test_scenario::take_shared_by_id<DAO>(&scenario, child_id);
-        let gov = dao::governance(&child_dao);
+// 2. Privileged request on the SubOU
+let priv_req = controller::privileged_submit(
+    &control,
+    &subou,
+    b"SetBoard".to_ascii_string(),
+    option::some(string::utf8(b"Controller sets SubOU board")),
+    set_board::new(vector[CREATOR], vector[]),
+    scenario.ctx(),
+);
 
-        assert!(!governance::is_member(gov, DAVE));
-        assert!(!governance::is_member(gov, EVE));
-        assert!(governance::is_member(gov, FRANK));
+// 3. Apply the change with the privileged request
+ou::set_board_governance(&mut subou, vector[CREATOR], vector[], &priv_req);
 
-        test_scenario::return_shared(child_dao);
-    };
-    test_scenario::end(scenario);
-}
+// 4. Close everything
+controller::privileged_consume(priv_req, &control);
+vault.return_cap(control, loan);
+parent_req.discharge(internal::permit());
+
+assert!(subou.governance().is_board_member(SUBOU_MEMBER));
+assert!(subou.governance().is_board_member(CREATOR));
 ```
+
+The test's comment notes that a parent ticket of another type (for example SetBoard) is denied the loan; `gate_tests::loan_cap_needs_vault_borrow` and `loan_cap_scope_denied_with_all_bits` cover both denials.
 
 ---
 
-### SubDAOControl returned via cap loan
+### First-party controller handlers
 
-**Why it matters:** The `SubDAOControl` is loaned, not extracted. After the privileged operation, it must be back in the parent's vault — otherwise the parent loses future control.
+**Why it matters:** These are the supported ways a controller acts on a SubOU; each runs the dual-hot-potato sequence inside one handler, so the PTB author never holds the privileged request.
 
-```move
-#[test]
-fun test_privileged_submit__control_returned_via_cap_loan() {
-    let mut scenario = test_scenario::begin(ALICE);
-    let (parent_id, child_id) = test_helpers::setup_dao_with_subdao(&mut scenario);
+| Handler | SubOU-side effect on the privileged request | Test |
+|---------|---------------------------------------------|------|
+| `subou_ops::execute_pause_subou_execution` | `set_controller_paused(true)` | `subou_ops_tests::pause_and_unpause_subou_e2e` |
+| `subou_ops::execute_unpause_subou_execution` | `set_controller_paused(false)` | `subou_ops_tests::pause_and_unpause_subou_e2e` |
+| `subou_ops::execute_controller_batch_add_members` | `add_board_members_governance` | `subou_ops_tests::controller_batch_add_members_e2e` |
+| `subou_ops::execute_controller_batch_remove_members` | `remove_board_members_governance` | `subou_ops_tests::controller_batch_remove_members_e2e` |
+| `lifecycle_ops::execute_spin_out_subou` | `clear_controller`, then `enable_proposal_type` for SpawnOU, SpinOutSubOU, CreateSubOU | `migration_tests::create_subou_and_spin_out_e2e` |
 
-    // Execute full privileged_submit sequence
-    // ...
+---
 
-    // After the PTB: SubDAOControl should still be in parent's vault
-    scenario.next_tx(ALICE);
-    {
-        let parent_vault = test_scenario::take_shared<CapabilityVault>(&scenario);
-        assert!(capability_vault::has_type<SubDAOControl>(&parent_vault));
-        // The specific control for child_id still exists
-        // ...
-        test_scenario::return_shared(parent_vault);
-    };
-    test_scenario::end(scenario);
-}
-```
+### The control returns to the parent vault
+
+**Requirement:** The control is loaned, never extracted, by every handler above except `SpinOutSubOU`, which returns it and then destroys it with `destroy_subou_control`.
+
+**Why it matters:** If the control stayed out of the vault the parent would lose future control of the SubOU.
+
+This is structural: `CapLoan` has no abilities, and only `capability_vault::return_cap` consumes it, after checking the cap's ID and the vault's ID. `migration_tests::create_subou_and_spin_out_e2e` shows the one intended exception: after spin-out the parent vault is empty.
