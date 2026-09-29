@@ -183,7 +183,7 @@ These threats were identified in design or security review and resolved with pro
 
 **Risk:** `submit_vote_execute` lets one member submit and execute in a single PTB when their vote alone passes, with no window for other members to vote NO or for the freeze admin to react. Default configs have `execution_delay_ms = 0`.
 
-**Mitigation:** Configure governance-sensitive types (board changes, config changes, type enablement) with `execution_delay_ms > 0`, which statically rules the atomic path out for them, and a quorum one vote cannot meet. Making non-zero delays the default is a proposed ADR, not implemented.
+**Mitigation:** Type enablement and config changes (`EnableProposalType`, `EnableBypassType`, `UpdateProposalConfig`) are held to YES from 80% of the whole board: every stored config must have `quorum × approval_threshold ≥ 80%`, so one vote cannot pass them on a board of two or more. Configure other governance-sensitive types (board changes) with `execution_delay_ms > 0`, which statically rules the atomic path out for them, and a quorum one vote cannot meet. Making non-zero delays the default is a proposed ADR, not implemented.
 
 ### 3.5 Extension Package Upgrade Authority
 

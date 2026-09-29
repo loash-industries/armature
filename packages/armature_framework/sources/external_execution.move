@@ -61,12 +61,11 @@ const EBypassForbiddenBits: u64 = 15;
 
 // === Constants ===
 
-/// 80% approval floor for EnableBypassType (basis points).
-/// Approval floor enforced at execute time. Mirrored by
-/// `admin_ops::ENABLE_BYPASS_APPROVAL_FLOOR_BPS` for the `UpdateProposalConfig`
-/// path; the two MUST stay in sync. The handler's check (this constant) is
-/// authoritative — the duplicate guards the on-OU config from being relaxed
-/// below the handler floor via `UpdateProposalConfig`.
+/// 80% approval floor for EnableBypassType (basis points), enforced at execute
+/// time against the whole board's weight. Mirrored by
+/// `ou::ENABLE_BYPASS_TYPE_MIN_THRESHOLD`; the two MUST stay in sync. `ou`
+/// holds every stored EnableBypassType config to quorum × threshold ≥ this
+/// floor, so a proposal that passes its vote always clears this check.
 const ENABLE_BYPASS_APPROVAL_FLOOR_BPS: u64 = 8_000;
 
 // Self-bootstrap forbidden types — see `assert_not_bypass_forbidden` below.
