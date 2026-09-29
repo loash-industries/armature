@@ -17,8 +17,8 @@ Core protocol implemented and deployed to testnet.
 - Capability vault with borrow, loan (hot-potato return), and extract patterns
 - Charter as on-chain metadata with governance-gated amendments
 - Emergency freeze system with selective type freezing and auto-expiry
-- Sub-DAO hierarchy: creation, controller authority, pause/unpause, spin-out to sovereignty
-- 20 proposal types across admin, board, security, treasury, sub-DAO, and upgrade categories
+- Sub-OU hierarchy: creation, controller authority, pause/unpause, spin-out to sovereignty
+- 20 proposal types across admin, board, security, treasury, sub-OU, and upgrade categories
 - Per-type governance parameters (quorum, threshold, delay, cooldown, expiry)
 - Safety rails: 80% floor for self-referential changes, 66% floor for enabling new types
 - Rust checkpoint indexer, PostgreSQL schema, React UI, REST API
@@ -39,7 +39,7 @@ Chart the programmable surface and make proposal extension writing frictionless.
 - [ ] **Proposal template scaffold** — minimal working example that developers can clone: payload struct, handler module, enable flow, and integration test
 - [ ] **Programmable surface map** — published reference of every governance-gated entry point, what each `ExecutionRequest` unlocks, and the capability/vault APIs available to handlers
 - [ ] **Type-state cookbook** — patterns for proposals that need persistent state across executions (following the `SmallPaymentState` model: lazy init, epoch reset, cap recalculation)
-- [ ] **Extension test harness** — reusable test utilities for creating mock DAOs, submitting proposals, and exercising the full vote-execute cycle without boilerplate
+- [ ] **Extension test harness** — reusable test utilities for creating mock OUs, submitting proposals, and exercising the full vote-execute cycle without boilerplate
 - [ ] **Published Move interface package** — stable importable package exposing only the types and functions extension authors need, decoupled from framework internals
 
 ## Phase 3 — Charter Invariants
@@ -53,21 +53,21 @@ Evolve the charter from a purely human-readable document into a two-tier constit
 
 ## Phase 4 — Federation
 
-Enable peer-to-peer alliances between sovereign DAOs without surrendering autonomy.
+Enable peer-to-peer alliances between sovereign OUs without surrendering autonomy.
 
-- [ ] **Federation formation** — two-phase propose-and-accept flow between sovereign DAOs
+- [ ] **Federation formation** — two-phase propose-and-accept flow between sovereign OUs
 - [ ] **FederationSeat capability** — non-transferable membership token granting voice in collective governance
-- [ ] **Collective treasury** — shared resource pool with multi-layer voting (representative vote + member DAO ratification for high-stakes decisions)
+- [ ] **Collective treasury** — shared resource pool with multi-layer voting (representative vote + member OU ratification for high-stakes decisions)
 - [ ] **Voluntary exit** — any member can leave through its own governance process
-- [ ] **Sovereignty gate** — only sovereign DAOs (not controlled sub-DAOs) can join; sub-DAOs must spin out first
+- [ ] **Sovereignty gate** — only sovereign OUs (not controlled sub-OUs) can join; sub-OUs must spin out first
 
 ## Phase 5 — Ticker Registry
 
 Give organizations stable, human-readable identities in a shared namespace.
 
-- [ ] **Protocol-level ticker registry** — short identifiers (up to 5 characters) mapping to DAO object IDs
+- [ ] **Protocol-level ticker registry** — short identifiers (up to 5 characters) mapping to OU object IDs
 - [ ] **Recursive addressing** — hierarchical tickers reflecting organizational structure (e.g. `TRIB/ENG/UI`)
-- [ ] **Ticker portability** — ticker capability travels with vault contents during DAO migration, preserving identity across successor transitions
+- [ ] **Ticker portability** — ticker capability travels with vault contents during OU migration, preserving identity across successor transitions
 - [ ] **Registration economics** — scarce namespace with registration fees funding protocol revenue
 
 ## Phase 6 — UX: The Disappearing Interface
@@ -77,23 +77,23 @@ The protocol succeeds when players stop noticing it. Following Whitehead, the go
 - [ ] **Intent-driven proposals** — players describe what they want ("fund the gate expansion, cap it at 500 SUI, let engineering run it") and the UI assembles the correct proposal composition, parameters, and routing
 - [ ] **Contextual governance** — surface only the decisions that matter to the current player in the current moment; hide the machinery of quorum math, cooldown timers, and type registries
 - [ ] **Notification-as-governance** — votes and approvals arrive where players already are (in-game, mobile, chat); acting on them requires minimal context-switching
-- [ ] **Progressive disclosure** — a new tribe with three members sees a simple interface; a hundred-member alliance with sub-DAOs and federation seats sees exactly the additional complexity it needs, no more
+- [ ] **Progressive disclosure** — a new tribe with three members sees a simple interface; a hundred-member alliance with sub-OUs and federation seats sees exactly the additional complexity it needs, no more
 - [ ] **Operational templates** — common organizational patterns (founding a tribe, spinning up a department, proposing a trade agreement) packaged as one-click flows that expand into correct proposal sequences
-- [ ] **Ambient status** — treasury health, active proposals, and organizational posture visible at a glance without requiring navigation; the DAO's vital signs, not its internal organs
+- [ ] **Ambient status** — treasury health, active proposals, and organizational posture visible at a glance without requiring navigation; the OU's vital signs, not its internal organs
 
 ## Phase 7 — Smart Assembly Integration
 
 Connect Armature governance to EVE Frontier's on-chain game primitives.
 
-- [ ] **Gate controller governance** — DAOs hold gate Smart Assembly capabilities in the capability vault; access, tolling, and permissions governed by proposal
-- [ ] **Mining and storage cooperatives** — collectively owned extraction and logistics infrastructure managed through DAO treasury flows
-- [ ] **Infrastructure-as-commons** — individual player assets contributed to DAOs become collectively governed public utilities
+- [ ] **Gate controller governance** — OUs hold gate Smart Assembly capabilities in the capability vault; access, tolling, and permissions governed by proposal
+- [ ] **Mining and storage cooperatives** — collectively owned extraction and logistics infrastructure managed through OU treasury flows
+- [ ] **Infrastructure-as-commons** — individual player assets contributed to OUs become collectively governed public utilities
 
 ## Phase 8 — Civilizational Mesh
 
 Compose all primitives into the multi-scale organizational fabric.
 
-- [ ] **Lateral composition** — a single DAO simultaneously acts as sub-DAO (downward control), federation member (upward membership), and parent of its own sub-DAOs
+- [ ] **Lateral composition** — a single OU simultaneously acts as sub-OU (downward control), federation member (upward membership), and parent of its own sub-OUs
 - [ ] **Tempo gradient** — governance parameters naturally vary by organizational depth: fast and loose at the edges (small teams), slow and deliberate at higher layers (tribes, alliances)
-- [ ] **Project funding** — Kickstarter-style sub-DAO model where backers contribute to a campaign, receive proportional governance tokens, and share in revenue
+- [ ] **Project funding** — Kickstarter-style sub-OU model where backers contribute to a campaign, receive proportional governance tokens, and share in revenue
 - [ ] **Revenue mesh** — parents fund children down, children return revenue up, peers exchange laterally; protocol provides pipes, governance provides policy

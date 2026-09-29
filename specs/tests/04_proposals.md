@@ -14,13 +14,13 @@ These tests verify the hot potatoes (`ExecutionRequest<P>`, `ExecutionTicket<P>`
 |------|----------|-------|
 | `test_execution_request_no_drop` | `ExecutionRequest` has no abilities, so only framework code destroys one (`proposal::consume`, `discharge`, `controller::privileged_consume`) | `proposal_tests` (structural) |
 | `consume_execution_request_destroys_hot_potato`, `consume_execution_request_works_after_governance_execution` | The test-only consumer destroys a request | `proposal_tests` |
-| `test_ticket_is_standalone_true` | A Standalone ticket exposes its DAO and vote weights | `proposal_tests` |
+| `test_ticket_is_standalone_true` | A Standalone ticket exposes its OU and vote weights | `proposal_tests` |
 | `test_ticket_yes_weight_aborts_on_composite` | `proposal::ENotStandaloneTicket` | `proposal_tests` |
 | `test_ticket_total_snapshot_weight_aborts_on_external` | `proposal::ENotStandaloneTicket` | `proposal_tests` |
 | `test_ticket_is_standalone_false_for_composite`, `test_ticket_is_standalone_false_for_external` | Composite and External tickets are not Standalone | `proposal_tests` |
 | `test_discharge_returning_payload` | Returns the payload of a type without `drop` | `proposal_tests` |
 | only `P`'s module spends or closes a ticket | `ticket_request`, `discharge`, `discharge_returning_payload` take `Permit<P>`; CI fails if they stop | structural (`scripts/check_request_gates.py`) |
-| `bypass_ticket_cannot_withdraw_from_treasury`, `bypass_ticket_cannot_unfreeze_other_type`, `bypass_ticket_cannot_add_board_member`, `atomic_ticket_cannot_migrate_dao`, `atomic_ticket_cannot_unfreeze_other_type` | Even `P`'s own module is held to `P`'s bits: `proposal::EPermissionDenied` | `armature_external_type_tests::external_type_lifecycle_tests` |
+| `bypass_ticket_cannot_withdraw_from_treasury`, `bypass_ticket_cannot_unfreeze_other_type`, `bypass_ticket_cannot_add_board_member`, `atomic_ticket_cannot_migrate_ou`, `atomic_ticket_cannot_unfreeze_other_type` | Even `P`'s own module is held to `P`'s bits: `proposal::EPermissionDenied` | `armature_external_type_tests::external_type_lifecycle_tests` |
 | `vote_path_request_carries_current_slot_bits` | A request carries the slot's bits when minted; a revocation applies from the next request (atomic path) | `permissions_tests` |
 | `request_carries_slot_scope_and_borrows_in_scope` | A request carries the slot's borrow scope | `borrow_scope_tests` |
 | `test_two_ptb_request_uses_slot_bits_at_execution` | Bits revoked after the vote: the executed request carries the new bits (`req_permissions() == 0`) | planned |
@@ -37,8 +37,8 @@ These tests verify the hot potatoes (`ExecutionRequest<P>`, `ExecutionTicket<P>`
 | `test_delete_expired_passed_inside_window_aborts` | Past `created_at + expiry_ms` but inside the window: `proposal::ENotExpired` | `proposal_tests` |
 | `test_delete_with_max_expiry_not_expired` | A saturated deadline never passes: `proposal::ENotExpired`, not an overflow | `proposal_tests` |
 | `freeze_outlasting_window_allows_delete` | A Passed proposal whose window closed during a freeze is deleted by a member | `armature_proposals::emergency_freeze_tests` |
-| `test_delete_emits_proposal_expired` | `ProposalExpired { proposal_id, dao_id }` | planned |
-| `test_execute_emits_proposal_executed` | Two-PTB path emits `ProposalExecuted { proposal_id, dao_id, executor }` | planned |
+| `test_delete_emits_proposal_expired` | `ProposalExpired { proposal_id, ou_id }` | planned |
+| `test_execute_emits_proposal_executed` | Two-PTB path emits `ProposalExecuted { proposal_id, ou_id, executor }` | planned |
 
 **Voting**
 
@@ -49,7 +49,7 @@ These tests verify the hot potatoes (`ExecutionRequest<P>`, `ExecutionTicket<P>`
 | `test_vote_just_before_expiry` | One millisecond earlier the vote counts and passes the proposal | `proposal_tests` |
 | `test_vote_double_vote_aborts` | `proposal::EAlreadyVoted` | `proposal_tests` |
 | `test_vote_no_vote_counted_correctly` | NO adds to `no_weight`; the proposal stays Active | `proposal_tests` |
-| `test_vote_with_other_dao_aborts` | A DAO other than the proposal's: `board_voting::EDAOIdMismatch` | `proposal_tests` |
+| `test_vote_with_other_ou_aborts` | An OU other than the proposal's: `board_voting::EOUIdMismatch` | `proposal_tests` |
 | `test_vote_non_snapshot_member_aborts` | A non-member: `proposal::ENotInSnapshot` | `proposal_tests` |
 | `test_new_member_cannot_vote_on_old_proposal` | A member added after creation: `proposal::ENotInSnapshot` | `proposal_tests` |
 | `test_member_readded_after_creation_cannot_vote` | Removed before creation, re-added after: `proposal::ENotInSnapshot` | `proposal_tests` |
@@ -76,14 +76,14 @@ These tests verify the hot potatoes (`ExecutionRequest<P>`, `ExecutionTicket<P>`
 | `test_execute_cooldown_active_aborts` | Type executed within `cooldown_ms`: `proposal::ECooldownActive` | `proposal_tests` |
 | `test_execute_cooldown_elapsed_succeeds` | Executable once the cooldown has passed | `proposal_tests` |
 | `test_execute_paused_aborts` | `proposal::EExecutionPaused` | `proposal_tests` |
-| `test_ticket_from_vote_execution_paused_aborts` | After `dao::set_execution_paused(true, &req)` (`PAUSE`), `ticket_from_vote` aborts `proposal::EExecutionPaused` | planned |
-| `ticket_from_vote__records_execution` | The `&mut DAO` variant records `last_executed_ms` | `board_voting_tests` |
-| `ticket_from_vote_readonly__executes_without_recording` | The read-only variant executes and writes nothing to the DAO | `board_voting_tests` |
-| `ticket_from_vote_readonly__slot_cooldown_aborts`, `ticket_from_vote_readonly__slot_only_cooldown_aborts`, `ticket_from_vote_readonly__snapshot_cooldown_aborts` | A cooldown on the slot or on the proposal's snapshot: `board_voting::ECooldownRequiresMutableDAO` | `board_voting_tests` |
+| `test_ticket_from_vote_execution_paused_aborts` | After `ou::set_execution_paused(true, &req)` (`PAUSE`), `ticket_from_vote` aborts `proposal::EExecutionPaused` | planned |
+| `ticket_from_vote__records_execution` | The `&mut OU` variant records `last_executed_ms` | `board_voting_tests` |
+| `ticket_from_vote_readonly__executes_without_recording` | The read-only variant executes and writes nothing to the OU | `board_voting_tests` |
+| `ticket_from_vote_readonly__slot_cooldown_aborts`, `ticket_from_vote_readonly__slot_only_cooldown_aborts`, `ticket_from_vote_readonly__snapshot_cooldown_aborts` | A cooldown on the slot or on the proposal's snapshot: `board_voting::ECooldownRequiresMutableOU` | `board_voting_tests` |
 | `authorize_execution_blocks_when_controller_paused` | `board_voting::EControllerPaused` | `controller_tests` |
 | `two_ptb__frozen_instantiation_aborts` | `emergency::EFrozen` | `freeze_path_tests` |
 | `test_ticket_from_vote_type_disabled_aborts` | Type disabled after the vote: `board_voting::ETypeNotEnabled` | planned |
-| `test_ticket_from_vote_wrong_dao_aborts` | Another DAO passed: `board_voting::EDAOIdMismatch` | planned |
+| `test_ticket_from_vote_wrong_ou_aborts` | Another OU passed: `board_voting::EOUIdMismatch` | planned |
 | `test_passed_proposal_retryable_after_failure` | A Passed proposal executes; the abort-then-retry sequence itself is structural | `proposal_tests` |
 
 **Executions without a `Proposal` object**
@@ -100,7 +100,7 @@ These tests verify the hot potatoes (`ExecutionRequest<P>`, `ExecutionTicket<P>`
 
 ### ExecutionRequest and ExecutionTicket are hot potatoes
 
-**Requirement:** `ExecutionRequest<phantom P> { dao_id, proposal_id, permissions, borrow_scope, privileged }` and `ExecutionTicket<P> { request, payload, closeout }` have no abilities. Only `public(package)` framework functions mint them; the mint paths go through `proposal::execute` (two-PTB, via `ticket_from_vote`), `execute_single_vote` (atomic), `privileged_execute` (bypass and controller) and `new_ticket_composite` (composite steps). A ticket leaves the PTB only through `discharge` or `discharge_returning_payload`; a bare request only through `proposal::consume` (`public(package)`) or `controller::privileged_consume`. `ticket_yes_weight` and `ticket_total_snapshot_weight` work only on Standalone (vote-path) tickets. `discharge` also checks a Standalone ticket's request against its proposal ID (`proposal::ERequestMismatch`), a defensive check the framework's constructors never trip.
+**Requirement:** `ExecutionRequest<phantom P> { ou_id, proposal_id, permissions, borrow_scope, privileged }` and `ExecutionTicket<P> { request, payload, closeout }` have no abilities. Only `public(package)` framework functions mint them; the mint paths go through `proposal::execute` (two-PTB, via `ticket_from_vote`), `execute_single_vote` (atomic), `privileged_execute` (bypass and controller) and `new_ticket_composite` (composite steps). A ticket leaves the PTB only through `discharge` or `discharge_returning_payload`; a bare request only through `proposal::consume` (`public(package)`) or `controller::privileged_consume`. `ticket_yes_weight` and `ticket_total_snapshot_weight` work only on Standalone (vote-path) tickets. `discharge` also checks a Standalone ticket's request against its proposal ID (`proposal::ERequestMismatch`), a defensive check the framework's constructors never trip.
 
 **Why it matters:** Governance approves an action, and the hot potato makes the approval usable only inside the transaction that executes it. With `drop` the handler could be skipped; with `store` the authority could be kept and replayed later.
 
@@ -129,9 +129,9 @@ The vault's `CapLoan` hot potato is covered in `06_capability_vault.md`.
 
 ```move
 // armature_external_type_tests::rebalance: a third-party handler
-public fun execute_rebalance<T>(dao: &DAO, ticket: ExecutionTicket<Rebalance<T>>) {
-    assert!(dao.id() == ticket.ticket_dao_id(), EDaoMismatch);
-    event::emit(Rebalanced { dao_id: dao.id(), amount: ticket.ticket_payload().amount });
+public fun execute_rebalance<T>(ou: &OU, ticket: ExecutionTicket<Rebalance<T>>) {
+    assert!(ou.id() == ticket.ticket_ou_id(), EOuMismatch);
+    event::emit(Rebalanced { ou_id: ou.id(), amount: ticket.ticket_payload().amount });
     ticket.discharge(internal::permit());   // compiles only in the module defining Rebalance
 }
 
@@ -155,12 +155,12 @@ fun bypass_ticket_cannot_withdraw_from_treasury() {
 
 ```move
 // From permissions_tests::vote_path_request_carries_current_slot_bits (atomic path)
-let t1 = board_voting::submit_vote_execute(&mut dao, option::none(), Granted {}, &freeze, &clock, scenario.ctx());
+let t1 = board_voting::submit_vote_execute(&mut ou, option::none(), Granted {}, &freeze, &clock, scenario.ctx());
 assert!(t1.ticket_request(internal::permit()).req_permissions() == permissions::board_add() | permissions::pause());
 t1.discharge(internal::permit());
 
-dao.test_update_config<Granted>(base_config());   // revoke both bits
-let t2 = board_voting::submit_vote_execute(&mut dao, option::none(), Granted {}, &freeze, &clock, scenario.ctx());
+ou.test_update_config<Granted>(base_config());   // revoke both bits
+let t2 = board_voting::submit_vote_execute(&mut ou, option::none(), Granted {}, &freeze, &clock, scenario.ctx());
 assert!(t2.ticket_request(internal::permit()).req_permissions() == 0);
 t2.discharge(internal::permit());
 ```
@@ -171,7 +171,7 @@ t2.discharge(internal::permit());
 
 ### Status Active to Passed
 
-**Requirement:** `board_voting::vote(&mut prop, &dao, approve, &clock, ctx)` records the vote and emits `VoteCast`. When `ProposalConfig::passes(yes, no, total_snapshot_weight)` holds, the status becomes `Passed`, `passed_at_ms` is set and `ProposalPassed` is emitted. `Active → Passed` is the only stored transition; a Passed proposal takes no more votes (`proposal::ENotActive`).
+**Requirement:** `board_voting::vote(&mut prop, &ou, approve, &clock, ctx)` records the vote and emits `VoteCast`. When `ProposalConfig::passes(yes, no, total_snapshot_weight)` holds, the status becomes `Passed`, `passed_at_ms` is set and `ProposalPassed` is emitted. `Active → Passed` is the only stored transition; a Passed proposal takes no more votes (`proposal::ENotActive`).
 
 **Why it matters:** `Passed` is what execution checks. A late vote must not rewrite a decided record.
 
@@ -180,9 +180,9 @@ t2.discharge(internal::permit());
 scenario.next_tx(CREATOR);
 {
     let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-    let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
-    board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
-    test_scenario::return_shared(vote_dao);
+    let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+    board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+    test_scenario::return_shared(vote_ou);
     // quorum: 1 * 10000 >= 5000 * 2; threshold: 1 * 10000 >= 5000 * 1
     assert!(prop.status().is_passed());
     test_scenario::return_shared(prop);
@@ -193,7 +193,7 @@ scenario.next_tx(CREATOR);
 
 ### Execution deletes the proposal
 
-**Requirement:** `board_voting::ticket_from_vote(&mut dao, prop, &freeze, &clock, ctx)` takes the proposal by value. After its checks (below), `proposal::execute` deletes the object, emits `ProposalExecuted { proposal_id, dao_id, executor }` and returns the payload and request, which `ticket_from_vote` wraps in a Standalone ticket carrying the proposal's vote weights. The storage rebate goes to the executing transaction's gas payer (the gas station on sponsored flows). `ticket_from_vote` records the execution time on the slot for cooldowns; `ticket_from_vote_readonly(&dao, …)` records nothing and requires `cooldown_ms == 0` on both the slot and the proposal's copy (`board_voting::ECooldownRequiresMutableDAO`).
+**Requirement:** `board_voting::ticket_from_vote(&mut ou, prop, &freeze, &clock, ctx)` takes the proposal by value. After its checks (below), `proposal::execute` deletes the object, emits `ProposalExecuted { proposal_id, ou_id, executor }` and returns the payload and request, which `ticket_from_vote` wraps in a Standalone ticket carrying the proposal's vote weights. The storage rebate goes to the executing transaction's gas payer (the gas station on sponsored flows). `ticket_from_vote` records the execution time on the slot for cooldowns; `ticket_from_vote_readonly(&ou, …)` records nothing and requires `cooldown_ms == 0` on both the slot and the proposal's copy (`board_voting::ECooldownRequiresMutableOU`).
 
 **Why it matters:** Deleting the object is the replay protection: once executed, nothing can execute it again, and no audit object locks a storage deposit.
 
@@ -203,15 +203,15 @@ scenario.next_tx(CREATOR);
 scenario.next_tx(CREATOR);
 let prop_id;
 {
-    let mut dao = scenario.take_shared<DAO>();
+    let mut ou = scenario.take_shared<OU>();
     let prop = scenario.take_shared<Proposal<TestPayload>>();
     prop_id = object::id(&prop);
     let freeze = scenario.take_shared<EmergencyFreeze>();
-    let ticket = board_voting::ticket_from_vote(&mut dao, prop, &freeze, &clock, scenario.ctx());
+    let ticket = board_voting::ticket_from_vote(&mut ou, prop, &freeze, &clock, scenario.ctx());
     assert!(ticket.ticket_proposal_id() == prop_id);
     ticket.discharge(internal::permit());
     test_scenario::return_shared(freeze);
-    test_scenario::return_shared(dao);
+    test_scenario::return_shared(ou);
 };
 let effects = scenario.next_tx(CREATOR);
 assert!(effects.deleted().contains(&prop_id));
@@ -224,7 +224,7 @@ assert!(!test_scenario::has_most_recent_shared<Proposal<TestPayload>>());
 
 ### Expired proposals are deleted by anyone
 
-**Requirement:** `proposal::delete_expired_proposal<P: store + drop>(proposal, &clock)` has no sender check. It deletes an Active proposal once `now >= created_at + expiry_ms`, and a Passed one once `now >= passed_at + execution_delay_ms + expiry_ms`; before that it aborts `proposal::ENotExpired`. It emits `ProposalExpired { proposal_id, dao_id }`; the rebate goes to the caller's gas payer. `P` must have `drop` because the payload is destroyed, which every shipped payload type has. There is no upper bound on `expiry_ms` or `execution_delay_ms`; the deadlines saturate at `u64::MAX`, so a proposal whose sum overflows never expires and can leave the chain only by executing.
+**Requirement:** `proposal::delete_expired_proposal<P: store + drop>(proposal, &clock)` has no sender check. It deletes an Active proposal once `now >= created_at + expiry_ms`, and a Passed one once `now >= passed_at + execution_delay_ms + expiry_ms`; before that it aborts `proposal::ENotExpired`. It emits `ProposalExpired { proposal_id, ou_id }`; the rebate goes to the caller's gas payer. `P` must have `drop` because the payload is destroyed, which every shipped payload type has. There is no upper bound on `expiry_ms` or `execution_delay_ms`; the deadlines saturate at `u64::MAX`, so a proposal whose sum overflows never expires and can leave the chain only by executing.
 
 **Why it matters:** Proposals that failed or were never executed must not linger as shared objects, and cleanup cannot depend on the board.
 
@@ -258,9 +258,9 @@ fun test_vote_after_expiry_aborts() {
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
-        board_voting::vote(&mut prop, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(prop);
     };
     // ...
@@ -271,7 +271,7 @@ fun test_vote_after_expiry_aborts() {
 
 ### Eligibility is fixed by roster version
 
-**Requirement:** A proposal stores `snapshot_version` (the roster version at creation) and `total_snapshot_weight` (the member count at creation) instead of copying the roster. `vote` aborts `board_voting::EDAOIdMismatch` unless the DAO passed is the proposal's, `proposal::ENotInSnapshot` unless the voter was a member at `snapshot_version` (`governance::was_member_at`), and `proposal::EAlreadyVoted` on a second vote. Members added after creation cannot vote; members removed after creation still can; an address removed before creation and re-added after cannot. Quorum is measured against `total_snapshot_weight`.
+**Requirement:** A proposal stores `snapshot_version` (the roster version at creation) and `total_snapshot_weight` (the member count at creation) instead of copying the roster. `vote` aborts `board_voting::EOUIdMismatch` unless the OU passed is the proposal's, `proposal::ENotInSnapshot` unless the voter was a member at `snapshot_version` (`governance::was_member_at`), and `proposal::EAlreadyVoted` on a second vote. Members added after creation cannot vote; members removed after creation still can; an address removed before creation and re-added after cannot. Quorum is measured against `total_snapshot_weight`.
 
 **Why it matters:** Changing the board must not change who decides a proposal already in flight, in either direction.
 
@@ -279,19 +279,19 @@ fun test_vote_after_expiry_aborts() {
 // From proposal_tests::test_removed_member_keeps_vote_on_old_proposal
 scenario.next_tx(CREATOR);
 {
-    let mut dao = scenario.take_shared<DAO>();
-    dao.governance_mut().remove_board_member(MEMBER_B);   // after the proposal was created
-    test_scenario::return_shared(dao);
+    let mut ou = scenario.take_shared<OU>();
+    ou.governance_mut().remove_board_member(MEMBER_B);   // after the proposal was created
+    test_scenario::return_shared(ou);
 };
 
 scenario.next_tx(MEMBER_B);
 {
     let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-    let dao = scenario.take_shared<DAO>();
-    assert!(!dao.governance().is_board_member(MEMBER_B));
-    board_voting::vote(&mut prop, &dao, true, &clock, scenario.ctx());
+    let ou = scenario.take_shared<OU>();
+    assert!(!ou.governance().is_board_member(MEMBER_B));
+    board_voting::vote(&mut prop, &ou, true, &clock, scenario.ctx());
     assert!(prop.status().is_passed());
-    test_scenario::return_shared(dao);
+    test_scenario::return_shared(ou);
     test_scenario::return_shared(prop);
 };
 ```
@@ -309,10 +309,10 @@ scenario.next_tx(MEMBER_B);
 fun test_non_board_member_cannot_execute_aborts() {
     // ... TestPayload enabled; CREATOR submits and votes it through
     scenario.next_tx(NON_MEMBER);
-    let mut dao = scenario.take_shared<DAO>();
+    let mut ou = scenario.take_shared<OU>();
     let prop = scenario.take_shared<Proposal<TestPayload>>();
     let freeze = scenario.take_shared<EmergencyFreeze>();
-    let _ticket = board_voting::ticket_from_vote(&mut dao, prop, &freeze, &clock, scenario.ctx());
+    let _ticket = board_voting::ticket_from_vote(&mut ou, prop, &freeze, &clock, scenario.ctx());
     abort 0
 }
 ```
@@ -323,7 +323,7 @@ fun test_non_board_member_cannot_execute_aborts() {
 
 ### Delay, window and cooldown
 
-**Requirement:** A Passed proposal is executable from `passed_at + execution_delay_ms` (`proposal::EDelayNotElapsed` before) until `passed_at + execution_delay_ms + expiry_ms` (`proposal::EExecutionWindowClosed` from then on). If `cooldown_ms > 0` and the type has executed before, execution also needs `now >= last_executed + cooldown_ms` (`proposal::ECooldownActive`). Every sum saturates at `u64::MAX`. When the DAO's execution is paused (`dao::set_execution_paused`, `PAUSE` bit) execution aborts `proposal::EExecutionPaused`.
+**Requirement:** A Passed proposal is executable from `passed_at + execution_delay_ms` (`proposal::EDelayNotElapsed` before) until `passed_at + execution_delay_ms + expiry_ms` (`proposal::EExecutionWindowClosed` from then on). If `cooldown_ms > 0` and the type has executed before, execution also needs `now >= last_executed + cooldown_ms` (`proposal::ECooldownActive`). Every sum saturates at `u64::MAX`. When the OU's execution is paused (`ou::set_execution_paused`, `PAUSE` bit) execution aborts `proposal::EExecutionPaused`.
 
 **Why it matters:** The delay gives members time to react to a decision (including freezing the type); the window stops a stale approval from running months later; the cooldown rate-limits a type.
 
@@ -345,11 +345,11 @@ A freeze that outlasts the window cancels the proposal: `armature_proposals::eme
 
 | Check | Abort | Covered by |
 |---|---|---|
-| DAO `Active`, or `Migrating` and `P` is `TransferAssets` | `board_voting::EDAONotActive` | planned (`02_dao_lifecycle.md`) |
-| Proposal belongs to the DAO | `board_voting::EDAOIdMismatch` | planned |
+| OU `Active`, or `Migrating` and `P` is `TransferAssets` | `board_voting::EOUNotActive` | planned (`02_ou_lifecycle.md`) |
+| Proposal belongs to the OU | `board_voting::EOUIdMismatch` | planned |
 | `P` still has a slot | `board_voting::ETypeNotEnabled` | planned |
-| DAO not paused by its controller | `board_voting::EControllerPaused` | `controller_tests::authorize_execution_blocks_when_controller_paused` |
-| Read-only variant: no cooldown on slot or snapshot | `board_voting::ECooldownRequiresMutableDAO` | `board_voting_tests` (three tests) |
+| OU not paused by its controller | `board_voting::EControllerPaused` | `controller_tests::authorize_execution_blocks_when_controller_paused` |
+| Read-only variant: no cooldown on slot or snapshot | `board_voting::ECooldownRequiresMutableOU` | `board_voting_tests` (three tests) |
 | `P` not frozen in the `EmergencyFreeze` passed | `emergency::EFrozen` | `freeze_path_tests::two_ptb__frozen_instantiation_aborts` |
 | Execution not paused | `proposal::EExecutionPaused` | `proposal_tests::test_execute_paused_aborts` |
 | Proposal `Passed` | `proposal::ENotPassed` | planned |
@@ -358,18 +358,18 @@ A freeze that outlasts the window cancels the proposal: `armature_proposals::eme
 | Window open | `proposal::EExecutionWindowClosed` | `proposal_tests::test_execute_after_window_aborts` |
 | Cooldown elapsed | `proposal::ECooldownActive` | `proposal_tests::test_execute_cooldown_active_aborts` |
 
-**Why it matters:** Each check is a reason a passed decision may no longer run: the DAO moved on, the type was withdrawn or frozen, or the timing rules say not yet or not any more.
+**Why it matters:** Each check is a reason a passed decision may no longer run: the OU moved on, the type was withdrawn or frozen, or the timing rules say not yet or not any more.
 
 ```move
 #[test, expected_failure(abort_code = board_voting::ETypeNotEnabled)]
 fun test_ticket_from_vote_type_disabled_aborts() {   // planned
     // ... TestPayload enabled; submitted and voted through
     scenario.next_tx(CREATOR);
-    let mut dao = scenario.take_shared<DAO>();
-    dao.test_disable_type<TestPayload>();
+    let mut ou = scenario.take_shared<OU>();
+    ou.test_disable_type<TestPayload>();
     let prop = scenario.take_shared<Proposal<TestPayload>>();
     let freeze = scenario.take_shared<EmergencyFreeze>();
-    let _ticket = board_voting::ticket_from_vote(&mut dao, prop, &freeze, &clock, scenario.ctx());
+    let _ticket = board_voting::ticket_from_vote(&mut ou, prop, &freeze, &clock, scenario.ctx());
     abort 0
 }
 ```

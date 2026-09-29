@@ -23,7 +23,7 @@
 | #2 | Create the `armature_proposals` package | P0/P1 | **Done differently**: built in March (PRs #12, #20, #24, #30, #66, #72, #73, #78, #82, #84); admin, board, freeze-governance and lifecycle types later moved into the framework; charter ops never built | C-07 → C-13 |
 | #4 | Scaffold the indexer | P2 | **Done** (PRs #122, #124), then moved to the `armature-indexer` repo (#148) | I-01 → I-02 |
 | #5 | Scaffold the UI | P3 | **Done** (PR #65; shadcn/ui refactor #128); removed from this repo in #148 | F-01 |
-| #6 | React Flow DAO hierarchy | P3 | **Done** (PR #87) | F-08 |
+| #6 | React Flow OU hierarchy | P3 | **Done** (PR #87) | F-08 |
 | #7 | Proposal security dashboard | P3 | **Done** (PR #83) | F-05.b |
 | #8 | Dynamic proposal form UI component | P3 | **Done differently** (PR #85, wired in #107): no AmendCharter or Walrus parts, since the contracts never had them | F-06, F-07 |
 | #10 | ProposalConfig defaults table | P3 | **Done differently**: warning thresholds in the governance config page (PR #83); defaults and floors are now enforced on-chain | (data task → feeds #7, #8) |
@@ -36,13 +36,13 @@
 | **NEW** | Integration test suite (3 demo flows) | P1 | Depends on #2, #3, mocks | **Done differently**: Move scenario tests, not the three demo flows |
 | **NEW** | Testnet deployment + demo rehearsals | P2 | Depends on integration tests | **Done differently**: published 2026-03-27 without mocks; Flows B/C dropped |
 | **NEW** | Gas profiling report | P2 | Depends on testnet deployment | **Dropped** |
-| **NEW** | DAO Dashboard + navigation shell | P3 | Depends on #5 | **Done** (PRs #65, #67) |
+| **NEW** | OU Dashboard + navigation shell | P3 | Depends on #5 | **Done** (PRs #65, #67) |
 | **NEW** | Proposal list + detail + voting UI | P3 | Depends on dashboard | **Done** (PRs #98, #110) |
 | **NEW** | Treasury + capability vault pages | P3 | Depends on dashboard | **Done** (PRs #67, #89) |
 | **NEW** | Board + charter pages | P3 | Depends on dashboard | **Done differently** (PR #67): no Walrus content to render |
 | **NEW** | Payload summary renderers | P3 | Depends on proposal detail | **Done differently** (PR #85): no AmendCharter diff or Walrus links |
-| **NEW** | CreateSubDAO wizard | P3 | Depends on #8 | **Done differently** (PR #85): charter step without Walrus |
-| **NEW** | SubDAO controller actions | P3 | Depends on proposal detail | **Done** (PR #87) |
+| **NEW** | CreateSubOU wizard | P3 | Depends on #8 | **Done differently** (PR #85): charter step without Walrus |
+| **NEW** | SubOU controller actions | P3 | Depends on proposal detail | **Done** (PR #87) |
 | **NEW** | Demo script + rehearsal | P4 | Depends on all P3 | **Done**: demo video |
 | **NEW** | Error UX polish | P4 | Depends on all P3 | **Open** when the UI left this repo |
 | **NEW** | Documentation + submission | P4 | Depends on all | **Done** |
@@ -53,27 +53,27 @@
 
 ### Armature #3 — `armature_framework` package
 
-> Create the framework package containing core DAO types, governance, proposal lifecycle, treasury, capability vault, emergency freeze, and board voting.
+> Create the framework package containing core OU types, governance, proposal lifecycle, treasury, capability vault, emergency freeze, and board voting.
 
 **Outcome: Done differently.** All six sub-issues merged on 2026-03-11/12. The package has since also taken the framework payload types (`sources/types/`) and their handlers (`sources/handlers/`), the permission model, composites, bypass execution, tribes and encrypted entries (see `docs/package-boundaries.md`).
 
-#### #13: DAO object, GovernanceConfig, and `dao::create` — Part of #3
+#### #13: OU object, GovernanceConfig, and `ou::create` — Part of #3
 
 **Outcome: Done differently** (PR #22). Governance became a table-backed roster (ARMATURE-13) and the proposal-type maps became per-type slots (ARMATURE-9).
 
-**Module:** `dao.move`, `governance.move`
+**Module:** `ou.move`, `governance.move`
 
 **Scope** (corrected to the current code):
-- `DAO` struct: `status`, `governance`, the four companion IDs, `execution_paused`, `controller_cap_id`, `controller_paused`, `encrypt_epoch`, `entries` (see `03_core_spec.md` §1.1)
+- `OU` struct: `status`, `governance`, the four companion IDs, `execution_paused`, `controller_cap_id`, `controller_paused`, `encrypt_epoch`, `entries` (see `03_core_spec.md` §1.1)
 - `GovernanceConfig` is a struct, not an enum: `members: Table<address, Member>`, `member_count`, `roster_version`. Board is the only model; the plan's enum and its unused Direct/Weighted variants were removed in ARMATURE-13. It is initialised from `GovernanceTypeInit::InitBoard { initial_members }`
-- `DAOStatus` enum (`Active`, `Migrating { successor_dao_id }`)
-- `dao::create(&GovernanceTypeInit, name, metadata_uri, ctx): ID` creates DAO + TreasuryVault + CapabilityVault + Charter + EmergencyFreeze as shared objects and transfers the `FreezeAdminCap` to the creator
-- `DAOCreated` and `DAOBoardInitialized` events
-- Default enabled proposal types are seeded as dynamic-field slots (`TypeSlot { name: TypeName }` → `ProposalType { display_key, config, last_executed_ms }`): 14 on a DAO, 12 on a SubDAO (no bypass meta-types). `TypeSlotAdded` fires for each
+- `OUStatus` enum (`Active`, `Migrating { successor_ou_id }`)
+- `ou::create(&GovernanceTypeInit, name, metadata_uri, ctx): ID` creates OU + TreasuryVault + CapabilityVault + Charter + EmergencyFreeze as shared objects and transfers the `FreezeAdminCap` to the creator
+- `OUCreated` and `OUBoardInitialized` events
+- Default enabled proposal types are seeded as dynamic-field slots (`TypeSlot { name: TypeName }` → `ProposalType { display_key, config, last_executed_ms }`): 14 on an OU, 12 on a SubOU (no bypass meta-types). `TypeSlotAdded` fires for each
 
 **Acceptance:**
-- `test_create_dao` — creates DAO, asserts all companion objects exist, governance = Board with the initial members, `FreezeAdminCap` held by the creator
-- `test_dao_created_event` — event emitted with correct fields
+- `test_create_ou` — creates OU, asserts all companion objects exist, governance = Board with the initial members, `FreezeAdminCap` held by the creator
+- `test_ou_created_event` — event emitted with correct fields
 - `test_default_proposal_types` — enabled types match spec
 
 **Blocks:** Everything else in #3 and #2
@@ -88,7 +88,7 @@
 
 **Scope:**
 - `TreasuryVault` struct with dynamic field storage (coin type name → `Balance<T>`; multicoin collections as dynamic object fields)
-- `deposit<T>(vault, coin, ctx)` (permissionless; a zero-value coin is a no-op), `withdraw<T, P>(vault, amount, &ExecutionRequest<P>, ctx)`, `claim_coin<T>(vault, Receiving<Coin<T>>, ctx)`, `balance<T>`. `withdraw` is `public`, not `public(friend)`: it needs a request of this DAO carrying `TREASURY_WITHDRAW`
+- `deposit<T>(vault, coin, ctx)` (permissionless; a zero-value coin is a no-op), `withdraw<T, P>(vault, amount, &ExecutionRequest<P>, ctx)`, `claim_coin<T>(vault, Receiving<Coin<T>>, ctx)`, `balance<T>`. `withdraw` is `public`, not `public(friend)`: it needs a request of this OU carrying `TREASURY_WITHDRAW`
 - Zero-balance cleanup, registry sync; events `CoinDeposited`, `CoinWithdrawn`, `CoinClaimed` (plus `MultiCoinDeposited`, `MultiCoinWithdrawn`)
 
 **Acceptance:** Withdraw auth, registry sync, zero-balance cleanup, deposit, insufficient balance, claim, balance queries (16 tests)
@@ -105,8 +105,8 @@
 
 **Scope:**
 - `CapabilityVault` struct with dynamic object fields
-- `store_cap_init` (`public(package)`, creation only) / `store_cap` (VAULT_STORE); `borrow_cap` / `borrow_cap_mut` (VAULT_BORROW, cap type in `borrow_scope`); `loan_cap` / `return_cap` (same gate; hot potato `CapLoan { cap_id, vault_id }`, and `return_cap` checks both IDs); `extract_cap` (VAULT_EXTRACT); `privileged_extract` (`public(package)` controller reclaim; the public entry `controller::privileged_extract` also needs the control to be the SubDAO's registered `controller_cap_id`)
-- `SubDAOControl { id, subdao_id }` lives here, with `create_subdao_control` (`public(package)`) / `destroy_subdao_control` (VAULT_EXTRACT); `receive_cap` (`public(package)`) / `receive_cap_authorized` for cross-DAO moves (plus `controller::receive_cap_from_controller`); `borrow_external_cap` (ungated) for bypass caps
+- `store_cap_init` (`public(package)`, creation only) / `store_cap` (VAULT_STORE); `borrow_cap` / `borrow_cap_mut` (VAULT_BORROW, cap type in `borrow_scope`); `loan_cap` / `return_cap` (same gate; hot potato `CapLoan { cap_id, vault_id }`, and `return_cap` checks both IDs); `extract_cap` (VAULT_EXTRACT); `privileged_extract` (`public(package)` controller reclaim; the public entry `controller::privileged_extract` also needs the control to be the SubOU's registered `controller_cap_id`)
+- `SubOUControl { id, subou_id }` lives here, with `create_subou_control` (`public(package)`) / `destroy_subou_control` (VAULT_EXTRACT); `receive_cap` (`public(package)`) / `receive_cap_authorized` for cross-OU moves (plus `controller::receive_cap_from_controller`); `borrow_external_cap` (ungated) for bypass caps
 - `contains` / `ids_for_type` queries, registry tracking
 
 **Acceptance:** Access control, registry sync, loan semantics, privileged extract, contains, ID queries (20 tests)
@@ -123,7 +123,7 @@
 
 **Scope** (corrected):
 - `Proposal<P>` struct (`snapshot_version`, `total_snapshot_weight`, snapshotted `config`, `status`) and `ProposalConfig` with validation (`quorum ∈ [1, 10000]`, `approval_threshold ∈ [5000, 10000]`, `expiry_ms ≥ 1 h`), plus `composable_allowed`, `permissions` and `borrow_scope`
-- `proposal::create` and `record_vote` are `public(package)`. The public path is `board_voting::submit_proposal<P>` (no `type_key` argument; `P` selects the slot) → `board_voting::vote(proposal, &dao, approve, clock, ctx)` → `board_voting::ticket_from_vote(dao, proposal /* by value */, freeze, clock, ctx)`. The last deletes the proposal and returns an `ExecutionTicket<P>` wrapping the `ExecutionRequest<P>` hot potato, which the type's handler closes with `discharge(permit)`
+- `proposal::create` and `record_vote` are `public(package)`. The public path is `board_voting::submit_proposal<P>` (no `type_key` argument; `P` selects the slot) → `board_voting::vote(proposal, &ou, approve, clock, ctx)` → `board_voting::ticket_from_vote(ou, proposal /* by value */, freeze, clock, ctx)`. The last deletes the proposal and returns an `ExecutionTicket<P>` wrapping the `ExecutionRequest<P>` hot potato, which the type's handler closes with `discharge(permit)`
 - `try_expire` is replaced by `proposal::delete_expired_proposal`: anyone deletes an Active proposal after `created_at + expiry_ms`, or a Passed one after `passed_at + execution_delay_ms + expiry_ms`. Deadlines saturate at `u64::MAX`
 - Status transitions: `Active → Passed` is the only stored one. There is no `Executed` or `Expired` status: the `ProposalExecuted` / `ProposalExpired` events and the object's deletion record them. Votes after `created_at + expiry_ms` abort (`EVotingClosed`), and execution after the window closes aborts (`EExecutionWindowClosed`)
 - Snapshot immutability: `snapshot_version`, `total_snapshot_weight` and `config` are write-once. Retry semantics: a handler abort reverts the whole PTB, deletion included, so the proposal stays Passed while its window is open
@@ -159,7 +159,7 @@
 **Module:** `emergency.move`
 
 **Scope** (corrected):
-- `EmergencyFreeze { frozen_types: VecMap<TypeName, u64>, max_freeze_duration_ms, freeze_exempt_types }` and `FreezeAdminCap`. `dao::create` transfers the cap to the creator (wallet-owned); a SubDAO made by `CreateSubDAO` has its cap stored in the parent's vault
+- `EmergencyFreeze { frozen_types: VecMap<TypeName, u64>, max_freeze_duration_ms, freeze_exempt_types }` and `FreezeAdminCap`. `ou::create` transfers the cap to the creator (wallet-owned); a SubOU made by `CreateSubOU` has its cap stored in the parent's vault
 - `freeze_type<P>(freeze, &cap, clock)`: the cap holder freezes `P` directly for `max_freeze_duration_ms` (default 7 days); `unfreeze_type<P>(freeze, &cap)`
 - `TransferFreezeAdmin` and `UnfreezeProposalType` are mandatory exemptions, matched by the framework's own types: they can never be frozen (`EProtectedType`) or removed from the exempt set (`EMandatoryExemptType`)
 - Auto-expiry: `is_frozen` check compares expiry against clock
@@ -174,19 +174,19 @@
 
 ### Armature #2 — `armature_proposals` package
 
-> Create the proposals package with all admin, treasury, board, SubDAO, and charter operations.
+> Create the proposals package with all admin, treasury, board, SubOU, and charter operations.
 
-**Outcome: Done differently.** Built in March. The package is now a first-party *extension* holding asset operations only (treasury, currency, SubDAO control, upgrades, plus `type_permissions`), with no special treatment from the framework. Admin, board, member, freeze-governance and lifecycle types moved into the framework (types in ARMATURE-9, handlers in ROAD-39) because the framework names them: fixed bits, the undisableable and SubDAO-blocked sets, default slots. See `docs/package-boundaries.md`. Charter operations were never built.
+**Outcome: Done differently.** Built in March. The package is now a first-party *extension* holding asset operations only (treasury, currency, SubOU control, upgrades, plus `type_permissions`), with no special treatment from the framework. Admin, board, member, freeze-governance and lifecycle types moved into the framework (types in ARMATURE-9, handlers in ROAD-39) because the framework names them: fixed bits, the undisableable and SubOU-blocked sets, default slots. See `docs/package-boundaries.md`. Charter operations were never built.
 
 #### C-07: Admin proposals (6 types) — Part of #2
 
-**Outcome: Done differently.** All six exist as framework types (`armature_framework/sources/types/`), handled by `armature::admin_ops` (UpdateMetadata, EnableProposalType, DisableProposalType, UpdateProposalConfig) and `armature::freeze_ops` (TransferFreezeAdmin, UnfreezeProposalType). Floors are higher than planned and are enforced in `dao`.
+**Outcome: Done differently.** All six exist as framework types (`armature_framework/sources/types/`), handled by `armature::admin_ops` (UpdateMetadata, EnableProposalType, DisableProposalType, UpdateProposalConfig) and `armature::freeze_ops` (TransferFreezeAdmin, UnfreezeProposalType). Floors are higher than planned and are enforced in `ou`.
 
 **Module:** `proposals/admin.move` → framework `types/` + `handlers/admin_ops.move`, `handlers/freeze_ops.move`
 
 **Scope** (corrected):
-- `UpdateProposalConfig`: its own config is always held to 80% (`dao::assert_config_floors`), not only when self-referential. The submission wrapper `admin_ops::propose_update_proposal_config` keeps the old self-targeting check (`EFloorNotMet`). Every config it stores must meet the target type's floor and permission floor, and it cannot change a framework type's fixed bits (`EFixedPermissions`)
-- `EnableProposalType`: 80% floor (the plan's 66% was raised in ROAD-39), checked at submission (`board_voting::EFloorNotMet`) and on every stored config; the payload pins the Move type (`type_name`, `ETypeMismatch`); SubDAO blocklist
+- `UpdateProposalConfig`: its own config is always held to 80% (`ou::assert_config_floors`), not only when self-referential. The submission wrapper `admin_ops::propose_update_proposal_config` keeps the old self-targeting check (`EFloorNotMet`). Every config it stores must meet the target type's floor and permission floor, and it cannot change a framework type's fixed bits (`EFixedPermissions`)
+- `EnableProposalType`: 80% floor (the plan's 66% was raised in ROAD-39), checked at submission (`board_voting::EFloorNotMet`) and on every stored config; the payload pins the Move type (`type_name`, `ETypeMismatch`); SubOU blocklist
 - `DisableProposalType`: cannot disable the undisableable types EnableProposalType, DisableProposalType, EnableBypassType, DisableBypassType, TransferFreezeAdmin, UnfreezeProposalType (`admin_ops::EUndisableableType`)
 - `UpdateMetadata` (display key "CharterUpdate"); `TransferFreezeAdmin` (unfreezes all, then transfers the cap) and `UnfreezeProposalType`, both permanently freeze-exempt
 - Permission bits (ROAD-39): all six hold fixed bits (TYPE_ADMIN, METADATA or FREEZE)
@@ -197,7 +197,7 @@
 
 ---
 
-#### C-08: Treasury proposals — SendCoin, SendCoinToDAO — Part of #2
+#### C-08: Treasury proposals — SendCoin, SendCoinToOU — Part of #2
 
 **Outcome: Done.** In `armature_proposals::treasury_ops`; `SendSmallPayment` (#84) and the batch multicoin sends (#150) joined them.
 
@@ -205,10 +205,10 @@
 
 **Scope:**
 - `SendCoin<T>` — `execute_send_coin<T>(vault, ticket, ctx)`: withdraw + transfer to the payload's address
-- `SendCoinToDAO<T>` — `execute_send_coin_to_dao<T>(src, target, ticket, ctx)`: withdraw + deposit into the target DAO's treasury
+- `SendCoinToOU<T>` — `execute_send_coin_to_ou<T>(src, target, ticket, ctx)`: withdraw + deposit into the target OU's treasury
 - Both consume an `ExecutionTicket<P>` (not a bare `ExecutionRequest`) and close it with `discharge(permit)`. The types must be enabled with `TREASURY_WITHDRAW` (`type_permissions::treasury_spend()`), which requires an 80% config
 
-**Acceptance:** Transfer, balance reduction, insufficient balance abort, generic coin types, cross-DAO deposit (7 tests)
+**Acceptance:** Transfer, balance reduction, insufficient balance abort, generic coin types, cross-OU deposit (7 tests)
 
 **Depends on:** #14, #16, #17
 
@@ -221,7 +221,7 @@
 **Module:** `proposals/board_ops.move` → framework `handlers/board_ops.move` (plus `handlers/member_ops.move`)
 
 **Scope** (corrected):
-- `SetBoard { to_add, to_remove }` applies the diff as one roster change (`roster_version` + 1), not a full-slate replacement. It emits `BoardUpdated { dao_id, added, removed }` and aborts `ENoBoardChange` if both lists are empty
+- `SetBoard { to_add, to_remove }` applies the diff as one roster change (`roster_version` + 1), not a full-slate replacement. It emits `BoardUpdated { ou_id, added, removed }` and aborts `ENoBoardChange` if both lists are empty
 - Removed members lose proposing and vote-path execution immediately, and added members gain them immediately. Voting follows each proposal's `snapshot_version`: removed members can still vote on proposals created before their removal, and added members cannot
 - Empty board aborts (`EEmptyBoard`). "Governance type preserved" no longer applies, since Board is the only model
 - Added later: `AddMember`, `RemoveMember` (#134), `BatchAddMembers` (#142; ≤ 100, skips existing members), `BatchRemoveMembers` (#158; atomic). Any member removal rotates `encrypt_epoch`
@@ -232,38 +232,38 @@
 
 ---
 
-#### C-10: SubDAOControl struct and controller machinery — Part of #2
+#### C-10: SubOUControl struct and controller machinery — Part of #2
 
 **Outcome: Done differently** (PRs #72, #82). The machinery is in the framework. Blocklist enforcement exists; "single controller" is enforced through the registered `controller_cap_id`; "acyclic graph" was never implemented as a check.
 
-**Module:** `dao.move` (extend), `capability_vault.move` (extend)
+**Module:** `ou.move` (extend), `capability_vault.move` (extend)
 
 **Scope** (corrected):
-- `SubDAOControl { id, subdao_id }` in `capability_vault.move`; on the DAO, `controller_cap_id: Option<ID>` (set by `dao::share_subdao`, cleared by `clear_controller` at spin-out) and `controller_paused`
-- `controller::privileged_extract(vault, cap_id, subdao, &SubDAOControl)` and `privileged_submit` call `controller::assert_registered_control`: `control.subdao_id` is the target and the control is the target's `controller_cap_id`
-- Blocklist: a DAO with `controller_cap_id` set cannot enable SpawnDAO, SpinOutSubDAO, CreateSubDAO, EnableBypassType or DisableBypassType. This is checked in the `admin_ops` and `external_execution` handlers and on creation-time overrides
-- Single controller: enforced through `controller_cap_id`; only the registered control passes `assert_registered_control`, and `create_subdao_control` is `public(package)` (only CreateSubDAO calls it). Acyclicity: not enforced
+- `SubOUControl { id, subou_id }` in `capability_vault.move`; on the OU, `controller_cap_id: Option<ID>` (set by `ou::share_subou`, cleared by `clear_controller` at spin-out) and `controller_paused`
+- `controller::privileged_extract(vault, cap_id, subou, &SubOUControl)` and `privileged_submit` call `controller::assert_registered_control`: `control.subou_id` is the target and the control is the target's `controller_cap_id`
+- Blocklist: an OU with `controller_cap_id` set cannot enable SpawnOU, SpinOutSubOU, CreateSubOU, EnableBypassType or DisableBypassType. This is checked in the `admin_ops` and `external_execution` handlers and on creation-time overrides
+- Single controller: enforced through `controller_cap_id`; only the registered control passes `assert_registered_control`, and `create_subou_control` is `public(package)` (only CreateSubOU calls it). Acyclicity: not enforced
 
-**Acceptance:** All SubDAO invariants (subset covering struct/machinery)
+**Acceptance:** All SubOU invariants (subset covering struct/machinery)
 
 **Depends on:** #13, #15
 
 ---
 
-#### C-11: SubDAO proposals — 6 types — Part of #2
+#### C-11: SubOU proposals — 6 types — Part of #2
 
-**Outcome: Done differently.** `CreateSubDAO` and `SpinOutSubDAO` (with `SpawnDAO` and `TransferAssets`) are framework types handled by `armature::lifecycle_ops`. The cap-delegation and pause types stay in `armature_proposals::subdao_ops` and are proposed on the controller DAO. Event names differ from the plan.
+**Outcome: Done differently.** `CreateSubOU` and `SpinOutSubOU` (with `SpawnOU` and `TransferAssets`) are framework types handled by `armature::lifecycle_ops`. The cap-delegation and pause types stay in `armature_proposals::subou_ops` and are proposed on the controller OU. Event names differ from the plan.
 
-**Module:** `proposals/subdao_ops.move` → framework `handlers/lifecycle_ops.move` + `armature_proposals/sources/subdao/subdao_ops.move`
+**Module:** `proposals/subou_ops.move` → framework `handlers/lifecycle_ops.move` + `armature_proposals/sources/subou/subou_ops.move`
 
 **Scope** (corrected):
-- `CreateSubDAO { name, initial_board, metadata_uri }` creates the child DAO with the default SubDAO slots (no bypass meta-types; the enable handlers refuse blocked types) and stores the `SubDAOControl` and the child's `FreezeAdminCap` in the parent vault. The payload carries no funding (fund with `SendCoinToDAO`). Event `SubDAOCreated { controller_dao_id, subdao_id, control_cap_id }`. Fixed bits VAULT_STORE + VAULT_EXTRACT, 80% floor
-- `SpinOutSubDAO` loans the control, runs `clear_controller` on the SubDAO through `privileged_submit`, re-enables SpawnDAO / SpinOutSubDAO / CreateSubDAO with the payload's configs, moves the `FreezeAdminCap` into the SubDAO's vault and destroys the control. Irreversible. Event `SubDAOSpunOut`
-- `TransferCapToSubDAO`, `ReclaimCapFromSubDAO` → events `CapTransferredToSubDAO`, `CapReclaimedFromSubDAO` (not `CapabilityTransferred` / `CapabilityReclaimed`). Reclaim is loan control → `controller::privileged_extract` → `store_cap` in one PTB; transfer deposits through `controller::receive_cap_from_controller`
-- `PauseSubDAOExecution`, `UnpauseSubDAOExecution` are voted on the controller DAO (VAULT_BORROW scoped to `SubDAOControl`); the SubDAO side runs `set_controller_paused` on a privileged request. Events `SubDAOExecutionPaused` / `SubDAOExecutionUnpaused`
+- `CreateSubOU { name, initial_board, metadata_uri }` creates the child OU with the default SubOU slots (no bypass meta-types; the enable handlers refuse blocked types) and stores the `SubOUControl` and the child's `FreezeAdminCap` in the parent vault. The payload carries no funding (fund with `SendCoinToOU`). Event `SubOUCreated { controller_ou_id, subou_id, control_cap_id }`. Fixed bits VAULT_STORE + VAULT_EXTRACT, 80% floor
+- `SpinOutSubOU` loans the control, runs `clear_controller` on the SubOU through `privileged_submit`, re-enables SpawnOU / SpinOutSubOU / CreateSubOU with the payload's configs, moves the `FreezeAdminCap` into the SubOU's vault and destroys the control. Irreversible. Event `SubOUSpunOut`
+- `TransferCapToSubOU`, `ReclaimCapFromSubOU` → events `CapTransferredToSubOU`, `CapReclaimedFromSubOU` (not `CapabilityTransferred` / `CapabilityReclaimed`). Reclaim is loan control → `controller::privileged_extract` → `store_cap` in one PTB; transfer deposits through `controller::receive_cap_from_controller`
+- `PauseSubOUExecution`, `UnpauseSubOUExecution` are voted on the controller OU (VAULT_BORROW scoped to `SubOUControl`); the SubOU side runs `set_controller_paused` on a privileged request. Events `SubOUExecutionPaused` / `SubOUExecutionUnpaused`
 - Added later: `ControllerBatchAddMembers` / `ControllerBatchRemoveMembers` (#158)
 
-**Acceptance:** CreateSubDAO (4), SpinOut (2), TransferCap (1), ReclaimCap (1), Pause (2), atomic reclaim (1) — 22 tests
+**Acceptance:** CreateSubOU (4), SpinOut (2), TransferCap (1), ReclaimCap (1), Pause (2), atomic reclaim (1) — 22 tests
 
 **Depends on:** C-10, #16, #17, #14, #15
 
@@ -276,13 +276,13 @@
 **Module:** `proposal.move` (extend) → `controller.move`
 
 **Scope** (corrected):
-- `controller::privileged_submit<P: store + drop>(control, subdao, type_key, metadata_ipfs, payload, ctx): ExecutionRequest<P>` does not create a Passed proposal. No `Proposal` object exists (ARMATURE-11); `ProposalCreated`, `ProposalPayloadCreated` and `ProposalExecuted` are the record. It takes no clock, and checks only `control.subdao_id == subdao.id` (`EControlMismatch`) and that the SubDAO is Active
-- The returned request is privileged (0 bits, empty scope) and passes every permission check on that SubDAO; `set_controller_paused` and `clear_controller` accept only privileged requests. It is closed with `controller::privileged_consume(req, &control)`
-- Two simultaneous hot potatoes: the controller DAO's own ticket (which needs VAULT_BORROW scoped to `SubDAOControl` to loan the control) and the SubDAO's privileged request
-- CapLoan for SubDAOControl must be returned in same PTB
+- `controller::privileged_submit<P: store + drop>(control, subou, type_key, metadata_ipfs, payload, ctx): ExecutionRequest<P>` does not create a Passed proposal. No `Proposal` object exists (ARMATURE-11); `ProposalCreated`, `ProposalPayloadCreated` and `ProposalExecuted` are the record. It takes no clock, and checks only `control.subou_id == subou.id` (`EControlMismatch`) and that the SubOU is Active
+- The returned request is privileged (0 bits, empty scope) and passes every permission check on that SubOU; `set_controller_paused` and `clear_controller` accept only privileged requests. It is closed with `controller::privileged_consume(req, &control)`
+- Two simultaneous hot potatoes: the controller OU's own ticket (which needs VAULT_BORROW scoped to `SubOUControl` to loan the control) and the SubOU's privileged request
+- CapLoan for SubOUControl must be returned in same PTB
 - Pause interaction: `privileged_submit` ignores `controller_paused`, so the controller can always unpause
 
-**Acceptance:** 7 tests — happy path, unauthorized abort, wrong SubDAO, interaction with pause
+**Acceptance:** 7 tests — happy path, unauthorized abort, wrong SubOU, interaction with pause
 
 **Depends on:** C-10, C-11, #16
 
@@ -290,7 +290,7 @@
 
 #### C-13: Charter object and charter proposals — Part of #2
 
-**Outcome: Dropped.** No Walrus integration, amendment records or charter proposals were built. The Charter is `{ id, dao_id, name, metadata_uri }` (since #159; during the hackathon it held a name, description and image URL), and its only mutation is `charter::update_metadata` (METADATA bit), reached through `UpdateMetadata`. The Walrus design remains planned in `05_charter.md`.
+**Outcome: Dropped.** No Walrus integration, amendment records or charter proposals were built. The Charter is `{ id, ou_id, name, metadata_uri }` (since #159; during the hackathon it held a name, description and image URL), and its only mutation is `charter::update_metadata` (METADATA bit), reached through `UpdateMetadata`. The Walrus design remains planned in `05_charter.md`.
 
 **Module (planned):** `charter.move`, `proposals/charter_ops.move`
 
@@ -309,11 +309,11 @@
 
 > Compile the initial ProposalConfig settings for all 18 proposal types, considering the security spec. Integrate into #7.
 
-**Outcome: Done differently.** The UI's governance config page shipped warning thresholds (PR #83). The defaults and floors are now code, enforced on every stored config. Seeded types start at quorum 50%, approval 50% raised to the type's floors, 7-day expiry, no delay and no cooldown (`dao::config_for_type`), and `docs/proposal-types.md` lists every type's bits and floor.
+**Outcome: Done differently.** The UI's governance config page shipped warning thresholds (PR #83). The defaults and floors are now code, enforced on every stored config. Seeded types start at quorum 50%, approval 50% raised to the type's floors, 7-day expiry, no delay and no cooldown (`ou::config_for_type`), and `docs/proposal-types.md` lists every type's bits and floor.
 
 **Scope** (corrected):
 - Table of default quorum, threshold, execution delay, cooldown, and expiry per proposal type
-- Invariants (current): EnableProposalType, UpdateProposalConfig and EnableBypassType ≥ 80%; any config holding TYPE_ADMIN, MIGRATE, TREASURY_WITHDRAW, VAULT_BORROW or VAULT_EXTRACT ≥ 80% (`dao::permission_floor`). The plan's 66% EnableProposalType floor no longer applies
+- Invariants (current): EnableProposalType, UpdateProposalConfig and EnableBypassType ≥ 80%; any config holding TYPE_ADMIN, MIGRATE, TREASURY_WITHDRAW, VAULT_BORROW or VAULT_EXTRACT ≥ 80% (`ou::permission_floor`). The plan's 66% EnableProposalType floor no longer applies
 - Warning thresholds for the security dashboard (#7)
 - Recommended vs minimum values with security rationale. `proposals/ADR_GOVERNANCE_TYPE_DELAY_DEFAULTS.md` (status Proposed) recommends non-zero delays for governance-sensitive types; today's defaults have none
 
@@ -350,14 +350,14 @@
 
 ### NEW — Integration test suite (3 demo flows)
 
-**Outcome: Done differently.** There is no `integration_flows.move`, and the gate/SSU and charter-amendment flows were never built. Scenario coverage lives in `armature_proposals/tests/`: `lifecycle_tests.move` (a small startup; an enterprise with two SubDAOs, a freeze, a controller board change and cross-DAO payments), `migration_tests.move` (successor spawn and origin destroy, SubDAO spin-out, controller board change through `privileged_submit`, `TransferAssets`) and `subdao_ops_tests.move`. `armature_external_type_tests` runs a third-party type through every execution path.
+**Outcome: Done differently.** There is no `integration_flows.move`, and the gate/SSU and charter-amendment flows were never built. Scenario coverage lives in `armature_proposals/tests/`: `lifecycle_tests.move` (a small startup; an enterprise with two SubOUs, a freeze, a controller board change and cross-OU payments), `migration_tests.move` (successor spawn and origin destroy, SubOU spin-out, controller board change through `privileged_submit`, `TransferAssets`) and `subou_ops_tests.move`. `armature_external_type_tests` runs a third-party type through every execution path.
 
 **Module:** `tests/integration_flows.move`
 
 **Scope:**
-- Flow A: create DAO → SetBoard → deposit → CreateSubDAO → SubDAO SendCoin → parent override (8 tests)
-- Flow B: CreateSubDAO (Gate Builders) → deploy mocked gates → configure tolls → revenue share → charter amendment (8 tests)
-- Flow C: deposit gate caps → configure gate access → toll revenue → delegate to SubDAO → SSU integration (8 tests)
+- Flow A: create OU → SetBoard → deposit → CreateSubOU → SubOU SendCoin → parent override (8 tests)
+- Flow B: CreateSubOU (Gate Builders) → deploy mocked gates → configure tolls → revenue share → charter amendment (8 tests)
+- Flow C: deposit gate caps → configure gate access → toll revenue → delegate to SubOU → SSU integration (8 tests)
 
 **Acceptance:** All 24 tests pass with `sui move test`
 
@@ -414,7 +414,7 @@
 
 ### NEW — Gas profiling report
 
-**Outcome: Dropped.** No report was committed. Later gas analysis of a live testnet DAO found the real cost in storage rather than PTB limits, and drove ARMATURE-9 … ARMATURE-12 (see `07_roadmap.md`).
+**Outcome: Dropped.** No report was committed. Later gas analysis of a live testnet OU found the real cost in storage rather than PTB limits, and drove ARMATURE-9 … ARMATURE-12 (see `07_roadmap.md`).
 
 **Scope:**
 - Table: operation → gas budget → actual gas used → margin
@@ -437,7 +437,7 @@
 **Outcome: Done** (PRs #122, #124; Diesel migrations). There are no charter-amendment events to store (charter changes emit `admin_ops::MetadataUpdated`), and since ARMATURE-12 a proposal's executed or expired state comes only from events.
 
 **Scope:**
-- PostgreSQL schema for: DAOs, proposals, votes, treasury transactions, SubDAO relationships, charter amendments, freeze events
+- PostgreSQL schema for: OUs, proposals, votes, treasury transactions, SubOU relationships, charter amendments, freeze events
 - Migration framework (e.g., `sqlx` migrations or `diesel`)
 - Tables mirror on-chain event structure
 
@@ -449,11 +449,11 @@
 
 #### I-02: Indexer crate — event consumer — Part of #4
 
-**Outcome: Done** (PRs #122, #124). Four of the planned event names never existed: `CharterAmended` (charter changes emit `MetadataUpdated`), `CapabilityTransferred` / `CapabilityReclaimed` (actual: `CapTransferredToSubDAO` / `CapReclaimedFromSubDAO`) and `BoardReplaced` (actual: `BoardUpdated { dao_id, added, removed }`). Events added since include `ProposalPayloadCreated`, `DAOBoardInitialized`, `TypeSlotAdded` / `TypeSlotRemoved` / `TypeSlotConfigUpdated`, `CoinDeposited` / `CoinWithdrawn`, `FreezeExemptTypeAdded` / `Removed`, and the member, bypass, composite and currency events; `ProposalCreated` carries `metadata_ipfs`, and freeze events carry `type_name`. Single-PTB executions (atomic, bypass, controller) exist only as events.
+**Outcome: Done** (PRs #122, #124). Four of the planned event names never existed: `CharterAmended` (charter changes emit `MetadataUpdated`), `CapabilityTransferred` / `CapabilityReclaimed` (actual: `CapTransferredToSubOU` / `CapReclaimedFromSubOU`) and `BoardReplaced` (actual: `BoardUpdated { ou_id, added, removed }`). Events added since include `ProposalPayloadCreated`, `OUBoardInitialized`, `TypeSlotAdded` / `TypeSlotRemoved` / `TypeSlotConfigUpdated`, `CoinDeposited` / `CoinWithdrawn`, `FreezeExemptTypeAdded` / `Removed`, and the member, bypass, composite and currency events; `ProposalCreated` carries `metadata_ipfs`, and freeze events carry `type_name`. Single-PTB executions (atomic, bypass, controller) exist only as events.
 
 **Scope:**
 - SUI custom indexing framework integration
-- Event handlers for the lifecycle events: `DAOCreated`, `ProposalCreated`, `VoteCast`, `ProposalPassed`, `ProposalExecuted`, `ProposalExpired`, `SubDAOCreated`, `SubDAOSpunOut`, `MetadataUpdated` (planned: `CharterAmended`), `CoinClaimed`, `TypeFrozen`, `TypeUnfrozen`, `CapTransferredToSubDAO` (planned: `CapabilityTransferred`), `CapReclaimedFromSubDAO` (planned: `CapabilityReclaimed`), `BoardUpdated` (planned: `BoardReplaced`)
+- Event handlers for the lifecycle events: `OUCreated`, `ProposalCreated`, `VoteCast`, `ProposalPassed`, `ProposalExecuted`, `ProposalExpired`, `SubOUCreated`, `SubOUSpunOut`, `MetadataUpdated` (planned: `CharterAmended`), `CoinClaimed`, `TypeFrozen`, `TypeUnfrozen`, `CapTransferredToSubOU` (planned: `CapabilityTransferred`), `CapReclaimedFromSubOU` (planned: `CapabilityReclaimed`), `BoardUpdated` (planned: `BoardReplaced`)
 - Cursor tracking for restart resilience
 
 **Acceptance:** Indexer consumes events from testnet and populates DB. Can restart without data loss.
@@ -478,32 +478,32 @@ All P3 work was built in this repo's top-level `ui/` app during the hackathon an
 - Vite + React project with TypeScript, `@awar.dev/ui` component library, `@mysten/dapp-kit` wallet integration, `@tanstack/react-router` routing
 - `SuiClient` wrapper with React Query provider, cache key structure from `06_data_layer.md`
 - Event polling hook (`useEventPoller`) — polls `suix_queryEvents` every 3–5s, invalidates cache keys per event→cache map
-- DAO context provider — selected DAO ID, companion object IDs resolved on selection
+- OU context provider — selected OU ID, companion object IDs resolved on selection
 - `AWARProvider` + `SidebarProvider` shell wired up
 
 **Acceptance:**
-- Can connect wallet on testnet, fetch and display a DAO object by ID
+- Can connect wallet on testnet, fetch and display an OU object by ID
 - Event poller runs, React Query devtools show cache entries
 
-**Depends on:** Testnet deployment (for DAO IDs)
+**Depends on:** Testnet deployment (for OU IDs)
 
 ---
 
-### NEW — DAO Dashboard + navigation shell
+### NEW — OU Dashboard + navigation shell
 
-> `AppShell`, `DaoSidebar`, `SubDAOBreadcrumb`, `DaoDashboard` per the hackathon UI specs (overview and core pages; since removed).
+> `AppShell`, `OuSidebar`, `SubOUBreadcrumb`, `OuDashboard` per the hackathon UI specs (overview and core pages; since removed).
 
 **Outcome: Done** (PRs #65, #67).
 
 **Scope:**
-- `Sidebar` with all 9 nav items (`SidebarMenu`, `SidebarMenuButton`, `SidebarMenuBadge`), `LogoLockup`, DAO switcher (`Select`), "New Proposal" `Button` (Member only)
-- `SubDAOBreadcrumb` via `Breadcrumb` components, wallet `Badge` in header
-- `DaoDashboard` — summary `Card` ×4, active proposals `Table` with `Progress` bars, SubDAO list, recent activity, controller `Alert` banner
+- `Sidebar` with all 9 nav items (`SidebarMenu`, `SidebarMenuButton`, `SidebarMenuBadge`), `LogoLockup`, OU switcher (`Select`), "New Proposal" `Button` (Member only)
+- `SubOUBreadcrumb` via `Breadcrumb` components, wallet `Badge` in header
+- `OuDashboard` — summary `Card` ×4, active proposals `Table` with `Progress` bars, SubOU list, recent activity, controller `Alert` banner
 
 **Acceptance:**
 - Navigate between all sidebar pages (pages can be empty shells)
-- Dashboard shows live data from a testnet DAO
-- Controller banner appears for SubDAOs, "New Proposal" hidden for non-members
+- Dashboard shows live data from a testnet OU
+- Controller banner appears for SubOUs, "New Proposal" hidden for non-members
 
 **Depends on:** F-01
 
@@ -539,11 +539,11 @@ All P3 work was built in this repo's top-level `ui/` app during the hackathon an
 
 **Scope:**
 - `TreasuryPage` — `Table` with `TableSortHead` (coin balances), deposit `Collapsible` form (`Form`, `Select`, `NumberInput`), transaction history
-- `CapVaultPage` — `Accordion` grouped by type, `Table` with `Badge` (loan status), `DropdownMenu` for cap actions, SubDAOControl section
+- `CapVaultPage` — `Accordion` grouped by type, `Table` with `Badge` (loan status), `DropdownMenu` for cap actions, SubOUControl section
 
 **Acceptance:**
 - Treasury shows coin types with formatted balances, can deposit from wallet
-- Cap vault lists stored capabilities, SubDAOControl entries link to child DAOs
+- Cap vault lists stored capabilities, SubOUControl entries link to child OUs
 
 **Depends on:** Dashboard
 
@@ -591,7 +591,7 @@ All P3 work was built in this repo's top-level `ui/` app during the hackathon an
 
 ### Armature #8 — Dynamic proposal form UI component
 
-> For each DAO, display enabled/disabled proposals with their settings, and provide forms for creating proposals of each type.
+> For each OU, display enabled/disabled proposals with their settings, and provide forms for creating proposals of each type.
 
 #### F-06: Proposal forms — Tier 1 (generic) + Tier 2 (custom) — Part of #8
 
@@ -612,12 +612,12 @@ All P3 work was built in this repo's top-level `ui/` app during the hackathon an
 
 ---
 
-#### F-07: CreateSubDAO wizard — Part of #8
+#### F-07: CreateSubOU wizard — Part of #8
 
-**Outcome: Done differently** (PR #85). The wizard's charter step collected name, description and image fields rather than a Walrus upload. Against today's contracts, the `CreateSubDAO` payload is `{ name, initial_board, metadata_uri }`. The SubDAO gets the default SubDAO slots; per-type configs and funding are not part of the proposal. Funding is a separate `SendCoinToDAO`, and per-type overrides exist only on the direct constructors (`dao::create_subdao_configured`, `tribe::create_tribe_configured`, `tribe::create_wired_subdao`).
+**Outcome: Done differently** (PR #85). The wizard's charter step collected name, description and image fields rather than a Walrus upload. Against today's contracts, the `CreateSubOU` payload is `{ name, initial_board, metadata_uri }`. The SubOU gets the default SubOU slots; per-type configs and funding are not part of the proposal. Funding is a separate `SendCoinToOU`, and per-type overrides exist only on the direct constructors (`ou::create_subou_configured`, `tribe::create_tribe_configured`, `tribe::create_wired_subou`).
 
 **Scope:**
-- `CreateSubDAOWizard` — 6-step wizard using `Tabs variant="solid"`:
+- `CreateSubOUWizard` — 6-step wizard using `Tabs variant="solid"`:
   1. Identity (`Input` ×2)
   2. Board (`Table` + `Input` rows, `NumberInput`)
   3. Charter (`Textarea` + Walrus upload; built without Walrus)
@@ -634,22 +634,22 @@ All P3 work was built in this repo's top-level `ui/` app during the hackathon an
 
 ---
 
-### Armature #6 — React Flow DAO hierarchy (blocked on #5)
+### Armature #6 — React Flow OU hierarchy (blocked on #5)
 
-> React Flow (`GraphCanvas` from `@awar.dev/ui`) visualization of SubDAO tree.
+> React Flow (`GraphCanvas` from `@awar.dev/ui`) visualization of SubOU tree.
 
-#### F-08: SubDAO list page + hierarchy graph + controller actions — Part of #6
+#### F-08: SubOU list page + hierarchy graph + controller actions — Part of #6
 
-**Outcome: Done** (PR #87: `SubDAOListPage`, `SubDAOGraph`, `ControllerActionsMenu`). The removed UI offered pause, unpause, cap transfer, cap reclaim and spin-out. There is no controller "Replace Board" type: controller board changes use `ControllerBatchAddMembers` / `ControllerBatchRemoveMembers` (#158).
+**Outcome: Done** (PR #87: `SubOUListPage`, `SubOUGraph`, `ControllerActionsMenu`). The removed UI offered pause, unpause, cap transfer, cap reclaim and spin-out. There is no controller "Replace Board" type: controller board changes use `ControllerBatchAddMembers` / `ControllerBatchRemoveMembers` (#158).
 
 **Scope:**
-- `SubDAOListPage` — `Tabs` (List / Graph views)
-- List view: `Card` per SubDAO with `Badge` (status), `DropdownMenu` (controller actions), `AlertDialog` (SpinOut confirmation)
+- `SubOUListPage` — `Tabs` (List / Graph views)
+- List view: `Card` per SubOU with `Badge` (status), `DropdownMenu` (controller actions), `AlertDialog` (SpinOut confirmation)
 - Graph view: `GraphCanvas` with custom node components, `GraphEdge` (control links), `GraphLegend`
 - Controller actions → proposal creation (Replace Board, Pause, Unpause, Reclaim Cap, Spin Out)
 
 **Acceptance:**
-- SubDAO list populated from parent's CapabilityVault, graph view renders hierarchy
+- SubOU list populated from parent's CapabilityVault, graph view renders hierarchy
 - Controller actions trigger correct proposal creation, SpinOut shows confirmation
 
 **Depends on:** Proposal detail, #5
@@ -683,7 +683,7 @@ All P3 work was built in this repo's top-level `ui/` app during the hackathon an
 
 **Scope:**
 - Step-by-step narration for each demo flow (target: each under 5 minutes)
-- Pre-created testnet state (DAOs, funded treasuries)
+- Pre-created testnet state (OUs, funded treasuries)
 - Rehearsal run-through, fallback plan
 
 **Acceptance:** Each flow completes under 5 minutes in the UI. Script covers narration + timing.
@@ -789,11 +789,11 @@ List+Detail  +Vault    Pages          +Emergency       │
     │                                   │              │
     ├──────── #8 Proposal Forms ◄── #10 ┘              │
     │              │                                   │
-    │         #8 CreateSubDAO Wizard                   │
+    │         #8 CreateSubOU Wizard                   │
     │                                                  │
-    ├──────── #6 SubDAO Hierarchy (Graph) ◄────────────┘
+    ├──────── #6 SubOU Hierarchy (Graph) ◄────────────┘
     │
-    └──────── SubDAO Controller Actions
+    └──────── SubOU Controller Actions
                     │
          ┌──────────┼──────────┐
          │          │          │

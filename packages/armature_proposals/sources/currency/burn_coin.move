@@ -2,8 +2,8 @@ module armature_proposals::burn_coin;
 
 use std::internal::{Self, Permit};
 
-/// Burn `amount` of `Coin<T>` using the DAO's custodied `TreasuryCap<T>`.
-/// The burned coins are withdrawn from the DAO's `TreasuryVault` — the clean,
+/// Burn `amount` of `Coin<T>` using the OU's custodied `TreasuryCap<T>`.
+/// The burned coins are withdrawn from the OU's `TreasuryVault` — the clean,
 /// accountable source — so supply contraction goes through the same balance
 /// the spend proposals draw from.
 public struct BurnCoin<phantom T> has drop, store {

@@ -15,7 +15,7 @@ Run the full Armature stack locally with a single command.
 │                      │                           │
 │  ┌───────────────────▼───────────────────────┐   │
 │  │ armature-deploy  (init — runs once)       │   │
-│  │ publishes Move packages, creates test DAO │   │
+│  │ publishes Move packages, creates test OU │   │
 │  └───────────────────────────────────────────┘   │
 └──────────────────────────────────────────────────┘
 ```
@@ -62,7 +62,7 @@ docker compose -f docker-compose.dev.yml --profile world up --build
 
 1. **sui-localnet** starts a Sui v1.67.2 node with `--force-regenesis` and a faucet
 2. *(world profile only)* **world-deploy** clones and deploys EVE Frontier world-contracts, configures fuel/energy/gates
-3. **armature-deploy** publishes `armature_framework` + `armature_proposals` (36 modules), creates 3 test wallets and a test DAO
+3. **armature-deploy** publishes `armature_framework` + `armature_proposals` (36 modules), creates 3 test wallets and a test OU
 
 ### Shared Volume
 
@@ -71,7 +71,7 @@ Deployment artifacts pass between containers via the `shared-data` volume:
 ```
 /shared/
 ├── .env.world          # (world profile) WORLD_PACKAGE_ID, governor key
-├── .env.armature       # ARMATURE_PACKAGE_ID, test DAO IDs, wallet addresses
+├── .env.armature       # ARMATURE_PACKAGE_ID, test OU IDs, wallet addresses
 └── world-deployment.json  # (world profile) Full publish transaction output
 ```
 

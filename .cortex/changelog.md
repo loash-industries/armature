@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-29 — rename DAO to OU (organizational unit)
+
+- Replaced the DAO terminology with OU across the Move packages, scripts and docs: module `armature::dao` is now `armature::ou`, `DAO` is `OU`, `DAOCreated` is `OUCreated`, and `SubDAO*` types, functions and error constants are `SubOU*`; the top-level OU is called the "org". Test-only top-level names use `org` (`org_id`, `cannot_deposit_into_org_vault`).
+- Breaking and not upgrade-compatible (module rename): a fresh deploy is required, and `armature-indexer` must match the new module and event names. Deploy scripts now call `::ou::create` and match `::ou::OUCreated`. No behaviour change.
+- Left as written: `specs/stretch/*`, earlier changelog entries, `whitepaper/releases/`, the `specs/04_subdao_hierarchy.md` filename (stretch specs link to it), and the text inside the `OU Primitive.pdf` figure.
+
 ## 2026-09-27 — remove dead proposal_id check from discharge (ARMATURE-42)
 
 - Removed the always-true request/closeout `proposal_id` check from `proposal::discharge` and `discharge_returning_payload`, along with the now-redundant `proposal_id` field on `Closeout::Standalone` and the unused `ERequestMismatch` (13) error constant. Discharge safety is unchanged: `Permit<P>` is what prevents discharging a ticket outside `P`'s handler, and `internal_workings.md` now documents this explicitly.

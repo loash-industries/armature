@@ -1,18 +1,18 @@
-/// Handlers for the framework's DAO-lifecycle types: CreateSubDAO, SpawnDAO,
-/// SpinOutSubDAO and TransferAssets. They live in the framework because only
+/// Handlers for the framework's OU-lifecycle types: CreateSubOU, SpawnOU,
+/// SpinOutSubOU and TransferAssets. They live in the framework because only
 /// this package can mint the `Permit` for these types (see
 /// `proposal::ticket_request`).
 module armature::lifecycle_ops;
 
-use armature::capability_vault::{CapabilityVault, SubDAOControl};
+use armature::capability_vault::{CapabilityVault, SubOUControl};
 use armature::controller;
-use armature::create_subdao::{Self, CreateSubDAO};
-use armature::dao::{Self, DAO};
+use armature::create_subou::{Self, CreateSubOU};
+use armature::ou::{Self, OU};
 use armature::emergency;
 use armature::governance;
 use armature::proposal::ExecutionTicket;
-use armature::spawn_dao::{Self, SpawnDAO};
-use armature::spin_out_subdao::{Self, SpinOutSubDAO};
+use armature::spawn_ou::{Self, SpawnOU};
+use armature::spin_out_subou::{Self, SpinOutSubOU};
 use armature::transfer_assets::{Self, TransferAssets};
 use armature::treasury_vault::TreasuryVault;
 use std::type_name::{Self, TypeName};
@@ -20,13 +20,13 @@ use sui::event;
 
 // === Errors ===
 
-const EVaultDAOMismatch: u64 = 0;
-const ESubDAOVaultMismatch: u64 = 1;
-const EDAOMismatch: u64 = 2;
+const EVaultOUMismatch: u64 = 0;
+const ESubOUVaultMismatch: u64 = 1;
+const EOUMismatch: u64 = 2;
 const EAssetLimitExceeded: u64 = 4;
 const ETargetTreasuryMismatch: u64 = 5;
 const ETargetVaultMismatch: u64 = 6;
-const ETargetDAOMismatch: u64 = 7;
+const ETargetOUMismatch: u64 = 7;
 /// The source treasury or vault is not the one the transfer was begun with.
 const ESourceMismatch: u64 = 8;
 /// The coin type or cap ID is not in the TransferAssets payload, or has
@@ -56,162 +56,162 @@ public struct AssetTransfer {
 
 // === Events ===
 
-public struct SubDAOCreated has copy, drop {
-    controller_dao_id: ID,
-    subdao_id: ID,
+public struct SubOUCreated has copy, drop {
+    controller_ou_id: ID,
+    subou_id: ID,
     control_cap_id: ID,
 }
 
-public struct SuccessorDAOSpawned has copy, drop {
-    origin_dao_id: ID,
-    successor_dao_id: ID,
+public struct SuccessorOUSpawned has copy, drop {
+    origin_ou_id: ID,
+    successor_ou_id: ID,
 }
 
-public struct SubDAOSpunOut has copy, drop {
-    controller_dao_id: ID,
-    subdao_id: ID,
+public struct SubOUSpunOut has copy, drop {
+    controller_ou_id: ID,
+    subou_id: ID,
 }
 
 public struct AssetsTransferInitiated has copy, drop {
-    dao_id: ID,
-    target_dao_id: ID,
+    ou_id: ID,
+    target_ou_id: ID,
     coin_count: u64,
     cap_count: u64,
 }
 
 // === Handlers ===
 
-/// Execute a CreateSubDAO proposal.
-public fun execute_create_subdao(
+/// Execute a CreateSubOU proposal.
+public fun execute_create_subou(
     vault: &mut CapabilityVault,
-    ticket: ExecutionTicket<CreateSubDAO>,
+    ticket: ExecutionTicket<CreateSubOU>,
     ctx: &mut TxContext,
 ) {
-    assert!(vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
+    assert!(vault.ou_id() == ticket.ticket_ou_id(), EVaultOUMismatch);
 
     let payload = ticket.ticket_payload();
     let gov_init = governance::init_board(*payload.initial_board());
 
-    let (subdao, freeze_admin_cap) = dao::create_subdao(
+    let (subou, freeze_admin_cap) = ou::create_subou(
         &gov_init,
         *payload.name(),
         *payload.metadata_uri(),
         ctx,
     );
 
-    let subdao_id = object::id(&subdao);
-    let req = ticket.ticket_request(create_subdao::permit());
+    let subou_id = object::id(&subou);
+    let req = ticket.ticket_request(create_subou::permit());
 
-    let control_cap_id = vault.create_subdao_control(subdao_id, req, ctx);
+    let control_cap_id = vault.create_subou_control(subou_id, req, ctx);
     vault.store_cap(freeze_admin_cap, req);
-    dao::share_subdao(subdao, control_cap_id);
+    ou::share_subou(subou, control_cap_id);
 
-    event::emit(SubDAOCreated {
-        controller_dao_id: vault.dao_id(),
-        subdao_id,
+    event::emit(SubOUCreated {
+        controller_ou_id: vault.ou_id(),
+        subou_id,
         control_cap_id,
     });
 
-    ticket.discharge(create_subdao::permit());
+    ticket.discharge(create_subou::permit());
 }
 
-/// Execute a SpawnDAO proposal.
-public fun execute_spawn_dao(
-    dao: &mut DAO,
-    ticket: ExecutionTicket<SpawnDAO>,
+/// Execute a SpawnOU proposal.
+public fun execute_spawn_ou(
+    ou: &mut OU,
+    ticket: ExecutionTicket<SpawnOU>,
     ctx: &mut TxContext,
 ) {
-    assert!(dao.id() == ticket.ticket_dao_id(), EDAOMismatch);
+    assert!(ou.id() == ticket.ticket_ou_id(), EOUMismatch);
 
     let payload = ticket.ticket_payload();
 
-    let successor_id = dao::create(
+    let successor_id = ou::create(
         payload.governance_init(),
         *payload.name(),
         *payload.metadata_uri(),
         ctx,
     );
 
-    dao.set_migrating(successor_id, ticket.ticket_request(spawn_dao::permit()));
+    ou.set_migrating(successor_id, ticket.ticket_request(spawn_ou::permit()));
 
-    event::emit(SuccessorDAOSpawned {
-        origin_dao_id: dao.id(),
-        successor_dao_id: successor_id,
+    event::emit(SuccessorOUSpawned {
+        origin_ou_id: ou.id(),
+        successor_ou_id: successor_id,
     });
 
-    ticket.discharge(spawn_dao::permit());
+    ticket.discharge(spawn_ou::permit());
 }
 
-/// Execute a SpinOutSubDAO proposal.
-public fun execute_spin_out_subdao(
+/// Execute a SpinOutSubOU proposal.
+public fun execute_spin_out_subou(
     vault: &mut CapabilityVault,
-    subdao_vault: &mut CapabilityVault,
-    subdao: &mut DAO,
-    ticket: ExecutionTicket<SpinOutSubDAO>,
+    subou_vault: &mut CapabilityVault,
+    subou: &mut OU,
+    ticket: ExecutionTicket<SpinOutSubOU>,
     ctx: &mut TxContext,
 ) {
-    assert!(vault.dao_id() == ticket.ticket_dao_id(), EVaultDAOMismatch);
+    assert!(vault.ou_id() == ticket.ticket_ou_id(), EVaultOUMismatch);
 
     let payload = ticket.ticket_payload();
-    assert!(subdao_vault.dao_id() == payload.subdao_id(), ESubDAOVaultMismatch);
+    assert!(subou_vault.ou_id() == payload.subou_id(), ESubOUVaultMismatch);
 
-    let req = ticket.ticket_request(spin_out_subdao::permit());
+    let req = ticket.ticket_request(spin_out_subou::permit());
 
-    let (control, loan) = vault.loan_cap<SubDAOControl, SpinOutSubDAO>(
+    let (control, loan) = vault.loan_cap<SubOUControl, SpinOutSubOU>(
         payload.control_cap_id(),
         req,
     );
 
-    let subdao_req = controller::privileged_submit(
+    let subou_req = controller::privileged_submit(
         &control,
-        subdao,
-        b"SpinOutSubDAO".to_ascii_string(),
+        subou,
+        b"SpinOutSubOU".to_ascii_string(),
         option::some(std::string::utf8(b"Controller-initiated spin-out")),
-        spin_out_subdao::new(
-            payload.subdao_id(),
+        spin_out_subou::new(
+            payload.subou_id(),
             payload.control_cap_id(),
             payload.freeze_admin_cap_id(),
-            *payload.spawn_dao_config(),
-            *payload.spin_out_subdao_config(),
-            *payload.create_subdao_config(),
+            *payload.spawn_ou_config(),
+            *payload.spin_out_subou_config(),
+            *payload.create_subou_config(),
         ),
         ctx,
     );
 
-    subdao.clear_controller(&subdao_req);
-    subdao.enable_proposal_type<SpawnDAO, SpinOutSubDAO>(
-        b"SpawnDAO".to_ascii_string(),
-        *payload.spawn_dao_config(),
-        &subdao_req,
+    subou.clear_controller(&subou_req);
+    subou.enable_proposal_type<SpawnOU, SpinOutSubOU>(
+        b"SpawnOU".to_ascii_string(),
+        *payload.spawn_ou_config(),
+        &subou_req,
     );
-    subdao.enable_proposal_type<SpinOutSubDAO, SpinOutSubDAO>(
-        b"SpinOutSubDAO".to_ascii_string(),
-        *payload.spin_out_subdao_config(),
-        &subdao_req,
+    subou.enable_proposal_type<SpinOutSubOU, SpinOutSubOU>(
+        b"SpinOutSubOU".to_ascii_string(),
+        *payload.spin_out_subou_config(),
+        &subou_req,
     );
-    subdao.enable_proposal_type<CreateSubDAO, SpinOutSubDAO>(
-        b"CreateSubDAO".to_ascii_string(),
-        *payload.create_subdao_config(),
-        &subdao_req,
+    subou.enable_proposal_type<CreateSubOU, SpinOutSubOU>(
+        b"CreateSubOU".to_ascii_string(),
+        *payload.create_subou_config(),
+        &subou_req,
     );
 
-    controller::privileged_consume(subdao_req, &control);
+    controller::privileged_consume(subou_req, &control);
     vault.return_cap(control, loan);
 
-    let freeze_cap = vault.extract_cap<emergency::FreezeAdminCap, SpinOutSubDAO>(
+    let freeze_cap = vault.extract_cap<emergency::FreezeAdminCap, SpinOutSubOU>(
         payload.freeze_admin_cap_id(),
         req,
     );
-    subdao_vault.receive_cap(freeze_cap, req);
+    subou_vault.receive_cap(freeze_cap, req);
 
-    vault.destroy_subdao_control(payload.control_cap_id(), req);
+    vault.destroy_subou_control(payload.control_cap_id(), req);
 
-    event::emit(SubDAOSpunOut {
-        controller_dao_id: vault.dao_id(),
-        subdao_id: payload.subdao_id(),
+    event::emit(SubOUSpunOut {
+        controller_ou_id: vault.ou_id(),
+        subou_id: payload.subou_id(),
     });
 
-    ticket.discharge(spin_out_subdao::permit());
+    ticket.discharge(spin_out_subou::permit());
 }
 
 // === TransferAssets ===
@@ -230,19 +230,19 @@ public fun begin_transfer_assets(
     source_cap_vault: &CapabilityVault,
     ticket: ExecutionTicket<TransferAssets>,
 ): AssetTransfer {
-    let dao_id = ticket.ticket_dao_id();
+    let ou_id = ticket.ticket_ou_id();
     let payload = ticket.ticket_payload();
 
-    assert!(source_treasury.dao_id() == dao_id, EVaultDAOMismatch);
-    assert!(source_cap_vault.dao_id() == dao_id, EVaultDAOMismatch);
+    assert!(source_treasury.ou_id() == ou_id, EVaultOUMismatch);
+    assert!(source_cap_vault.ou_id() == ou_id, EVaultOUMismatch);
     assert!(
         payload.coin_types().length() + payload.cap_ids().length() <= MAX_TRANSFER_ASSETS,
         EAssetLimitExceeded,
     );
 
     event::emit(AssetsTransferInitiated {
-        dao_id,
-        target_dao_id: payload.target_dao_id(),
+        ou_id,
+        target_ou_id: payload.target_ou_id(),
         coin_count: payload.coin_types().length(),
         cap_count: payload.cap_ids().length(),
     });
@@ -269,7 +269,7 @@ public fun transfer_coin<T>(
     assert!(object::id(source) == self.source_treasury_id, ESourceMismatch);
     let payload = self.ticket.ticket_payload();
     assert!(object::id(target) == payload.target_treasury_id(), ETargetTreasuryMismatch);
-    assert!(target.dao_id() == payload.target_dao_id(), ETargetDAOMismatch);
+    assert!(target.ou_id() == payload.target_ou_id(), ETargetOUMismatch);
 
     let (found, i) = self.coins_left.index_of(&type_name::with_original_ids<T>());
     assert!(found, EAssetNotListed);
@@ -294,7 +294,7 @@ public fun transfer_cap<T: key + store>(
     assert!(object::id(source) == self.source_vault_id, ESourceMismatch);
     let payload = self.ticket.ticket_payload();
     assert!(object::id(target) == payload.target_vault_id(), ETargetVaultMismatch);
-    assert!(target.dao_id() == payload.target_dao_id(), ETargetDAOMismatch);
+    assert!(target.ou_id() == payload.target_ou_id(), ETargetOUMismatch);
 
     let (found, i) = self.caps_left.index_of(&cap_id);
     assert!(found, EAssetNotListed);

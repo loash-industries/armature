@@ -5,15 +5,15 @@ that stands in for a third party:
 
 | Package | Role | Upgrade cadence |
 |---|---|---|
-| `armature_framework` | The kernel: DAO objects, the execution engine, and the types that change who may do what | Never touched after a release |
-| `armature_proposals` | First-party extension: asset operations on the treasury and capability vault, SubDAO control, upgrades | Frequent |
+| `armature_framework` | The kernel: OU objects, the execution engine, and the types that change who may do what | Never touched after a release |
+| `armature_proposals` | First-party extension: asset operations on the treasury and capability vault, SubOU control, upgrades | Frequent |
 | `armature_world_bridge` | First-party extension: EVE Frontier world integration (autojoin) | Frequent |
 | `armature_external_type_tests` | Test-only fixture shaped like a third-party integrator (`Rebalance<T>`) | Never published |
 
 This page is the rule for deciding where a new proposal type goes, and why the
 current inventory sits where it does. It exists because a type's package is a
 one-way door: a type's identity is its defining package, so moving a type later
-creates a new type that every DAO must re-enable and the indexer must re-key.
+creates a new type that every OU must re-enable and the indexer must re-key.
 
 ## Why the package boundary is the trust boundary
 
@@ -32,10 +32,10 @@ mutator checks them. Three things follow.
   every change must preserve.
 - **Bits and scopes are the blast radius of a package, not a handler.** Each
   package keeps an `UpgradeCap`. An upgrade can rewrite how every type defined
-  in that package spends its request, and a DAO cannot pin a package version.
+  in that package spends its request, and an OU cannot pin a package version.
   Whoever holds the `armature_proposals` upgrade cap can therefore use every
-  bit and scope any DAO has granted a proposals-defined type. Keep that cap in
-  a DAO vault governed by `ProposeUpgrade`, or make the package immutable per
+  bit and scope any OU has granted a proposals-defined type. Keep that cap in
+  an OU vault governed by `ProposeUpgrade`, or make the package immutable per
   release.
 - **What "shopping around" now means.** A PTB author cannot shop across types:
   the permit stops them spending another type's ticket, and bits stop a ticket
@@ -50,14 +50,14 @@ mutator checks them. Three things follow.
 Ask these in order. The first "yes" decides.
 
 1. **Does the framework name the type?** The fixed-bits table
-   (`dao::framework_permissions`), the fixed borrow scope
-   (`dao::framework_borrow_scope`), the undisableable and SubDAO-blocked sets,
+   (`ou::framework_permissions`), the fixed borrow scope
+   (`ou::framework_borrow_scope`), the undisableable and SubOU-blocked sets,
    the migration-allowed set, the mandatory freeze exemptions, default seeded
    slots, and the typed composite steps all name types. Anything they name is a
    framework type. No choice.
 2. **Does the handler need a package-private framework internal?** Minting an
-   `ExternalExecutionCap`, creating DAO objects, constructing a
-   `SubDAOControl`. Framework.
+   `ExternalExecutionCap`, creating OU objects, constructing a
+   `SubOUControl`. Framework.
 3. **Does the type reconfigure the framework's own safety machinery?** The
    emergency freeze is the framework's last line of defence, and its exempt set
    decides which types keep executing while everything else is stopped. That
@@ -71,7 +71,7 @@ Ask these in order. The first "yes" decides.
    trustworthy as that package's upgrade key. The *type* stays outside; the
    *bound* becomes a framework primitive (`spend_guard`, the borrow scope).
 5. **Otherwise it is an extension type.** First-party versus third-party
-   differs only in who holds the upgrade cap and who reviews. The DAO's 80%
+   differs only in who holds the upgrade cap and who reviews. The OU's 80%
    enable vote is the sole trust decision in both cases.
 
 Two standing constraints sit on top of the rule:
@@ -87,14 +87,14 @@ Two standing constraints sit on top of the rule:
 |---|---|---|---|
 | EnableProposalType, DisableProposalType, UpdateProposalConfig, EnableBypassType, DisableBypassType | TYPE_ADMIN (+ vault) | framework | 1, 2 |
 | AddMember, RemoveMember, BatchAddMembers, BatchRemoveMembers, SetBoard, UpdateMetadata | BOARD_*, METADATA | framework | 1 |
-| SpawnDAO, CreateSubDAO, SpinOutSubDAO, TransferAssets | MIGRATE, VAULT_*, TREASURY_WITHDRAW; SpinOutSubDAO scoped to `SubDAOControl` | framework | 1 |
+| SpawnOU, CreateSubOU, SpinOutSubOU, TransferAssets | MIGRATE, VAULT_*, TREASURY_WITHDRAW; SpinOutSubOU scoped to `SubOUControl` | framework | 1 |
 | TransferFreezeAdmin, UnfreezeProposalType, UpdateFreezeConfig, UpdateFreezeExemptTypes | FREEZE | framework | 1, 3 |
 | AdoptCurrency, MintCoin, MintAllowance, BurnCoin, ReturnCurrencyCap | vault bits, TREASURY_WITHDRAW; borrowers scoped to `TreasuryCap<T>` | proposals | 4, 5 |
-| SendCoin, SendCoinToDAO, SendSmallPayment, SendBatchMulticoin* | TREASURY_WITHDRAW | proposals | 4, 5 |
-| TransferCapToSubDAO, ReclaimCapFromSubDAO, ControllerBatch*, PauseSubDAOExecution, UnpauseSubDAOExecution | VAULT_EXTRACT / VAULT_BORROW scoped to `SubDAOControl` | proposals | 5 |
+| SendCoin, SendCoinToOU, SendSmallPayment, SendBatchMulticoin* | TREASURY_WITHDRAW | proposals | 4, 5 |
+| TransferCapToSubOU, ReclaimCapFromSubOU, ControllerBatch*, PauseSubOUExecution, UnpauseSubOUExecution | VAULT_EXTRACT / VAULT_BORROW scoped to `SubOUControl` | proposals | 5 |
 | ProposeUpgrade | VAULT_BORROW scoped to `UpgradeCap` | proposals | 5 |
 | ConfigureMintAllowance | none (own type-state) | proposals | 5 |
-| AutojoinDAO, ConfigureAutojoin | BOARD_ADD / none | world_bridge | 5 |
+| AutojoinOU, ConfigureAutojoin | BOARD_ADD / none | world_bridge | 5 |
 | Rebalance | none | external tests | third-party template |
 
 ## Bypass types
@@ -102,7 +102,7 @@ Two standing constraints sit on top of the rule:
 A bypass-capable type is a triple in one module: the payload, a mint entry
 that authenticates the caller before calling `external_execution::ticket_from_cap`,
 and the handler. The framework enforces "one module" through the permit. The
-`ExternalExecutionCap` in the vault is the DAO's opt-in, not a bearer
+`ExternalExecutionCap` in the vault is the OU's opt-in, not a bearer
 credential, so the mint entry's check is the whole authorization. The
 constructor's visibility is irrelevant: `Rebalance::new` is public and the type
 is still safe from outsiders, because nobody outside its module can reach the
@@ -117,7 +117,7 @@ Two framework rules make this safe by construction rather than by review:
   `UpdateProposalConfig` grant cannot open it either.
 - **Borrow scope.** A `VAULT_BORROW` type reaches only the cap types in its
   `borrow_scope`, whatever its handler does. `MintAllowance<T>` is scoped to
-  `TreasuryCap<T>` and cannot reach the `UpgradeCap` or a `SubDAOControl` in
+  `TreasuryCap<T>` and cannot reach the `UpgradeCap` or a `SubOUControl` in
   the same vault.
 
 First-party reference implementations: `autojoin_ops::autojoin` (world bridge,

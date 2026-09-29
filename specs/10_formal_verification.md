@@ -4,7 +4,7 @@
 
 > **Status: plan, not implemented** (checked 2026-09-26 at commit `6ed2b77`). The repo has no prover specs (`#[spec(...)]` functions), no spec modules and no prover CI job. Today the properties listed here are enforced by the Move type system, the unit and scenario tests, and a CI gate check (§5). This document is the plan for adding proofs on top of those.
 
-## 1. Why Formal Verification for DAO Protocol
+## 1. Why Formal Verification for OU Protocol
 
 This protocol governs treasury funds, capability delegation, organizational hierarchy and, since ROAD-39, a per-type permission model that decides what each executed proposal may touch. A single arithmetic bug in quorum calculation, a missed permission check or a mis-scoped borrow could drain a treasury, hand a capability to the wrong type, or deadlock governance permanently.
 
@@ -16,16 +16,16 @@ The invariants in `03_core_spec.md` §6 are covered by about 573 Move tests (fra
 
 | Module | Risk if Broken | Verification Priority |
 |--------|---------------|----------------------|
-| Permission model (`permissions`; floors and grant rules in `dao`; `proposal::assert_permitted` / `assert_may_borrow`; bypass-safe bits in `external_execution`) | A request reaches a mutator its type was never granted; a no-vote path changes the authority graph | **Critical** |
+| Permission model (`permissions`; floors and grant rules in `ou`; `proposal::assert_permitted` / `assert_may_borrow`; bypass-safe bits in `external_execution`) | A request reaches a mutator its type was never granted; a no-vote path changes the authority graph | **Critical** |
 | TreasuryVault | Fund loss / phantom balances | **Critical** |
 | Governance arithmetic (pass rule, config bounds, floors) | Broken quorum → unauthorized execution | **Critical** |
 | CapabilityVault + CapLoan | Capability theft / stuck loans / borrow outside scope | **High** |
 | Proposal state machine and deadlines | Double execution, skipped execution, proposals deletable too early or never | **High** |
 | Type registry (slots, display keys) | A payload executing under another type's config or bits | **High** |
 | EmergencyFreeze | Permanent lockout / freeze bypass | **High** |
-| SubDAO hierarchy and controller | Authority laundering / stuck pause / control over the wrong DAO | **High** |
+| SubOU hierarchy and controller | Authority laundering / stuck pause / control over the wrong OU | **High** |
 | Composite pipeline | Bits pooling across steps; grants carried inside a composite | **Medium** |
-| DAO lifecycle | Orphaned state / premature destroy | **Medium** |
+| OU lifecycle | Orphaned state / premature destroy | **Medium** |
 | `spend_guard` | Rate-limit bypass | **Medium** |
 
 The Charter targets of the original plan (tampered history, version skip) are gone: the Charter holds only a name and a metadata URI (`05_charter.md`), and its one mutator is covered by the permission checks.
@@ -70,7 +70,7 @@ packages/armature_framework/specs/        (proposed)
 ├── emergency_spec.move            — TypeName keying, mandatory exemptions, auto-expiry
 ├── controller_spec.move           — controller pause, privileged requests, controller-only mutators
 ├── composite_spec.move            — step bounds, no nesting, config maximum
-├── dao_lifecycle_spec.move        — Active → Migrating, migration gate, destroy preconditions
+├── ou_lifecycle_spec.move        — Active → Migrating, migration gate, destroy preconditions
 └── spend_guard_spec.move          — rolling-epoch cap
 ```
 
@@ -86,9 +86,9 @@ public fun withdraw_spec<T, P>(
     req: &ExecutionRequest<P>,
     ctx: &mut TxContext,
 ): Coin<T> {
-    // Preconditions: a request of this DAO carrying TREASURY_WITHDRAW
+    // Preconditions: a request of this OU carrying TREASURY_WITHDRAW
     // (or privileged), and enough balance
-    requires(vault.dao_id() == req.req_dao_id());
+    requires(vault.ou_id() == req.req_ou_id());
     requires(req.req_has_permission(permissions::treasury_withdraw()));
     requires(balance<T>(vault) >= amount);
 
@@ -106,7 +106,7 @@ public fun withdraw_spec<T, P>(
 }
 ```
 
-The abort side is specified with `asserts()`: `withdraw` aborts with `EDAOIdMismatch` for another DAO's request, `EPermissionDenied` without the bit, and `EInsufficientBalance` past the balance. Every gated mutator in `packages/armature_framework/internal_workings.md` §2 gets the same pair of specs. That turns each `gate_tests.move` denial test, which checks one input, into a statement about all inputs.
+The abort side is specified with `asserts()`: `withdraw` aborts with `EOUIdMismatch` for another OU's request, `EPermissionDenied` without the bit, and `EInsufficientBalance` past the balance. Every gated mutator in `packages/armature_framework/internal_workings.md` §2 gets the same pair of specs. That turns each `gate_tests.move` denial test, which checks one input, into a statement about all inputs.
 
 ### What the Prover Does
 
@@ -121,15 +121,15 @@ A proved spec means: *for ALL possible inputs satisfying `requires`, the `ensure
 
 Each invariant below restates one from `03_core_spec.md` §6 (Consolidated Invariants) or `packages/armature_framework/internal_workings.md` and maps to one proposed spec file. **No row has a spec yet.** "Enforced today by" names what holds the property until a proof exists; "type system" means the Move compiler rejects any violation.
 
-**Changes from the March tracker (41 rows).** Dropped: `Charter::VersionMonotonic`, `Charter::AmendmentRecords` and `Charter::RenewStorage` (no Walrus charter, versions or amendments), and every property of the removed `Executed` / `Expired` statuses. Changed: `Admin::EnableTypeFloor` (66%) and `Admin::UpdateConfigFloor` (self-referential 80%) became `Permissions::Floors` (80% on every stored config); `Proposal::TypeGate` ("in `enabled_proposals`") became `Registry::TypeSelectsSlot`; `SubDAO::HierarchyBlocklist` moved into `Registry::ClassificationSets`. Removed as unenforced: "only one `SubDAOControl` per SubDAO" (now covered by `SubDAO::PrivilegedScope`: only the registered control has authority). Added: the Permissions, Registry, Composite and SpendGuard groups and the deletion and deadline rows.
+**Changes from the March tracker (41 rows).** Dropped: `Charter::VersionMonotonic`, `Charter::AmendmentRecords` and `Charter::RenewStorage` (no Walrus charter, versions or amendments), and every property of the removed `Executed` / `Expired` statuses. Changed: `Admin::EnableTypeFloor` (66%) and `Admin::UpdateConfigFloor` (self-referential 80%) became `Permissions::Floors` (80% on every stored config); `Proposal::TypeGate` ("in `enabled_proposals`") became `Registry::TypeSelectsSlot`; `SubOU::HierarchyBlocklist` moved into `Registry::ClassificationSets`. Removed as unenforced: "only one `SubOUControl` per SubOU" (now covered by `SubOU::PrivilegedScope`: only the registered control has authority). Added: the Permissions, Registry, Composite and SpendGuard groups and the deletion and deadline rows.
 
 ### Permissions (`permissions_spec.move`)
 
 | ID | Invariant | Enforced today by |
 |----|-----------|-------------------|
-| `Permissions::MutatorGated` | Every framework `public fun` taking an `ExecutionRequest` checks the request's DAO, then its bits or `privileged`. The exceptions are on a reviewed allowlist: accessors, the checks themselves, `P`-scoped type-state, `privileged_consume` and test helpers | `scripts/check_request_gates.py` (CI); `gate_tests.move`, one denial test per gated mutator (30) |
+| `Permissions::MutatorGated` | Every framework `public fun` taking an `ExecutionRequest` checks the request's OU, then its bits or `privileged`. The exceptions are on a reviewed allowlist: accessors, the checks themselves, `P`-scoped type-state, `privileged_consume` and test helpers | `scripts/check_request_gates.py` (CI); `gate_tests.move`, one denial test per gated mutator (30) |
 | `Permissions::BitsFromSlot` | A request's `permissions` and `borrow_scope` equal `P`'s slot values at mint time on the vote, atomic, bypass and composite-step paths. Only `controller::privileged_submit` mints `privileged = true`, with 0 bits and an empty scope | `permissions_tests`, `borrow_scope_tests`, `composite_tests` |
-| `Permissions::FixedFrameworkBits` | A framework type's slot always holds exactly `dao::framework_permissions` and `dao::framework_borrow_scope` (`EFixedPermissions`) | `permissions_tests`, `borrow_scope_tests` |
+| `Permissions::FixedFrameworkBits` | A framework type's slot always holds exactly `ou::framework_permissions` and `ou::framework_borrow_scope` (`EFixedPermissions`) | `permissions_tests`, `borrow_scope_tests` |
 | `Permissions::Floors` | Every stored config meets `min_approval_threshold_for_type` (80% for EnableProposalType, UpdateProposalConfig, EnableBypassType) and `permission_floor(bits)` (80% with TYPE_ADMIN, MIGRATE, TREASURY_WITHDRAW, VAULT_BORROW or VAULT_EXTRACT). Checked on enable, update and creation-time overrides (`EThresholdBelowMinimum`) | `permissions_tests`, `admin_ops_tests`, `tribe_tests` |
 | `Permissions::GrantRules` | Only an EnableProposalType, EnableBypassType or UpdateProposalConfig request, or a privileged one, changes a type's bits or scope (`EPermissionChangeNotAllowed`). The added bits' floor never exceeds the granter's floor (`EGrantFloorNotMet`), and a scope change counts as a VAULT_BORROW grant | `permissions_tests`, `borrow_scope_tests` |
 | `Permissions::NoGrantInComposite` | `add_step` refuses EnableProposalType and UpdateProposalConfig (`EUseTypedStep`). `add_enable_proposal_type_step` refuses a config with bits or a scope, and `add_update_proposal_config_step` refuses any change to them (`EGrantInComposite`) | `permissions_tests` |
@@ -137,15 +137,15 @@ Each invariant below restates one from `03_core_spec.md` §6 (Consolidated Invar
 | `Permissions::BorrowScope` | `borrow_cap`, `borrow_cap_mut` and `loan_cap` need VAULT_BORROW and the cap type in the request's scope (`EBorrowScopeDenied`); a privileged request passes | `borrow_scope_tests`, `gate_tests` |
 | `Permissions::BypassSafeBits` | A bypass-enabled type never holds TYPE_ADMIN, MIGRATE, VAULT_EXTRACT or FREEZE. This is refused at `execute_enable_bypass_type` and on every `ticket_from_cap` (`EBypassForbiddenBits`) | `external_execution_tests` |
 | `Permissions::PermitBinding` | `ticket_request`, `discharge`, `discharge_returning_payload` and `ticket_from_cap(_readonly)` require `Permit<P>`, so only `P`'s defining module (or its package) can spend, close or bypass-mint a `P` ticket | Type system (`std::internal::Permit`); `check_request_gates.py` (`PERMIT_REQUIRED`); `external_type_lifecycle_tests` |
-| `Permissions::ControllerOnly` | `set_controller_paused` and `clear_controller` accept only privileged requests (`dao::ENotPrivileged`) | `gate_tests` |
-| `Charter::MetadataGate` | `charter::update_metadata` needs a request of the charter's DAO carrying METADATA | `gate_tests`, `charter_tests` |
+| `Permissions::ControllerOnly` | `set_controller_paused` and `clear_controller` accept only privileged requests (`ou::ENotPrivileged`) | `gate_tests` |
+| `Charter::MetadataGate` | `charter::update_metadata` needs a request of the charter's OU carrying METADATA | `gate_tests`, `charter_tests` |
 
 ### Governance arithmetic (`governance_arith_spec.move`)
 
 | ID | Invariant | Enforced today by |
 |----|-----------|-------------------|
 | `Board::PassRule` | A proposal passes iff `yes + no > 0`, `(yes + no) · 10000 ≥ quorum · total_snapshot_weight` and `yes · 10000 ≥ approval_threshold · (yes + no)`, computed in u128 with no overflow (`utils::gte_bps`) | `utils` unit tests (incl. `u64::MAX` inputs), `board_voting_tests`, `proposal_tests` |
-| `ProposalConfig::Validation` | `new_config` aborts unless `quorum ∈ [1, 10000]`, `approval_threshold ∈ [5000, 10000]` and `expiry_ms ≥ 3,600,000`. There is no upper bound on expiry or delay | `dao_tests` |
+| `ProposalConfig::Validation` | `new_config` aborts unless `quorum ∈ [1, 10000]`, `approval_threshold ∈ [5000, 10000]` and `expiry_ms ≥ 3,600,000`. There is no upper bound on expiry or delay | `ou_tests` |
 | `Board::NonEmpty` | No roster change leaves the board empty (`EEmptyBoard`). Adding a current member aborts (`EDuplicateBoardMember`), except in a batch add, which skips it | `board_ops_tests`, `member_ops_tests`, `tribe_tests` |
 | `Board::RosterVersion` | `roster_version` rises by exactly one per membership change (a batch counts once, a no-op batch not at all); a former member keeps a closed tenure | `proposal_tests` (`test_roster_version_and_snapshot_version`) |
 
@@ -153,10 +153,10 @@ Each invariant below restates one from `03_core_spec.md` §6 (Consolidated Invar
 
 | ID | Invariant | Enforced today by |
 |----|-----------|-------------------|
-| `Registry::SlotUnique` | At most one slot per canonical `TypeName` (`ETypeAlreadyEnabled`). Display keys are non-empty and unique per DAO (`EEmptyDisplayKey`, `EDisplayKeyTaken`), and the display-key index stays the inverse of the slots across enable and disable | `dao_tests`, `admin_ops_tests` |
-| `Registry::TypeSelectsSlot` | Submission and execution take config, display key and bits from `P`'s own slot, with no caller-supplied key; a type without a slot aborts `ETypeNotEnabled` | `dao_tests`, `external_type_lifecycle_tests` |
+| `Registry::SlotUnique` | At most one slot per canonical `TypeName` (`ETypeAlreadyEnabled`). Display keys are non-empty and unique per OU (`EEmptyDisplayKey`, `EDisplayKeyTaken`), and the display-key index stays the inverse of the slots across enable and disable | `ou_tests`, `admin_ops_tests` |
+| `Registry::TypeSelectsSlot` | Submission and execution take config, display key and bits from `P`'s own slot, with no caller-supplied key; a type without a slot aborts `ETypeNotEnabled` | `ou_tests`, `external_type_lifecycle_tests` |
 | `Registry::PinnedType` | EnableProposalType and EnableBypassType execute only for the Move type the payload names (`ETypeMismatch`) | `admin_ops_tests`, `external_execution_tests` |
-| `Registry::ClassificationSets` | Undisableable types are never disabled; SubDAO-blocked types are never enabled on a DAO with a controller; only `TransferAssets` runs while Migrating. The first two are handler-level (see §4.1) | `admin_ops_tests`, `tribe_tests`, `migration_tests` |
+| `Registry::ClassificationSets` | Undisableable types are never disabled; SubOU-blocked types are never enabled on an OU with a controller; only `TransferAssets` runs while Migrating. The first two are handler-level (see §4.1) | `admin_ops_tests`, `tribe_tests`, `migration_tests` |
 
 ### Proposal lifecycle (`proposal_lifecycle_spec.move`)
 
@@ -179,7 +179,7 @@ Each invariant below restates one from `03_core_spec.md` §6 (Consolidated Invar
 
 | ID | Invariant | Enforced today by |
 |----|-----------|-------------------|
-| `Treasury::WithdrawGate` | `withdraw` and `withdraw_multicoin` need a request of this DAO carrying TREASURY_WITHDRAW (or privileged) | `gate_tests`, `treasury_vault_tests` |
+| `Treasury::WithdrawGate` | `withdraw` and `withdraw_multicoin` need a request of this OU carrying TREASURY_WITHDRAW (or privileged) | `gate_tests`, `treasury_vault_tests` |
 | `Treasury::Conservation` | `withdraw` lowers the balance by exactly `amount` and returns a coin of `amount`; `deposit` raises it by the coin's value | `treasury_vault_tests` |
 | `Treasury::RegistrySynced` | `coin_types` is exactly the set of coin types with a non-zero balance | `treasury_vault_tests` |
 | `Treasury::ZeroBalanceCleanup` | No zero `Balance<T>` field persists; a zero-value deposit is a no-op | `treasury_vault_tests` |
@@ -189,48 +189,48 @@ Each invariant below restates one from `03_core_spec.md` §6 (Consolidated Invar
 
 | ID | Invariant | Enforced today by |
 |----|-----------|-------------------|
-| `CapabilityVault::Gating` | Store needs VAULT_STORE; borrow and loan need VAULT_BORROW plus scope; extract and `SubDAOControl` create/destroy need VAULT_EXTRACT. `borrow_external_cap` is the only ungated read | `gate_tests`, `borrow_scope_tests`, `capability_vault_tests` |
+| `CapabilityVault::Gating` | Store needs VAULT_STORE; borrow and loan need VAULT_BORROW plus scope; extract and `SubOUControl` create/destroy need VAULT_EXTRACT. `borrow_external_cap` is the only ungated read | `gate_tests`, `borrow_scope_tests`, `capability_vault_tests` |
 | `CapabilityVault::RegistrySynced` | `cap_types`, `cap_ids` and `ids_by_type` match the stored caps | `capability_vault_tests` |
 | `CapabilityVault::LoanPreservesRegistries` | `loan_cap` leaves the registries unchanged (the ID counts as held) | `capability_vault_tests` |
 | `CapabilityVault::CapLoanVerification` | `return_cap` accepts only the loaned cap, into the vault it came from (`ECapIdMismatch`, `EVaultIdMismatch`) | Code only; no negative test exists |
-| `CapabilityVault::PrivilegedExtract` | `controller::privileged_extract` needs the SubDAO's vault (`EControlMismatch`) and its registered `&SubDAOControl` (`assert_registered_control`); `capability_vault::privileged_extract` is `public(package)` and checks `control.subdao_id == vault.dao_id` | `capability_vault_tests`, `cross_dao_auth_tests` |
-| `CapabilityVault::ReceiveFromController` | A cap enters another DAO's vault only through `receive_cap_authorized` (both requests), `controller::receive_cap_from_controller` (sender's vault holds the target's registered control; `ENotController`) or the framework's SpinOutSubDAO / TransferAssets handlers; `receive_cap` is `public(package)` | `capability_vault_tests`, `cross_dao_auth_tests` |
+| `CapabilityVault::PrivilegedExtract` | `controller::privileged_extract` needs the SubOU's vault (`EControlMismatch`) and its registered `&SubOUControl` (`assert_registered_control`); `capability_vault::privileged_extract` is `public(package)` and checks `control.subou_id == vault.ou_id` | `capability_vault_tests`, `cross_ou_auth_tests` |
+| `CapabilityVault::ReceiveFromController` | A cap enters another OU's vault only through `receive_cap_authorized` (both requests), `controller::receive_cap_from_controller` (sender's vault holds the target's registered control; `ENotController`) or the framework's SpinOutSubOU / TransferAssets handlers; `receive_cap` is `public(package)` | `capability_vault_tests`, `cross_ou_auth_tests` |
 
 ### Emergency Freeze (`emergency_spec.move`)
 
 | ID | Invariant | Enforced today by |
 |----|-----------|-------------------|
-| `EmergencyFreeze::BlocksExecution` | A frozen type cannot execute on the two-PTB, atomic, bypass or composite-step path (`assert_not_frozen<P>`); the freeze passed must be the executing DAO's (`EDAOMismatch`) | `freeze_path_tests`, `external_type_lifecycle_tests`, `cross_dao_auth_tests` |
+| `EmergencyFreeze::BlocksExecution` | A frozen type cannot execute on the two-PTB, atomic, bypass or composite-step path (`assert_not_frozen<P>`); the freeze passed must be the executing OU's (`EOUMismatch`) | `freeze_path_tests`, `external_type_lifecycle_tests`, `cross_ou_auth_tests` |
 | `EmergencyFreeze::KeyedByTypeName` | Freezing one instantiation (`Rebalance<CredA>`) leaves others executable | `freeze_path_tests`, `external_type_lifecycle_tests` |
 | `EmergencyFreeze::AutoExpiry` | A freeze ends at `now + max_freeze_duration_ms` with no further action | `emergency_tests` |
 | `EmergencyFreeze::MandatoryExemptions` | `TransferFreezeAdmin` and `UnfreezeProposalType`, matched by framework type, can never be frozen (`EProtectedType`) or un-exempted (`EMandatoryExemptType`) | `emergency_tests`, `freeze_ops_tests` |
 | `EmergencyFreeze::GovernanceOverride` | FREEZE-bit requests (and the cap holder) can unfreeze; only FREEZE-bit requests change the duration or the exempt set | `gate_tests`, `freeze_ops_tests` |
 
-### SubDAO and controller (`controller_spec.move`)
+### SubOU and controller (`controller_spec.move`)
 
 | ID | Invariant | Enforced today by |
 |----|-----------|-------------------|
-| `SubDAO::ControllerCapId` | `controller_cap_id` is set when a SubDAO is shared (`share_subdao`) and cleared only by `clear_controller` (privileged) | `controller_tests`, `migration_tests` |
-| `SubDAO::PauseCompleteness` | While `controller_paused`, the vote, atomic and bypass paths abort (`EControllerPaused`); only the controller's privileged path still runs | `controller_tests`, `subdao_ops_tests` (`paused_subdao_blocks_execution`) |
-| `SubDAO::PauseGranularity` | While paused, submission and voting still work | `subdao_ops_tests` |
-| `SubDAO::SpinOutCleanup` | `clear_controller` resets `controller_paused` to false | `migration_tests` |
-| `SubDAO::PrivilegedScope` | `privileged_submit` needs `control.subdao_id == subdao.id` (`EControlMismatch`), `subdao.controller_cap_id == some(id(control))` (`ENotController`) and an Active target; its request passes every check on that DAO and on no other | `controller_tests`, `cross_dao_auth_tests` |
+| `SubOU::ControllerCapId` | `controller_cap_id` is set when a SubOU is shared (`share_subou`) and cleared only by `clear_controller` (privileged) | `controller_tests`, `migration_tests` |
+| `SubOU::PauseCompleteness` | While `controller_paused`, the vote, atomic and bypass paths abort (`EControllerPaused`); only the controller's privileged path still runs | `controller_tests`, `subou_ops_tests` (`paused_subou_blocks_execution`) |
+| `SubOU::PauseGranularity` | While paused, submission and voting still work | `subou_ops_tests` |
+| `SubOU::SpinOutCleanup` | `clear_controller` resets `controller_paused` to false | `migration_tests` |
+| `SubOU::PrivilegedScope` | `privileged_submit` needs `control.subou_id == subou.id` (`EControlMismatch`), `subou.controller_cap_id == some(id(control))` (`ENotController`) and an Active target; its request passes every check on that OU and on no other | `controller_tests`, `cross_ou_auth_tests` |
 
 ### Composite (`composite_spec.move`)
 
 | ID | Invariant | Enforced today by |
 |----|-----------|-------------------|
 | `Composite::Bounds` | At most 16 steps; no nested `CompositePayload` (`ECompositeNesting`); each step type is enabled and `composable_allowed` | `composite_tests` (both packages) |
-| `Composite::DAOBound` | `begin_pipeline` and `advance_step` take only the ticket's / pipeline's DAO (`EDAOIdMismatch`); each step aborts if the DAO is execution- or controller-paused (`EExecutionPaused`, `EControllerPaused`) or the step type is disabled (`ETypeNotEnabled`) | `cross_dao_auth_tests` |
+| `Composite::OUBound` | `begin_pipeline` and `advance_step` take only the ticket's / pipeline's OU (`EOUIdMismatch`); each step aborts if the OU is execution- or controller-paused (`EExecutionPaused`, `EControllerPaused`) or the step type is disabled (`ETypeNotEnabled`) | `cross_ou_auth_tests` |
 | `Composite::ConfigMaximum` | The composite's config is the component-wise maximum of the "Composite" slot and every step's config; EnableProposalType and UpdateProposalConfig steps force ≥ 80% (`composite::EFloorNotMet`) | Code (`submit_composite`); `composite_tests` cover the passing case only |
 
-### DAO Lifecycle (`dao_lifecycle_spec.move`)
+### OU Lifecycle (`ou_lifecycle_spec.move`)
 
 | ID | Invariant | Enforced today by |
 |----|-----------|-------------------|
-| `DAO::StatusTransition` | `Active → Migrating` only (`set_migrating`, MIGRATE); no path back | `migration_tests` |
-| `DAO::MigrationGate` | While Migrating, only `TransferAssets` may be submitted or executed; the bypass path requires Active | `migration_tests` |
-| `DAO::DestroyRequirements` | `dao::destroy` needs Migrating, matching companion IDs, no encrypted entries, empty vaults and an empty frozen-type map | `migration_tests` (`spawn_dao_and_destroy_origin_e2e`) |
+| `OU::StatusTransition` | `Active → Migrating` only (`set_migrating`, MIGRATE); no path back | `migration_tests` |
+| `OU::MigrationGate` | While Migrating, only `TransferAssets` may be submitted or executed; the bypass path requires Active | `migration_tests` |
+| `OU::DestroyRequirements` | `ou::destroy` needs Migrating, matching companion IDs, no encrypted entries, empty vaults and an empty frozen-type map | `migration_tests` (`spawn_ou_and_destroy_origin_e2e`) |
 
 ### SpendGuard (`spend_guard_spec.move`)
 
@@ -242,18 +242,18 @@ Each invariant below restates one from `03_core_spec.md` §6 (Consolidated Invar
 
 Specs written naively for these would fail. Each needs a decision (change the code, or state the weaker property) before it can be specified.
 
-- **Classification checks are handler-level.** The undisableable, SubDAO-blocked and composable-versus-cooldown checks run in the framework handlers (`admin_ops`, `external_execution`), and the SubDAO blocklist also on creation-time overrides. They do not run in `dao::enable_proposal_type`, `disable_proposal_type` or `update_proposal_config`. A non-framework type granted TYPE_ADMIN (an 80% vote; never bypass-enabled) reaches those mutators with arguments of its own handler's choosing. The properties therefore hold only if no such type is enabled, or must be proved per handler.
+- **Classification checks are handler-level.** The undisableable, SubOU-blocked and composable-versus-cooldown checks run in the framework handlers (`admin_ops`, `external_execution`), and the SubOU blocklist also on creation-time overrides. They do not run in `ou::enable_proposal_type`, `disable_proposal_type` or `update_proposal_config`. A non-framework type granted TYPE_ADMIN (an 80% vote; never bypass-enabled) reaches those mutators with arguments of its own handler's choosing. The properties therefore hold only if no such type is enabled, or must be proved per handler.
 - **Composite steps skip the step type's cooldown.** `composite::advance_step` checks no per-step cooldown: it asserts only `cooldown_ms == 0 || composable_allowed`, and the `last_executed_snapshot` that `begin_pipeline` records is never read. The design relies on cooldown types not being composable, but only the `admin_ops` and `external_execution` handlers refuse a config that is both. Creation-time overrides keep a default slot's `composable_allowed` and do not run that check. A default-composable type such as AddMember, given a cooldown at creation, therefore runs inside composites without its own cooldown; the composite is rate-limited only by the `CompositePayload` slot's last execution. The module's doc comments still say `advance_step` enforces cooldowns.
 - **Arithmetic that aborts instead of saturating.** `emergency::freeze_type` computes `now + max_freeze_duration_ms` unchecked, and `update_freeze_duration` accepts any value, so a very large duration makes every freeze abort until governance lowers it. `external_execution` checks the bypass cooldown as `last + cooldown_ms` unchecked, whereas the vote paths use `utils::saturating_add`; the outcome is the same (blocked), but the abort code differs. `spend_guard::charge` divides by `epoch_duration_ms`, so a window created with a zero duration aborts every charge.
-- **Destroy liveness.** `dao::destroy` needs the frozen-type map empty, and expired entries stay in it until an unfreeze removes them. On a Migrating DAO no governance unfreeze can run (only `TransferAssets` executes), so only the `FreezeAdminCap` holder can clear them.
+- **Destroy liveness.** `ou::destroy` needs the frozen-type map empty, and expired entries stay in it until an unfreeze removes them. On a Migrating OU no governance unfreeze can run (only `TransferAssets` executes), so only the `FreezeAdminCap` holder can clear them.
 
 Accepted behaviours, which specs must state rather than forbid:
 
 - A config with an enormous `expiry_ms` or `execution_delay_ms` never expires: a Passed proposal under it leaves the chain only by execution.
 - With the default 7-day freeze and 7-day expiry, freezing a type right after one of its proposals passes can run out that proposal's execution window.
 - `disable_proposal_type` drops the type's cooldown state, so a re-enabled type's first execution is not rate-limited.
-- `capability_vault::receive_cap` (`public(package)`) does not check the receiving vault's DAO; its framework callers (SpinOutSubDAO, TransferAssets, `receive_cap_from_controller`) tie the sender to the target.
-- Destroying a DAO leaves its type slots attached to the deleted UID and drops the roster table without reclaiming entry deposits.
+- `capability_vault::receive_cap` (`public(package)`) does not check the receiving vault's OU; its framework callers (SpinOutSubOU, TransferAssets, `receive_cap_from_controller`) tie the sender to the target.
+- Destroying an OU leaves its type slots attached to the deleted UID and drops the roster table without reclaiming entry deposits.
 
 ## 5. What Enforces These Today, and CI Integration
 
@@ -263,7 +263,7 @@ Accepted behaviours, which specs must state rather than forbid:
 - **Unit and scenario tests** (`sui move test` per package): framework 419, proposals 123, world bridge 20, external-type fixture 11. The security-relevant suites are:
   - `gate_tests.move`: one denial test per gated mutator (30). Each mutator must refuse a request holding every bit except the one it needs; for the controller-only pair, any unprivileged request
   - `permissions_tests`, `borrow_scope_tests`, `freeze_path_tests`, `submit_vote_execute_tests`
-  - `cross_dao_auth_tests`: forged or spun-out `SubDAOControl`s, another DAO's freeze object, deposits into a vault the sender does not control, and composites run against another DAO or after a pause or disable
+  - `cross_ou_auth_tests`: forged or spun-out `SubOUControl`s, another OU's freeze object, deposits into a vault the sender does not control, and composites run against another OU or after a pause or disable
   - `proposal_tests`: deadlines, deletion, snapshot eligibility, the saturating maximum expiry
   - `armature_external_type_tests`: a third-party type on every path, and replays of the confirmed cross-type attacks
   - the world bridge's autojoin tickets, which carry BOARD_ADD only
@@ -334,6 +334,6 @@ Proposed; until specs exist, the gate check and the test suites are the blocking
 - Dynamic fields may require manual modeling. The type registry (slots and the display-key index), type-state, treasury balances and vault caps all live in dynamic fields, and the roster in a `Table`
 - Hot potato patterns (no-ability structs) are partially supported. Structural guarantees come from Move's type system; specs verify behavioral properties
 - Properties that cross package boundaries (`Permit<P>` binding, which package may spend a ticket) come from the type system and `std::internal`, not from specs
-- The framework uses Move 2024 enums (`ProposalStatus`, `Closeout`, `DAOStatus`), macros (`do_ref!`) and `std::internal::Permit`. Check prover support for each before writing specs
+- The framework uses Move 2024 enums (`ProposalStatus`, `Closeout`, `OUStatus`), macros (`do_ref!`) and `std::internal::Permit`. Check prover support for each before writing specs
 - Z3 may timeout on deeply nested nonlinear arithmetic — keep specs focused
 - Integer specs use unbounded `num` — constrain with `requires(x <= u64::max_value!())`

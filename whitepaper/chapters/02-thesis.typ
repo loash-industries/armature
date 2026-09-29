@@ -30,14 +30,14 @@ A shared language that every player and group can speak. A baseline that handles
 #import "../lib/template.typ": principle
 
 #principle[Design Principle][
-  Armature is not a product built on Frontier's primitives. It is a protocol that makes Frontier's primitives usable by organizations. The DAO is not a voting tool --- it is the organizational primitive for an entire player economy.
+  Armature is not a product built on Frontier's primitives. It is a protocol that makes Frontier's primitives usable by organizations. The OU is not a voting tool --- it is the organizational primitive for an entire player economy.
 ]
 
-A tribe creates a DAO. The DAO holds a treasury, defines a charter, and governs itself through typed proposals.
+A tribe creates an OU. The OU holds a treasury, defines a charter, and governs itself through typed proposals.
 
-As the tribe grows, it spawns Sub-DAOs as departments --- Engineering, Logistics, Diplomacy --- each with their own budgets and governance rules. Those departments run projects. Revenue flows back through treasury vaults.
+As the tribe grows, it spawns Sub-OUs as departments --- Engineering, Logistics, Diplomacy --- each with their own budgets and governance rules. Those departments run projects. Revenue flows back through treasury vaults.
 
-The DAO framework is the governance layer. Everything else --- markets, logistics networks, registries, ticketing systems --- builds on top.
+The OU framework is the governance layer. Everything else --- markets, logistics networks, registries, ticketing systems --- builds on top.
 
 == The Four Pillars
 
@@ -55,10 +55,10 @@ These four form a closed loop.
 
 The charter sets the rules for proposals. Proposals can change the charter. Proposals define which proposal types exist.
 
-This self-referential structure is what makes a DAO self-governing. It can evolve its own rules without outside intervention.
+This self-referential structure is what makes an OU self-governing. It can evolve its own rules without outside intervention.
 
 #figure(
-  image("../figures/DAO Primitive.pdf", width: 100%),
-  caption: [Anatomy of a DAO --- Players issue and vote on Proposals, which give access to the Treasury and amend the Charter. The Charter parametrizes Proposals, and Proposals can expand or reduce their own set.],
+  image("../figures/OU Primitive.pdf", width: 100%),
+  caption: [Anatomy of an OU --- Players issue and vote on Proposals, which give access to the Treasury and amend the Charter. The Charter parametrizes Proposals, and Proposals can expand or reduce their own set.],
 )
 

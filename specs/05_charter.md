@@ -2,7 +2,7 @@
 
 ## Overview
 
-Every DAO has a Charter: its name and a pointer to a human-readable document that defines the organization's purpose, operating agreements and rules. Part A describes what is implemented: an on-chain `Charter` object holding the name and a metadata URI (an IPFS CID), changed by the `UpdateMetadata` proposal type. Part B describes the planned Walrus-backed charter with versioned, hash-verified amendments, which is **not implemented**.
+Every OU has a Charter: its name and a pointer to a human-readable document that defines the organization's purpose, operating agreements and rules. Part A describes what is implemented: an on-chain `Charter` object holding the name and a metadata URI (an IPFS CID), changed by the `UpdateMetadata` proposal type. Part B describes the planned Walrus-backed charter with versioned, hash-verified amendments, which is **not implemented**.
 
 ---
 
@@ -10,28 +10,28 @@ Every DAO has a Charter: its name and a pointer to a human-readable document tha
 
 ## 1. Core Object: `Charter`
 
-A separate shared object, following the same concurrent-access pattern as `TreasuryVault` and `CapabilityVault`. The `DAO` stores only a `charter_id: ID` reference to it.
+A separate shared object, following the same concurrent-access pattern as `TreasuryVault` and `CapabilityVault`. The `OU` stores only a `charter_id: ID` reference to it.
 
 ```rust
 struct Charter has key, store {
     id:           UID,
-    dao_id:       ID,       // back-reference to the owning DAO
-    name:         String,   // the DAO's name, set at creation
-    metadata_uri: String,   // IPFS CID / URI of the DAO's metadata document
+    ou_id:       ID,       // back-reference to the owning OU
+    name:         String,   // the OU's name, set at creation
+    metadata_uri: String,   // IPFS CID / URI of the OU's metadata document
 }
 ```
 
-Accessors: `charter::dao_id`, `name`, `metadata_uri`.
+Accessors: `charter::ou_id`, `name`, `metadata_uri`.
 
 ### Design Decisions
 
-- **Separate shared object.** The `Charter` is independently shared so that reads (anyone can read it) don't contend with writes or with other DAO operations.
+- **Separate shared object.** The `Charter` is independently shared so that reads (anyone can read it) don't contend with writes or with other OU operations.
 - **Pointer, not content.** The chain stores only a URI. The document it points to (description, logo, charter text) lives off-chain; an IPFS CID is content-addressed, so the URI itself pins the content.
 - **Name is fixed.** No mutator changes `name`.
 
 ## 2. Charter Creation
 
-A `Charter` is created alongside the DAO by every DAO constructor, from the `name` and `metadata_uri` arguments (`dao::create`, the SubDAO constructors, `tribe::create_tribe(_configured)`, `tribe::create_wired_subdao`). An empty name aborts with `dao::EInvalidName`. A `CreateSubDAO` payload carries the new SubDAO's `name` and `metadata_uri`; a `SpawnDAO` payload carries the successor's.
+A `Charter` is created alongside the OU by every OU constructor, from the `name` and `metadata_uri` arguments (`ou::create`, the SubOU constructors, `tribe::create_tribe(_configured)`, `tribe::create_wired_subou`). An empty name aborts with `ou::EInvalidName`. A `CreateSubOU` payload carries the new SubOU's `name` and `metadata_uri`; a `SpawnOU` payload carries the successor's.
 
 ## 3. Updating Metadata: `UpdateMetadata`
 
@@ -41,12 +41,12 @@ struct UpdateMetadata has copy, drop, store {
 }
 ```
 
-- Framework type, seeded on every DAO with the display key **`CharterUpdate`**; its fixed permission bit is `METADATA`.
-- Handler: `admin_ops::execute_update_metadata(charter, ticket)`. It checks the charter belongs to the ticket's DAO (`admin_ops::ECharterDaoMismatch`) and calls `charter::update_metadata<P>(charter, new_metadata_uri, &ExecutionRequest<P>)`, which checks the DAO again (`charter::EDaoMismatch`) and requires `METADATA` (`proposal::EPermissionDenied`).
-- Emits `admin_ops::MetadataUpdated { dao_id, new_ipfs_cid }`.
+- Framework type, seeded on every OU with the display key **`CharterUpdate`**; its fixed permission bit is `METADATA`.
+- Handler: `admin_ops::execute_update_metadata(charter, ticket)`. It checks the charter belongs to the ticket's OU (`admin_ops::ECharterOuMismatch`) and calls `charter::update_metadata<P>(charter, new_metadata_uri, &ExecutionRequest<P>)`, which checks the OU again (`charter::EOuMismatch`) and requires `METADATA` (`proposal::EPermissionDenied`).
+- Emits `admin_ops::MetadataUpdated { ou_id, new_ipfs_cid }`.
 - Composable by default, so it can be a composite step.
 
-Recommended governance parameters depend on how much the DAO's metadata matters to it. A DAO that treats the metadata document as its constitution should raise `UpdateMetadata`'s threshold, delay and cooldown with `UpdateProposalConfig`.
+Recommended governance parameters depend on how much the OU's metadata matters to it. An OU that treats the metadata document as its constitution should raise `UpdateMetadata`'s threshold, delay and cooldown with `UpdateProposalConfig`.
 
 ## 4. Reading the Charter
 
@@ -54,10 +54,10 @@ Anyone can read the `Charter` object (standard Sui RPC) and fetch the document a
 
 ## 5. Metadata Document Format
 
-The framework stores the URI and does not parse the document. It typically carries the DAO's display fields (description, logo) and, for DAOs that want one, a charter text. Recommended structure for the charter text, as structured markdown:
+The framework stores the URI and does not parse the document. It typically carries the OU's display fields (description, logo) and, for OUs that want one, a charter text. Recommended structure for the charter text, as structured markdown:
 
 ```markdown
-# [DAO Name] Charter
+# [OU Name] Charter
 Version: [N]
 Ratified: [date]
 
@@ -66,7 +66,7 @@ Ratified: [date]
 
 ## 2. Membership
 [Who can be a member. How members join and leave.
- For SubDAOs: relationship to controller.]
+ For SubOUs: relationship to controller.]
 
 ## 3. Governance
 [Governance model (Board).
@@ -78,7 +78,7 @@ Ratified: [date]
  Budget allocation philosophy. Revenue distribution rules.]
 
 ## 5. Organizational Structure
-[SubDAO relationships.
+[SubOU relationships.
  Delegation of authority. Reporting lines.]
 
 ## 6. Amendment Procedure
@@ -94,14 +94,14 @@ Ratified: [date]
 
 Structured markdown is human-readable, parseable by UIs, diff-friendly for review, and extensible.
 
-## 6. Integration with DAO Lifecycle
+## 6. Integration with OU Lifecycle
 
 | Lifecycle Event | Charter Impact |
 |---|---|
-| DAO creation (any constructor) | `Charter` created with the given `name` and `metadata_uri` |
-| `CreateSubDAO` / tribe constructors | `Charter` created for each SubDAO from the payload or arguments |
+| OU creation (any constructor) | `Charter` created with the given `name` and `metadata_uri` |
+| `CreateSubOU` / tribe constructors | `Charter` created for each SubOU from the payload or arguments |
 | `UpdateMetadata` | `metadata_uri` replaced; `MetadataUpdated` emitted |
-| `dao::destroy` | `Charter` destroyed alongside the other companion objects |
+| `ou::destroy` | `Charter` destroyed alongside the other companion objects |
 
 ---
 
@@ -137,7 +137,7 @@ struct AmendmentRecord has copy, drop, store {
 
 ## 8. Planned Types
 
-The charter's fields are private to the framework, so every planned write needs a new gated mutator in `armature::charter`. It would check the charter's DAO and a permission bit, as `update_metadata` checks `METADATA`. Under the placement rule in [`docs/package-boundaries.md`](../docs/package-boundaries.md), a type the framework seeds as a default slot must itself be a framework type.
+The charter's fields are private to the framework, so every planned write needs a new gated mutator in `armature::charter`. It would check the charter's OU and a permission bit, as `update_metadata` checks `METADATA`. Under the placement rule in [`docs/package-boundaries.md`](../docs/package-boundaries.md), a type the framework seeds as a default slot must itself be a framework type.
 
 ### 8.1 `AmendCharter`
 
@@ -172,13 +172,13 @@ struct RenewCharterStorage has drop, store {
 }
 ```
 
-The handler would update `current_blob_id` without changing `content_hash` or `version` and without adding an `AmendmentRecord`. The hash check is off-chain; the handler trusts governance approval. It could have lower thresholds than `AmendCharter`, since it does not change content. Historical blob IDs in `amendment_history` may point to expired blobs, so off-chain archival is recommended for long-lived DAOs.
+The handler would update `current_blob_id` without changing `content_hash` or `version` and without adding an `AmendmentRecord`. The hash check is off-chain; the handler trusts governance approval. It could have lower thresholds than `AmendCharter`, since it does not change content. Historical blob IDs in `amendment_history` may point to expired blobs, so off-chain archival is recommended for long-lived OUs.
 
 ## 9. Planned Lifecycle Impact
 
 | Lifecycle Event | Charter Impact (planned) |
 |---|---|
-| DAO creation | Initial charter at `version = 1`, empty history |
-| `CreateSubDAO` | Controller provides the SubDAO's initial charter content |
+| OU creation | Initial charter at `version = 1`, empty history |
+| `CreateSubOU` | Controller provides the SubOU's initial charter content |
 | `AmendCharter` | Charter updated, `version` incremented, `AmendmentRecord` added |
 | `RenewCharterStorage` | `current_blob_id` updated, content unchanged |

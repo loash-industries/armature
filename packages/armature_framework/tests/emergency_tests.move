@@ -27,9 +27,9 @@ public struct TransferFreezeAdminLookalike has drop {}
 
 fun setup(): (EmergencyFreeze, FreezeAdminCap, sui::clock::Clock) {
     let mut ctx = tx_context::dummy();
-    let dao_id = object::id_from_address(@0xDA0);
-    let freeze = emergency::new_for_testing(dao_id, &mut ctx);
-    let cap = emergency::new_admin_cap_for_testing(dao_id, &mut ctx);
+    let ou_id = object::id_from_address(@0xDA0);
+    let freeze = emergency::new_for_testing(ou_id, &mut ctx);
+    let cap = emergency::new_admin_cap_for_testing(ou_id, &mut ctx);
     let clock = clock::create_for_testing(&mut ctx);
     (freeze, cap, clock)
 }
@@ -61,7 +61,7 @@ fun test_freeze__assert_not_frozen_aborts() {
     let (mut freeze, cap, clock) = setup();
 
     freeze.freeze_type<TreasuryWithdraw>(&cap, &clock);
-    freeze.assert_not_frozen<TreasuryWithdraw>(freeze.dao_id(), &clock);
+    freeze.assert_not_frozen<TreasuryWithdraw>(freeze.ou_id(), &clock);
 
     teardown(freeze, cap, clock);
 }
@@ -75,7 +75,7 @@ fun test_freeze__does_not_block_unfrozen_types() {
 
     assert!(freeze.is_frozen<TreasuryWithdraw>(&clock));
     assert!(!freeze.is_frozen<SetBoard>(&clock));
-    freeze.assert_not_frozen<SetBoard>(freeze.dao_id(), &clock);
+    freeze.assert_not_frozen<SetBoard>(freeze.ou_id(), &clock);
 
     teardown(freeze, cap, clock);
 }
@@ -89,22 +89,22 @@ fun test_freeze__generic_instantiations_are_independent() {
 
     assert!(freeze.is_frozen<PlaceOrder<CredA>>(&clock));
     assert!(!freeze.is_frozen<PlaceOrder<CredB>>(&clock));
-    freeze.assert_not_frozen<PlaceOrder<CredB>>(freeze.dao_id(), &clock);
+    freeze.assert_not_frozen<PlaceOrder<CredB>>(freeze.ou_id(), &clock);
 
     teardown(freeze, cap, clock);
 }
 
-#[test, expected_failure(abort_code = emergency::EDAOMismatch)]
-/// Only the cap holder with matching DAO ID can freeze.
+#[test, expected_failure(abort_code = emergency::EOUMismatch)]
+/// Only the cap holder with matching OU ID can freeze.
 fun test_freeze__requires_freeze_admin_cap() {
     let (mut freeze, cap, clock) = setup();
 
-    // Create a cap for a different DAO
+    // Create a cap for a different OU
     let mut ctx = tx_context::dummy();
-    let wrong_dao_id = object::id_from_address(@0xBAD);
-    let wrong_cap = emergency::new_admin_cap_for_testing(wrong_dao_id, &mut ctx);
+    let wrong_ou_id = object::id_from_address(@0xBAD);
+    let wrong_cap = emergency::new_admin_cap_for_testing(wrong_ou_id, &mut ctx);
 
-    // Should abort — wrong DAO
+    // Should abort — wrong OU
     freeze.freeze_type<TreasuryWithdraw>(&wrong_cap, &clock);
 
     destroy(wrong_cap);
@@ -182,7 +182,7 @@ fun test_auto_expiry__expired_freeze_treated_as_inactive() {
 
     // Should no longer be frozen, and assert_not_frozen should not abort
     assert!(!freeze.is_frozen<TreasuryWithdraw>(&clock));
-    freeze.assert_not_frozen<TreasuryWithdraw>(freeze.dao_id(), &clock);
+    freeze.assert_not_frozen<TreasuryWithdraw>(freeze.ou_id(), &clock);
 
     teardown(freeze, cap, clock);
 }

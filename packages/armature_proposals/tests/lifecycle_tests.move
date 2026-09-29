@@ -3,10 +3,10 @@ module armature_proposals::lifecycle_tests;
 
 use armature::board_ops;
 use armature::board_voting;
-use armature::capability_vault::{CapabilityVault, SubDAOControl};
+use armature::capability_vault::{CapabilityVault, SubOUControl};
 use armature::controller;
-use armature::create_subdao::{Self, CreateSubDAO};
-use armature::dao::{Self, DAO};
+use armature::create_subou::{Self, CreateSubOU};
+use armature::ou::{Self, OU};
 use armature::emergency::{EmergencyFreeze, FreezeAdminCap};
 use armature::freeze_ops;
 use armature::governance;
@@ -16,9 +16,9 @@ use armature::set_board::{Self, SetBoard};
 use armature::treasury_vault::TreasuryVault;
 use armature::unfreeze_proposal_type::{Self, UnfreezeProposalType};
 use armature_proposals::send_coin::{Self, SendCoin};
-use armature_proposals::send_coin_to_dao::{Self, SendCoinToDAO};
+use armature_proposals::send_coin_to_ou::{Self, SendCoinToOU};
 use armature_proposals::send_small_payment::{Self, SendSmallPayment};
-use armature_proposals::subdao_ops;
+use armature_proposals::subou_ops;
 use armature_proposals::treasury_ops;
 use armature_proposals::type_permissions;
 use std::internal;
@@ -48,7 +48,7 @@ const EMPLOYEE: address = @0xE1;
 public struct USDC has drop {}
 
 /// Test payload for a parent-side controller operation: granted VAULT_BORROW
-/// so its ticket may loan the SubDAOControl and FreezeAdminCap.
+/// so its ticket may loan the SubOUControl and FreezeAdminCap.
 public struct ControllerOp has drop, store {}
 
 #[test]
@@ -56,15 +56,15 @@ fun small_startup_lifecycle() {
     let mut scenario = test_scenario::begin(ALICE);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    // ── 1. Create DAO with 3-person board ────────────────────────────
-    let dao_id;
+    // ── 1. Create OU with 3-person board ────────────────────────────
+    let ou_id;
     scenario.next_tx(ALICE);
     {
         let init = governance::init_board(vector[ALICE, BOB, CAROL]);
-        dao_id =
-            dao::create(
+        ou_id =
+            ou::create(
                 &init,
-                string::utf8(b"Startup DAO"),
+                string::utf8(b"Startup OU"),
                 string::utf8(b"https://example.com/startup.png"),
                 scenario.ctx(),
             );
@@ -75,13 +75,13 @@ fun small_startup_lifecycle() {
     // tested in admin_ops_tests.
     scenario.next_tx(ALICE);
     {
-        let mut dao = scenario.take_shared_by_id<DAO>(dao_id);
+        let mut ou = scenario.take_shared_by_id<OU>(ou_id);
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type<SendSmallPayment<SUI>>(
+        ou.test_enable_type<SendSmallPayment<SUI>>(
             b"SendSmallPayment".to_ascii_string(),
             config.with_permissions(type_permissions::treasury_spend()),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // ── 3. Fund the treasury ─────────────────────────────────────────
@@ -97,17 +97,17 @@ fun small_startup_lifecycle() {
     // ── 4. ALICE submits a SendSmallPayment proposal ──────────────────
     scenario.next_tx(ALICE);
     {
-        let dao = scenario.take_shared_by_id<DAO>(dao_id);
+        let ou = scenario.take_shared_by_id<OU>(ou_id);
         clock.set_for_testing(1_000);
         let payload = send_small_payment::new<SUI>(CAROL, 5_000);
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::some(string::utf8(b"Pay Carol for design work")),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // ── 5. ALICE + BOB vote yes (2/3 quorum met) ─────────────────────
@@ -115,9 +115,9 @@ fun small_startup_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<SendSmallPayment<SUI>>>();
         clock.set_for_testing(1_500);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
@@ -125,23 +125,23 @@ fun small_startup_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<SendSmallPayment<SUI>>>();
         clock.set_for_testing(2_000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     // ── 6. Execute the payment ───────────────────────────────────────
     scenario.next_tx(ALICE);
     {
-        let mut dao = scenario.take_shared_by_id<DAO>(dao_id);
+        let mut ou = scenario.take_shared_by_id<OU>(ou_id);
         let mut vault = scenario.take_shared<TreasuryVault>();
         let mut proposal = scenario.take_shared<Proposal<SendSmallPayment<SUI>>>();
-        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(dao.emergency_freeze_id());
+        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(ou.emergency_freeze_id());
         clock.set_for_testing(3_000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
@@ -149,7 +149,7 @@ fun small_startup_lifecycle() {
         );
 
         treasury_ops::execute_send_small_payment<SUI>(
-            &mut dao,
+            &mut ou,
             &mut vault,
             ticket,
             &clock,
@@ -160,23 +160,23 @@ fun small_startup_lifecycle() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // ── 7. CAROL leaves, DAN and EVE join → ALICE proposes SetBoard ──
     scenario.next_tx(ALICE);
     {
-        let dao = scenario.take_shared_by_id<DAO>(dao_id);
+        let ou = scenario.take_shared_by_id<OU>(ou_id);
         clock.set_for_testing(10_000);
         let payload = set_board::new(vector[DAN, EVE], vector[CAROL]);
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::some(string::utf8(b"Carol leaving, welcome Dan and Eve")),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // ── 8. ALICE + BOB vote yes on SetBoard (2/3 quorum) ─────────────
@@ -184,9 +184,9 @@ fun small_startup_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<SetBoard>>();
         clock.set_for_testing(10_500);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
@@ -194,64 +194,64 @@ fun small_startup_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<SetBoard>>();
         clock.set_for_testing(11_000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     // ── 9. Execute SetBoard ─────────────────────────────────────────
     scenario.next_tx(ALICE);
     {
-        let mut dao = scenario.take_shared_by_id<DAO>(dao_id);
+        let mut ou = scenario.take_shared_by_id<OU>(ou_id);
         let mut proposal = scenario.take_shared<Proposal<SetBoard>>();
-        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(dao.emergency_freeze_id());
+        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(ou.emergency_freeze_id());
         clock.set_for_testing(12_000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
 
-        board_ops::execute_set_board(&mut dao, ticket);
+        board_ops::execute_set_board(&mut ou, ticket);
 
         // Verify new board
-        assert!(dao.governance().is_board_member(ALICE));
-        assert!(dao.governance().is_board_member(BOB));
-        assert!(dao.governance().is_board_member(DAN));
-        assert!(dao.governance().is_board_member(EVE));
-        assert!(!dao.governance().is_board_member(CAROL));
+        assert!(ou.governance().is_board_member(ALICE));
+        assert!(ou.governance().is_board_member(BOB));
+        assert!(ou.governance().is_board_member(DAN));
+        assert!(ou.governance().is_board_member(EVE));
+        assert!(!ou.governance().is_board_member(CAROL));
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // ── 10. New board works: DAN proposes, DAN + EVE vote → 2/4 = 50% ─
     scenario.next_tx(DAN);
     {
-        let dao = scenario.take_shared_by_id<DAO>(dao_id);
+        let ou = scenario.take_shared_by_id<OU>(ou_id);
         clock.set_for_testing(20_000);
         let payload = send_small_payment::new<SUI>(DAN, 1_000);
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::some(string::utf8(b"DAN expense reimbursement")),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(DAN);
     {
         let mut proposal = scenario.take_shared<Proposal<SendSmallPayment<SUI>>>();
         clock.set_for_testing(20_500);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
@@ -259,22 +259,22 @@ fun small_startup_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<SendSmallPayment<SUI>>>();
         clock.set_for_testing(21_000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(DAN);
     {
-        let mut dao = scenario.take_shared_by_id<DAO>(dao_id);
+        let mut ou = scenario.take_shared_by_id<OU>(ou_id);
         let mut vault = scenario.take_shared<TreasuryVault>();
         let mut proposal = scenario.take_shared<Proposal<SendSmallPayment<SUI>>>();
-        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(dao.emergency_freeze_id());
+        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(ou.emergency_freeze_id());
         clock.set_for_testing(22_000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
@@ -282,7 +282,7 @@ fun small_startup_lifecycle() {
         );
 
         treasury_ops::execute_send_small_payment<SUI>(
-            &mut dao,
+            &mut ou,
             &mut vault,
             ticket,
             &clock,
@@ -293,7 +293,7 @@ fun small_startup_lifecycle() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -303,20 +303,20 @@ fun small_startup_lifecycle() {
 // =========================================================================
 // Scenario 2 — Medium Enterprise
 //
-// Top-level DAO: 5-member board [M1..M5].
+// Org: 5-member board [M1..M5].
 //   - 3/5 quorum for normal proposals (60%)
 //   - 4/5 for supermajority items (80% — e.g. UpdateProposalConfig targeting itself)
-// Engineering SubDAO: board = [ENG1, ENG2, ROGUE]
-// Finance SubDAO: board = [FIN1, FIN2]
+// Engineering SubOU: board = [ENG1, ENG2, ROGUE]
+// Finance SubOU: board = [FIN1, FIN2]
 //
 // Flow:
-//   1. Create top-level DAO, fund treasury
-//   2. Create Engineering and Finance SubDAOs
+//   1. Create org, fund treasury
+//   2. Create Engineering and Finance SubOUs
 //   3. ROGUE causes trouble → freeze SendCoin on Engineering
 //   4. Controller changes Engineering board: remove ROGUE, keep [ENG1, ENG2]
 //   5. Unfreeze SendCoin on Engineering via governance
-//   6. Top-level receives revenue, sends salary budget to Finance SubDAO
-//   7. Finance SubDAO pays salary to Engineering employee
+//   6. Top-level receives revenue, sends salary budget to Finance SubOU
+//   7. Finance SubOU pays salary to Engineering employee
 // =========================================================================
 
 const M1: address = @0x11;
@@ -335,38 +335,38 @@ fun medium_enterprise_lifecycle() {
     let mut scenario = test_scenario::begin(M1);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    // ── 1. Create top-level DAO with 5-member board ──────────────────
-    let top_dao_id;
+    // ── 1. Create org with 5-member board ──────────────────
+    let org_id;
     scenario.next_tx(M1);
     {
         let init = governance::init_board(vector[M1, M2, M3, M4, M5]);
-        top_dao_id =
-            dao::create(
+        org_id =
+            ou::create(
                 &init,
-                string::utf8(b"Enterprise DAO"),
+                string::utf8(b"Enterprise OU"),
                 string::utf8(b"https://example.com/enterprise.png"),
                 scenario.ctx(),
             );
     };
 
-    // ── 2. Enable opt-in types on top-level DAO ──────────────────────
+    // ── 2. Enable opt-in types on org ──────────────────────
     scenario.next_tx(M1);
     {
-        let mut dao = scenario.take_shared_by_id<DAO>(top_dao_id);
+        let mut ou = scenario.take_shared_by_id<OU>(org_id);
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type<CreateSubDAO>(b"CreateSubDAO".to_ascii_string(), config);
-        dao.test_enable_type<SendCoin<USDC>>(
+        ou.test_enable_type<CreateSubOU>(b"CreateSubOU".to_ascii_string(), config);
+        ou.test_enable_type<SendCoin<USDC>>(
             b"SendCoin".to_ascii_string(),
             config.with_permissions(type_permissions::treasury_spend()),
         );
-        dao.test_enable_type<SendCoinToDAO<USDC>>(
-            b"SendCoinToDAO".to_ascii_string(),
+        ou.test_enable_type<SendCoinToOU<USDC>>(
+            b"SendCoinToOU".to_ascii_string(),
             config.with_permissions(type_permissions::treasury_spend()),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
-    // ── 3. Fund top-level treasury ───────────────────────────────────
+    // ── 3. Fund org treasury ───────────────────────────────────
     scenario.next_tx(M1);
     {
         let mut vault = scenario.take_shared<TreasuryVault>();
@@ -376,211 +376,211 @@ fun medium_enterprise_lifecycle() {
         test_scenario::return_shared(vault);
     };
 
-    // ── 4. Create Engineering SubDAO ─────────────────────────────────
+    // ── 4. Create Engineering SubOU ─────────────────────────────────
     // M1 proposes, M1+M2+M3 vote (3/5 = 60% quorum)
     scenario.next_tx(M1);
     {
-        let dao = scenario.take_shared_by_id<DAO>(top_dao_id);
+        let ou = scenario.take_shared_by_id<OU>(org_id);
         clock.set_for_testing(1_000);
-        let payload = create_subdao::new(
+        let payload = create_subou::new(
             string::utf8(b"Engineering"),
             vector[ENG1, ENG2, ROGUE],
             string::utf8(b"https://example.com/eng.png"),
         );
         board_voting::submit_proposal(
-            &dao,
-            option::some(string::utf8(b"Create Engineering SubDAO")),
+            &ou,
+            option::some(string::utf8(b"Create Engineering SubOU")),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(M1);
     {
-        let mut proposal = scenario.take_shared<Proposal<CreateSubDAO>>();
+        let mut proposal = scenario.take_shared<Proposal<CreateSubOU>>();
         clock.set_for_testing(1_500);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(M2);
     {
-        let mut proposal = scenario.take_shared<Proposal<CreateSubDAO>>();
+        let mut proposal = scenario.take_shared<Proposal<CreateSubOU>>();
         clock.set_for_testing(2_000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(M3);
     {
-        let mut proposal = scenario.take_shared<Proposal<CreateSubDAO>>();
+        let mut proposal = scenario.take_shared<Proposal<CreateSubOU>>();
         clock.set_for_testing(2_100);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     let eng_control_id;
     scenario.next_tx(M1);
     {
-        let mut dao = scenario.take_shared_by_id<DAO>(top_dao_id);
-        let mut proposal = scenario.take_shared<Proposal<CreateSubDAO>>();
+        let mut ou = scenario.take_shared_by_id<OU>(org_id);
+        let mut proposal = scenario.take_shared<Proposal<CreateSubOU>>();
         let mut vault = scenario.take_shared<CapabilityVault>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3_000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
 
-        lifecycle_ops::execute_create_subdao(&mut vault, ticket, scenario.ctx());
+        lifecycle_ops::execute_create_subou(&mut vault, ticket, scenario.ctx());
 
-        let control_ids = vault.ids_for_type<SubDAOControl>();
+        let control_ids = vault.ids_for_type<SubOUControl>();
         eng_control_id = control_ids[0];
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
-    // Capture Engineering DAO ID
-    let eng_dao_id;
+    // Capture Engineering OU ID
+    let eng_ou_id;
     scenario.next_tx(M1);
     {
-        let top = scenario.take_shared_by_id<DAO>(top_dao_id);
-        let eng = scenario.take_shared<DAO>();
-        eng_dao_id = eng.id();
+        let org = scenario.take_shared_by_id<OU>(org_id);
+        let eng = scenario.take_shared<OU>();
+        eng_ou_id = eng.id();
         test_scenario::return_shared(eng);
-        test_scenario::return_shared(top);
+        test_scenario::return_shared(org);
     };
 
-    // ── 5. Create Finance SubDAO ─────────────────────────────────────
+    // ── 5. Create Finance SubOU ─────────────────────────────────────
     scenario.next_tx(M1);
     {
-        let dao = scenario.take_shared_by_id<DAO>(top_dao_id);
+        let ou = scenario.take_shared_by_id<OU>(org_id);
         clock.set_for_testing(5_000);
-        let payload = create_subdao::new(
+        let payload = create_subou::new(
             string::utf8(b"Finance"),
             vector[FIN1, FIN2],
             string::utf8(b"https://example.com/fin.png"),
         );
         board_voting::submit_proposal(
-            &dao,
-            option::some(string::utf8(b"Create Finance SubDAO")),
+            &ou,
+            option::some(string::utf8(b"Create Finance SubOU")),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(M1);
     {
-        let mut proposal = scenario.take_shared<Proposal<CreateSubDAO>>();
+        let mut proposal = scenario.take_shared<Proposal<CreateSubOU>>();
         clock.set_for_testing(5_500);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(M2);
     {
-        let mut proposal = scenario.take_shared<Proposal<CreateSubDAO>>();
+        let mut proposal = scenario.take_shared<Proposal<CreateSubOU>>();
         clock.set_for_testing(6_000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(M3);
     {
-        let mut proposal = scenario.take_shared<Proposal<CreateSubDAO>>();
+        let mut proposal = scenario.take_shared<Proposal<CreateSubOU>>();
         clock.set_for_testing(6_100);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(M1);
     {
-        let mut dao = scenario.take_shared_by_id<DAO>(top_dao_id);
-        let mut proposal = scenario.take_shared<Proposal<CreateSubDAO>>();
-        let mut vault = scenario.take_shared_by_id<CapabilityVault>(dao.capability_vault_id());
-        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(dao.emergency_freeze_id());
+        let mut ou = scenario.take_shared_by_id<OU>(org_id);
+        let mut proposal = scenario.take_shared<Proposal<CreateSubOU>>();
+        let mut vault = scenario.take_shared_by_id<CapabilityVault>(ou.capability_vault_id());
+        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(ou.emergency_freeze_id());
         clock.set_for_testing(7_000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
 
-        lifecycle_ops::execute_create_subdao(&mut vault, ticket, scenario.ctx());
+        lifecycle_ops::execute_create_subou(&mut vault, ticket, scenario.ctx());
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
-    // Capture Finance DAO ID and treasury
-    let fin_dao_id;
+    // Capture Finance OU ID and treasury
+    let fin_ou_id;
     let fin_vault_id;
     scenario.next_tx(M1);
     {
-        let top = scenario.take_shared_by_id<DAO>(top_dao_id);
-        let eng = scenario.take_shared_by_id<DAO>(eng_dao_id);
-        let fin = scenario.take_shared<DAO>();
-        fin_dao_id = fin.id();
+        let org = scenario.take_shared_by_id<OU>(org_id);
+        let eng = scenario.take_shared_by_id<OU>(eng_ou_id);
+        let fin = scenario.take_shared<OU>();
+        fin_ou_id = fin.id();
         fin_vault_id = fin.treasury_id();
         test_scenario::return_shared(fin);
         test_scenario::return_shared(eng);
-        test_scenario::return_shared(top);
+        test_scenario::return_shared(org);
     };
 
-    // ── 6. ROGUE detected — freeze SendCoin on Engineering SubDAO ────
-    //    The FreezeAdminCap for the Engineering SubDAO is in the parent vault.
+    // ── 6. ROGUE detected — freeze SendCoin on Engineering SubOU ────
+    //    The FreezeAdminCap for the Engineering SubOU is in the parent vault.
     //    We loan it with a ControllerOp on parent (a type granted VAULT_BORROW),
     //    freeze the type on Eng, then also change Eng board via privileged_submit
     //    in the same PTB.
 
     scenario.next_tx(M1);
     {
-        let mut dao = scenario.take_shared_by_id<DAO>(top_dao_id);
+        let mut ou = scenario.take_shared_by_id<OU>(org_id);
         clock.set_for_testing(20_000);
-        dao.test_enable_type<ControllerOp>(
+        ou.test_enable_type<ControllerOp>(
             b"ControllerOp".to_ascii_string(),
             proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0)
-                .with_permissions(type_permissions::subdao_control())
-                // This bespoke op loans both the SubDAOControl and the SubDAO's FreezeAdminCap.
+                .with_permissions(type_permissions::subou_control())
+                // This bespoke op loans both the SubOUControl and the SubOU's FreezeAdminCap.
                 .with_borrow_scope(vector[
-                    std::type_name::with_defining_ids<SubDAOControl>(),
+                    std::type_name::with_defining_ids<SubOUControl>(),
                     std::type_name::with_defining_ids<FreezeAdminCap>(),
                 ]),
         );
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::some(string::utf8(b"Freeze eng type + change eng board")),
             ControllerOp {},
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // 3/5 vote: M1, M2, M3
@@ -588,9 +588,9 @@ fun medium_enterprise_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<ControllerOp>>();
         clock.set_for_testing(20_500);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
@@ -598,9 +598,9 @@ fun medium_enterprise_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<ControllerOp>>();
         clock.set_for_testing(21_000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
@@ -608,30 +608,30 @@ fun medium_enterprise_lifecycle() {
     {
         let mut proposal = scenario.take_shared<Proposal<ControllerOp>>();
         clock.set_for_testing(21_100);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     // ── 7. Execute vehicle: freeze SendCoin on Eng + change Eng board ──
     scenario.next_tx(M1);
     {
-        let mut top_dao = scenario.take_shared_by_id<DAO>(top_dao_id);
-        let top_proposal = scenario.take_shared<Proposal<ControllerOp>>();
-        let top_freeze = scenario.take_shared_by_id<EmergencyFreeze>(top_dao.emergency_freeze_id());
-        let mut vault = scenario.take_shared_by_id<CapabilityVault>(top_dao.capability_vault_id());
-        let mut eng_dao = scenario.take_shared_by_id<DAO>(eng_dao_id);
+        let mut org = scenario.take_shared_by_id<OU>(org_id);
+        let org_proposal = scenario.take_shared<Proposal<ControllerOp>>();
+        let org_freeze = scenario.take_shared_by_id<EmergencyFreeze>(org.emergency_freeze_id());
+        let mut vault = scenario.take_shared_by_id<CapabilityVault>(org.capability_vault_id());
+        let mut eng_ou = scenario.take_shared_by_id<OU>(eng_ou_id);
         let mut eng_freeze = scenario.take_shared_by_id<
             EmergencyFreeze,
-        >(eng_dao.emergency_freeze_id());
+        >(eng_ou.emergency_freeze_id());
         clock.set_for_testing(22_000);
 
         // Authorize parent proposal
         let parent_req = board_voting::ticket_from_vote(
-            &mut top_dao,
-            top_proposal,
-            &top_freeze,
+            &mut org,
+            org_proposal,
+            &org_freeze,
             &clock,
             scenario.ctx(),
         );
@@ -644,14 +644,14 @@ fun medium_enterprise_lifecycle() {
             parent_req.ticket_request(internal::permit()),
         );
 
-        // Freeze SendCoin on Engineering SubDAO
+        // Freeze SendCoin on Engineering SubOU
         eng_freeze.freeze_type<SendCoin<USDC>>(&freeze_cap, &clock);
 
         // Return FreezeAdminCap
         vault.return_cap(freeze_cap, freeze_loan);
 
-        // Loan SubDAOControl to change Engineering board
-        let (control, control_loan) = vault.loan_cap<SubDAOControl, ControllerOp>(
+        // Loan SubOUControl to change Engineering board
+        let (control, control_loan) = vault.loan_cap<SubOUControl, ControllerOp>(
             eng_control_id,
             parent_req.ticket_request(internal::permit()),
         );
@@ -659,16 +659,16 @@ fun medium_enterprise_lifecycle() {
         // Privileged submit: remove ROGUE from Engineering board
         let priv_req = controller::privileged_submit(
             &control,
-            &eng_dao,
+            &eng_ou,
             b"SetBoard".to_ascii_string(),
             option::some(string::utf8(b"Remove rogue actor")),
             set_board::new(vector[], vector[ROGUE]),
             scenario.ctx(),
         );
 
-        // Apply board change on Engineering SubDAO
-        dao::set_board_governance(
-            &mut eng_dao,
+        // Apply board change on Engineering SubOU
+        ou::set_board_governance(
+            &mut eng_ou,
             vector[],
             vector[ROGUE],
             &priv_req,
@@ -677,61 +677,61 @@ fun medium_enterprise_lifecycle() {
         // Consume privileged request
         controller::privileged_consume(priv_req, &control);
 
-        // Return SubDAOControl
+        // Return SubOUControl
         vault.return_cap(control, control_loan);
 
         // Verify Engineering board changed
-        assert!(eng_dao.governance().is_board_member(ENG1));
-        assert!(eng_dao.governance().is_board_member(ENG2));
-        assert!(!eng_dao.governance().is_board_member(ROGUE));
+        assert!(eng_ou.governance().is_board_member(ENG1));
+        assert!(eng_ou.governance().is_board_member(ENG2));
+        assert!(!eng_ou.governance().is_board_member(ROGUE));
 
         parent_req.discharge(internal::permit());
 
         test_scenario::return_shared(eng_freeze);
-        test_scenario::return_shared(eng_dao);
+        test_scenario::return_shared(eng_ou);
         test_scenario::return_shared(vault);
-        test_scenario::return_shared(top_freeze);
-        test_scenario::return_shared(top_dao);
+        test_scenario::return_shared(org_freeze);
+        test_scenario::return_shared(org);
     };
 
     // ── 8. Unfreeze SendCoin on Engineering via governance ────────────
     // Engineering's own board submits UnfreezeProposalType.
     scenario.next_tx(ENG1);
     {
-        let eng_dao = scenario.take_shared_by_id<DAO>(eng_dao_id);
+        let eng_ou = scenario.take_shared_by_id<OU>(eng_ou_id);
         clock.set_for_testing(30_000);
         let payload = unfreeze_proposal_type::new<SendCoin<USDC>>();
         board_voting::submit_proposal(
-            &eng_dao,
+            &eng_ou,
             option::some(string::utf8(b"Unfreeze SendCoin after rogue removed")),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(eng_dao);
+        test_scenario::return_shared(eng_ou);
     };
 
     scenario.next_tx(ENG2);
     {
         let mut proposal = scenario.take_shared<Proposal<UnfreezeProposalType>>();
         clock.set_for_testing(31_000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(ENG1);
     {
-        let mut eng_dao = scenario.take_shared_by_id<DAO>(eng_dao_id);
+        let mut eng_ou = scenario.take_shared_by_id<OU>(eng_ou_id);
         let mut proposal = scenario.take_shared<Proposal<UnfreezeProposalType>>();
         let mut eng_freeze = scenario.take_shared_by_id<
             EmergencyFreeze,
-        >(eng_dao.emergency_freeze_id());
+        >(eng_ou.emergency_freeze_id());
         clock.set_for_testing(32_000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut eng_dao,
+            &mut eng_ou,
             proposal,
             &eng_freeze,
             &clock,
@@ -747,138 +747,138 @@ fun medium_enterprise_lifecycle() {
         assert!(!eng_freeze.is_frozen<SendCoin<USDC>>(&clock));
 
         test_scenario::return_shared(eng_freeze);
-        test_scenario::return_shared(eng_dao);
+        test_scenario::return_shared(eng_ou);
     };
 
-    // ── 9. Top-level DAO sends salary budget to Finance SubDAO ───────
-    // M1 proposes SendCoinToDAO<USDC> to Finance treasury, M1+M2+M3 vote.
+    // ── 9. Org sends salary budget to Finance SubOU ───────
+    // M1 proposes SendCoinToOU<USDC> to Finance treasury, M1+M2+M3 vote.
     scenario.next_tx(M1);
     {
-        let dao = scenario.take_shared_by_id<DAO>(top_dao_id);
+        let ou = scenario.take_shared_by_id<OU>(org_id);
         clock.set_for_testing(40_000);
-        let payload = send_coin_to_dao::new<USDC>(fin_vault_id, 500_000);
+        let payload = send_coin_to_ou::new<USDC>(fin_vault_id, 500_000);
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::some(string::utf8(b"Q1 salary budget to Finance")),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(M1);
     {
-        let mut proposal = scenario.take_shared<Proposal<SendCoinToDAO<USDC>>>();
+        let mut proposal = scenario.take_shared<Proposal<SendCoinToOU<USDC>>>();
         clock.set_for_testing(40_500);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(M2);
     {
-        let mut proposal = scenario.take_shared<Proposal<SendCoinToDAO<USDC>>>();
+        let mut proposal = scenario.take_shared<Proposal<SendCoinToOU<USDC>>>();
         clock.set_for_testing(41_000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(M3);
     {
-        let mut proposal = scenario.take_shared<Proposal<SendCoinToDAO<USDC>>>();
+        let mut proposal = scenario.take_shared<Proposal<SendCoinToOU<USDC>>>();
         clock.set_for_testing(41_100);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(M1);
     {
-        let mut top_dao = scenario.take_shared_by_id<DAO>(top_dao_id);
-        let mut top_vault = scenario.take_shared_by_id<TreasuryVault>(top_dao.treasury_id());
+        let mut org = scenario.take_shared_by_id<OU>(org_id);
+        let mut org_vault = scenario.take_shared_by_id<TreasuryVault>(org.treasury_id());
         let mut fin_vault = scenario.take_shared_by_id<TreasuryVault>(fin_vault_id);
-        let mut proposal = scenario.take_shared<Proposal<SendCoinToDAO<USDC>>>();
-        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(top_dao.emergency_freeze_id());
+        let mut proposal = scenario.take_shared<Proposal<SendCoinToOU<USDC>>>();
+        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(org.emergency_freeze_id());
         clock.set_for_testing(42_000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut top_dao,
+            &mut org,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
 
-        treasury_ops::execute_send_coin_to_dao<USDC>(
-            &mut top_vault,
+        treasury_ops::execute_send_coin_to_ou<USDC>(
+            &mut org_vault,
             &mut fin_vault,
             ticket,
             scenario.ctx(),
         );
 
         // Verify balances
-        assert!(top_vault.balance<USDC>() == 9_500_000);
+        assert!(org_vault.balance<USDC>() == 9_500_000);
         assert!(fin_vault.balance<USDC>() == 500_000);
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(fin_vault);
-        test_scenario::return_shared(top_vault);
-        test_scenario::return_shared(top_dao);
+        test_scenario::return_shared(org_vault);
+        test_scenario::return_shared(org);
     };
 
-    // ── 10. Finance SubDAO pays salary to EMPLOYEE ───────────────────
+    // ── 10. Finance SubOU pays salary to EMPLOYEE ───────────────────
     // Finance board enables SendCoin, then FIN1 proposes, FIN2 votes.
     scenario.next_tx(FIN1);
     {
-        let mut fin_dao = scenario.take_shared_by_id<DAO>(fin_dao_id);
+        let mut fin_ou = scenario.take_shared_by_id<OU>(fin_ou_id);
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        fin_dao.test_enable_type<SendCoin<USDC>>(
+        fin_ou.test_enable_type<SendCoin<USDC>>(
             b"SendCoin".to_ascii_string(),
             config.with_permissions(type_permissions::treasury_spend()),
         );
-        test_scenario::return_shared(fin_dao);
+        test_scenario::return_shared(fin_ou);
     };
 
     scenario.next_tx(FIN1);
     {
-        let fin_dao = scenario.take_shared_by_id<DAO>(fin_dao_id);
+        let fin_ou = scenario.take_shared_by_id<OU>(fin_ou_id);
         clock.set_for_testing(50_000);
         let payload = send_coin::new<USDC>(EMPLOYEE, 100_000);
         board_voting::submit_proposal(
-            &fin_dao,
+            &fin_ou,
             option::some(string::utf8(b"March salary for EMPLOYEE")),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(fin_dao);
+        test_scenario::return_shared(fin_ou);
     };
 
     scenario.next_tx(FIN2);
     {
         let mut proposal = scenario.take_shared<Proposal<SendCoin<USDC>>>();
         clock.set_for_testing(51_000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(FIN1);
     {
-        let mut fin_dao = scenario.take_shared_by_id<DAO>(fin_dao_id);
+        let mut fin_ou = scenario.take_shared_by_id<OU>(fin_ou_id);
         let mut fin_vault = scenario.take_shared_by_id<TreasuryVault>(fin_vault_id);
         let mut proposal = scenario.take_shared<Proposal<SendCoin<USDC>>>();
-        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(fin_dao.emergency_freeze_id());
+        let freeze = scenario.take_shared_by_id<EmergencyFreeze>(fin_ou.emergency_freeze_id());
         clock.set_for_testing(52_000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut fin_dao,
+            &mut fin_ou,
             proposal,
             &freeze,
             &clock,
@@ -896,7 +896,7 @@ fun medium_enterprise_lifecycle() {
 
         test_scenario::return_shared(freeze);
         test_scenario::return_shared(fin_vault);
-        test_scenario::return_shared(fin_dao);
+        test_scenario::return_shared(fin_ou);
     };
 
     clock.destroy_for_testing();

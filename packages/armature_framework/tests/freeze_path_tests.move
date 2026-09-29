@@ -5,7 +5,7 @@
 module armature::freeze_path_tests;
 
 use armature::board_voting;
-use armature::dao::{Self, DAO};
+use armature::ou::{Self, OU};
 use armature::emergency::{Self, EmergencyFreeze, FreezeAdminCap};
 use armature::external_execution;
 use armature::governance;
@@ -24,16 +24,16 @@ public struct CredB has drop {}
 
 // === Helpers ===
 
-/// Single-member DAO with `Order<CredA>` and `Order<CredB>` enabled (no delay,
+/// Single-member OU with `Order<CredA>` and `Order<CredB>` enabled (no delay,
 /// no cooldown, so one YES passes and the atomic path is allowed), and
 /// `Order<CredA>` frozen.
 fun setup(scenario: &mut Scenario, clock: &mut Clock) {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -41,11 +41,11 @@ fun setup(scenario: &mut Scenario, clock: &mut Clock) {
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type<Order<CredA>>(b"OrderA".to_ascii_string(), config);
-        dao.test_enable_type<Order<CredB>>(b"OrderB".to_ascii_string(), config);
-        test_scenario::return_shared(dao);
+        ou.test_enable_type<Order<CredA>>(b"OrderA".to_ascii_string(), config);
+        ou.test_enable_type<Order<CredB>>(b"OrderB".to_ascii_string(), config);
+        test_scenario::return_shared(ou);
     };
 
     clock.set_for_testing(1_000);
@@ -63,10 +63,10 @@ fun setup(scenario: &mut Scenario, clock: &mut Clock) {
 
 fun run_atomic<T>(scenario: &mut Scenario, clock: &Clock) {
     scenario.next_tx(CREATOR);
-    let mut dao = scenario.take_shared<DAO>();
+    let mut ou = scenario.take_shared<OU>();
     let freeze = scenario.take_shared<EmergencyFreeze>();
     let ticket = board_voting::submit_vote_execute<Order<T>>(
-        &mut dao,
+        &mut ou,
         option::none(),
         Order<T> {},
         &freeze,
@@ -75,17 +75,17 @@ fun run_atomic<T>(scenario: &mut Scenario, clock: &Clock) {
     );
     ticket.discharge(internal::permit());
     test_scenario::return_shared(freeze);
-    test_scenario::return_shared(dao);
+    test_scenario::return_shared(ou);
 }
 
 fun run_bypass<T>(scenario: &mut Scenario, clock: &Clock) {
     scenario.next_tx(CREATOR);
-    let mut dao = scenario.take_shared<DAO>();
+    let mut ou = scenario.take_shared<OU>();
     let freeze = scenario.take_shared<EmergencyFreeze>();
-    let cap = proposal::new_external_execution_cap_for_testing<Order<T>>(dao.id(), scenario.ctx());
+    let cap = proposal::new_external_execution_cap_for_testing<Order<T>>(ou.id(), scenario.ctx());
     let ticket = external_execution::ticket_from_cap<Order<T>>(
         &cap,
-        &mut dao,
+        &mut ou,
         &freeze,
         option::none(),
         Order<T> {},
@@ -96,36 +96,36 @@ fun run_bypass<T>(scenario: &mut Scenario, clock: &Clock) {
     ticket.discharge(internal::permit());
     proposal::destroy_external_execution_cap_for_testing(cap);
     test_scenario::return_shared(freeze);
-    test_scenario::return_shared(dao);
+    test_scenario::return_shared(ou);
 }
 
 /// Submit and pass a two-PTB proposal, then execute it in a later transaction.
 fun run_two_ptb<T>(scenario: &mut Scenario, clock: &Clock) {
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
-        board_voting::submit_proposal(&dao, option::none(), Order<T> {}, clock, scenario.ctx());
-        test_scenario::return_shared(dao);
+        let ou = scenario.take_shared<OU>();
+        board_voting::submit_proposal(&ou, option::none(), Order<T> {}, clock, scenario.ctx());
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
         let mut prop = scenario.take_shared<Proposal<Order<T>>>();
-        let dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
-        board_voting::vote(&mut prop, &dao, true, clock, scenario.ctx());
-        test_scenario::return_shared(dao);
+        let ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &ou, true, clock, scenario.ctx());
+        test_scenario::return_shared(ou);
         test_scenario::return_shared(prop);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let prop = scenario.take_shared<Proposal<Order<T>>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
-        let ticket = board_voting::ticket_from_vote(&mut dao, prop, &freeze, clock, scenario.ctx());
+        let ticket = board_voting::ticket_from_vote(&mut ou, prop, &freeze, clock, scenario.ctx());
         ticket.discharge(internal::permit());
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 }
 

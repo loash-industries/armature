@@ -4,14 +4,14 @@ module armature_proposals::admin_ops_tests;
 use armature::add_member::AddMember;
 use armature::admin_ops;
 use armature::board_voting;
-use armature::dao::{Self, DAO};
+use armature::ou::{Self, OU};
 use armature::disable_proposal_type::{Self, DisableProposalType};
 use armature::emergency::EmergencyFreeze;
 use armature::enable_proposal_type::{Self, EnableProposalType};
 use armature::governance;
 use armature::proposal::{Self, Proposal};
 use armature::set_board::SetBoard;
-use armature::spawn_dao::SpawnDAO;
+use armature::spawn_ou::SpawnOU;
 use armature::update_proposal_config::{Self, UpdateProposalConfig};
 use std::string;
 use std::type_name;
@@ -30,34 +30,34 @@ const CREATOR: address = @0xA;
 
 // === Test helpers ===
 
-/// Create a standalone DAO (no controller) with a single board member.
-fun create_dao(scenario: &mut test_scenario::Scenario) {
+/// Create a standalone OU (no controller) with a single board member.
+fun create_ou(scenario: &mut test_scenario::Scenario) {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
     };
 }
 
-/// Create a SubDAO with a controller cap ID set, then share it.
-fun create_and_share_subdao(scenario: &mut test_scenario::Scenario) {
+/// Create a SubOU with a controller cap ID set, then share it.
+fun create_and_share_subou(scenario: &mut test_scenario::Scenario) {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR]);
-        let (subdao, freeze_cap) = dao::create_subdao(
+        let (subou, freeze_cap) = ou::create_subou(
             &init,
-            string::utf8(b"Sub DAO"),
+            string::utf8(b"Sub OU"),
             string::utf8(b"https://example.com/sub.png"),
             scenario.ctx(),
         );
         // Use the FreezeAdminCap's object ID as a stand-in controller cap ID.
         let controller_id = sui::object::id(&freeze_cap);
-        dao::share_subdao(subdao, controller_id);
+        ou::share_subou(subou, controller_id);
         std::unit_test::destroy(freeze_cap);
     };
 }
@@ -70,10 +70,10 @@ fun submit_enable_type_proposal<NewType>(
 ) {
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         // Framework types carry fixed bits; meet the floor those bits need.
-        let bits = dao::framework_permissions(&type_name::with_defining_ids<NewType>());
-        let threshold = dao::permission_floor(bits).max(5_000);
+        let bits = ou::framework_permissions(&type_name::with_defining_ids<NewType>());
+        let threshold = ou::permission_floor(bits).max(5_000);
         let config = proposal::new_config(5_000, threshold, 0, 604_800_000, 0, 0);
         let payload = enable_proposal_type::new(
             type_key.to_ascii_string(),
@@ -81,13 +81,13 @@ fun submit_enable_type_proposal<NewType>(
             config,
         );
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::some(string::utf8(b"Enable proposal type")),
             payload,
             clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 }
 
@@ -96,49 +96,49 @@ fun vote_yes(scenario: &mut test_scenario::Scenario, clock: &clock::Clock) {
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 }
 
 // === Tests ===
 
-#[test, expected_failure(abort_code = admin_ops::ESubDAOBlockedType)]
-/// SubDAO with a controller cannot enable hierarchy-altering types (SpawnDAO).
-fun enable_blocked_type_aborts_for_subdao_with_controller() {
+#[test, expected_failure(abort_code = admin_ops::ESubOUBlockedType)]
+/// SubOU with a controller cannot enable hierarchy-altering types (SpawnOU).
+fun enable_blocked_type_aborts_for_subou_with_controller() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_and_share_subdao(&mut scenario);
+    create_and_share_subou(&mut scenario);
     clock.set_for_testing(1000);
-    submit_enable_type_proposal<SpawnDAO>(&mut scenario, &clock, b"SpawnDAO");
+    submit_enable_type_proposal<SpawnOU>(&mut scenario, &clock, b"SpawnOU");
     clock.set_for_testing(2000);
     vote_yes(&mut scenario, &clock);
 
-    // Execute — must abort with ESubDAOBlockedType
+    // Execute — must abort with ESubOUBlockedType
     scenario.next_tx(CREATOR);
     {
-        let mut subdao = scenario.take_shared<DAO>();
+        let mut subou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut subdao,
+            &mut subou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_enable_proposal_type<SpawnDAO>(
-            &mut subdao,
+        admin_ops::execute_enable_proposal_type<SpawnOU>(
+            &mut subou,
             ticket,
         );
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(subdao);
+        test_scenario::return_shared(subou);
     };
 
     clock.destroy_for_testing();
@@ -146,43 +146,43 @@ fun enable_blocked_type_aborts_for_subdao_with_controller() {
 }
 
 #[test]
-/// SubDAO with a controller CAN enable a non-blocked type.
-fun enable_non_blocked_type_succeeds_for_subdao_with_controller() {
+/// SubOU with a controller CAN enable a non-blocked type.
+fun enable_non_blocked_type_succeeds_for_subou_with_controller() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_and_share_subdao(&mut scenario);
+    create_and_share_subou(&mut scenario);
     clock.set_for_testing(1000);
-    // A third-party payload type that is not pre-enabled and not SubDAO-blocked.
+    // A third-party payload type that is not pre-enabled and not SubOU-blocked.
     submit_enable_type_proposal<TestPayload>(&mut scenario, &clock, b"CustomAction");
     clock.set_for_testing(2000);
     vote_yes(&mut scenario, &clock);
 
     scenario.next_tx(CREATOR);
     {
-        let mut subdao = scenario.take_shared<DAO>();
+        let mut subou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut subdao,
+            &mut subou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
         admin_ops::execute_enable_proposal_type<TestPayload>(
-            &mut subdao,
+            &mut subou,
             ticket,
         );
 
         // Verify the type was added under its display key
-        assert!(subdao.is_type_enabled<TestPayload>());
-        assert!(subdao.type_display_key<TestPayload>() == b"CustomAction".to_ascii_string());
+        assert!(subou.is_type_enabled<TestPayload>());
+        assert!(subou.type_display_key<TestPayload>() == b"CustomAction".to_ascii_string());
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(subdao);
+        test_scenario::return_shared(subou);
     };
 
     clock.destroy_for_testing();
@@ -190,38 +190,38 @@ fun enable_non_blocked_type_succeeds_for_subdao_with_controller() {
 }
 
 #[test]
-/// Independent DAO (no controller) CAN enable a hierarchy-altering type (SpawnDAO).
-fun enable_blocked_type_succeeds_for_independent_dao() {
+/// Independent OU (no controller) CAN enable a hierarchy-altering type (SpawnOU).
+fun enable_blocked_type_succeeds_for_independent_ou() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
     clock.set_for_testing(1000);
-    submit_enable_type_proposal<SpawnDAO>(&mut scenario, &clock, b"SpawnDAO");
+    submit_enable_type_proposal<SpawnOU>(&mut scenario, &clock, b"SpawnOU");
     clock.set_for_testing(2000);
     vote_yes(&mut scenario, &clock);
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_enable_proposal_type<SpawnDAO>(&mut dao, ticket);
+        admin_ops::execute_enable_proposal_type<SpawnOU>(&mut ou, ticket);
 
-        // Verify SpawnDAO is now enabled
-        assert!(dao.is_type_enabled<SpawnDAO>());
+        // Verify SpawnOU is now enabled
+        assert!(ou.is_type_enabled<SpawnOU>());
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -240,22 +240,22 @@ fun disable_core_type_enable_proposal_type_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
 
     // Submit DisableProposalType proposal targeting "EnableProposalType"
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
         let payload = disable_proposal_type::new(b"EnableProposalType".to_ascii_string());
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::some(string::utf8(b"Try to disable core type")),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // Vote yes
@@ -263,31 +263,31 @@ fun disable_core_type_enable_proposal_type_aborts() {
     {
         let mut proposal = scenario.take_shared<Proposal<DisableProposalType>>();
         clock.set_for_testing(2000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     // Execute — should abort with EUndisableableType
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<DisableProposalType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_disable_proposal_type(&mut dao, ticket);
+        admin_ops::execute_disable_proposal_type(&mut ou, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -300,51 +300,51 @@ fun disable_core_type_unfreeze_proposal_type_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
         let payload = disable_proposal_type::new(b"UnfreezeProposalType".to_ascii_string());
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::some(string::utf8(b"Try to disable core type")),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<DisableProposalType>>();
         clock.set_for_testing(2000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<DisableProposalType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_disable_proposal_type(&mut dao, ticket);
+        admin_ops::execute_disable_proposal_type(&mut ou, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -359,29 +359,29 @@ const MEMBER_D: address = @0xD;
 const MEMBER_E: address = @0xE;
 
 #[test, expected_failure(abort_code = 6, location = armature::board_voting)]
-/// EnableProposalType submission is rejected when the DAO's config has an
+/// EnableProposalType submission is rejected when the OU's config has an
 /// approval_threshold below the 80% floor (EFloorNotMet). The abort happens at
 /// submit_proposal, before the proposal enters the object graph.
 fun enable_proposal_type_submission_floor_rejects_below_80_percent() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
 
     // Lower EnableProposalType threshold to 65% (6500 bps) via test helper.
     // Any proposal submitted while this config is active must be rejected.
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let config = proposal::new_config(5_000, 7_999, 0, 604_800_000, 0, 0);
-        dao.test_update_config<EnableProposalType>(config);
-        test_scenario::return_shared(dao);
+        ou.test_update_config<EnableProposalType>(config);
+        test_scenario::return_shared(ou);
     };
 
     // Submit EnableProposalType proposal — must abort with EFloorNotMet (6500 < 6600).
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
         let payload = enable_proposal_type::new(
@@ -390,13 +390,13 @@ fun enable_proposal_type_submission_floor_rejects_below_80_percent() {
             config,
         );
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::none(),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -404,27 +404,27 @@ fun enable_proposal_type_submission_floor_rejects_below_80_percent() {
 }
 
 #[test]
-/// EnableProposalType submission succeeds when the DAO's config has
+/// EnableProposalType submission succeeds when the OU's config has
 /// approval_threshold exactly at the 80% floor (8000 bps).
 fun enable_proposal_type_submission_floor_allows_80_percent() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
 
     // Set EnableProposalType threshold to exactly 80% (8000 bps).
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let config = proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0);
-        dao.test_update_config<EnableProposalType>(config);
-        test_scenario::return_shared(dao);
+        ou.test_update_config<EnableProposalType>(config);
+        test_scenario::return_shared(ou);
     };
 
     // Submit should succeed (8000 >= 8000).
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
         let payload = enable_proposal_type::new(
@@ -433,13 +433,13 @@ fun enable_proposal_type_submission_floor_allows_80_percent() {
             config,
         );
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::none(),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -450,27 +450,27 @@ fun enable_proposal_type_submission_floor_allows_80_percent() {
 
 #[test, expected_failure(abort_code = admin_ops::EFloorNotMet)]
 /// propose_update_proposal_config rejects a self-targeting submission when the
-/// DAO's UpdateProposalConfig threshold is below 80%. The abort happens before
+/// OU's UpdateProposalConfig threshold is below 80%. The abort happens before
 /// the proposal enters the object graph.
 fun update_proposal_config_self_submission_floor_rejects_below_80_percent() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
 
     // Lower UpdateProposalConfig threshold to 51% via test helper.
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let config = proposal::new_config(5_000, 5_100, 0, 604_800_000, 0, 0);
-        dao.test_update_config<UpdateProposalConfig>(config);
-        test_scenario::return_shared(dao);
+        ou.test_update_config<UpdateProposalConfig>(config);
+        test_scenario::return_shared(ou);
     };
 
     // Submit self-targeting UpdateProposalConfig via the wrapper — must abort with EFloorNotMet.
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
         let payload = update_proposal_config::new(
             b"UpdateProposalConfig".to_ascii_string(), // self-target
@@ -483,13 +483,13 @@ fun update_proposal_config_self_submission_floor_rejects_below_80_percent() {
             option::none(),
         );
         admin_ops::propose_update_proposal_config(
-            &dao,
+            &ou,
             option::none(),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -498,17 +498,17 @@ fun update_proposal_config_self_submission_floor_rejects_below_80_percent() {
 
 #[test]
 /// propose_update_proposal_config accepts a self-targeting submission when the
-/// DAO's UpdateProposalConfig threshold is exactly at the 80% floor (8000 bps).
+/// OU's UpdateProposalConfig threshold is exactly at the 80% floor (8000 bps).
 fun update_proposal_config_self_submission_floor_allows_80_percent() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
     // Default UpdateProposalConfig threshold is 8000 (80%) — no override needed.
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
         let payload = update_proposal_config::new(
             b"UpdateProposalConfig".to_ascii_string(), // self-target
@@ -521,13 +521,13 @@ fun update_proposal_config_self_submission_floor_allows_80_percent() {
             option::none(),
         );
         admin_ops::propose_update_proposal_config(
-            &dao,
+            &ou,
             option::none(),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -541,13 +541,13 @@ fun update_proposal_config_non_self_target_succeeds() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    // Create DAO with 5 board members
+    // Create OU with 5 board members
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR, MEMBER_B, MEMBER_C, MEMBER_D, MEMBER_E]);
-        dao::create(
+        ou::create(
             &init,
-            string::utf8(b"Test DAO"),
+            string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
             scenario.ctx(),
         );
@@ -556,7 +556,7 @@ fun update_proposal_config_non_self_target_succeeds() {
     // Override UpdateProposalConfig config with quorum needing 3+ votes
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let config = proposal::new_config(
             6_000, // quorum 60% (need 3 of 5)
             5_000, // approval_threshold 50%
@@ -565,14 +565,14 @@ fun update_proposal_config_non_self_target_succeeds() {
             0,
             0,
         );
-        dao.test_update_config<UpdateProposalConfig>(config);
-        test_scenario::return_shared(dao);
+        ou.test_update_config<UpdateProposalConfig>(config);
+        test_scenario::return_shared(ou);
     };
 
     // Submit UpdateProposalConfig targeting SetBoard (not self)
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
         let payload = update_proposal_config::new(
             b"SetBoard".to_ascii_string(),
@@ -585,13 +585,13 @@ fun update_proposal_config_non_self_target_succeeds() {
             option::none(),
         );
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::some(string::utf8(b"Lower SetBoard quorum")),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // 3 of 5 vote yes (60% — no 80% floor for non-self targets)
@@ -599,9 +599,9 @@ fun update_proposal_config_non_self_target_succeeds() {
     {
         let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
         clock.set_for_testing(2000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
@@ -609,9 +609,9 @@ fun update_proposal_config_non_self_target_succeeds() {
     {
         let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
         clock.set_for_testing(3000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
@@ -619,35 +619,35 @@ fun update_proposal_config_non_self_target_succeeds() {
     {
         let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
         clock.set_for_testing(4000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     // Execute — should succeed (no 80% floor for SetBoard target)
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(5000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_update_proposal_config(&mut dao, ticket);
+        admin_ops::execute_update_proposal_config(&mut ou, ticket);
 
         // Verify SetBoard quorum was updated
-        let new_config = dao.type_config<SetBoard>();
+        let new_config = ou.type_config<SetBoard>();
         assert!(new_config.quorum() == 3_000);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -658,19 +658,19 @@ fun update_proposal_config_non_self_target_succeeds() {
 // EThresholdBelowFloor tests
 // =========================================================================
 
-#[test, expected_failure(abort_code = armature::dao::EThresholdBelowMinimum)]
+#[test, expected_failure(abort_code = armature::ou::EThresholdBelowMinimum)]
 /// UpdateProposalConfig cannot lower EnableProposalType threshold below 80% floor.
 fun update_config_below_floor_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
 
     // Submit UpdateProposalConfig targeting EnableProposalType with threshold=5000 (below 6600
     // floor)
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
         let payload = update_proposal_config::new(
             b"EnableProposalType".to_ascii_string(),
@@ -683,13 +683,13 @@ fun update_config_below_floor_aborts() {
             option::none(),
         );
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::some(string::utf8(b"Lower EnableProposalType threshold")),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // Vote yes (single-member board → 100% approval, passes 80% floor)
@@ -697,59 +697,59 @@ fun update_config_below_floor_aborts() {
     {
         let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
         clock.set_for_testing(2000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     // Execute — should abort with EThresholdBelowFloor
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_update_proposal_config(&mut dao, ticket);
+        admin_ops::execute_update_proposal_config(&mut ou, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = armature::dao::EThresholdBelowMinimum)]
+#[test, expected_failure(abort_code = armature::ou::EThresholdBelowMinimum)]
 /// EnableProposalType cannot enable a floor-gated type with a sub-floor threshold.
-/// Uses a SubDAO that has had UpdateProposalConfig disabled via test helper,
+/// Uses a SubOU that has had UpdateProposalConfig disabled via test helper,
 /// then tries to re-enable it with a threshold below the 80% floor.
 fun enable_type_with_sub_floor_config_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_and_share_subdao(&mut scenario);
+    create_and_share_subou(&mut scenario);
 
-    // Disable UpdateProposalConfig on the SubDAO via test helper so we can re-enable it
+    // Disable UpdateProposalConfig on the SubOU via test helper so we can re-enable it
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
-        dao.test_disable_type<UpdateProposalConfig>();
-        test_scenario::return_shared(dao);
+        let mut ou = scenario.take_shared<OU>();
+        ou.test_disable_type<UpdateProposalConfig>();
+        test_scenario::return_shared(ou);
     };
 
     // Submit EnableProposalType proposal to re-enable UpdateProposalConfig with threshold=5000
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
         // 5000 (50%) is below the 80% floor for UpdateProposalConfig
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
@@ -759,13 +759,13 @@ fun enable_type_with_sub_floor_config_aborts() {
             config,
         );
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::some(string::utf8(b"Re-enable UpdateProposalConfig with weak threshold")),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // Vote yes
@@ -773,31 +773,31 @@ fun enable_type_with_sub_floor_config_aborts() {
     {
         let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
         clock.set_for_testing(2000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     // Execute — should abort with EThresholdBelowFloor
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_enable_proposal_type<UpdateProposalConfig>(&mut dao, ticket);
+        admin_ops::execute_enable_proposal_type<UpdateProposalConfig>(&mut ou, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -820,7 +820,7 @@ fun run_enable_type<NewType: store>(
     clock.set_for_testing(ts_submit);
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
         let payload = enable_proposal_type::new(
             type_key.to_ascii_string(),
@@ -828,41 +828,41 @@ fun run_enable_type<NewType: store>(
             config,
         );
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::none(),
             payload,
             clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.set_for_testing(ts_vote);
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     clock.set_for_testing(ts_exec);
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             clock,
             scenario.ctx(),
         );
-        admin_ops::execute_enable_proposal_type<NewType>(&mut dao, ticket);
+        admin_ops::execute_enable_proposal_type<NewType>(&mut ou, ticket);
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 }
 
@@ -873,16 +873,16 @@ fun execute_enable_proposal_type_adds_slot() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
     run_enable_type<TestPayload>(&mut scenario, &mut clock, b"MyGrant", 1000, 2000, 3000);
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
-        assert!(dao.is_type_enabled<TestPayload>());
-        assert!(dao.type_display_key<TestPayload>() == b"MyGrant".to_ascii_string());
-        assert!(!dao.is_type_enabled<AltPayload>());
-        test_scenario::return_shared(dao);
+        let ou = scenario.take_shared<OU>();
+        assert!(ou.is_type_enabled<TestPayload>());
+        assert!(ou.type_display_key<TestPayload>() == b"MyGrant".to_ascii_string());
+        assert!(!ou.is_type_enabled<AltPayload>());
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -895,27 +895,27 @@ fun execute_enable_proposal_type_reenable_same_type_succeeds() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
 
     run_enable_type<TestPayload>(&mut scenario, &mut clock, b"MyGrant", 1000, 2000, 3000);
 
     // Disable via test helper — slot and display key are released.
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
-        dao.test_disable_type<TestPayload>();
-        assert!(!dao.is_type_enabled<TestPayload>());
-        test_scenario::return_shared(dao);
+        let mut ou = scenario.take_shared<OU>();
+        ou.test_disable_type<TestPayload>();
+        assert!(!ou.is_type_enabled<TestPayload>());
+        test_scenario::return_shared(ou);
     };
 
     run_enable_type<TestPayload>(&mut scenario, &mut clock, b"MyGrant", 4000, 5000, 6000);
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
-        assert!(dao.is_type_enabled<TestPayload>());
-        assert!(dao.type_display_key<TestPayload>() == b"MyGrant".to_ascii_string());
-        test_scenario::return_shared(dao);
+        let ou = scenario.take_shared<OU>();
+        assert!(ou.is_type_enabled<TestPayload>());
+        assert!(ou.type_display_key<TestPayload>() == b"MyGrant".to_ascii_string());
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -929,40 +929,40 @@ fun execute_enable_proposal_type_display_key_reusable_after_disable() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
 
     run_enable_type<TestPayload>(&mut scenario, &mut clock, b"MyGrant", 1000, 2000, 3000);
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
-        dao.test_disable_type<TestPayload>();
-        test_scenario::return_shared(dao);
+        let mut ou = scenario.take_shared<OU>();
+        ou.test_disable_type<TestPayload>();
+        test_scenario::return_shared(ou);
     };
 
     run_enable_type<AltPayload>(&mut scenario, &mut clock, b"MyGrant", 4000, 5000, 6000);
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
-        assert!(dao.is_type_enabled<AltPayload>());
-        assert!(!dao.is_type_enabled<TestPayload>());
-        assert!(dao.type_display_key<AltPayload>() == b"MyGrant".to_ascii_string());
-        test_scenario::return_shared(dao);
+        let ou = scenario.take_shared<OU>();
+        assert!(ou.is_type_enabled<AltPayload>());
+        assert!(!ou.is_type_enabled<TestPayload>());
+        assert!(ou.type_display_key<AltPayload>() == b"MyGrant".to_ascii_string());
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = 15, location = armature::dao)]
+#[test, expected_failure(abort_code = 15, location = armature::ou)]
 /// Enabling a second type under a display key that is still in use aborts with
-/// dao::EDisplayKeyTaken.
+/// ou::EDisplayKeyTaken.
 fun execute_enable_proposal_type_duplicate_display_key_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
 
     run_enable_type<TestPayload>(&mut scenario, &mut clock, b"MyGrant", 1000, 2000, 3000);
     // TestPayload still holds "MyGrant" — AltPayload cannot take it.
@@ -979,7 +979,7 @@ fun execute_enable_proposal_type_wrong_new_type_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
 
     // Board approves TestPayload under "MyGrant"...
     clock.set_for_testing(1000);
@@ -990,22 +990,22 @@ fun execute_enable_proposal_type_wrong_new_type_aborts() {
     // ...but the executor tries to register AltPayload.
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_enable_proposal_type<AltPayload>(&mut dao, ticket);
+        admin_ops::execute_enable_proposal_type<AltPayload>(&mut ou, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -1020,25 +1020,25 @@ fun execute_enable_proposal_type_wrong_new_type_aborts() {
 /// execute_update_proposal_config correctly applies the composable_allowed override.
 /// Starts with AddMember (composable by default), disables it via UpdateProposalConfig
 /// with composable_allowed: some(false), then re-enables it with some(true) and verifies
-/// each state transition on the DAO config.
+/// each state transition on the OU config.
 fun update_proposal_config_composable_allowed_updates_config() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
 
     // AddMember is composable by default — confirm baseline.
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
-        assert!(dao.type_config<AddMember>().composable_allowed());
-        test_scenario::return_shared(dao);
+        let ou = scenario.take_shared<OU>();
+        assert!(ou.type_config<AddMember>().composable_allowed());
+        test_scenario::return_shared(ou);
     };
 
     // Submit UpdateProposalConfig for AddMember with composable_allowed: some(false).
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
         let payload = update_proposal_config::new(
             b"AddMember".to_ascii_string(),
@@ -1051,52 +1051,52 @@ fun update_proposal_config_composable_allowed_updates_config() {
             option::some(false), // disable composability
         );
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::none(),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
         clock.set_for_testing(2000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_update_proposal_config(&mut dao, ticket);
+        admin_ops::execute_update_proposal_config(&mut ou, ticket);
 
         // Composability is now false.
-        assert!(!dao.type_config<AddMember>().composable_allowed());
+        assert!(!ou.type_config<AddMember>().composable_allowed());
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // Submit a second UpdateProposalConfig to re-enable composability.
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(4000);
         let payload = update_proposal_config::new(
             b"AddMember".to_ascii_string(),
@@ -1109,51 +1109,51 @@ fun update_proposal_config_composable_allowed_updates_config() {
             option::some(true), // re-enable composability
         );
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::none(),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
         clock.set_for_testing(5000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(6000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_update_proposal_config(&mut dao, ticket);
+        admin_ops::execute_update_proposal_config(&mut ou, ticket);
 
         // Composability is restored.
-        assert!(dao.type_config<AddMember>().composable_allowed());
+        assert!(ou.type_config<AddMember>().composable_allowed());
 
         // Other fields are preserved — quorum unchanged from default.
-        let cfg = dao.type_config<AddMember>();
+        let cfg = ou.type_config<AddMember>();
         assert!(cfg.quorum() == 5_000);
         assert!(cfg.approval_threshold() == 5_000);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -1170,12 +1170,12 @@ fun enable_proposal_type_composable_cooldown_conflict_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
 
     // Submit EnableProposalType with a conflicting config: cooldown + composable
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
         let bad_config = proposal::new_config(
             5_000,
@@ -1191,13 +1191,13 @@ fun enable_proposal_type_composable_cooldown_conflict_aborts() {
             bad_config,
         );
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::none(),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // Vote
@@ -1205,32 +1205,32 @@ fun enable_proposal_type_composable_cooldown_conflict_aborts() {
     {
         let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
         clock.set_for_testing(2000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     // Execute — must abort at composable_cooldown check
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<EnableProposalType>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
 
-        admin_ops::execute_enable_proposal_type<TestPayload>(&mut dao, ticket);
+        admin_ops::execute_enable_proposal_type<TestPayload>(&mut ou, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -1244,13 +1244,13 @@ fun update_proposal_config_composable_cooldown_conflict_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
 
     // Submit UpdateProposalConfig that sets cooldown > 0 and composable_allowed = true for
     // AddMember
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
         let payload = update_proposal_config::new(
             b"AddMember".to_ascii_string(),
@@ -1263,13 +1263,13 @@ fun update_proposal_config_composable_cooldown_conflict_aborts() {
             option::some(true), // composable_allowed = true → CONFLICT
         );
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::none(),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // Vote
@@ -1277,32 +1277,32 @@ fun update_proposal_config_composable_cooldown_conflict_aborts() {
     {
         let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
         clock.set_for_testing(2000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     // Execute — must abort at composable_cooldown check
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
 
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
 
-        admin_ops::execute_update_proposal_config(&mut dao, ticket);
+        admin_ops::execute_update_proposal_config(&mut ou, ticket);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();
@@ -1317,20 +1317,20 @@ fun update_proposal_config_preserves_permissions() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     let bits = armature::permissions::board_add() | armature::permissions::pause();
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
-        dao.test_enable_type<TestPayload>(
+        let mut ou = scenario.take_shared<OU>();
+        ou.test_enable_type<TestPayload>(
             b"TestPayload".to_ascii_string(),
             proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0).with_permissions(bits),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
         let payload = update_proposal_config::new(
             b"TestPayload".to_ascii_string(),
@@ -1342,37 +1342,37 @@ fun update_proposal_config_preserves_permissions() {
             option::none(),
             option::none(),
         );
-        board_voting::submit_proposal(&dao, option::none(), payload, &clock, scenario.ctx());
-        test_scenario::return_shared(dao);
+        board_voting::submit_proposal(&ou, option::none(), payload, &clock, scenario.ctx());
+        test_scenario::return_shared(ou);
     };
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let proposal = scenario.take_shared<Proposal<UpdateProposalConfig>>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
             scenario.ctx(),
         );
-        admin_ops::execute_update_proposal_config(&mut dao, ticket);
+        admin_ops::execute_update_proposal_config(&mut ou, ticket);
 
-        let config = dao.type_config<TestPayload>();
+        let config = ou.type_config<TestPayload>();
         assert!(config.approval_threshold() == 6_000);
         assert!(config.permissions() == bits);
 
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     clock.destroy_for_testing();

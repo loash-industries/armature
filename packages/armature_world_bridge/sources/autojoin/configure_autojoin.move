@@ -1,5 +1,5 @@
-/// Board-voted proposal that mutates the DAO's `TribeIdAllowlist`.
-/// Lazily initialises the type-state on first execution so the DAO
+/// Board-voted proposal that mutates the OU's `TribeIdAllowlist`.
+/// Lazily initialises the type-state on first execution so the OU
 /// doesn't need a separate "init" proposal between `EnableProposalType`
 /// and the first config change.
 ///
@@ -10,7 +10,7 @@
 /// which is `public` and doesn't require a request.
 module armature_world_bridge::configure_autojoin;
 
-use armature::dao::DAO;
+use armature::ou::OU;
 use armature::proposal::{Self, ExecutionRequest, ExecutionTicket};
 use armature_world_bridge::tribe_allowlist::{Self, TribeIdAllowlist};
 use std::internal;
@@ -18,7 +18,7 @@ use sui::event;
 
 // === Errors ===
 
-const EDaoMismatch: u64 = 0;
+const EOuMismatch: u64 = 0;
 const ETooManyAdds: u64 = 1;
 const ETooManyRemoves: u64 = 2;
 const EZeroTribeIdNotAllowed: u64 = 3;
@@ -32,7 +32,7 @@ const MAX_OPS_PER_CALL: u64 = 16;
 
 // === Structs ===
 
-/// Payload: bulk-update the DAO's tribe-id allowlist plus optionally
+/// Payload: bulk-update the OU's tribe-id allowlist plus optionally
 /// flip the kill-switch. `set_enabled` is `Option<bool>` so callers
 /// can leave the flag untouched.
 public struct ConfigureAutojoin has drop, store {
@@ -44,7 +44,7 @@ public struct ConfigureAutojoin has drop, store {
 // === Events ===
 
 public struct AutojoinAllowlistUpdated has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     added: vector<u32>,
     removed: vector<u32>,
     enabled: bool,
@@ -76,8 +76,8 @@ public fun set_enabled(self: &ConfigureAutojoin): &Option<bool> { &self.set_enab
 /// Per-call bounds (`MAX_OPS_PER_CALL`) are checked before consulting
 /// the allowlist's own bound (`MAX_TRIBE_IDS`) so the cheaper check
 /// fails fast.
-public fun execute_configure_autojoin(dao: &mut DAO, ticket: ExecutionTicket<ConfigureAutojoin>) {
-    assert!(dao.id() == ticket.ticket_dao_id(), EDaoMismatch);
+public fun execute_configure_autojoin(ou: &mut OU, ticket: ExecutionTicket<ConfigureAutojoin>) {
+    assert!(ou.id() == ticket.ticket_ou_id(), EOuMismatch);
     let payload = ticket.ticket_payload();
     let req = ticket.ticket_request(internal::permit());
 
@@ -90,14 +90,14 @@ public fun execute_configure_autojoin(dao: &mut DAO, ticket: ExecutionTicket<Con
         i = i + 1;
     };
 
-    if (!dao.has_type_state<ConfigureAutojoin>()) {
-        dao.init_type_state<ConfigureAutojoin, TribeIdAllowlist>(
+    if (!ou.has_type_state<ConfigureAutojoin>()) {
+        ou.init_type_state<ConfigureAutojoin, TribeIdAllowlist>(
             tribe_allowlist::empty(),
             req,
         );
     };
 
-    let allowlist: &mut TribeIdAllowlist = dao.borrow_type_state_mut<
+    let allowlist: &mut TribeIdAllowlist = ou.borrow_type_state_mut<
         ConfigureAutojoin,
         TribeIdAllowlist,
     >(req);
@@ -110,7 +110,7 @@ public fun execute_configure_autojoin(dao: &mut DAO, ticket: ExecutionTicket<Con
     let enabled = allowlist.is_enabled();
 
     event::emit(AutojoinAllowlistUpdated {
-        dao_id: dao.id(),
+        ou_id: ou.id(),
         added: payload.add_tribe_ids,
         removed: payload.remove_tribe_ids,
         enabled,

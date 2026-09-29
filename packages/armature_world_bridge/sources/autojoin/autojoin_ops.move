@@ -1,20 +1,20 @@
-/// AutojoinDAO — permissionless self-join for DAOs whose Members SubDAO
+/// AutojoinOU — permissionless self-join for OUs whose Members SubOU
 /// has opted into bypass execution for this type and configured an
 /// allowlist of in-game tribe IDs synonymous with it.
 ///
 /// Flow (single PTB, no vote):
-///   1. DAO has previously passed `EnableBypassType { type_key: "AutojoinDAO", .. }`
-///      with `NewType = AutojoinDAO`, depositing an `ExternalExecutionCap<AutojoinDAO>`
-///      in the DAO's CapabilityVault.
-///   2. DAO has previously passed `EnableProposalType { type_key: "ConfigureAutojoin", .. }`
+///   1. OU has previously passed `EnableBypassType { type_key: "AutojoinOU", .. }`
+///      with `NewType = AutojoinOU`, depositing an `ExternalExecutionCap<AutojoinOU>`
+///      in the OU's CapabilityVault.
+///   2. OU has previously passed `EnableProposalType { type_key: "ConfigureAutojoin", .. }`
 ///      with `NewType = ConfigureAutojoin`, then `ConfigureAutojoin { add_tribe_ids: [N],
 /// set_enabled: some(true), .. }`
 ///      to populate the allowlist.
-///   3. Player calls `autojoin(dao, vault, cap_id, character, freeze, clock, ctx)`.
+///   3. Player calls `autojoin(ou, vault, cap_id, character, freeze, clock, ctx)`.
 ///      The function verifies the character's wallet matches `ctx.sender()`,
 ///      the character's tribe is in the allowlist, the kill-switch is on,
-///      then mints the ticket through `external_execution::ticket_from_cap<AutojoinDAO>`
-///      (which runs the standard cross-cutting checks: DAO active, type slot
+///      then mints the ticket through `external_execution::ticket_from_cap<AutojoinOU>`
+///      (which runs the standard cross-cutting checks: OU active, type slot
 ///      present, not frozen/paused, cooldown, record_execution), adds the
 ///      joiner, and discharges the ticket. The ticket never leaves this module.
 ///
@@ -25,16 +25,16 @@
 ///     all of which call `admin_acl.verify_sponsor(ctx)`.
 ///   - `Character` is shared; the `&Character` reference cannot be fabricated.
 ///   - `&CapabilityVault` is shared and read-only here; `borrow_external_cap`
-///     asserts `vault.dao_id == dao.id()` so a wrong vault aborts at the source.
-///   - `ticket_from_cap` re-asserts `cap.dao_id == dao.id()` and runs
-///     the full cross-cutting check set. Two independent dao-id boundaries.
+///     asserts `vault.ou_id == ou.id()` so a wrong vault aborts at the source.
+///   - `ticket_from_cap` re-asserts `cap.ou_id == ou.id()` and runs
+///     the full cross-cutting check set. Two independent ou-id boundaries.
 ///   - The ticket's request (BOARD_ADD) is spent only here, on `ctx.sender()`:
-///     the caller never holds the ticket, and `Permit<AutojoinDAO>` can only be
+///     the caller never holds the ticket, and `Permit<AutojoinOU>` can only be
 ///     minted in this module, so nobody can add any other address with it.
 module armature_world_bridge::autojoin_ops;
 
 use armature::capability_vault::CapabilityVault;
-use armature::dao::DAO;
+use armature::ou::OU;
 use armature::emergency::EmergencyFreeze;
 use armature::external_execution;
 use armature::permissions;
@@ -47,7 +47,7 @@ use world::character::Character;
 
 // === Errors ===
 
-// 0 was EDaoMismatch: the joiner is added inside `autojoin`, on the DAO the ticket was minted for.
+// 0 was EOuMismatch: the joiner is added inside `autojoin`, on the OU the ticket was minted for.
 const ESenderNotCharacterOwner: u64 = 1;
 const EAllowlistNotInitialized: u64 = 2;
 const EAutojoinDisabled: u64 = 3;
@@ -57,9 +57,9 @@ const EZeroTribeIdNotAllowed: u64 = 5;
 // === Structs ===
 
 /// Per-self-join payload. Recorded for the audit trail; the execute
-/// handler re-reads `dao` and `character` state at execution time
+/// handler re-reads `ou` and `character` state at execution time
 /// rather than trusting payload values, so the payload is informational.
-public struct AutojoinDAO has drop, store {
+public struct AutojoinOU has drop, store {
     character_id: ID,
     tribe_id: u32,
     joining_address: address,
@@ -68,7 +68,7 @@ public struct AutojoinDAO has drop, store {
 // === Events ===
 
 public struct MemberAutojoined has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     member: address,
     tribe_id: u32,
     character_id: ID,
@@ -76,20 +76,20 @@ public struct MemberAutojoined has copy, drop {
 
 // === Accessors ===
 
-public fun character_id(self: &AutojoinDAO): ID { self.character_id }
+public fun character_id(self: &AutojoinOU): ID { self.character_id }
 
-public fun tribe_id(self: &AutojoinDAO): u32 { self.tribe_id }
+public fun tribe_id(self: &AutojoinOU): u32 { self.tribe_id }
 
-public fun joining_address(self: &AutojoinDAO): address { self.joining_address }
+public fun joining_address(self: &AutojoinOU): address { self.joining_address }
 
-/// The permission bits AutojoinDAO needs in the config its EnableBypassType
-/// carries: BOARD_ADD only (`execute_autojoin_dao` adds the joining member).
+/// The permission bits AutojoinOU needs in the config its EnableBypassType
+/// carries: BOARD_ADD only (`execute_autojoin_ou` adds the joining member).
 /// ConfigureAutojoin needs none: it writes only its own type-state.
 public fun autojoin_permissions(): u64 { permissions::board_add() }
 
 // === Autojoin ===
 
-/// Add `ctx.sender()` to the Members DAO's board without a vote.
+/// Add `ctx.sender()` to the Members OU's board without a vote.
 ///
 /// Aborts on:
 ///   - `character.character_address() != ctx.sender()` — joiner wallet must
@@ -97,10 +97,10 @@ public fun autojoin_permissions(): u64 { permissions::board_add() }
 ///   - Allowlist type-state missing — `ConfigureAutojoin` has never run.
 ///   - Allowlist `enabled == false` — kill-switch.
 ///   - `character.tribe()` not in allowlist.
-///   - Any check inside `ticket_from_cap` (DAO active, type slot present,
+///   - Any check inside `ticket_from_cap` (OU active, type slot present,
 ///     not paused/frozen, cooldown, etc).
 public fun autojoin(
-    members_dao: &mut DAO,
+    members_ou: &mut OU,
     members_vault: &CapabilityVault,
     cap_id: ID,
     character: &Character,
@@ -115,9 +115,9 @@ public fun autojoin(
     //    is the joiner-identity gate.
     assert!(character.character_address() == sender, ESenderNotCharacterOwner);
 
-    // 2. Read the per-DAO allowlist. type-state is keyed by ConfigureAutojoin.
-    assert!(members_dao.has_type_state<ConfigureAutojoin>(), EAllowlistNotInitialized);
-    let allowlist: &TribeIdAllowlist = members_dao.borrow_type_state<
+    // 2. Read the per-OU allowlist. type-state is keyed by ConfigureAutojoin.
+    assert!(members_ou.has_type_state<ConfigureAutojoin>(), EAllowlistNotInitialized);
+    let allowlist: &TribeIdAllowlist = members_ou.borrow_type_state<
         ConfigureAutojoin,
         TribeIdAllowlist,
     >();
@@ -129,18 +129,18 @@ public fun autojoin(
     assert!(tribe_id != 0, EZeroTribeIdNotAllowed);
     assert!(allowlist.contains(tribe_id), ETribeIdNotAllowed);
 
-    // 3. Borrow the cap. borrow_external_cap asserts vault.dao_id == members_dao.id().
-    let cap = members_vault.borrow_external_cap<AutojoinDAO>(members_dao.id(), cap_id);
+    // 3. Borrow the cap. borrow_external_cap asserts vault.ou_id == members_ou.id().
+    let cap = members_vault.borrow_external_cap<AutojoinOU>(members_ou.id(), cap_id);
 
     // 4. Mint the ticket through the framework's cap-gated path.
-    let payload = AutojoinDAO {
+    let payload = AutojoinOU {
         character_id: object::id(character),
         tribe_id,
         joining_address: sender,
     };
-    let ticket = external_execution::ticket_from_cap<AutojoinDAO>(
+    let ticket = external_execution::ticket_from_cap<AutojoinOU>(
         cap,
-        members_dao,
+        members_ou,
         freeze,
         option::none(),
         payload,
@@ -150,10 +150,10 @@ public fun autojoin(
     );
 
     // 5. Spend the request on the joiner only, then close the ticket.
-    members_dao.add_board_member_governance(sender, ticket.ticket_request(internal::permit()));
+    members_ou.add_board_member_governance(sender, ticket.ticket_request(internal::permit()));
 
     event::emit(MemberAutojoined {
-        dao_id: members_dao.id(),
+        ou_id: members_ou.id(),
         member: sender,
         tribe_id,
         character_id: object::id(character),

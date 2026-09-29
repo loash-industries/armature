@@ -1,4 +1,4 @@
-# 01 — DAO Creation
+# 01 — OU Creation
 
 > **Tool:** Playwright (Chromium)
 > **Network:** Sui localnet
@@ -12,31 +12,31 @@
 
 ## Scenarios
 
-### 1.1 — Happy Path: Create a new DAO
+### 1.1 — Happy Path: Create a new OU
 
 1. Navigate to `/create`
-2. Fill in DAO name (e.g., "Test DAO Alpha")
+2. Fill in OU name (e.g., "Test OU Alpha")
 3. Fill in description (e.g., "A test governance organization")
 4. Fill in image URL (optional, e.g., an IPFS CID or blank)
 5. Add initial board members:
    - Add wallet address A (creator)
    - Add wallet address B (second member)
-6. Click "Create DAO" — wallet prompt appears
-7. Sign transaction (`buildCreateDao`)
+6. Click "Create OU" — wallet prompt appears
+7. Sign transaction (`buildCreateOu`)
 
 **Expected:**
 
 - Transaction succeeds
-- Redirected to `/dao/$newDaoId` (dashboard)
+- Redirected to `/ou/$newOuId` (dashboard)
 - Dashboard summary cards show:
   - Treasury: 0 SUI
   - Board Members: 2
-  - Charter name matches "Test DAO Alpha"
+  - Charter name matches "Test OU Alpha"
   - Enabled proposal types: 7 (default set)
 - On-chain verification:
-  - DAO object exists, status = Active
-  - TreasuryVault created and linked (`dao.treasury_id`)
-  - CapabilityVault created and linked (`dao.capability_vault_id`)
+  - OU object exists, status = Active
+  - TreasuryVault created and linked (`ou.treasury_id`)
+  - CapabilityVault created and linked (`ou.capability_vault_id`)
   - Charter created with correct name/description/image_url
   - EmergencyFreeze created with default 7-day max duration
   - FreezeAdminCap transferred to creator wallet
@@ -49,7 +49,7 @@
   - TransferFreezeAdmin
   - UnfreezeProposalType
 - Default config per type: quorum=5000 bps (50%), threshold=5000 bps (50%), expiry=7 days, no execution delay, no cooldown
-- `DAOCreated` event emitted with correct fields
+- `OUCreated` event emitted with correct fields
 
 ### 1.2 — Single board member
 
@@ -60,7 +60,7 @@
 
 **Expected:**
 
-- Transaction succeeds — single-member DAOs are valid
+- Transaction succeeds — single-member OUs are valid
 - Board page shows 1 member
 
 ### 1.3 — Negative: Empty board
@@ -98,11 +98,11 @@
 
 ### 1.6 — Verify companion object linkage
 
-After successful DAO creation (scenario 1.1):
+After successful OU creation (scenario 1.1):
 
-1. Navigate to `/dao/$daoId/treasury` — page loads, shows empty balances
-2. Navigate to `/dao/$daoId/vault` — page loads, shows empty vault
-3. Navigate to `/dao/$daoId/charter` — shows correct name, description, image
-4. Navigate to `/dao/$daoId/emergency` — shows no frozen types, max duration = 7 days
-5. Navigate to `/dao/$daoId/board` — shows both board members
-6. Navigate to `/dao/$daoId/governance` — shows 7 enabled types with default configs
+1. Navigate to `/ou/$ouId/treasury` — page loads, shows empty balances
+2. Navigate to `/ou/$ouId/vault` — page loads, shows empty vault
+3. Navigate to `/ou/$ouId/charter` — shows correct name, description, image
+4. Navigate to `/ou/$ouId/emergency` — shows no frozen types, max duration = 7 days
+5. Navigate to `/ou/$ouId/board` — shows both board members
+6. Navigate to `/ou/$ouId/governance` — shows 7 enabled types with default configs

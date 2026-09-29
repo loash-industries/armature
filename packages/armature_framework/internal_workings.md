@@ -2,11 +2,11 @@
 
 ## Privilege Model Overview
 
-The framework enforces a **proposal-gated, per-type permission model**. Every state-mutating operation on DAO objects requires one of:
+The framework enforces a **proposal-gated, per-type permission model**. Every state-mutating operation on OU objects requires one of:
 
-- an `ExecutionRequest<P>` hot potato **for that DAO** whose permission bits include the bit the mutator names (see §9). The bits are those `P`'s type slot held when the request was minted;
-- a **privileged** `ExecutionRequest<P>` (minted only by `controller::privileged_submit` for a SubDAO), which passes every bit check on that SubDAO;
-- a `FreezeAdminCap` (emergency freeze/unfreeze) or the SubDAO's registered `SubDAOControl` (`controller::privileged_extract`);
+- an `ExecutionRequest<P>` hot potato **for that OU** whose permission bits include the bit the mutator names (see §9). The bits are those `P`'s type slot held when the request was minted;
+- a **privileged** `ExecutionRequest<P>` (minted only by `controller::privileged_submit` for a SubOU), which passes every bit check on that SubOU;
+- a `FreezeAdminCap` (emergency freeze/unfreeze) or the SubOU's registered `SubOUControl` (`controller::privileged_extract`);
 - `public(package)` visibility (framework-internal only).
 
 Holding a request for one type does **not** authorize mutations that type was never granted. Permissions are deny-by-default: a type holds no bits unless seeded (framework types, §9.1), set in a creation-time override, or granted by an 80% meta-type vote (§9.2).
@@ -27,7 +27,7 @@ The only permissionless operations are:
 
 ```move
 public struct ExecutionRequest<phantom P> {
-    dao_id: ID,
+    ou_id: ID,
     proposal_id: ID,
     permissions: u64, // P's slot bits when the request was minted
     privileged: bool, // true only for controller::privileged_submit
@@ -36,7 +36,7 @@ public struct ExecutionRequest<phantom P> {
 
 A **hot-potato** (no `drop`, `copy`, or `store`). Handlers receive it inside an `ExecutionTicket<P>` (read with `ticket_request(permit)`), and `ticket.discharge(permit)` destroys it. Both take `std::internal::Permit<P>`, which only the module defining `P` can mint, so only `P`'s handler can spend or close the ticket. The phantom `P` binds the request to a payload type; `permissions` binds it to what that type may do.
 
-**Mint paths** — every path reads `P`'s slot on the DAO at mint time:
+**Mint paths** — every path reads `P`'s slot on the OU at mint time:
 
 | Path | Function | `permissions` | `privileged` |
 |------|----------|---------------|--------------|
@@ -51,9 +51,9 @@ Because bits are read when the request is minted (execution time, not submission
 **Checks** (`proposal.move`):
 - `req_permissions(req)`, `req_is_privileged(req)` — accessors.
 - `req_has_permission(req, bits)` — `privileged || contains(permissions, bits)`.
-- `assert_permitted(req, bits)` — aborts `proposal::EPermissionDenied` (21). Called by modules that `dao` depends on (treasury_vault, capability_vault, charter, emergency, tribe), which cannot take `&DAO`; they check the DAO id against their own object first.
-- `dao::assert_permitted(dao, bits, req)` — `EDAOIdMismatch` (2) for another DAO's request, then the request check. Used by DAO mutators.
-- `dao::assert_controller(dao, req)` — `EDAOIdMismatch`, then `ENotPrivileged` (24) unless the request is privileged. No bit grants it.
+- `assert_permitted(req, bits)` — aborts `proposal::EPermissionDenied` (21). Called by modules that `ou` depends on (treasury_vault, capability_vault, charter, emergency, tribe), which cannot take `&OU`; they check the OU id against their own object first.
+- `ou::assert_permitted(ou, bits, req)` — `EOUIdMismatch` (2) for another OU's request, then the request check. Used by OU mutators.
+- `ou::assert_controller(ou, req)` — `EOUIdMismatch`, then `ENotPrivileged` (24) unless the request is privileged. No bit grants it.
 
 **Two-PTB lifecycle:**
 1. Board member calls `board_voting::submit_proposal<P>()` → shared `Proposal<P>` created with the slot's config
@@ -65,9 +65,9 @@ Because bits are read when the request is minted (execution time, not submission
 
 ## 2. Proposal-Gated Functions by Module
 
-Every function below that takes an `ExecutionRequest` checks the request's DAO, then its bits. `packages/armature_framework/tests/gate_tests.move` has one denial test per gated function (a request holding every bit except the required one), and `scripts/check_request_gates.py` (run in CI) fails if a `public fun` in `armature_framework/sources` takes an `ExecutionRequest` without calling `assert_permitted` / `assert_controller` and is not on its reviewed allowlist.
+Every function below that takes an `ExecutionRequest` checks the request's OU, then its bits. `packages/armature_framework/tests/gate_tests.move` has one denial test per gated function (a request holding every bit except the required one), and `scripts/check_request_gates.py` (run in CI) fails if a `public fun` in `armature_framework/sources` takes an `ExecutionRequest` without calling `assert_permitted` / `assert_controller` and is not on its reviewed allowlist.
 
-### 2.1 dao.move
+### 2.1 ou.move
 
 | Function | Requires | Effect |
 |----------|----------|--------|
@@ -80,10 +80,10 @@ Every function below that takes an `ExecutionRequest` checks the request's DAO, 
 | `disable_proposal_type<P>()` | `TYPE_ADMIN` | Remove a type slot |
 | `update_proposal_config<P>()` | `TYPE_ADMIN` | Replace a slot's config; runs floors and grant rules |
 | `set_execution_paused<P>()` | `PAUSE` | Pause or resume all proposal execution |
-| `set_migrating<P>()` | `MIGRATE` | Transition DAO to `Migrating` (irreversible) |
-| `set_controller_paused<P>()` | privileged (`assert_controller`) | Controller pause of a SubDAO |
-| `clear_controller<P>()` | privileged (`assert_controller`) | Drop the controller relationship (SpinOutSubDAO) |
-| `init_type_state` / `borrow_type_state_mut` / `remove_type_state<P>()` | DAO id only | Type-state keyed by the request's own `P`; no bit needed |
+| `set_migrating<P>()` | `MIGRATE` | Transition OU to `Migrating` (irreversible) |
+| `set_controller_paused<P>()` | privileged (`assert_controller`) | Controller pause of a SubOU |
+| `clear_controller<P>()` | privileged (`assert_controller`) | Drop the controller relationship (SpinOutSubOU) |
+| `init_type_state` / `borrow_type_state_mut` / `remove_type_state<P>()` | OU id only | Type-state keyed by the request's own `P`; no bit needed |
 
 ### 2.2 treasury_vault.move
 
@@ -103,21 +103,21 @@ Every function below that takes an `ExecutionRequest` checks the request's DAO, 
 | `borrow_cap_mut<T, P>()` | `VAULT_BORROW` + `T` in scope | Mutable borrow (a `TreasuryCap` borrow mints) |
 | `loan_cap<T, P>()` | `VAULT_BORROW` + `T` in scope | Temporary extract; returns `(T, CapLoan)` hot-potato |
 | `extract_cap<T, P>()` | `VAULT_EXTRACT` | Permanently remove capability from vault |
-| `create_subdao_control<P>()` | `VAULT_EXTRACT`; `public(package)` | Create `SubDAOControl` for a parent–child relationship (only caller: `CreateSubDAO`, for the SubDAO it just created) |
-| `destroy_subdao_control<P>()` | `VAULT_EXTRACT` | Destroy `SubDAOControl`, relinquishing parent authority |
-| `receive_cap<T, P>()` | `VAULT_EXTRACT` on the **sending** DAO's request; `public(package)` | Cross-DAO receive; no receiver DAO check, so each caller ties sender to vault (SpinOutSubDAO's own SubDAO, TransferAssets' voted target, `controller::receive_cap_from_controller`) |
-| `receive_cap_authorized<T, Send, Recv>()` | `VAULT_EXTRACT` on sender, `VAULT_STORE` on receiver | Dual-authorized receive; asserts the vault belongs to `Recv`'s DAO |
-| `borrow_external_cap<P>()` | **None** (vault must match `dao_id`) | Borrow an `ExternalExecutionCap<P>` for bypass execution |
-| `privileged_extract<T>()` | `SubDAOControl` bound to the vault's DAO; `public(package)` | Parent DAO reclaims capability from child vault; reached through `controller::privileged_extract` |
-| `controller::privileged_extract<T>()` | The SubDAO's registered `&SubDAOControl`; vault is the SubDAO's | Extract a cap from the SubDAO's vault (controller reclaim) |
-| `controller::receive_cap_from_controller<T, P>()` | `VAULT_EXTRACT` on `req`; `controller_vault` is `req`'s DAO's and holds the SubDAO's registered control | Push a cap into the SubDAO's vault from its controller |
-| `store_cap_init<T>()` | `public(package)` | Store capability during DAO creation only |
+| `create_subou_control<P>()` | `VAULT_EXTRACT`; `public(package)` | Create `SubOUControl` for a parent–child relationship (only caller: `CreateSubOU`, for the SubOU it just created) |
+| `destroy_subou_control<P>()` | `VAULT_EXTRACT` | Destroy `SubOUControl`, relinquishing parent authority |
+| `receive_cap<T, P>()` | `VAULT_EXTRACT` on the **sending** OU's request; `public(package)` | Cross-OU receive; no receiver OU check, so each caller ties sender to vault (SpinOutSubOU's own SubOU, TransferAssets' voted target, `controller::receive_cap_from_controller`) |
+| `receive_cap_authorized<T, Send, Recv>()` | `VAULT_EXTRACT` on sender, `VAULT_STORE` on receiver | Dual-authorized receive; asserts the vault belongs to `Recv`'s OU |
+| `borrow_external_cap<P>()` | **None** (vault must match `ou_id`) | Borrow an `ExternalExecutionCap<P>` for bypass execution |
+| `privileged_extract<T>()` | `SubOUControl` bound to the vault's OU; `public(package)` | Parent OU reclaims capability from child vault; reached through `controller::privileged_extract` |
+| `controller::privileged_extract<T>()` | The SubOU's registered `&SubOUControl`; vault is the SubOU's | Extract a cap from the SubOU's vault (controller reclaim) |
+| `controller::receive_cap_from_controller<T, P>()` | `VAULT_EXTRACT` on `req`; `controller_vault` is `req`'s OU's and holds the SubOU's registered control | Push a cap into the SubOU's vault from its controller |
+| `store_cap_init<T>()` | `public(package)` | Store capability during OU creation only |
 
 ### 2.4 charter.move
 
 | Function | Requires | Effect |
 |----------|----------|--------|
-| `update_metadata<P>()` | `METADATA` | Update the DAO's metadata URI |
+| `update_metadata<P>()` | `METADATA` | Update the OU's metadata URI |
 
 ### 2.5 emergency.move
 
@@ -130,7 +130,7 @@ Every function below that takes an `ExecutionRequest` checks the request's DAO, 
 | `unfreeze_all<P>()` | `FREEZE` | Bulk-unfreeze all currently frozen types |
 | `add_freeze_exempt_type<P>()` / `remove_freeze_exempt_type<P>()` | `FREEZE` | Edit the exempt set |
 
-Frozen and exempt entries are keyed by the payload's canonical `TypeName` (`with_defining_ids`), the same key as the DAO's type slots. Freezing `PlaceLimitOrder<CRED>` blocks that instantiation on the atomic, bypass, composite and two-PTB paths and leaves other instantiations alone.
+Frozen and exempt entries are keyed by the payload's canonical `TypeName` (`with_defining_ids`), the same key as the OU's type slots. Freezing `PlaceLimitOrder<CRED>` blocks that instantiation on the atomic, bypass, composite and two-PTB paths and leaves other instantiations alone.
 
 **Protected types** (cannot be frozen, cannot be removed from the exempt set): `armature::transfer_freeze_admin::TransferFreezeAdmin`, `armature::unfreeze_proposal_type::UnfreezeProposalType`. They are matched by Move type, so a same-named type in another package gets no exemption.
 
@@ -138,7 +138,7 @@ Frozen and exempt entries are keyed by the payload's canonical `TypeName` (`with
 
 | Function | Requires | Effect |
 |----------|----------|--------|
-| `create_wired_subdao<P>()` | `VAULT_STORE` + `VAULT_EXTRACT` | Create a SubDAO and store its `SubDAOControl` in the parent vault |
+| `create_wired_subou<P>()` | `VAULT_STORE` + `VAULT_EXTRACT` | Create a SubOU and store its `SubOUControl` in the parent vault |
 
 ### 2.7 board_voting.move / external_execution.move / composite.move / controller.move
 
@@ -150,33 +150,33 @@ These mint requests rather than consume them:
 | `board_voting::vote<P>()` | Member at `snapshot_version`; no double vote; voting period open | Cast vote; may transition to `Passed` |
 | `board_voting::ticket_from_vote<P>()` | Current board member; type enabled, not frozen, not paused | Delete the proposal, return a ticket carrying the slot's bits |
 | `board_voting::submit_vote_execute<P>()` | Board member whose single vote passes | Submit, vote and execute in one PTB |
-| `external_execution::ticket_from_cap<P>()` | `&ExternalExecutionCap<P>` for this DAO (no sender check) | Bypass ticket carrying the slot's bits |
-| `composite::advance_step<P>()` | Passed composite pipeline; `dao` is the pipeline's, not paused, step type still enabled and not frozen | Step ticket carrying the step type's bits |
-| `controller::privileged_submit<P>()` | The SubDAO's registered `&SubDAOControl` (`assert_registered_control`) | Privileged request (0 bits, passes every check on that SubDAO) |
+| `external_execution::ticket_from_cap<P>()` | `&ExternalExecutionCap<P>` for this OU (no sender check) | Bypass ticket carrying the slot's bits |
+| `composite::advance_step<P>()` | Passed composite pipeline; `ou` is the pipeline's, not paused, step type still enabled and not frozen | Step ticket carrying the step type's bits |
+| `controller::privileged_submit<P>()` | The SubOU's registered `&SubOUControl` (`assert_registered_control`) | Privileged request (0 bits, passes every check on that SubOU) |
 | `proposal::delete_expired_proposal<P>()` | Voting period or execution window closed | Delete the proposal (anyone) |
 
 ---
 
 ## 3. public(package) Functions — Framework-Internal Only
 
-These are callable only from within the `armature_framework` package and are used during DAO construction or internal orchestration:
+These are callable only from within the `armature_framework` package and are used during OU construction or internal orchestration:
 
 | Module | Function | Purpose |
 |--------|----------|---------|
 | `governance` | `new_board()` | Construct Board governance config from init payload |
 | `governance` | `assert_board_member()` | Assert address is a current board member (aborts if not) |
-| `governance` | `set_board()` / `add_board_member(s)()` / `remove_board_member(s)()` | Roster changes (reached via the gated `dao` mutators) |
-| `dao` | `governance_mut()` | Mutable access to governance config |
-| `dao` | `record_execution()` | Track last execution timestamp for cooldown |
+| `governance` | `set_board()` / `add_board_member(s)()` / `remove_board_member(s)()` | Roster changes (reached via the gated `ou` mutators) |
+| `ou` | `governance_mut()` | Mutable access to governance config |
+| `ou` | `record_execution()` | Track last execution timestamp for cooldown |
 | `proposal` | `create()` / `record_vote()` | Create a proposal, record a vote (via `board_voting`) |
 | `proposal` | `execute()` / `execute_single_vote()` / `privileged_execute()` | Mint an `ExecutionRequest` carrying the given bits |
 | `proposal` | `new_execution_request()` | Factory for an unprivileged request holding **no** bits |
 | `proposal` | `new_external_execution_cap()` / `destroy_external_execution_cap()` | Only `external_execution`'s bypass handlers |
-| `charter` | `new()` / `share()` | Construct and share Charter during DAO creation |
+| `charter` | `new()` / `share()` | Construct and share Charter during OU creation |
 | `emergency` | `new()` / `new_admin_cap()` / `share()` / `transfer_admin_cap()` | Construct and distribute emergency objects |
 | `treasury_vault` | `new()` / `share()` | Construct and share TreasuryVault |
-| `capability_vault` | `new()` / `share()` / `store_cap_init()` / `new_subdao_control()` | Construct, share, and seed CapabilityVault |
-| `capability_vault` | `create_subdao_control()` / `receive_cap()` / `privileged_extract()` | Callers establish the cross-DAO link the function cannot check (rows above in §2.3) |
+| `capability_vault` | `new()` / `share()` / `store_cap_init()` / `new_subou_control()` | Construct, share, and seed CapabilityVault |
+| `capability_vault` | `create_subou_control()` / `receive_cap()` / `privileged_extract()` | Callers establish the cross-OU link the function cannot check (rows above in §2.3) |
 
 ---
 
@@ -184,7 +184,7 @@ These are callable only from within the `armature_framework` package and are use
 
 Board membership is checked at three points:
 
-1. **Proposal creation** — `board_voting::submit_proposal()` (and `submit_vote_execute()`) calls `dao.governance().assert_board_member(ctx.sender())`
+1. **Proposal creation** — `board_voting::submit_proposal()` (and `submit_vote_execute()`) calls `ou.governance().assert_board_member(ctx.sender())`
 2. **Voting** — `board_voting::vote()` requires the voter was a member at the proposal's `snapshot_version` (`was_member_at`)
 3. **Proposal execution** — `proposal::execute()` calls `governance.is_board_member(executor)` and aborts with `ENotEligible` if false
 
@@ -198,11 +198,11 @@ Handlers for framework types live in `armature_framework/sources/handlers` (only
 
 | Handler Module | Payload Type | Framework Function(s) Called | Bits (`type_permissions`) |
 |-----------------|-------------|------------------------------|------|
-| `board_ops` (framework) | `SetBoard` | `dao::set_board_governance()` | fixed |
-| `member_ops` (framework) | `AddMember`, `BatchAddMembers`, `RemoveMember`, `BatchRemoveMembers` | `dao::add/remove_board_member(s)_governance()` | fixed |
-| `admin_ops` (framework) | `EnableProposalType`, `DisableProposalType`, `UpdateProposalConfig` | `dao::enable/disable_proposal_type()`, `dao::update_proposal_config()` | fixed |
+| `board_ops` (framework) | `SetBoard` | `ou::set_board_governance()` | fixed |
+| `member_ops` (framework) | `AddMember`, `BatchAddMembers`, `RemoveMember`, `BatchRemoveMembers` | `ou::add/remove_board_member(s)_governance()` | fixed |
+| `admin_ops` (framework) | `EnableProposalType`, `DisableProposalType`, `UpdateProposalConfig` | `ou::enable/disable_proposal_type()`, `ou::update_proposal_config()` | fixed |
 | `admin_ops` (framework) | `UpdateMetadata` | `charter::update_metadata()` | fixed |
-| `treasury_ops` | `SendCoin<T>`, `SendCoinToDAO<T>`, `SendSmallPayment<T>`, `SendBatchMulticoinTo{Address,DAO}` | `treasury_vault::withdraw()` / `withdraw_multicoin()` (+ `deposit`) | `treasury_spend()` = TREASURY_WITHDRAW |
+| `treasury_ops` | `SendCoin<T>`, `SendCoinToOU<T>`, `SendSmallPayment<T>`, `SendBatchMulticoinTo{Address,OU}` | `treasury_vault::withdraw()` / `withdraw_multicoin()` (+ `deposit`) | `treasury_spend()` = TREASURY_WITHDRAW |
 | `currency_ops` | `AdoptCurrency<T>` | `capability_vault::store_cap()` | `adopt_currency()` = VAULT_STORE |
 | `currency_ops` | `MintCoin<T>`, `MintAllowance<T>` | `capability_vault::borrow_cap_mut()` | `mint()` = VAULT_BORROW, scope `currency_scope<T>()` = [`TreasuryCap<T>`] |
 | `configure_mint_allowance` | `ConfigureMintAllowance<T>` | own type-state (minter allowlist read by `currency_ops::mint_allowance_bypass`) | none |
@@ -211,37 +211,37 @@ Handlers for framework types live in `armature_framework/sources/handlers` (only
 | `freeze_ops` (framework) | `TransferFreezeAdmin` | `emergency::unfreeze_all()` | fixed |
 | `freeze_ops` (framework) | `UnfreezeProposalType` | `emergency::governance_unfreeze_type()` | fixed |
 | `freeze_ops` (framework) | `UpdateFreezeConfig`, `UpdateFreezeExemptTypes` | `emergency::update_freeze_duration()`, `add/remove_freeze_exempt_type()` | fixed |
-| `subdao_ops` | `TransferCapToSubDAO` | `extract_cap()` + `controller::receive_cap_from_controller()` | `transfer_cap_to_subdao()` = VAULT_EXTRACT |
-| `subdao_ops` | `ReclaimCapFromSubDAO` | `loan_cap()` + `controller::privileged_extract()` + `store_cap()` | `reclaim_cap_from_subdao()` = VAULT_BORROW + VAULT_STORE, scope `subdao_control_scope()` = [`SubDAOControl`] |
-| `subdao_ops` | `PauseSubDAOExecution`, `UnpauseSubDAOExecution`, `ControllerBatch{Add,Remove}Members` | `loan_cap()` (SubDAOControl), then SubDAO mutators on a privileged request | `subdao_control()` = VAULT_BORROW, scope [`SubDAOControl`] |
-| `lifecycle_ops` (framework) | `CreateSubDAO`, `SpawnDAO`, `SpinOutSubDAO`, `TransferAssets` | vault / `set_migrating` / controller calls | fixed |
+| `subou_ops` | `TransferCapToSubOU` | `extract_cap()` + `controller::receive_cap_from_controller()` | `transfer_cap_to_subou()` = VAULT_EXTRACT |
+| `subou_ops` | `ReclaimCapFromSubOU` | `loan_cap()` + `controller::privileged_extract()` + `store_cap()` | `reclaim_cap_from_subou()` = VAULT_BORROW + VAULT_STORE, scope `subou_control_scope()` = [`SubOUControl`] |
+| `subou_ops` | `PauseSubOUExecution`, `UnpauseSubOUExecution`, `ControllerBatch{Add,Remove}Members` | `loan_cap()` (SubOUControl), then SubOU mutators on a privileged request | `subou_control()` = VAULT_BORROW, scope [`SubOUControl`] |
+| `lifecycle_ops` (framework) | `CreateSubOU`, `SpawnOU`, `SpinOutSubOU`, `TransferAssets` | vault / `set_migrating` / controller calls | fixed |
 | `upgrade_ops` | `ProposeUpgrade` | `capability_vault::loan_cap()` (UpgradeCap) | `propose_upgrade()` = VAULT_BORROW, scope `propose_upgrade_scope()` = [`UpgradeCap`] |
 
 Every handler follows the same pattern:
 1. Accept `ExecutionTicket<P>` from a mint path (§1)
-2. Assert the target objects belong to `ticket.ticket_dao_id()`
+2. Assert the target objects belong to `ticket.ticket_ou_id()`
 3. Read the payload with `ticket.ticket_payload()` and call gated framework function(s) with `ticket.ticket_request(permit)`, where `permit` is `internal::permit()` in the module defining `P` (or that module's `public(package) fun permit()`)
 4. Call `ticket.discharge(permit)` (or `discharge_returning_payload(permit)`) to destroy the hot potato
 
-Controller-side handlers hold two requests at once: the controller DAO's own (which must carry VAULT_BORROW to loan the `SubDAOControl`) and the SubDAO's privileged request from `privileged_submit`.
+Controller-side handlers hold two requests at once: the controller OU's own (which must carry VAULT_BORROW to loan the `SubOUControl`) and the SubOU's privileged request from `privileged_submit`.
 
 ---
 
-## 6. Cross-DAO Validation
+## 6. Cross-OU Validation
 
-An `ExecutionRequest<P>` carries a `dao_id`. To prevent "shopping" — using a request from DAO-A to mutate DAO-B — every framework mutator asserts the request's DAO against its target **before** checking bits:
+An `ExecutionRequest<P>` carries a `ou_id`. To prevent "shopping" — using a request from OU-A to mutate OU-B — every framework mutator asserts the request's OU against its target **before** checking bits:
 
 | Module | Check | Error |
 |--------|-------|-------|
-| `dao` | `self.id() == req.req_dao_id()` (in `dao::assert_permitted` / `assert_controller`) | `EDAOIdMismatch` (2) |
-| `treasury_vault` | `self.dao_id == req.req_dao_id()` | `EDAOIdMismatch` (1) |
-| `capability_vault` | `self.dao_id == req.req_dao_id()` | `EDAOIdMismatch` (3) |
-| `charter` | `self.dao_id == req.req_dao_id()` | `EDaoMismatch` (0) |
-| `emergency` | `self.dao_id == req.req_dao_id()` | `EDAOMismatch` (0) |
+| `ou` | `self.id() == req.req_ou_id()` (in `ou::assert_permitted` / `assert_controller`) | `EOUIdMismatch` (2) |
+| `treasury_vault` | `self.ou_id == req.req_ou_id()` | `EOUIdMismatch` (1) |
+| `capability_vault` | `self.ou_id == req.req_ou_id()` | `EOUIdMismatch` (3) |
+| `charter` | `self.ou_id == req.req_ou_id()` | `EOuMismatch` (0) |
+| `emergency` | `self.ou_id == req.req_ou_id()` | `EOUMismatch` (0) |
 
-Exceptions, by design: `capability_vault::receive_cap` does not check the receiving vault's DAO, so it is `public(package)` and each framework caller ties the sender to the receiving vault (SpinOutSubDAO: its own SubDAO; TransferAssets: the voted target; `controller::receive_cap_from_controller`: the sender's vault holds the SubDAO's registered control). Other packages use `receive_cap_from_controller` for parent→child moves and `receive_cap_authorized` for anything else. Also by design, `tribe::create_wired_subdao` relies on `store_cap`'s vault check. Handlers in `armature_proposals` additionally assert their target objects' DAO against the ticket.
+Exceptions, by design: `capability_vault::receive_cap` does not check the receiving vault's OU, so it is `public(package)` and each framework caller ties the sender to the receiving vault (SpinOutSubOU: its own SubOU; TransferAssets: the voted target; `controller::receive_cap_from_controller`: the sender's vault holds the SubOU's registered control). Other packages use `receive_cap_from_controller` for parent→child moves and `receive_cap_authorized` for anything else. Also by design, `tribe::create_wired_subou` relies on `store_cap`'s vault check. Handlers in `armature_proposals` additionally assert their target objects' OU against the ticket.
 
-Tickets are closed with `proposal::discharge()`, which takes a `Permit<P>` that only `P`'s handler module can create, so a ticket cannot be discharged without running its handler. `proposal::consume()` is `public(package)`; `controller::privileged_consume()` checks the request's DAO against the `SubDAOControl`.
+Tickets are closed with `proposal::discharge()`, which takes a `Permit<P>` that only `P`'s handler module can create, so a ticket cannot be discharged without running its handler. `proposal::consume()` is `public(package)`; `controller::privileged_consume()` checks the request's OU against the `SubOUControl`.
 
 ---
 
@@ -251,24 +251,24 @@ Tickets are closed with `proposal::discharge()`, which takes a `Permit<P>` that 
 - **Hot-potato enforcement** — the token _must_ be consumed in the same PTB; it cannot be stored or transferred
 - **Per-type permission bits** — a request authorizes only the mutations its type's slot held bits for when it was minted; every framework mutator checks, and CI fails on an ungated one (§2)
 - **Handler authority** — `ticket_request`, `discharge` and `ticket_from_cap` take `std::internal::Permit<P>`, so only `P`'s own module can mint, spend or close its tickets, and it spends the request with arguments read from the payload. CI fails if any of them drops the permit (`scripts/check_request_gates.py`)
-- **Floors in `dao`** — every stored config must meet the type's own floor and `permission_floor(bits)` (80% for TYPE_ADMIN, MIGRATE, TREASURY_WITHDRAW, VAULT_BORROW, VAULT_EXTRACT). `assert_config_floors` runs on `enable_proposal_type`, `update_proposal_config` and creation-time overrides, so no handler can skip it (`EThresholdBelowMinimum`, 12)
-- **Fixed framework bits** — framework types always hold exactly `dao::framework_permissions` (`EFixedPermissions`, 23)
+- **Floors in `ou`** — every stored config must meet the type's own floor and `permission_floor(bits)` (80% for TYPE_ADMIN, MIGRATE, TREASURY_WITHDRAW, VAULT_BORROW, VAULT_EXTRACT). `assert_config_floors` runs on `enable_proposal_type`, `update_proposal_config` and creation-time overrides, so no handler can skip it (`EThresholdBelowMinimum`, 12)
+- **Fixed framework bits** — framework types always hold exactly `ou::framework_permissions` (`EFixedPermissions`, 23)
 - **Controlled grants** — only EnableProposalType, EnableBypassType and UpdateProposalConfig (all 80%) or a privileged request may change a type's bits (`EPermissionChangeNotAllowed`, 19; `EGrantFloorNotMet`, 21); grants cannot ride in a composite (`EUseTypedStep`, `EGrantInComposite`)
 - **Snapshot isolation** — voting eligibility is fixed at the proposal's `snapshot_version`; later board changes don't affect in-flight proposals
 - **Protected types** — `TransferFreezeAdmin` and `UnfreezeProposalType` cannot be frozen, preventing lockout
-- **Cooldown tracking** — `dao.record_execution()` prevents rapid re-execution of the same proposal type
+- **Cooldown tracking** — `ou.record_execution()` prevents rapid re-execution of the same proposal type
 
-**Bypass caveat.** `capability_vault::borrow_external_cap` is public and `external_execution::ticket_from_cap` does not check the sender, but it does take `Permit<P>`: only `P`'s own module can mint a bypass ticket, so the extension's authorization check (character ownership, token balance, an allowlist in type-state) runs there. The cap in the vault is the DAO's opt-in, not a bearer credential. `MintAllowance<T>` is minted only by `currency_ops::mint_allowance_bypass`, which checks the sender against the `ConfigureMintAllowance<T>` allowlist and per-call cap (ARMATURE-21 / ARMATURE-31). Grant a bypass type only the bits and scope its handler needs, and never a bit in `bypass_forbidden_bits` (§9.1b). Placement rules for types and handlers: `docs/package-boundaries.md`.
+**Bypass caveat.** `capability_vault::borrow_external_cap` is public and `external_execution::ticket_from_cap` does not check the sender, but it does take `Permit<P>`: only `P`'s own module can mint a bypass ticket, so the extension's authorization check (character ownership, token balance, an allowlist in type-state) runs there. The cap in the vault is the OU's opt-in, not a bearer credential. `MintAllowance<T>` is minted only by `currency_ops::mint_allowance_bypass`, which checks the sender against the `ConfigureMintAllowance<T>` allowlist and per-call cap (ARMATURE-21 / ARMATURE-31). Grant a bypass type only the bits and scope its handler needs, and never a bit in `bypass_forbidden_bits` (§9.1b). Placement rules for types and handlers: `docs/package-boundaries.md`.
 
 ---
 
-## 8. Intra-DAO Threshold Bypass Audit (Phantom Type `P` Safety)
+## 8. Intra-OU Threshold Bypass Audit (Phantom Type `P` Safety)
 
 ### 8.1 Attack Vector
 
-Within the **same DAO**, can a board member use a proposal type with a low approval threshold to execute an operation that should require a high threshold?
+Within the **same OU**, can a board member use a proposal type with a low approval threshold to execute an operation that should require a high threshold?
 
-For example: If `SetBoard` requires 80% threshold but `UpdateMetadata` requires 50%, can a board member create an `ExecutionRequest<UpdateMetadata>` and use it to call `dao.set_board_governance<UpdateMetadata>()`?
+For example: If `SetBoard` requires 80% threshold but `UpdateMetadata` requires 50%, can a board member create an `ExecutionRequest<UpdateMetadata>` and use it to call `ou.set_board_governance<UpdateMetadata>()`?
 
 ### 8.2 Finding: Was exploitable — NOW FIXED
 
@@ -276,7 +276,7 @@ The phantom type `P` on `ExecutionRequest<P>` alone did not provide adequate sec
 
 1. ~~**Framework mutators accept any `P`**: Functions like `set_board_governance<P>()`, `withdraw<T, P>()`, etc. are `public` with unconstrained generic `P`. An `ExecutionRequest<AnyType>` works for every operation.~~ ✅ **Fixed (ROAD-39)**: mutators are still generic over `P`, but each checks the request's permission bits, so `ExecutionRequest<UpdateMetadata>` (METADATA only) aborts `EPermissionDenied` in `set_board_governance`.
 
-2. ~~**`proposal::create()` is `public`** and accepts a caller-supplied `ProposalConfig` parameter. A third-party package can call it directly with arbitrarily low quorum/threshold, bypassing the DAO's registered configs entirely.~~ ✅ **Fixed**: `create()` is now `public(package)`.
+2. ~~**`proposal::create()` is `public`** and accepts a caller-supplied `ProposalConfig` parameter. A third-party package can call it directly with arbitrarily low quorum/threshold, bypassing the OU's registered configs entirely.~~ ✅ **Fixed**: `create()` is now `public(package)`.
 
 3. ~~**`proposal::consume()` is `public`** — any package can destroy the hot potato after directly calling framework mutators, bypassing the typed handlers in `armature_proposals`.~~ ✅ **Fixed**: `consume()` is now `public(package)`. External handlers close tickets with `discharge()`.
 
@@ -292,16 +292,16 @@ A **single malicious board member** could have taken full control:
 ```move
 public struct Dummy has store { x: u8 }
 
-public fun create_poison(dao: &DAO, clock: &Clock, ctx: &mut TxContext) {
+public fun create_poison(ou: &OU, clock: &Clock, ctx: &mut TxContext) {
     let config = proposal::new_config(1, 5000, 0, 0, 0, 0); // quorum=0.01%, threshold=50%
     proposal::create<Dummy>(  // ERROR: public(package) — not callable from here
-        dao.id(),
+        ou.id(),
         b"x".to_ascii_string(),
         ctx.sender(),
         b"".to_string(),
         Dummy { x: 0 },
-        config,              // custom config, not from DAO
-        dao.governance(),    // public accessor
+        config,              // custom config, not from OU
+        ou.governance(),    // public accessor
         clock,
         ctx,
     );
@@ -310,9 +310,9 @@ public fun create_poison(dao: &DAO, clock: &Clock, ctx: &mut TxContext) {
 
 **Step 2** — Vote + execute + hijack in one PTB (**BLOCKED — the request carries no BOARD_SET**):
 ```move
-public fun hijack(dao: &mut DAO, ticket: ExecutionTicket<Dummy>, ctx: &TxContext) {
+public fun hijack(ou: &mut OU, ticket: ExecutionTicket<Dummy>, ctx: &TxContext) {
     // Dummy was enabled with no bits, so its request carries 0.
-    dao.set_board_governance(vector[ctx.sender()], vector[], ticket.ticket_request(internal::permit()));
+    ou.set_board_governance(vector[ctx.sender()], vector[], ticket.ticket_request(internal::permit()));
     // ERROR: proposal::EPermissionDenied — Dummy does not hold BOARD_SET
     ticket.discharge(internal::permit());
 }
@@ -323,8 +323,8 @@ public fun hijack(dao: &mut DAO, ticket: ExecutionTicket<Dummy>, ctx: &TxContext
 | Mechanism | Status |
 |-----------|--------|
 | `proposal::execute()` / `privileged_execute()` / `new_execution_request()` | `public(package)` ✓ |
-| `board_voting::ticket_from_vote()` | Validates dao_id, type enabled, not frozen, board membership ✓ |
-| Framework mutators | Check DAO id and permission bits ✓ |
+| `board_voting::ticket_from_vote()` | Validates ou_id, type enabled, not frozen, board membership ✓ |
+| Framework mutators | Check OU id and permission bits ✓ |
 | `ticket_request` / `discharge` / `ticket_from_cap` | Require `Permit<P>`: only `P`'s module can mint, spend or close a ticket ✓ |
 | Attacker must be a board member | Required for voting and vote-path execution ✓ (not for bypass — see §7) |
 
@@ -332,30 +332,30 @@ public fun hijack(dao: &mut DAO, ticket: ExecutionTicket<Dummy>, ctx: &TxContext
 
 | # | Severity | Issue | Status |
 |---|----------|-------|--------|
-| 1 | **CRITICAL** | `proposal::create()` was `public` — accepted caller-supplied `ProposalConfig`, bypassing DAO's stored governance rules | ✅ Fixed — now `public(package)` |
+| 1 | **CRITICAL** | `proposal::create()` was `public` — accepted caller-supplied `ProposalConfig`, bypassing OU's stored governance rules | ✅ Fixed — now `public(package)` |
 | 2 | **CRITICAL** | Framework mutators are generic over `P` — `ExecutionRequest<AnyType>` unlocks every operation | ✅ Fixed (ROAD-39) — per-type permission bits checked by every mutator |
 | 3 | **HIGH** | `proposal::consume()` was `public` — any package could destroy the hot potato, bypassing typed handlers | ✅ Fixed — now `public(package)`; tickets close with `discharge()` |
 | 4 | **MEDIUM** | `proposal::create()` does not validate proposer is a board member (only `submit_proposal` does) | ✅ Fixed — `create()` is `public(package)`, only reachable via `board_voting` |
-| 5 | **MEDIUM** | Execution did not check if the proposal type is frozen or still enabled | ✅ Fixed — `ticket_from_vote` asserts the type is enabled and `assert_not_frozen<P>` against the DAO's own freeze |
+| 5 | **MEDIUM** | Execution did not check if the proposal type is frozen or still enabled | ✅ Fixed — `ticket_from_vote` asserts the type is enabled and `assert_not_frozen<P>` against the OU's own freeze |
 | 6 | **HIGH** | Bypass type's bits are usable by any caller who can build its payload; `MintAllowance` bypass is open minting | ✅ Fixed — `ticket_from_cap` requires `Permit<P>`; only `P`'s module can mint a bypass ticket |
 | 7 | **CRITICAL** | A ticket's request is spendable by whoever holds the ticket, with arguments of their choosing: an autojoin player adds any addresses under `BOARD_ADD`; the executor of an approved payment withdraws the whole treasury under `TREASURY_WITHDRAW`; `TransferAssets` hands the withdrawn coins and caps to the executor | ✅ Fixed — `ticket_request` / `discharge` require `Permit<P>`; framework-type handlers moved into the framework; `TransferAssets` moves each listed asset itself |
-| 8 | **HIGH** | Handler trusted caller-chosen objects: `execute_mint_coin` / `execute_mint_allowance` deposited into any treasury passed; `execute_propose_upgrade` returned the raw `UpgradeCap` | ✅ Fixed — treasury checked against the request's DAO; the cap stays in a `PendingUpgrade` hot potato |
-| 9 | **CRITICAL** | `create_subdao_control` accepted any `subdao_id` and `privileged_submit` / `privileged_extract` compared only `control.subdao_id`: any DAO could mint a control for another DAO and drive it | ✅ Fixed — `create_subdao_control` and `capability_vault::privileged_extract` are `public(package)`; `controller::assert_registered_control` requires the control to be the SubDAO's `controller_cap_id` (`ENotController`) |
-| 10 | **HIGH** | `assert_not_frozen<P>` did not check the freeze object's DAO: passing another DAO's unfrozen freeze skipped the check | ✅ Fixed — `assert_not_frozen<P>(freeze, dao_id, clock)` aborts `EDAOMismatch` on every execution path |
-| 11 | **MEDIUM** | `receive_cap` was `public` and checked no receiving DAO: any request with VAULT_EXTRACT could push caps into any vault; `TransferCapToSubDAO` did not check the target was the sender's SubDAO | ✅ Fixed — `receive_cap` is `public(package)`; parent→child moves use `controller::receive_cap_from_controller` |
-| 12 | **HIGH** | `begin_pipeline` / `advance_step` did not bind the passed `DAO` to the ticket / pipeline, so a step could run with another DAO's type config and bits; steps ignored pauses and disabled types | ✅ Fixed — `composite::EDAOIdMismatch`, `EExecutionPaused`, `EControllerPaused`, `ETypeNotEnabled` |
+| 8 | **HIGH** | Handler trusted caller-chosen objects: `execute_mint_coin` / `execute_mint_allowance` deposited into any treasury passed; `execute_propose_upgrade` returned the raw `UpgradeCap` | ✅ Fixed — treasury checked against the request's OU; the cap stays in a `PendingUpgrade` hot potato |
+| 9 | **CRITICAL** | `create_subou_control` accepted any `subou_id` and `privileged_submit` / `privileged_extract` compared only `control.subou_id`: any OU could mint a control for another OU and drive it | ✅ Fixed — `create_subou_control` and `capability_vault::privileged_extract` are `public(package)`; `controller::assert_registered_control` requires the control to be the SubOU's `controller_cap_id` (`ENotController`) |
+| 10 | **HIGH** | `assert_not_frozen<P>` did not check the freeze object's OU: passing another OU's unfrozen freeze skipped the check | ✅ Fixed — `assert_not_frozen<P>(freeze, ou_id, clock)` aborts `EOUMismatch` on every execution path |
+| 11 | **MEDIUM** | `receive_cap` was `public` and checked no receiving OU: any request with VAULT_EXTRACT could push caps into any vault; `TransferCapToSubOU` did not check the target was the sender's SubOU | ✅ Fixed — `receive_cap` is `public(package)`; parent→child moves use `controller::receive_cap_from_controller` |
+| 12 | **HIGH** | `begin_pipeline` / `advance_step` did not bind the passed `OU` to the ticket / pipeline, so a step could run with another OU's type config and bits; steps ignored pauses and disabled types | ✅ Fixed — `composite::EOUIdMismatch`, `EExecutionPaused`, `EControllerPaused`, `ETypeNotEnabled` |
 
 ### 8.6 Applied Fixes
 
-**Fix 1 (blocks the attack)**: `proposal::create()` changed to `public(package) fun`. Forces all proposal creation through `board_voting`, which validates the type is enabled and uses the DAO's stored `ProposalConfig`.
+**Fix 1 (blocks the attack)**: `proposal::create()` changed to `public(package) fun`. Forces all proposal creation through `board_voting`, which validates the type is enabled and uses the OU's stored `ProposalConfig`.
 
 **Fix 2 (defense-in-depth)**: `proposal::consume()` changed to `public(package) fun`. Handlers receive an `ExecutionTicket<P>` and close it with `discharge()`, which requires a `Permit<P>` from `P`'s handler module.
 
-**Fix 3 (ROAD-39)**: per-type permission bits (§9). `ExecutionRequest` carries the bits of its type's slot; every mutator checks them; floors live in `dao`; framework types have fixed bits; only the 80% meta-types may grant.
+**Fix 3 (ROAD-39)**: per-type permission bits (§9). `ExecutionRequest` carries the bits of its type's slot; every mutator checks them; floors live in `ou`; framework types have fixed bits; only the 80% meta-types may grant.
 
 ## 9. Permission Bits (ROAD-39)
 
-Each proposal type's `ProposalConfig.permissions` names the DAO-wide mutations a request of that type may perform. The request carries the bits its slot held when it was minted, and every mutator checks them (`dao::assert_permitted` for DAO mutators, `proposal::assert_permitted` for the vault, charter, emergency and tribe modules; see §2). Bits are defined in `armature::permissions`. A config holding any bit marked 80% needs `approval_threshold >= 8000` (`dao::permission_floor`), on every path that stores a config.
+Each proposal type's `ProposalConfig.permissions` names the OU-wide mutations a request of that type may perform. The request carries the bits its slot held when it was minted, and every mutator checks them (`ou::assert_permitted` for OU mutators, `proposal::assert_permitted` for the vault, charter, emergency and tribe modules; see §2). Bits are defined in `armature::permissions`. A config holding any bit marked 80% needs `approval_threshold >= 8000` (`ou::permission_floor`), on every path that stores a config.
 
 | Bit | Floor | Guards |
 |---|---|---|
@@ -364,17 +364,17 @@ Each proposal type's `ProposalConfig.permissions` names the DAO-wide mutations a
 | `BOARD_SET` | — | apply a SetBoard diff |
 | `TYPE_ADMIN` | 80% | enable, disable, reconfigure proposal types |
 | `PAUSE` | — | pause or resume execution |
-| `MIGRATE` | 80% | move the DAO to Migrating |
+| `MIGRATE` | 80% | move the OU to Migrating |
 | `METADATA` | — | charter metadata |
 | `TREASURY_WITHDRAW` | 80% | withdraw from the TreasuryVault |
 | `VAULT_STORE` | — | store a capability |
-| `VAULT_BORROW` | 80% | borrow or loan a capability whose type is in the config's `borrow_scope` (a mutable TreasuryCap borrow mints; a loaned SubDAOControl controls the SubDAO) |
-| `VAULT_EXTRACT` | 80% | extract a capability; create or destroy a SubDAOControl |
+| `VAULT_BORROW` | 80% | borrow or loan a capability whose type is in the config's `borrow_scope` (a mutable TreasuryCap borrow mints; a loaned SubOUControl controls the SubOU) |
+| `VAULT_EXTRACT` | 80% | extract a capability; create or destroy a SubOUControl |
 | `FREEZE` | — | governance changes to the EmergencyFreeze |
 
 ### 9.1 Framework types: fixed bits
 
-Framework payload types always hold exactly these bits (`dao::framework_permissions`), whatever config enabled them; `UpdateProposalConfig` cannot change them (`EFixedPermissions`). Default slots are seeded with them at DAO creation, with thresholds raised to the floor they need.
+Framework payload types always hold exactly these bits (`ou::framework_permissions`), whatever config enabled them; `UpdateProposalConfig` cannot change them (`EFixedPermissions`). Default slots are seeded with them at OU creation, with thresholds raised to the floor they need.
 
 | Type | Bits | Why |
 |---|---|---|
@@ -386,9 +386,9 @@ Framework payload types always hold exactly these bits (`dao::framework_permissi
 | EnableBypassType | TYPE_ADMIN, VAULT_STORE | enables the type and stores its ExternalExecutionCap |
 | DisableBypassType | TYPE_ADMIN, VAULT_EXTRACT | extracts the cap to destroy it, disables the type |
 | TransferFreezeAdmin, UnfreezeProposalType, UpdateFreezeConfig, UpdateFreezeExemptTypes | FREEZE | `unfreeze_all`, `governance_unfreeze_type`, `update_freeze_duration`, `add/remove_freeze_exempt_type` |
-| SpawnDAO | MIGRATE | `set_migrating` |
-| CreateSubDAO | VAULT_STORE, VAULT_EXTRACT | creates and stores a SubDAOControl, stores the SubDAO's FreezeAdminCap |
-| SpinOutSubDAO | VAULT_BORROW (scope: SubDAOControl), VAULT_EXTRACT | loans the SubDAOControl, extracts the FreezeAdminCap, destroys the control |
+| SpawnOU | MIGRATE | `set_migrating` |
+| CreateSubOU | VAULT_STORE, VAULT_EXTRACT | creates and stores a SubOUControl, stores the SubOU's FreezeAdminCap |
+| SpinOutSubOU | VAULT_BORROW (scope: SubOUControl), VAULT_EXTRACT | loans the SubOUControl, extracts the FreezeAdminCap, destroys the control |
 | TransferAssets | TREASURY_WITHDRAW, VAULT_EXTRACT | moves coins and caps to the successor |
 | CompositePayload | none | its ticket is consumed by `begin_pipeline` |
 
@@ -396,7 +396,7 @@ Other types (e.g. `armature_proposals`' `SendCoin<T>`) hold the bits in the conf
 
 ### 9.1a Borrow scope
 
-`ProposalConfig.borrow_scope` (a `vector<TypeName>`, `with_borrow_scope`) names the capability types a VAULT_BORROW request may borrow or loan. Deny-by-default: empty borrows nothing. `ExecutionRequest.borrow_scope` copies it at mint time on every path (two-PTB, atomic, bypass, composite step; a controller request carries none and is privileged). `capability_vault::borrow_cap`, `borrow_cap_mut` and `loan_cap` call `proposal::assert_may_borrow(req, &type_name::with_defining_ids<T>())` after the bit check (`EBorrowScopeDenied`, 22); a privileged request passes. Framework types hold a fixed scope (`dao::framework_borrow_scope`: SpinOutSubDAO → [SubDAOControl], all others empty), enforced with the fixed bits (`EFixedPermissions`). A scope change is a grant: `assert_may_change_permissions` treats it as adding VAULT_BORROW, so only the three meta-types (or a privileged request) may set or change it, and the composite typed steps refuse it (`EGrantInComposite`). `UpdateProposalConfig` carries it as `Option<vector<TypeName>>` (`with_borrow_scope`). Extension packages publish scopes beside bits (`armature_proposals::type_permissions::*_scope`).
+`ProposalConfig.borrow_scope` (a `vector<TypeName>`, `with_borrow_scope`) names the capability types a VAULT_BORROW request may borrow or loan. Deny-by-default: empty borrows nothing. `ExecutionRequest.borrow_scope` copies it at mint time on every path (two-PTB, atomic, bypass, composite step; a controller request carries none and is privileged). `capability_vault::borrow_cap`, `borrow_cap_mut` and `loan_cap` call `proposal::assert_may_borrow(req, &type_name::with_defining_ids<T>())` after the bit check (`EBorrowScopeDenied`, 22); a privileged request passes. Framework types hold a fixed scope (`ou::framework_borrow_scope`: SpinOutSubOU → [SubOUControl], all others empty), enforced with the fixed bits (`EFixedPermissions`). A scope change is a grant: `assert_may_change_permissions` treats it as adding VAULT_BORROW, so only the three meta-types (or a privileged request) may set or change it, and the composite typed steps refuse it (`EGrantInComposite`). `UpdateProposalConfig` carries it as `Option<vector<TypeName>>` (`with_borrow_scope`). Extension packages publish scopes beside bits (`armature_proposals::type_permissions::*_scope`).
 
 ### 9.1b Bypass-safe bits
 

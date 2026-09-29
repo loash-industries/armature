@@ -2,12 +2,12 @@
 
 #import "../lib/template.typ": aside, principle
 
-The Charter is the DAO's constitution. It declares the organization's vision and long-term intent, and it is the anchor for the invariants --- the rules by which the DAO mutates --- that the charter is designed to carry.
+The Charter is the OU's constitution. It declares the organization's vision and long-term intent, and it is the anchor for the invariants --- the rules by which the OU mutates --- that the charter is designed to carry.
 
 Every organization operates under assumptions its members care about preserving. A treasury spending cap. A minimum quorum for existential decisions. A requirement that certain capabilities never leave the vault. These are not preferences --- they are the organizational physics a constitution exists to encode. Today Armature enforces the universal ones through framework-level safety floors; the charter's role in encoding _per-organization_ invariants is the planned evolution described below.
 
 #principle[The Charter Principle][
-  The Charter is the DAO's highest authority. It defines what the DAO _should_ do. The proposal system defines what the DAO _can_ do. The tension between these two --- between aspiration and mechanism --- is productive. It ensures that governance operates within a framework of meaning, not merely of code.
+  The Charter is the OU's highest authority. It defines what the OU _should_ do. The proposal system defines what the OU _can_ do. The tension between these two --- between aspiration and mechanism --- is productive. It ensures that governance operates within a framework of meaning, not merely of code.
 ]
 
 == Two Faces of the Charter
@@ -30,7 +30,7 @@ A charter might state that "the treasury shall not be used for personal expenses
 
 The second aspect, not yet implemented, is a set of on-chain invariants defined directly on the Charter object: structured, machine-readable parameters that proposals read and enforce.
 
-Where the document expresses _what the organization believes_, the invariants would encode _what the organization protects_ --- what members care about maintaining throughout the current lifecycle of the DAO.
+Where the document expresses _what the organization believes_, the invariants would encode _what the organization protects_ --- what members care about maintaining throughout the current lifecycle of the OU.
 
 A charter invariant might set a maximum single treasury withdrawal. A proposal that attempts to exceed it would fail --- not because a voter caught it, but because the framework reads the invariant and enforces it. Another invariant might set a floor on the quorum for charter amendments, ensuring that constitutional changes always require broad participation regardless of how governance parameters evolve.
 
@@ -46,7 +46,7 @@ This duality is what will make the charter a living constitution rather than a s
 
 == Amending the Charter
 
-Amending the charter is one of the most consequential governance actions a DAO can take. Today an amendment is a proposal that updates the charter's document pointer; the recommended configuration reflects the gravity of a constitutional change:
+Amending the charter is one of the most consequential governance actions an OU can take. Today an amendment is a proposal that updates the charter's document pointer; the recommended configuration reflects the gravity of a constitutional change:
 
 - A high approval threshold --- reflecting constitutional significance.
 - A multi-day execution delay --- ensuring the full membership has time to review and respond.
@@ -61,4 +61,4 @@ The Charter is the source of truth from which the organization's stated mission 
 
 That record is permanent. Because every amendment flows through a proposal, the on-chain log preserves how the rules changed, which proposals drove those changes, and --- through the document pointers it references --- what the organization declared at each step. Future members can trace the whole arc.
 
-In a game world where civilizations rise and fall, this permanence matters. The charter is the DAO's contribution to the historical record of Frontier. DAO archaeology --- the study of organizational evolution through on-chain constitutional history --- becomes possible.
+In a game world where civilizations rise and fall, this permanence matters. The charter is the OU's contribution to the historical record of Frontier. OU archaeology --- the study of organizational evolution through on-chain constitutional history --- becomes possible.

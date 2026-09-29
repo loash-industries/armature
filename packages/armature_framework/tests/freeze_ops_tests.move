@@ -5,7 +5,7 @@
 module armature::freeze_ops_tests;
 
 use armature::board_voting;
-use armature::dao::{Self, DAO};
+use armature::ou::{Self, OU};
 use armature::emergency::{Self, EmergencyFreeze, FreezeAdminCap};
 use armature::freeze_ops;
 use armature::governance;
@@ -25,26 +25,26 @@ const MEMBER_B: address = @0xB;
 
 // === Helpers ===
 
-fun create_dao(scenario: &mut test_scenario::Scenario): ID {
+fun create_ou(scenario: &mut test_scenario::Scenario): ID {
     scenario.next_tx(CREATOR);
     let init = governance::init_board(vector[CREATOR, MEMBER_B]);
-    dao::create(
+    ou::create(
         &init,
-        string::utf8(b"Test DAO"),
+        string::utf8(b"Test OU"),
         string::utf8(b"https://example.com/logo.png"),
         scenario.ctx(),
     )
 }
 
 /// Enable `T` with a plain config. Framework types get their fixed bits from
-/// the DAO regardless of what the config carries.
+/// the OU regardless of what the config carries.
 fun enable_type<T>(scenario: &mut test_scenario::Scenario, key: vector<u8>) {
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let config = proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0);
-        dao.test_enable_type<T>(key.to_ascii_string(), config);
-        test_scenario::return_shared(dao);
+        ou.test_enable_type<T>(key.to_ascii_string(), config);
+        test_scenario::return_shared(ou);
     };
 }
 
@@ -56,30 +56,30 @@ fun submit_exempt_types(
 ) {
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(ts);
-        board_voting::submit_proposal(&dao, option::none(), payload, clock, scenario.ctx());
-        test_scenario::return_shared(dao);
+        board_voting::submit_proposal(&ou, option::none(), payload, clock, scenario.ctx());
+        test_scenario::return_shared(ou);
     };
     scenario.next_tx(CREATOR);
     {
         let mut p = scenario.take_shared<Proposal<UpdateFreezeExemptTypes>>();
         clock.set_for_testing(ts + 1000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(p.dao_id());
-        board_voting::vote(&mut p, &vote_dao, true, clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(p.ou_id());
+        board_voting::vote(&mut p, &vote_ou, true, clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(p);
     };
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let p = scenario.take_shared<Proposal<UpdateFreezeExemptTypes>>();
         let mut freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(ts + 2000);
-        let ticket = board_voting::ticket_from_vote(&mut dao, p, &freeze, clock, scenario.ctx());
+        let ticket = board_voting::ticket_from_vote(&mut ou, p, &freeze, clock, scenario.ctx());
         freeze_ops::execute_update_freeze_exempt_types(&mut freeze, ticket);
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 }
 
@@ -91,19 +91,19 @@ fun submit_exempt_types(
 fun freeze_governance_types_hold_fixed_freeze_bit() {
     let cfg = type_name::with_defining_ids<UpdateFreezeConfig>();
     let exempt = type_name::with_defining_ids<UpdateFreezeExemptTypes>();
-    assert!(dao::is_framework_type(&cfg));
-    assert!(dao::is_framework_type(&exempt));
-    assert!(dao::framework_permissions(&cfg) == permissions::emergency_freeze());
-    assert!(dao::framework_permissions(&exempt) == permissions::emergency_freeze());
+    assert!(ou::is_framework_type(&cfg));
+    assert!(ou::is_framework_type(&exempt));
+    assert!(ou::framework_permissions(&cfg) == permissions::emergency_freeze());
+    assert!(ou::framework_permissions(&exempt) == permissions::emergency_freeze());
 
     let mut scenario = test_scenario::begin(CREATOR);
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
     enable_type<UpdateFreezeConfig>(&mut scenario, b"UpdateFreezeConfig");
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
-        assert!(dao.type_config_by_name(&cfg).permissions() == permissions::emergency_freeze());
-        test_scenario::return_shared(dao);
+        let ou = scenario.take_shared<OU>();
+        assert!(ou.type_config_by_name(&cfg).permissions() == permissions::emergency_freeze());
+        test_scenario::return_shared(ou);
     };
     scenario.end();
 }
@@ -116,7 +116,7 @@ fun update_freeze_config_e2e() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
     enable_type<UpdateFreezeConfig>(&mut scenario, b"UpdateFreezeConfig");
 
     // Default max freeze duration is 7 days.
@@ -131,37 +131,37 @@ fun update_freeze_config_e2e() {
 
     scenario.next_tx(CREATOR);
     {
-        let dao = scenario.take_shared<DAO>();
+        let ou = scenario.take_shared<OU>();
         clock.set_for_testing(1000);
         let payload = update_freeze_config::new(new_duration);
         board_voting::submit_proposal(
-            &dao,
+            &ou,
             option::some(string::utf8(b"Reduce freeze duration")),
             payload,
             &clock,
             scenario.ctx(),
         );
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     scenario.next_tx(CREATOR);
     {
         let mut proposal = scenario.take_shared<Proposal<UpdateFreezeConfig>>();
         clock.set_for_testing(2000);
-        let vote_dao = scenario.take_shared_by_id<DAO>(proposal.dao_id());
-        board_voting::vote(&mut proposal, &vote_dao, true, &clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(proposal);
     };
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let proposal = scenario.take_shared<Proposal<UpdateFreezeConfig>>();
         let mut freeze = scenario.take_shared<EmergencyFreeze>();
         clock.set_for_testing(3000);
         let ticket = board_voting::ticket_from_vote(
-            &mut dao,
+            &mut ou,
             proposal,
             &freeze,
             &clock,
@@ -170,7 +170,7 @@ fun update_freeze_config_e2e() {
         freeze_ops::execute_update_freeze_config(&mut freeze, ticket);
         assert!(freeze.max_freeze_duration_ms() == new_duration);
         test_scenario::return_shared(freeze);
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
     };
 
     // The new duration bounds an admin freeze.
@@ -199,7 +199,7 @@ fun add_freeze_exempt_type_e2e() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
     enable_type<UpdateFreezeExemptTypes>(&mut scenario, b"UpdateFreezeExemptTypes");
 
     let mut payload = update_freeze_exempt_types::new();
@@ -223,7 +223,7 @@ fun remove_freeze_exempt_type_e2e() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
     enable_type<UpdateFreezeExemptTypes>(&mut scenario, b"UpdateFreezeExemptTypes");
 
     let mut add = update_freeze_exempt_types::new();
@@ -263,7 +263,7 @@ fun remove_mandatory_exempt_type_aborts() {
     let mut scenario = test_scenario::begin(CREATOR);
     let mut clock = clock::create_for_testing(scenario.ctx());
 
-    create_dao(&mut scenario);
+    create_ou(&mut scenario);
     enable_type<UpdateFreezeExemptTypes>(&mut scenario, b"UpdateFreezeExemptTypes");
 
     let mut payload = update_freeze_exempt_types::new();

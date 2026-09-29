@@ -4,13 +4,13 @@
 
 == What Is a Proposal
 
-A proposal is a statement of intent backed by a governance vote. It is the primary mechanism through which a DAO's state changes, and all authority is rooted in governance: there are no admin backdoors and no owner keys. Two additional execution paths exist --- a parent DAO's override of a Sub-DAO it controls, and an opt-in bypass gated by an external authority --- but both are themselves enabled and governed through the proposal system. The security chapter treats them in full.
+A proposal is a statement of intent backed by a governance vote. It is the primary mechanism through which an OU's state changes, and all authority is rooted in governance: there are no admin backdoors and no owner keys. Two additional execution paths exist --- a parent OU's override of a Sub-OU it controls, and an opt-in bypass gated by an external authority --- but both are themselves enabled and governed through the proposal system. The security chapter treats them in full.
 
-Every action a DAO takes --- spending from its treasury, delegating a capability, amending its charter, creating a department, changing its own rules --- is expressed as a proposal. Members issue proposals; members vote on them; the system executes the result.
+Every action an OU takes --- spending from its treasury, delegating a capability, amending its charter, creating a department, changing its own rules --- is expressed as a proposal. Members issue proposals; members vote on them; the system executes the result.
 
-Proposals are the vocabulary of the DAO. Each proposal type is a word in that vocabulary --- a specific kind of action the organization knows how to perform. The set of enabled proposal types defines the full range of what the organization can do.
+Proposals are the vocabulary of the OU. Each proposal type is a word in that vocabulary --- a specific kind of action the organization knows how to perform. The set of enabled proposal types defines the full range of what the organization can do.
 
-A DAO that has not enabled charter amendments cannot amend its charter. A DAO that has not enabled Sub-DAO creation cannot create departments. The vocabulary is the permission set.
+An OU that has not enabled charter amendments cannot amend its charter. An OU that has not enabled Sub-OU creation cannot create departments. The vocabulary is the permission set.
 
 == How Proposals Work
 
@@ -44,17 +44,17 @@ Two safety rails prevent governance from weakening itself.
 
 *Self-referential floor.* Changing a proposal type's own governance parameters requires a high supermajority --- an 80% approval floor. A slim majority cannot lower the bar for future governance changes.
 
-*Enable floor.* Adding a new proposal type to the DAO's vocabulary requires a two-thirds supermajority --- a 66% approval floor. Expanding what the organization can do expands its attack surface and requires broad consent. Enabling the opt-in external-authorization bypass, which sidesteps voting entirely, carries the stricter 80% floor.
+*Enable floor.* Adding a new proposal type to the OU's vocabulary requires a two-thirds supermajority --- a 66% approval floor. Expanding what the organization can do expands its attack surface and requires broad consent. Enabling the opt-in external-authorization bypass, which sidesteps voting entirely, carries the stricter 80% floor.
 
 These floors are _framework-enforced_ constants --- they cannot be bypassed by governance configuration. They are the protocol's minimum guarantees about governance integrity.
 
 == Extending the Vocabulary
 
-The proposal system is open by design. Armature ships with a built-in set of proposal types covering administration and charter amendment, treasury operations, board and membership management, currency issuance (minting and burning DAO-controlled coins), package upgrades, Sub-DAO operations, and emergency controls. But this set is not closed.
+The proposal system is open by design. Armature ships with a built-in set of proposal types covering administration and charter amendment, treasury operations, board and membership management, currency issuance (minting and burning OU-controlled coins), package upgrades, Sub-OU operations, and emergency controls. But this set is not closed.
 
-Any developer can define new proposal types. A bounty payment, a token distribution, a custom access control action --- each can be implemented as a proposal type and adopted by any DAO that chooses to enable it. The framework handles voting, thresholds, timing, and authorization for all types equally. Enabling a new type is the trust gate; the governance decides what vocabulary it adopts.
+Any developer can define new proposal types. A bounty payment, a token distribution, a custom access control action --- each can be implemented as a proposal type and adopted by any OU that chooses to enable it. The framework handles voting, thresholds, timing, and authorization for all types equally. Enabling a new type is the trust gate; the governance decides what vocabulary it adopts.
 
-This turns the DAO from a closed product into an open protocol. The governance engine is a platform. Proposal types are its applications.
+This turns the OU from a closed product into an open protocol. The governance engine is a platform. Proposal types are its applications.
 
 == Proposal Composition
 

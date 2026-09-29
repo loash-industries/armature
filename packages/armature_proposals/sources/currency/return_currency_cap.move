@@ -2,10 +2,10 @@ module armature_proposals::return_currency_cap;
 
 use std::internal::{Self, Permit};
 
-/// Relinquish custody of a `TreasuryCap<T>`: extract it from the DAO's
+/// Relinquish custody of a `TreasuryCap<T>`: extract it from the OU's
 /// `CapabilityVault` and transfer it to `recipient`, dropping the currency
-/// from the DAO's custody. The escape hatch / handoff path — without it a cap
-/// would be locked in the vault forever, blocking sub-DAO spin-outs and
+/// from the OU's custody. The escape hatch / handoff path — without it a cap
+/// would be locked in the vault forever, blocking sub-OU spin-outs and
 /// migrations. Vote-gated, symmetric to `AdoptCurrency`.
 public struct ReturnCurrencyCap<phantom T> has drop, store {
     treasury_cap_id: ID,

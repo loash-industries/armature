@@ -2,11 +2,11 @@
 
 > **Tool:** Playwright (Chromium)
 > **Network:** Sui localnet
-> **Route:** `/dao/$daoId/proposals/*`
+> **Route:** `/ou/$ouId/proposals/*`
 
 ## Prerequisites
 
-- DAO created with 3 board members: A, B, C
+- OU created with 3 board members: A, B, C
 - At least one proposal type enabled (SetBoard used as the test vehicle)
 - Default config: quorum=50%, threshold=50%, expiry=7 days, no execution delay, no cooldown
 
@@ -15,14 +15,14 @@
 ### 3.1 — Submit a proposal
 
 1. Connect as wallet A
-2. Navigate to `/dao/$daoId/proposals/new`
+2. Navigate to `/ou/$ouId/proposals/new`
 3. Proposal type selector dialog appears — select "Set Board"
 4. Fill form, submit
 
 **Expected:**
 
 - Transaction succeeds
-- Redirected to `/dao/$daoId/proposals/$proposalId`
+- Redirected to `/ou/$ouId/proposals/$proposalId`
 - Proposal detail shows:
   - Status: Active
   - Proposer: wallet A (truncated)
@@ -30,7 +30,7 @@
   - Vote tally: 0 Yes / 0 No
   - Vote snapshot: 3 members (A, B, C) with weight 1 each
 - `ProposalCreated` event emitted
-- Proposals list (`/dao/$daoId/proposals`) shows the new proposal
+- Proposals list (`/ou/$ouId/proposals`) shows the new proposal
 
 ### 3.2 — Vote Yes
 
@@ -173,7 +173,7 @@ Setup: Create a proposal type with `cooldown_ms > 0`.
 ### 3.13 — Proposals list filtering
 
 1. Create multiple proposals in different states (Active, Passed, Executed, Expired)
-2. Navigate to `/dao/$daoId/proposals`
+2. Navigate to `/ou/$ouId/proposals`
 3. Click each status tab: All, Active, Passed, Executed, Expired
 
 **Expected:**

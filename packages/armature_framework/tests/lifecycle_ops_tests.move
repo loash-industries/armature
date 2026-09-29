@@ -5,7 +5,7 @@ module armature::lifecycle_ops_tests;
 
 use armature::board_voting;
 use armature::capability_vault::CapabilityVault;
-use armature::dao::{Self, DAO};
+use armature::ou::{Self, OU};
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
 use armature::lifecycle_ops::{Self, AssetTransfer};
@@ -24,14 +24,14 @@ const CREATOR: address = @0xA;
 /// A second coin type for the treasury.
 public struct OTHER has drop {}
 
-fun create_dao(scenario: &mut Scenario): ID {
+fun create_ou(scenario: &mut Scenario): ID {
     scenario.next_tx(CREATOR);
     let init = governance::init_board(vector[CREATOR]);
-    dao::create(&init, string::utf8(b"DAO"), string::utf8(b""), scenario.ctx())
+    ou::create(&init, string::utf8(b"OU"), string::utf8(b""), scenario.ctx())
 }
 
-/// Three DAOs: `source` holds 1_000 SUI and 500 OTHER and has TransferAssets
-/// enabled; `target` is the payload's target; `other` is an unrelated DAO.
+/// Three OUs: `source` holds 1_000 SUI and 500 OTHER and has TransferAssets
+/// enabled; `target` is the payload's target; `other` is an unrelated OU.
 /// Mints a TransferAssets ticket on `source` listing `coin_types`, begins the
 /// transfer and hands it to `$f` with the three treasuries.
 macro fun with_transfer(
@@ -46,14 +46,14 @@ macro fun with_transfer(
 ) {
     let mut scenario = test_scenario::begin(CREATOR);
     let clock = clock::create_for_testing(scenario.ctx());
-    let source_id = create_dao(&mut scenario);
-    let target_id = create_dao(&mut scenario);
-    let other_id = create_dao(&mut scenario);
+    let source_id = create_ou(&mut scenario);
+    let target_id = create_ou(&mut scenario);
+    let other_id = create_ou(&mut scenario);
 
     scenario.next_tx(CREATOR);
-    let mut source = scenario.take_shared_by_id<DAO>(source_id);
-    let target = scenario.take_shared_by_id<DAO>(target_id);
-    let other = scenario.take_shared_by_id<DAO>(other_id);
+    let mut source = scenario.take_shared_by_id<OU>(source_id);
+    let target = scenario.take_shared_by_id<OU>(target_id);
+    let other = scenario.take_shared_by_id<OU>(other_id);
     let mut source_treasury = scenario.take_shared_by_id<TreasuryVault>(source.treasury_id());
     let mut target_treasury = scenario.take_shared_by_id<TreasuryVault>(target.treasury_id());
     let mut other_treasury = scenario.take_shared_by_id<TreasuryVault>(other.treasury_id());

@@ -2,7 +2,7 @@
 /// defined outside the armature packages and a handler that consumes its ticket.
 module armature_external_type_tests::rebalance;
 
-use armature::dao::DAO;
+use armature::ou::OU;
 use armature::emergency::EmergencyFreeze;
 use armature::external_execution;
 use armature::proposal::{ExecutionTicket, ExternalExecutionCap};
@@ -12,7 +12,7 @@ use sui::event;
 
 // === Errors ===
 
-const EDaoMismatch: u64 = 0;
+const EOuMismatch: u64 = 0;
 
 // === Structs ===
 
@@ -23,7 +23,7 @@ public struct Rebalance<phantom T> has drop, store {
 // === Events ===
 
 public struct Rebalanced has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     amount: u64,
 }
 
@@ -46,7 +46,7 @@ public fun amount<T>(self: &Rebalance<T>): u64 { self.amount }
 /// the mint. This sample has none.
 public fun submit_bypass<T>(
     cap: &ExternalExecutionCap<Rebalance<T>>,
-    dao: &DAO,
+    ou: &OU,
     freeze: &EmergencyFreeze,
     amount: u64,
     clock: &Clock,
@@ -54,7 +54,7 @@ public fun submit_bypass<T>(
 ): ExecutionTicket<Rebalance<T>> {
     external_execution::ticket_from_cap_readonly(
         cap,
-        dao,
+        ou,
         freeze,
         option::none(),
         Rebalance { amount },
@@ -66,10 +66,10 @@ public fun submit_bypass<T>(
 
 // === Handler ===
 
-/// Execute a `Rebalance<T>` ticket for `dao`.
-public fun execute_rebalance<T>(dao: &DAO, ticket: ExecutionTicket<Rebalance<T>>) {
-    assert!(dao.id() == ticket.ticket_dao_id(), EDaoMismatch);
-    event::emit(Rebalanced { dao_id: dao.id(), amount: ticket.ticket_payload().amount });
+/// Execute a `Rebalance<T>` ticket for `ou`.
+public fun execute_rebalance<T>(ou: &OU, ticket: ExecutionTicket<Rebalance<T>>) {
+    assert!(ou.id() == ticket.ticket_ou_id(), EOuMismatch);
+    event::emit(Rebalanced { ou_id: ou.id(), amount: ticket.ticket_payload().amount });
     ticket.discharge(internal::permit());
 }
 

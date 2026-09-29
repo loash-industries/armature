@@ -43,8 +43,8 @@ These tests cover quorum and threshold arithmetic, the propose threshold, type-s
 | `submit_proposal_default_type_uses_its_payload_slot` | A `SetBoard` payload submits against the default "SetBoard" slot |
 | `ticket_from_vote__records_execution` | Ticket minted, proposal deleted, `last_executed_ms<P>()` = clock |
 | `ticket_from_vote__type_disabled_after_pass_aborts` | Type disabled after its proposal passed → Abort `board_voting::ETypeNotEnabled` |
-| `ticket_from_vote_readonly__executes_without_recording` | Ticket minted from `&DAO`; `last_executed_ms<P>()` stays `none` |
-| `ticket_from_vote_readonly__slot_cooldown_aborts` | Slot cooldown > 0 → Abort `board_voting::ECooldownRequiresMutableDAO` |
+| `ticket_from_vote_readonly__executes_without_recording` | Ticket minted from `&OU`; `last_executed_ms<P>()` stays `none` |
+| `ticket_from_vote_readonly__slot_cooldown_aborts` | Slot cooldown > 0 → Abort `board_voting::ECooldownRequiresMutableOU` |
 | `ticket_from_vote_readonly__slot_only_cooldown_aborts` | Cooldown raised on the slot after submission → same abort |
 | `ticket_from_vote_readonly__snapshot_cooldown_aborts` | Cooldown in the proposal's snapshot, cleared on the slot since → same abort |
 
@@ -68,9 +68,9 @@ These tests cover quorum and threshold arithmetic, the propose threshold, type-s
 | `test_sve__execution_paused_aborts` | Abort `proposal::EExecutionPaused` |
 | `test_sve__controller_paused_aborts` | Abort `board_voting::EControllerPaused` |
 | `test_sve__enable_proposal_type_below_floor_aborts` | EnableProposalType slot at 5000 → Abort `board_voting::EFloorNotMet` |
-| `test_sve_readonly__returns_ticket_and_leaves_dao_untouched` | Same Standalone ticket from `&DAO`; `last_executed_ms<P>()` stays `none` |
+| `test_sve_readonly__returns_ticket_and_leaves_ou_untouched` | Same Standalone ticket from `&OU`; `last_executed_ms<P>()` stays `none` |
 | `test_sve_readonly__back_to_back` | Two read-only calls succeed |
-| `test_sve_readonly__cooldown_type_aborts` | Abort `board_voting::ECooldownRequiresMutableDAO` |
+| `test_sve_readonly__cooldown_type_aborts` | Abort `board_voting::ECooldownRequiresMutableOU` |
 | `test_sve_readonly__nonzero_delay_aborts` | Abort `board_voting::EDelayForbidsAtomicExecution` |
 | `test_sve_readonly__type_not_enabled_aborts` | Abort `board_voting::ETypeNotEnabled` |
 | `test_sve_readonly__quorum_not_met_aborts` | Abort `board_voting::EInsufficientVotingWeight` |
@@ -83,36 +83,36 @@ These tests cover quorum and threshold arithmetic, the propose threshold, type-s
 
 | Test | Expected |
 |------|----------|
-| `test_sve__migrating_dao_aborts` (planned) | DAO `Migrating`, `P` is not `TransferAssets` → Abort `board_voting::EDAONotActive` |
+| `test_sve__migrating_ou_aborts` (planned) | OU `Migrating`, `P` is not `TransferAssets` → Abort `board_voting::EOUNotActive` |
 | `test_sve__propose_threshold_above_weight_aborts` (planned) | propose_threshold 2 → Abort `board_voting::EProposeThresholdNotMet` |
 | `test_sve__enable_bypass_type_multi_member_aborts_in_handler` (planned) | 2-member board, default `EnableBypassType` config (quorum 5000, threshold 8000): the single vote passes, then `external_execution::execute_enable_bypass_type` sees yes 1 / total 2 → Abort `external_execution::EApprovalFloorNotMet` |
-| `ticket_from_vote__other_dao_aborts` (planned) | Passed proposal of DAO A executed against DAO B → Abort `board_voting::EDAOIdMismatch` |
+| `ticket_from_vote__other_ou_aborts` (planned) | Passed proposal of OU A executed against OU B → Abort `board_voting::EOUIdMismatch` |
 | `ticket_from_vote__disabled_type_aborts` (planned) | Type disabled after the proposal passed → Abort `board_voting::ETypeNotEnabled` |
 
 ## Tests
 
-The vote-counting tests share three helpers local to `board_voting_tests.move`: `create_dao_with_members` wraps `dao::create(&governance::init_board(members), name, metadata_uri, ctx)`; `submit_proposal_with_config` calls the package-internal `proposal::create` with an explicit config, so each test sets its own quorum and threshold without an `EnableProposalType` vote; `vote_as` casts a vote through the public entry point:
+The vote-counting tests share three helpers local to `board_voting_tests.move`: `create_ou_with_members` wraps `ou::create(&governance::init_board(members), name, metadata_uri, ctx)`; `submit_proposal_with_config` calls the package-internal `proposal::create` with an explicit config, so each test sets its own quorum and threshold without an `EnableProposalType` vote; `vote_as` casts a vote through the public entry point:
 
 ```move
 fun vote_as(scenario: &mut test_scenario::Scenario, voter: address, approve: bool, clock: &Clock) {
     scenario.next_tx(voter);
     {
         let mut prop = scenario.take_shared<Proposal<TestPayload>>();
-        let vote_dao = scenario.take_shared_by_id<DAO>(prop.dao_id());
-        board_voting::vote(&mut prop, &vote_dao, approve, clock, scenario.ctx());
-        test_scenario::return_shared(vote_dao);
+        let vote_ou = scenario.take_shared_by_id<OU>(prop.ou_id());
+        board_voting::vote(&mut prop, &vote_ou, approve, clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
         test_scenario::return_shared(prop);
     };
 }
 ```
 
-`board_voting::vote` aborts with `board_voting::EDAOIdMismatch` unless `dao` is the proposal's own DAO, then records the vote (`proposal::ENotActive`, `EVotingClosed`, `ENotInSnapshot`, `EAlreadyVoted`; see `04_proposals.md`).
+`board_voting::vote` aborts with `board_voting::EOUIdMismatch` unless `ou` is the proposal's own OU, then records the vote (`proposal::ENotActive`, `EVotingClosed`, `ENotInSnapshot`, `EAlreadyVoted`; see `04_proposals.md`).
 
 ---
 
 ### Single member, single YES vote passes
 
-**Why it matters:** The simplest DAO (a solo founder) must be fully functional. If a 1-member board cannot pass proposals, the creation flow breaks.
+**Why it matters:** The simplest OU (a solo founder) must be fully functional. If a 1-member board cannot pass proposals, the creation flow breaks.
 
 ```move
 #[test]
@@ -121,7 +121,7 @@ fun test_board__single_member_yes_passes() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_dao_with_members(&mut scenario, vector[CREATOR]);
+    create_ou_with_members(&mut scenario, vector[CREATOR]);
     submit_proposal_with_config(&mut scenario, &clock, 5_000, 5_000); // quorum, threshold
     vote_as(&mut scenario, CREATOR, true, &clock);
 
@@ -205,7 +205,7 @@ vote_as(&mut scenario, MEMBER_B, true, &clock);
 
 ### Submission is keyed by the payload type
 
-**Requirement:** `submit_proposal<P>(dao: &DAO, metadata_ipfs: Option<String>, payload: P, clock, ctx)` takes no type key. `P` selects its own slot, which supplies the config and the display key recorded on the proposal.
+**Requirement:** `submit_proposal<P>(ou: &OU, metadata_ipfs: Option<String>, payload: P, clock, ctx)` takes no type key. `P` selects its own slot, which supplies the config and the display key recorded on the proposal.
 
 **Why it matters:** A payload cannot be submitted under another type's config: there is no string key to spoof.
 
@@ -215,7 +215,7 @@ fun submit_proposal_aborts_for_type_without_slot() {
     // Only TestPayload has a slot (display key "CustomKey").
     ...
     board_voting::submit_proposal(
-        &dao,
+        &ou,
         option::none(),
         AltPayload { label: 99 }, // no slot for AltPayload
         &clock,
@@ -225,22 +225,22 @@ fun submit_proposal_aborts_for_type_without_slot() {
 }
 ```
 
-`submit_proposal` also aborts with `board_voting::EDAONotActive` unless the DAO is Active (or Migrating and `P` is `TransferAssets`), with `governance::ENotBoardMember` for a non-member, and with `board_voting::EFloorNotMet` when `P` is `EnableProposalType` and its slot's threshold is below 8000.
+`submit_proposal` also aborts with `board_voting::EOUNotActive` unless the OU is Active (or Migrating and `P` is `TransferAssets`), with `governance::ENotBoardMember` for a non-member, and with `board_voting::EFloorNotMet` when `P` is `EnableProposalType` and its slot's threshold is below 8000.
 
 ---
 
 ### Two-PTB execution: ticket_from_vote and the read-only variant
 
-**Requirement:** `ticket_from_vote<P>(dao: &mut DAO, prop: Proposal<P>, freeze, clock, ctx): ExecutionTicket<P>` takes the proposal by value, deletes it and records the execution timestamp on the slot. `ticket_from_vote_readonly` takes `&DAO`, records nothing, and aborts with `board_voting::ECooldownRequiresMutableDAO` if the slot's config or the proposal's snapshotted config has `cooldown_ms > 0`.
+**Requirement:** `ticket_from_vote<P>(ou: &mut OU, prop: Proposal<P>, freeze, clock, ctx): ExecutionTicket<P>` takes the proposal by value, deletes it and records the execution timestamp on the slot. `ticket_from_vote_readonly` takes `&OU`, records nothing, and aborts with `board_voting::ECooldownRequiresMutableOU` if the slot's config or the proposal's snapshotted config has `cooldown_ms > 0`.
 
-**Why it matters:** A PTB that reaches the DAO only through read-only entry points can pass it as an immutable shared input, which takes no write lock. Cooldown tracking needs the write, so a cooldown on either config forces the `&mut` variant; otherwise the next execution would skip the cooldown.
+**Why it matters:** A PTB that reaches the OU only through read-only entry points can pass it as an immutable shared input, which takes no write lock. Cooldown tracking needs the write, so a cooldown on either config forces the `&mut` variant; otherwise the next execution would skip the cooldown.
 
 ```move
 // ticket_from_vote_readonly__executes_without_recording
-let ticket = board_voting::ticket_from_vote_readonly(&dao, prop, &freeze, &clock, scenario.ctx());
+let ticket = board_voting::ticket_from_vote_readonly(&ou, prop, &freeze, &clock, scenario.ctx());
 assert!(ticket.ticket_payload().value == 7);
 ticket.discharge(internal::permit()); // TestPayload is defined in the test module
-assert!(dao.last_executed_ms<TestPayload>().is_none());
+assert!(ou.last_executed_ms<TestPayload>().is_none());
 ```
 
 The execution checks themselves (`proposal::ENotPassed`, `ENotEligible`, `EDelayNotElapsed`, `EExecutionWindowClosed`, `ECooldownActive`, `EExecutionPaused`) are covered in `04_proposals.md`.
@@ -249,12 +249,12 @@ The execution checks themselves (`proposal::ENotPassed`, `ENotEligible`, `EDelay
 
 ## Atomic single-vote path
 
-`submit_vote_execute<P: store>(dao: &mut DAO, metadata_ipfs: Option<String>, payload: P, freeze: &EmergencyFreeze, clock: &Clock, ctx: &mut TxContext): ExecutionTicket<P>` submits, casts the caller's YES vote and executes in one call. `submit_vote_execute_readonly<P>` has the same arguments with `dao: &DAO`.
+`submit_vote_execute<P: store>(ou: &mut OU, metadata_ipfs: Option<String>, payload: P, freeze: &EmergencyFreeze, clock: &Clock, ctx: &mut TxContext): ExecutionTicket<P>` submits, casts the caller's YES vote and executes in one call. `submit_vote_execute_readonly<P>` has the same arguments with `ou: &OU`.
 
 **No `Proposal` object is created**, owned or shared. The proposal ID comes from `ctx.fresh_object_address()`, and the events a shared proposal would emit over its life are emitted in order and form the audit record:
 
-1. `ProposalCreated { proposal_id, dao_id, type_key, proposer, metadata_ipfs }`
-2. `ProposalPayloadCreated { proposal_id, dao_id, payload_bcs }`
+1. `ProposalCreated { proposal_id, ou_id, type_key, proposer, metadata_ipfs }`
+2. `ProposalPayloadCreated { proposal_id, ou_id, payload_bcs }`
 3. `VoteCast { voter: proposer, approve: true, weight: 1 }`
 4. `ProposalPassed { yes_weight: 1, no_weight: 0 }`
 5. `ProposalExecuted { executor: proposer }`
@@ -263,20 +263,20 @@ Checks, in order (they mirror `submit_proposal` followed by `ticket_from_vote`):
 
 | # | Check | Abort |
 |---|-------|-------|
-| 1 | DAO Active, or Migrating and `P` is migration-allowed | `board_voting::EDAONotActive` |
+| 1 | OU Active, or Migrating and `P` is migration-allowed | `board_voting::EOUNotActive` |
 | 2 | `P` has a slot | `board_voting::ETypeNotEnabled` |
 | 3 | Caller is a current board member | `governance::ENotBoardMember` |
 | 4 | `EnableProposalType` slot threshold ≥ 8000 | `board_voting::EFloorNotMet` |
 | 5 | Propose threshold | `board_voting::EProposeThresholdNotMet` |
 | 6 | `execution_delay_ms == 0` | `board_voting::EDelayForbidsAtomicExecution` |
-| 7 | Read-only variant only: `cooldown_ms == 0` | `board_voting::ECooldownRequiresMutableDAO` |
+| 7 | Read-only variant only: `cooldown_ms == 0` | `board_voting::ECooldownRequiresMutableOU` |
 | 8 | Not controller-paused | `board_voting::EControllerPaused` |
 | 9 | `P` not frozen | `emergency::EFrozen` |
 | 10 | The caller's single YES passes quorum and threshold against the current `member_count` | `board_voting::EInsufficientVotingWeight` |
 | 11 | Execution not paused | `proposal::EExecutionPaused` |
 | 12 | Cooldown elapsed since the slot's last execution | `proposal::ECooldownActive` |
 
-The ticket is Standalone with `yes_weight = 1` and `total_snapshot_weight = member_count`, and its request carries the slot's permission bits and borrow scope at that moment. Handler checks on actual vote weights therefore behave as on the two-PTB path: `EnableBypassType`'s handler requires yes / total ≥ 80%, which one vote meets only on a 1-member board. The `&mut DAO` variant records the execution timestamp (cooldown); the read-only variant writes nothing.
+The ticket is Standalone with `yes_weight = 1` and `total_snapshot_weight = member_count`, and its request carries the slot's permission bits and borrow scope at that moment. Handler checks on actual vote weights therefore behave as on the two-PTB path: `EnableBypassType`'s handler requires yes / total ≥ 80%, which one vote meets only on a 1-member board. The `&mut OU` variant records the execution timestamp (cooldown); the read-only variant writes nothing.
 
 **Single-vote pass math.** With one YES and no NO the threshold is always met (10000 ≥ any `approval_threshold`). Quorum is met iff `quorum × member_count ≤ 10000`:
 
@@ -296,7 +296,7 @@ A config built for single-vote execution typically uses quorum 1 bps and delay 0
 
 ### Single member receives a Standalone ticket
 
-**Why it matters:** Single-member DAOs and single-vote trading configs execute in one PTB without a shared object per execution.
+**Why it matters:** Single-member OUs and single-vote trading configs execute in one PTB without a shared object per execution.
 
 ```move
 #[test]
@@ -305,16 +305,16 @@ fun test_sve__single_member_returns_ticket() {
     let mut clock = clock::create_for_testing(scenario.ctx());
     clock.set_for_testing(1_000_000);
 
-    create_single_member_dao(&mut scenario);
-    // dao.test_enable_type<FastPayload>(...) with new_config(5_000, 5_000, 0, 3_600_000, 0, 0)
+    create_single_member_ou(&mut scenario);
+    // ou.test_enable_type<FastPayload>(...) with new_config(5_000, 5_000, 0, 3_600_000, 0, 0)
     enable_fast_type(&mut scenario, 5_000, 5_000, 0, 0); // quorum, threshold, delay, cooldown
 
     scenario.next_tx(CREATOR);
     {
-        let mut dao = scenario.take_shared<DAO>();
+        let mut ou = scenario.take_shared<OU>();
         let freeze = scenario.take_shared<EmergencyFreeze>();
         let ticket = board_voting::submit_vote_execute<FastPayload>(
-            &mut dao,
+            &mut ou,
             option::none(),
             FastPayload { value: 42 },
             &freeze,
@@ -325,7 +325,7 @@ fun test_sve__single_member_returns_ticket() {
         assert!(ticket.ticket_yes_weight() == 1);
         assert!(ticket.ticket_total_snapshot_weight() == 1);
         ticket.discharge(internal::permit()); // FastPayload is defined in the test module
-        test_scenario::return_shared(dao);
+        test_scenario::return_shared(ou);
         test_scenario::return_shared(freeze);
     };
     clock.destroy_for_testing();
@@ -356,7 +356,7 @@ assert!(effects.num_user_events() == 5);
 
 **Requirement:** `execution_delay_ms > 0` aborts with `board_voting::EDelayForbidsAtomicExecution` before any event is emitted.
 
-**Why it matters:** A delay exists to leave time between pass and execution. The atomic path has none, so it refuses up front rather than failing later. Setting a delay is how a DAO keeps a type off this path.
+**Why it matters:** A delay exists to leave time between pass and execution. The atomic path has none, so it refuses up front rather than failing later. Setting a delay is how an OU keeps a type off this path.
 
 `test_sve__nonzero_delay_aborts` enables `FastPayload` with a 1000 ms delay; `test_sve_readonly__nonzero_delay_aborts` checks the read-only variant.
 
@@ -374,11 +374,11 @@ assert!(effects.num_user_events() == 5);
 
 ### Read-only variant requires cooldown 0
 
-**Requirement:** `submit_vote_execute_readonly` aborts with `board_voting::ECooldownRequiresMutableDAO` when the slot's `cooldown_ms > 0`. It never writes the DAO.
+**Requirement:** `submit_vote_execute_readonly` aborts with `board_voting::ECooldownRequiresMutableOU` when the slot's `cooldown_ms > 0`. It never writes the OU.
 
-**Why it matters:** Concurrent single-vote executions of a cooldown-free type can share the DAO as an immutable input and stop contending on it. A type with a cooldown must record its execution time, so it must use the `&mut DAO` variant.
+**Why it matters:** Concurrent single-vote executions of a cooldown-free type can share the OU as an immutable input and stop contending on it. A type with a cooldown must record its execution time, so it must use the `&mut OU` variant.
 
-`test_sve_readonly__returns_ticket_and_leaves_dao_untouched` asserts `dao.last_executed_ms<FastPayload>().is_none()` after a read-only execution; `test_sve__mutable_variant_records_execution` asserts the `&mut` variant records the clock.
+`test_sve_readonly__returns_ticket_and_leaves_ou_untouched` asserts `ou.last_executed_ms<FastPayload>().is_none()` after a read-only execution; `test_sve__mutable_variant_records_execution` asserts the `&mut` variant records the clock.
 
 ---
 
@@ -387,6 +387,6 @@ assert!(effects.num_user_events() == 5);
 **Why it matters:** The atomic path must not be a way around the safety checks of the two-PTB path.
 
 - `test_sve__frozen_type_aborts`: the freeze admin calls `freeze.freeze_type<FastPayload>(&cap, &clock)`; the atomic call aborts `emergency::EFrozen`.
-- `test_sve__execution_paused_aborts`: `dao.set_execution_paused(true, &req)` with a test request; abort `proposal::EExecutionPaused`.
-- `test_sve__controller_paused_aborts`: `dao.set_controller_paused(true, &req)` with a privileged test request; abort `board_voting::EControllerPaused`.
+- `test_sve__execution_paused_aborts`: `ou.set_execution_paused(true, &req)` with a test request; abort `proposal::EExecutionPaused`.
+- `test_sve__controller_paused_aborts`: `ou.set_controller_paused(true, &req)` with a privileged test request; abort `board_voting::EControllerPaused`.
 - `test_sve__enable_proposal_type_below_floor_aborts`: EnableProposalType's slot lowered to 5000 with the `test_update_config` seam; the atomic submission aborts `board_voting::EFloorNotMet`, the same submission-time floor as `submit_proposal`.

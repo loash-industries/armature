@@ -19,18 +19,18 @@ use sui::event;
 
 // === Errors ===
 
-const EFreezeDaoMismatch: u64 = 0;
-const ECapDaoMismatch: u64 = 1;
+const EFreezeOuMismatch: u64 = 0;
+const ECapOuMismatch: u64 = 1;
 
 // === Events ===
 
 public struct FreezeAdminTransferred has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     new_admin: address,
 }
 
 public struct FreezeConfigUpdated has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     new_max_freeze_duration_ms: u64,
 }
 
@@ -43,15 +43,15 @@ public fun execute_transfer_freeze_admin(
     cap: FreezeAdminCap,
     ticket: ExecutionTicket<TransferFreezeAdmin>,
 ) {
-    assert!(freeze.dao_id() == ticket.ticket_dao_id(), EFreezeDaoMismatch);
-    assert!(cap.admin_cap_dao_id() == freeze.dao_id(), ECapDaoMismatch);
+    assert!(freeze.ou_id() == ticket.ticket_ou_id(), EFreezeOuMismatch);
+    assert!(cap.admin_cap_ou_id() == freeze.ou_id(), ECapOuMismatch);
 
     let payload = ticket.ticket_payload();
 
     emergency::unfreeze_all(freeze, ticket.ticket_request(transfer_freeze_admin::permit()));
 
     event::emit(FreezeAdminTransferred {
-        dao_id: freeze.dao_id(),
+        ou_id: freeze.ou_id(),
         new_admin: payload.new_admin(),
     });
 
@@ -80,7 +80,7 @@ public fun execute_update_freeze_config(
     freeze: &mut EmergencyFreeze,
     ticket: ExecutionTicket<UpdateFreezeConfig>,
 ) {
-    assert!(freeze.dao_id() == ticket.ticket_dao_id(), EFreezeDaoMismatch);
+    assert!(freeze.ou_id() == ticket.ticket_ou_id(), EFreezeOuMismatch);
 
     let payload = ticket.ticket_payload();
 
@@ -91,7 +91,7 @@ public fun execute_update_freeze_config(
     );
 
     event::emit(FreezeConfigUpdated {
-        dao_id: freeze.dao_id(),
+        ou_id: freeze.ou_id(),
         new_max_freeze_duration_ms: payload.new_max_freeze_duration_ms(),
     });
 
@@ -104,7 +104,7 @@ public fun execute_update_freeze_exempt_types(
     freeze: &mut EmergencyFreeze,
     ticket: ExecutionTicket<UpdateFreezeExemptTypes>,
 ) {
-    assert!(freeze.dao_id() == ticket.ticket_dao_id(), EFreezeDaoMismatch);
+    assert!(freeze.ou_id() == ticket.ticket_ou_id(), EFreezeOuMismatch);
 
     let payload = ticket.ticket_payload();
     let req = ticket.ticket_request(update_freeze_exempt_types::permit());

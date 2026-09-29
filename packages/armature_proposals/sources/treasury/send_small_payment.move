@@ -9,7 +9,7 @@ public struct SendSmallPayment<phantom T> has drop, store {
     amount: u64,
 }
 
-/// Handler-owned persistent state stored as a dynamic field on the DAO.
+/// Handler-owned persistent state stored as a dynamic field on the OU.
 /// Each coin type T gets its own state (keyed by TypeName of SendSmallPayment<T>).
 public struct SmallPaymentState has drop, store {
     epoch_start_ms: u64,

@@ -2,8 +2,8 @@ module armature_proposals::controller_batch_add_members;
 
 use std::internal::{Self, Permit};
 
-/// Add multiple members to a managed sub-DAO's board via SubDAOControl authority.
-/// Proposed on the controller DAO; executes atomically on the target sub-DAO
+/// Add multiple members to a managed sub-OU's board via SubOUControl authority.
+/// Proposed on the controller OU; executes atomically on the target sub-OU
 /// using the privileged_submit pattern.
 public struct ControllerBatchAddMembers has drop, store {
     control_id: ID,

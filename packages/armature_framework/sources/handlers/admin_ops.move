@@ -2,7 +2,7 @@ module armature::admin_ops;
 
 use armature::board_voting;
 use armature::charter::Charter;
-use armature::dao::{Self, DAO};
+use armature::ou::{Self, OU};
 use armature::disable_proposal_type::{Self, DisableProposalType};
 use armature::enable_proposal_type::{Self, EnableProposalType};
 use armature::proposal::{Self, ExecutionRequest, ExecutionTicket};
@@ -15,12 +15,12 @@ use sui::event;
 
 // === Errors ===
 
-const EDaoMismatch: u64 = 0;
-const ECharterDaoMismatch: u64 = 1;
+const EOuMismatch: u64 = 0;
+const ECharterOuMismatch: u64 = 1;
 const EUndisableableType: u64 = 2;
-const ESubDAOBlockedType: u64 = 4;
+const ESubOUBlockedType: u64 = 4;
 // 5 was EThresholdBelowFloor: config floors are now enforced by
-// dao::enable_proposal_type / update_proposal_config (dao::EThresholdBelowMinimum).
+// ou::enable_proposal_type / update_proposal_config (ou::EThresholdBelowMinimum).
 /// Proposal's approval_threshold is below the hardcoded floor for this type.
 /// Enforced at submission time by propose_update_proposal_config.
 const EFloorNotMet: u64 = 6;
@@ -34,22 +34,22 @@ const ETypeNotEnabled: u64 = 9;
 // === Events ===
 
 public struct ProposalTypeDisabled has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     type_key: std::ascii::String,
 }
 
 public struct ProposalTypeEnabled has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     type_key: std::ascii::String,
 }
 
 public struct ProposalConfigUpdated has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     target_type_key: std::ascii::String,
 }
 
 public struct MetadataUpdated has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     new_ipfs_cid: std::string::String,
 }
 
@@ -60,18 +60,18 @@ public struct MetadataUpdated has copy, drop {
 /// (EnableProposalType, EnableBypassType, DisableBypassType, DisableProposalType,
 /// TransferFreezeAdmin, UnfreezeProposalType) or not enabled.
 public fun execute_disable_proposal_type(
-    dao: &mut DAO,
+    ou: &mut OU,
     ticket: ExecutionTicket<DisableProposalType>,
 ) {
-    assert!(dao.id() == ticket.ticket_dao_id(), EDaoMismatch);
+    assert!(ou.id() == ticket.ticket_ou_id(), EOuMismatch);
     let type_key = ticket.ticket_payload().type_key();
-    let name = resolve_display_key(dao, &type_key);
+    let name = resolve_display_key(ou, &type_key);
     assert_disableable(&name);
-    dao.disable_proposal_type<DisableProposalType>(
+    ou.disable_proposal_type<DisableProposalType>(
         name,
         ticket.ticket_request(disable_proposal_type::permit()),
     );
-    event::emit(ProposalTypeDisabled { dao_id: dao.id(), type_key });
+    event::emit(ProposalTypeDisabled { ou_id: ou.id(), type_key });
     ticket.discharge(disable_proposal_type::permit());
 }
 
@@ -79,11 +79,11 @@ public fun execute_disable_proposal_type(
 /// payload's display key. `NewType` must equal the type pinned in the payload,
 /// so the executor cannot register a different payload type than the board voted on.
 public fun execute_enable_proposal_type<NewType: store>(
-    dao: &mut DAO,
+    ou: &mut OU,
     ticket: ExecutionTicket<EnableProposalType>,
 ) {
     enable_proposal_type_impl<NewType>(
-        dao,
+        ou,
         ticket.ticket_payload(),
         ticket.ticket_request(enable_proposal_type::permit()),
     );
@@ -93,16 +93,16 @@ public fun execute_enable_proposal_type<NewType: store>(
 /// Execute an UpdateProposalConfig proposal: merge optional field overrides
 /// into the existing config of the type whose display key the payload names.
 public fun execute_update_proposal_config(
-    dao: &mut DAO,
+    ou: &mut OU,
     ticket: ExecutionTicket<UpdateProposalConfig>,
 ) {
-    assert!(dao.id() == ticket.ticket_dao_id(), EDaoMismatch);
+    assert!(ou.id() == ticket.ticket_ou_id(), EOuMismatch);
 
     let payload = ticket.ticket_payload();
     let target_key = payload.target_type_key();
-    let name = resolve_display_key(dao, &target_key);
+    let name = resolve_display_key(ou, &target_key);
 
-    let existing = dao.type_config_by_name(&name);
+    let existing = ou.type_config_by_name(&name);
     let new_config = proposal::new_config(
         payload.quorum().destroy_with_default(existing.quorum()),
         payload.approval_threshold().destroy_with_default(existing.approval_threshold()),
@@ -119,21 +119,21 @@ public fun execute_update_proposal_config(
 
     assert_config_composability(&new_config);
 
-    dao.update_proposal_config<UpdateProposalConfig>(
+    ou.update_proposal_config<UpdateProposalConfig>(
         name,
         new_config,
         ticket.ticket_request(update_proposal_config::permit()),
     );
 
     event::emit(ProposalConfigUpdated {
-        dao_id: dao.id(),
+        ou_id: ou.id(),
         target_type_key: target_key,
     });
 
     ticket.discharge(update_proposal_config::permit());
 }
 
-/// Execute an UpdateMetadata proposal: update the DAO charter's IPFS CID.
+/// Execute an UpdateMetadata proposal: update the OU charter's IPFS CID.
 public fun execute_update_metadata(charter: &mut Charter, ticket: ExecutionTicket<UpdateMetadata>) {
     update_metadata_impl(
         charter,
@@ -146,11 +146,11 @@ public fun execute_update_metadata(charter: &mut Charter, ticket: ExecutionTicke
 // === Internal ===
 
 fun enable_proposal_type_impl<NewType: store>(
-    dao: &mut DAO,
+    ou: &mut OU,
     payload: &EnableProposalType,
     request: &ExecutionRequest<EnableProposalType>,
 ) {
-    assert!(dao.id() == request.req_dao_id(), EDaoMismatch);
+    assert!(ou.id() == request.req_ou_id(), EOuMismatch);
 
     let name = type_name::with_defining_ids<NewType>();
     assert!(name == payload.type_name(), ETypeMismatch);
@@ -158,16 +158,16 @@ fun enable_proposal_type_impl<NewType: store>(
     let type_key = payload.type_key();
     let config = *payload.config();
 
-    if (dao.controller_cap_id().is_some()) {
-        assert!(!dao::is_subdao_blocked_type(&name), ESubDAOBlockedType);
+    if (ou.controller_cap_id().is_some()) {
+        assert!(!ou::is_subou_blocked_type(&name), ESubOUBlockedType);
     };
 
     assert_config_composability(&config);
 
-    dao.enable_proposal_type<NewType, EnableProposalType>(type_key, config, request);
+    ou.enable_proposal_type<NewType, EnableProposalType>(type_key, config, request);
 
     event::emit(ProposalTypeEnabled {
-        dao_id: dao.id(),
+        ou_id: ou.id(),
         type_key,
     });
 }
@@ -177,10 +177,10 @@ fun update_metadata_impl(
     payload: &UpdateMetadata,
     request: &ExecutionRequest<UpdateMetadata>,
 ) {
-    assert!(charter.dao_id() == request.req_dao_id(), ECharterDaoMismatch);
+    assert!(charter.ou_id() == request.req_ou_id(), ECharterOuMismatch);
     charter.update_metadata(*payload.new_ipfs_cid(), request);
     event::emit(MetadataUpdated {
-        dao_id: charter.dao_id(),
+        ou_id: charter.ou_id(),
         new_ipfs_cid: *payload.new_ipfs_cid(),
     });
 }
@@ -188,7 +188,7 @@ fun update_metadata_impl(
 // === Submission wrapper ===
 
 /// Submit an UpdateProposalConfig proposal with submission-time floor enforcement.
-/// When the payload targets UpdateProposalConfig itself, asserts that the DAO's
+/// When the payload targets UpdateProposalConfig itself, asserts that the OU's
 /// current UpdateProposalConfig approval_threshold meets the 80% supermajority
 /// floor before creating the proposal. This is strictly stronger than the old
 /// execution-time check: a malicious downgrade proposal never enters the object
@@ -198,40 +198,40 @@ fun update_metadata_impl(
 ///
 /// Callers that need non-self-targeting UpdateProposalConfig submissions can use
 /// board_voting::submit_proposal<UpdateProposalConfig> directly. They are still
-/// held to 80%: dao keeps UpdateProposalConfig's own config at or above its floor.
+/// held to 80%: ou keeps UpdateProposalConfig's own config at or above its floor.
 #[allow(lint(share_owned, custom_state_change))]
 public fun propose_update_proposal_config(
-    dao: &DAO,
+    ou: &OU,
     metadata_ipfs: Option<String>,
     payload: UpdateProposalConfig,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
     let self_type = type_name::with_defining_ids<UpdateProposalConfig>();
-    let target = resolve_display_key(dao, &payload.target_type_key());
+    let target = resolve_display_key(ou, &payload.target_type_key());
 
     if (target == self_type) {
-        let config = dao.type_config_by_name(&self_type);
-        let floor = dao::min_approval_threshold_for_type(&self_type);
+        let config = ou.type_config_by_name(&self_type);
+        let floor = ou::min_approval_threshold_for_type(&self_type);
         assert!(config.approval_threshold() >= floor, EFloorNotMet);
     };
 
-    board_voting::submit_proposal<UpdateProposalConfig>(dao, metadata_ipfs, payload, clock, ctx);
+    board_voting::submit_proposal<UpdateProposalConfig>(ou, metadata_ipfs, payload, clock, ctx);
 }
 
 // === Internal ===
 
 /// Resolve a display key to the enabled type carrying it, aborting with
 /// ETypeNotEnabled if no enabled type has that display key.
-fun resolve_display_key(dao: &DAO, type_key: &std::ascii::String): TypeName {
-    let name = dao.type_for_display_key(type_key);
+fun resolve_display_key(ou: &OU, type_key: &std::ascii::String): TypeName {
+    let name = ou.type_for_display_key(type_key);
     assert!(name.is_some(), ETypeNotEnabled);
     name.destroy_some()
 }
 
 /// Abort if the type is one of the core undisableable types.
 fun assert_disableable(name: &TypeName) {
-    assert!(!dao::is_undisableable_type(name), EUndisableableType);
+    assert!(!ou::is_undisableable_type(name), EUndisableableType);
 }
 
 /// Enforce the composability–cooldown mutual exclusion:

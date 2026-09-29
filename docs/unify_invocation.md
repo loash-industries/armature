@@ -4,7 +4,7 @@
 
 ### Summary
 
-Composition is currently opt-in **per proposal type** at the source level: a type can only appear as a step in a composite if a maintainer hand-writes a `_step` sister handler for it. Today **7 of ~25** proposal types have one. This makes composability a privilege the framework grants type-by-type rather than an ambient property of *being* a proposal type — friction that grows linearly with the proposal set and works against the goal of giving DAOs an open, expressive governance language.
+Composition is currently opt-in **per proposal type** at the source level: a type can only appear as a step in a composite if a maintainer hand-writes a `_step` sister handler for it. Today **7 of ~25** proposal types have one. This makes composability a privilege the framework grants type-by-type rather than an ambient property of *being* a proposal type — friction that grows linearly with the proposal set and works against the goal of giving OUs an open, expressive governance language.
 
 This issue proposes consolidating the three execution paths behind a single `ExecutionTicket<P>` hot potato so that **writing one handler per type makes it standalone-, composite-, and external-executable simultaneously**, with no `_step` twin.
 
@@ -24,20 +24,20 @@ The `_step` twin exists purely to reconcile two ownership facts between paths 1 
 
 ```move
 // today — two functions, identical effect, differing only in ownership/discharge
-public fun execute_add_member(dao, proposal: &Proposal<AddMember>, request) {
-    add_member_impl(dao, proposal.payload(), &request);   // borrow
+public fun execute_add_member(ou, proposal: &Proposal<AddMember>, request) {
+    add_member_impl(ou, proposal.payload(), &request);   // borrow
     proposal::finalize(request, proposal);                // strict close-out
 }
-public fun execute_add_member_step(dao, payload: AddMember, request) {
-    add_member_impl(dao, &payload, &request);             // owned
+public fun execute_add_member_step(ou, payload: AddMember, request) {
+    add_member_impl(ou, &payload, &request);             // owned
     proposal::consume_execution_request(request);         // light close-out
 }
 ```
 
 ### Pain points
 
-- **Linear maintenance tax:** every type a DAO might want to bundle needs a `_step` twin authored, reviewed, and kept in sync with its primary handler. (Plus `composable_allowed` opt-in and SDK/PTB-builder support — but those are intrinsic; the twin is not.)
-- **Composition is gated by us, not expressed by DAOs:** a DAO cannot compose a perfectly valid proposal type simply because no one wrote its twin. This contradicts the design goal that proposal-set expansion should *automatically* grant composition.
+- **Linear maintenance tax:** every type an OU might want to bundle needs a `_step` twin authored, reviewed, and kept in sync with its primary handler. (Plus `composable_allowed` opt-in and SDK/PTB-builder support — but those are intrinsic; the twin is not.)
+- **Composition is gated by us, not expressed by OUs:** an OU cannot compose a perfectly valid proposal type simply because no one wrote its twin. This contradicts the design goal that proposal-set expansion should *automatically* grant composition.
 - **Twins aren't always trivial:** some carry type params and per-type subtleties (`execute_enable_proposal_type_step<NewType>`), so "mechanical boilerplate" undersells the risk surface.
 
 ### Proposal: `ExecutionTicket<P>`
@@ -53,14 +53,14 @@ public struct ExecutionTicket<P> {           // hot potato — no abilities
 public enum Closeout has drop { Standalone { proposal_id: ID }, Composite, External }
 
 // Three mints (authorization differs intrinsically — see C2), one ticket type:
-public fun ticket_from_vote<P>(dao, prop: &mut Proposal<P>, freeze, clock, ctx): ExecutionTicket<P>
-public fun ticket_from_cap<P>(cap, dao, freeze, type_key, payload, clock, ctx): ExecutionTicket<P>
+public fun ticket_from_vote<P>(ou, prop: &mut Proposal<P>, freeze, clock, ctx): ExecutionTicket<P>
+public fun ticket_from_cap<P>(cap, ou, freeze, type_key, payload, clock, ctx): ExecutionTicket<P>
 public fun ticket_from_step<P>(...): ExecutionTicket<P>   // called by composite::advance_step
 
 // ONE handler per type — borrows req for vault auth, consumes ticket at the end:
-public fun execute_add_member(dao: &mut DAO, ticket: ExecutionTicket<AddMember>) {
+public fun execute_add_member(ou: &mut OU, ticket: ExecutionTicket<AddMember>) {
     let (payload, req) = ticket.borrow_for_exec();   // &req available for vault calls
-    add_member_impl(dao, &payload, &req);
+    add_member_impl(ou, &payload, &req);
     ticket.discharge();                              // finalize-or-consume by closeout tag
 }
 ```
@@ -81,7 +81,7 @@ The vote path currently keeps the payload borrowed inside the persistent `Propos
 - **C1 — handlers only read the payload.** No handler takes `&mut Proposal` or uses the proposal post-extraction, so moving the payload out is behaviorally safe.
 - **C2 — authorization differs per path and cannot be unified.** Vote (delay + cooldown + board-member), external (capability), composite (per-step freeze + cooldown vs. snapshot) are genuinely different. Unification is at the **handler** boundary, not the mint boundary — there will still be three constructors. This proposal does **not** claim "one path to rule them all."
 - **C3 — external path already fits.** `external_executed_create` already takes `payload: P` by value.
-- **C4 — `ExecutionRequest` is a load-bearing authz token, not just a lifecycle marker.** `treasury_vault::withdraw`, `capability_vault` store/send/receive, and `spend_guard` take `&ExecutionRequest<P>` and check `req_dao_id()`. **Therefore the request must remain a distinct, borrowable value** — the ticket *contains* and exposes `&request`; it does not replace it.
+- **C4 — `ExecutionRequest` is a load-bearing authz token, not just a lifecycle marker.** `treasury_vault::withdraw`, `capability_vault` store/send/receive, and `spend_guard` take `&ExecutionRequest<P>` and check `req_ou_id()`. **Therefore the request must remain a distinct, borrowable value** — the ticket *contains* and exposes `&request`; it does not replace it.
 
 ### Migration
 
@@ -97,7 +97,7 @@ Scope: ~8 mint/handler sites in `armature_proposals`, plus `composite.move`, `ex
 
 1. **`Option<P>` slot vs. move-out-and-drop:** keep the executed `Proposal` as a `None`-payload audit record (recommended), or drop the proposal entirely on execute? Affects indexers that read historical payloads.
 2. **`finalize`'s status assertion:** the strict `status == Executed` check moves into `discharge()` for the standalone closeout; confirm no external tooling depends on calling `finalize` directly.
-3. **Nesting & dataflow:** this unifies *execution* but deliberately keeps the "ordered independent actions" model (no inter-step dataflow, no nested composites). If DAO-expressible dataflow is a future goal, it's a separate, larger design — flag now so we don't design ourselves into a corner.
+3. **Nesting & dataflow:** this unifies *execution* but deliberately keeps the "ordered independent actions" model (no inter-step dataflow, no nested composites). If OU-expressible dataflow is a future goal, it's a separate, larger design — flag now so we don't design ourselves into a corner.
 4. **Should `composable_allowed` survive at all?** If composition becomes automatic, the deny-by-default gate (from #137) becomes the *only* remaining per-type opt-in. Is that gate still wanted as a safety valve, or does unification make it redundant for non-floor-gated types?
 
 ### Acceptance criteria

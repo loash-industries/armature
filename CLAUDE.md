@@ -2,7 +2,7 @@
 
 ## About This Repo
 
-`armature` is the on-chain DAO protocol for the Trinary Exchange platform — a programmable governance, treasury, and capability framework written in Move for the Sui blockchain. It also contains the React UI dashboard. For full context see `.cortex/overview.md`.
+`armature` is the on-chain OU protocol for the Trinary Exchange platform — a programmable governance, treasury, and capability framework written in Move for the Sui blockchain. It also contains the React UI dashboard. For full context see `.cortex/overview.md`.
 
 The Rust indexer lives in the separate `armature-indexer` repo.
 

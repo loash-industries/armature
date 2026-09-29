@@ -12,7 +12,7 @@ Stretch features have been split into individual documents for easier navigation
 |---|---|---|
 | Federation System | Not implemented | [stretch/01_federation.md](stretch/01_federation.md) |
 | Governance Models (Direct, Weighted) | Superseded: removed; Board is the only model | [stretch/02_governance_models.md](stretch/02_governance_models.md) |
-| Migration via SpawnDAO | Implemented (`SpawnDAO`, `TransferAssets`, `dao::destroy`); with Board the only model, it moves assets to a successor rather than changing governance model | [stretch/03_migration.md](stretch/03_migration.md) |
+| Migration via SpawnOU | Implemented (`SpawnOU`, `TransferAssets`, `ou::destroy`); with Board the only model, it moves assets to a successor rather than changing governance model | [stretch/03_migration.md](stretch/03_migration.md) |
 | Project Funding Lifecycle | Not implemented | [stretch/04_project_funding.md](stretch/04_project_funding.md) |
 | Advanced Proposals | Implemented | [stretch/05_advanced_proposals.md](stretch/05_advanced_proposals.md) |
 | EVE Infrastructure Integration | Partially implemented (autojoin, tribe constructors) | [stretch/06_eve_infrastructure.md](stretch/06_eve_infrastructure.md) |

@@ -2,15 +2,15 @@
 
 ## Summary
 
-Board membership changes through five framework types, all seeded on every DAO with fixed permission bits and no approval floor:
+Board membership changes through five framework types, all seeded on every OU with fixed permission bits and no approval floor:
 
 | Type | Handler | Bit | Event |
 |------|---------|-----|-------|
-| `SetBoard { to_add, to_remove }` | `board_ops::execute_set_board(dao, ticket)` | `BOARD_SET` | `BoardUpdated { dao_id, added, removed }` |
-| `AddMember { member }` | `member_ops::execute_add_member(dao, ticket)` | `BOARD_ADD` | `MemberAdded` |
-| `RemoveMember { member }` | `member_ops::execute_remove_member(dao, ticket)` | `BOARD_REMOVE` | `MemberRemoved` |
-| `BatchAddMembers { members }` | `member_ops::execute_batch_add_members(dao, ticket)` | `BOARD_ADD` | `MembersBatchAdded { dao_id, added, skipped }` |
-| `BatchRemoveMembers { members }` | `member_ops::execute_batch_remove_members(dao, ticket)` | `BOARD_REMOVE` | `MembersBatchRemoved { dao_id, removed }` |
+| `SetBoard { to_add, to_remove }` | `board_ops::execute_set_board(ou, ticket)` | `BOARD_SET` | `BoardUpdated { ou_id, added, removed }` |
+| `AddMember { member }` | `member_ops::execute_add_member(ou, ticket)` | `BOARD_ADD` | `MemberAdded` |
+| `RemoveMember { member }` | `member_ops::execute_remove_member(ou, ticket)` | `BOARD_REMOVE` | `MemberRemoved` |
+| `BatchAddMembers { members }` | `member_ops::execute_batch_add_members(ou, ticket)` | `BOARD_ADD` | `MembersBatchAdded { ou_id, added, skipped }` |
+| `BatchRemoveMembers { members }` | `member_ops::execute_batch_remove_members(ou, ticket)` | `BOARD_REMOVE` | `MembersBatchRemoved { ou_id, removed }` |
 
 `SetBoard` applies a **diff**, not a full-slate replacement: the roster is a `Table<address, Member>`, which cannot be enumerated on-chain. Replacing the whole board means listing every current member in `to_remove` and the new ones in `to_add`. `governance::set_board` validates everything before mutating, in this order:
 
@@ -20,14 +20,14 @@ Board membership changes through five framework types, all seeded on every DAO w
 4. An address in `to_remove` is not a member → `governance::ENotBoardMember`
 5. The result would be empty → `governance::EEmptyBoard`
 
-Each change advances `roster_version` once (a batch counts once; a batch add that adds nobody does not advance it) and updates `member_count`. Removed members keep a closed tenure; re-adding opens a new one. Any removal rotates the DAO's `encrypt_epoch` (Seal-encrypted entries). The handlers check the ticket's DAO (`board_ops::EDaoMismatch`, `member_ops::EDaoMismatch`), and the `dao` mutators check the bit (`proposal::EPermissionDenied`).
+Each change advances `roster_version` once (a batch counts once; a batch add that adds nobody does not advance it) and updates `member_count`. Removed members keep a closed tenure; re-adding opens a new one. Any removal rotates the OU's `encrypt_epoch` (Seal-encrypted entries). The handlers check the ticket's OU (`board_ops::EOuMismatch`, `member_ops::EOuMismatch`), and the `ou` mutators check the bit (`proposal::EPermissionDenied`).
 
 Effects on governance rights, all immediate:
 
 - A removed member can no longer submit (`governance::ENotBoardMember`) or execute (`proposal::ENotEligible`), but can still vote on proposals created while they were a member (eligibility is `was_member_at(snapshot_version)`).
 - An added member can submit at once, but cannot vote on proposals created before they joined (`proposal::ENotInSnapshot`).
 
-Default configs: quorum 5000, threshold 5000, delay 0; `SetBoard`, `AddMember` and `RemoveMember` are composable, the batch types are not. With delay 0 these types can take the atomic single-vote path; `09_board_voting.md` recommends a non-zero delay for them. A controller changes a SubDAO's board with `ControllerBatchAddMembers` / `ControllerBatchRemoveMembers` (`13_subdao_ops.md`).
+Default configs: quorum 5000, threshold 5000, delay 0; `SetBoard`, `AddMember` and `RemoveMember` are composable, the batch types are not. With delay 0 these types can take the atomic single-vote path; `09_board_voting.md` recommends a non-zero delay for them. A controller changes a SubOU's board with `ControllerBatchAddMembers` / `ControllerBatchRemoveMembers` (`13_subou_ops.md`).
 
 Real suites: `packages/armature_proposals/tests/board_ops_tests.move` (6) and `member_ops_tests.move` (15), plus tests cited from `encrypted_entry_tests.move`, `gate_tests.move`, `proposal_tests.move`, `composite_tests.move` and `lifecycle_tests.move`.
 
@@ -47,14 +47,14 @@ Real suites: `packages/armature_proposals/tests/board_ops_tests.move` (6) and `m
 | SetBoard | `encrypted_entry_tests::test_setboard_full_replacement_rotates_epoch` | Add and remove in one change: epoch bumped |
 | SetBoard | `gate_tests::set_board_governance_needs_board_set` | Request with every bit but BOARD_SET: Abort `proposal::EPermissionDenied` |
 | SetBoard | `composite_tests::composite_set_board_step_e2e` | SetBoard runs as a composite step |
-| SetBoard | `dao_tests::test_board_governance_persists_across_proposals` | Governance is still Board after a set_board change |
+| SetBoard | `ou_tests::test_board_governance_persists_across_proposals` | Governance is still Board after a set_board change |
 | SetBoard | `lifecycle_tests::small_startup_lifecycle` | After [A, B, C] → [A, B, D, E], D proposes and D + E pass a payment |
 | SetBoard | `test_set_board__add_existing_member_aborts` (planned) | Abort `governance::EDuplicateBoardMember` |
 | SetBoard | `test_set_board__remove_non_member_aborts` (planned) | Abort `governance::ENotBoardMember` |
 | SetBoard | `test_set_board__address_in_both_lists_aborts` (planned) | Abort `governance::EDuplicateBoardMember` |
 | SetBoard | `test_set_board__removed_member_cannot_propose_aborts` (planned) | Removed member calls `submit_proposal`: Abort `governance::ENotBoardMember` |
 | SetBoard | `test_set_board__updates_member_count_and_roster_version` (planned) | `member_count` = new size; `roster_version` + 1 |
-| SetBoard | `test_set_board__emits_board_updated` (planned) | `BoardUpdated { dao_id, added: to_add, removed: to_remove }` |
+| SetBoard | `test_set_board__emits_board_updated` (planned) | `BoardUpdated { ou_id, added: to_add, removed: to_remove }` |
 | AddMember | `test_add_member_e2e` | Member added |
 | AddMember | `test_add_member_duplicate_aborts` | Already a member: Abort `governance::EDuplicateBoardMember` |
 | RemoveMember | `test_remove_member_e2e` | Member removed |
@@ -74,7 +74,7 @@ Real suites: `packages/armature_proposals/tests/board_ops_tests.move` (6) and `m
 | (roster) | `proposal_tests::test_removed_member_keeps_vote_on_old_proposal` | A removed member still votes on an older proposal |
 | (roster) | `proposal_tests::test_new_member_cannot_vote_on_old_proposal` | Abort `proposal::ENotInSnapshot` |
 | (roster) | `proposal_tests::test_removed_member_cannot_execute` | Abort `proposal::ENotEligible` |
-| (roster) | `dao_tests::test_root_size_independent_of_board_size` | Adding and removing a batch of members leaves the DAO root's BCS size unchanged |
+| (roster) | `ou_tests::test_root_size_independent_of_board_size` | Adding and removing a batch of members leaves the OU root's BCS size unchanged |
 
 Unqualified names are in `board_ops_tests.move` (SetBoard) or `member_ops_tests.move` (member types). The five mutator gates (`add_board_member(s)_governance`, `remove_board_member(s)_governance`, `set_board_governance`) each have a denial test in `gate_tests.move`.
 
@@ -89,13 +89,13 @@ Unqualified names are in `board_ops_tests.move` (SetBoard) or `member_ops_tests.
 ```move
 // test_set_board_e2e (condensed)
 let payload = set_board::new(vector[NEW_MEMBER], vector[]); // to_add, to_remove
-board_voting::submit_proposal(&dao, option::some(string::utf8(b"Add NEW_MEMBER to board")), payload, &clock, scenario.ctx());
+board_voting::submit_proposal(&ou, option::some(string::utf8(b"Add NEW_MEMBER to board")), payload, &clock, scenario.ctx());
 // CREATOR votes YES: 1 of 2 meets quorum 5000 and threshold 5000
 ...
-let ticket = board_voting::ticket_from_vote(&mut dao, proposal, &freeze, &clock, scenario.ctx());
-board_ops::execute_set_board(&mut dao, ticket);
+let ticket = board_voting::ticket_from_vote(&mut ou, proposal, &freeze, &clock, scenario.ctx());
+board_ops::execute_set_board(&mut ou, ticket);
 
-let gov = dao.governance();
+let gov = ou.governance();
 assert!(gov.is_board_member(CREATOR));
 assert!(gov.is_board_member(MEMBER_B));
 assert!(gov.is_board_member(NEW_MEMBER));
@@ -107,19 +107,19 @@ assert!(gov.is_board_member(NEW_MEMBER));
 
 ### SetBoard: the board can never be empty
 
-**Why it matters:** A zero-member board could never propose, vote or execute again; the DAO would be permanently ungovernable.
+**Why it matters:** A zero-member board could never propose, vote or execute again; the OU would be permanently ungovernable.
 
 ```move
 #[test, expected_failure(abort_code = armature::governance::EEmptyBoard)]
 fun test_set_board_empty_members_aborts() {
-    // DAO [CREATOR, MEMBER_B]
+    // OU [CREATOR, MEMBER_B]
     let payload = set_board::new(vector[], vector[CREATOR, MEMBER_B]);
     // ... submit, vote, ticket_from_vote ...
-    board_ops::execute_set_board(&mut dao, ticket); // aborts in governance::set_board
+    board_ops::execute_set_board(&mut ou, ticket); // aborts in governance::set_board
 }
 ```
 
-`RemoveMember` and `BatchRemoveMembers` enforce the same rule (`test_remove_last_member_aborts`, `test_batch_remove_members_would_empty_aborts`), as does DAO creation with an empty initial board (`tribe_tests::create_tribe_aborts_on_empty_tribe_board`).
+`RemoveMember` and `BatchRemoveMembers` enforce the same rule (`test_remove_last_member_aborts`, `test_batch_remove_members_would_empty_aborts`), as does OU creation with an empty initial board (`tribe_tests::create_tribe_aborts_on_empty_tribe_board`).
 
 ---
 
@@ -129,13 +129,13 @@ fun test_set_board_empty_members_aborts() {
 
 **Why it matters:** A no-op change would still advance `roster_version` and emit `BoardUpdated`, misleading indexers into recording a membership change.
 
-`encrypted_entry_tests::test_setboard_empty_change_aborts` calls `dao.set_board_governance(vector[], vector[], &req)` with a test request.
+`encrypted_entry_tests::test_setboard_empty_change_aborts` calls `ou.set_board_governance(vector[], vector[], &req)` with a test request.
 
 ---
 
 ### SetBoard: removals rotate the encryption epoch
 
-**Requirement:** `dao::set_board_governance` bumps `encrypt_epoch` whenever `to_remove` is non-empty; additions alone leave it unchanged. `remove_board_member(s)_governance` bump it on every call.
+**Requirement:** `ou::set_board_governance` bumps `encrypt_epoch` whenever `to_remove` is non-empty; additions alone leave it unchanged. `remove_board_member(s)_governance` bump it on every call.
 
 **Why it matters:** Seal-encrypted entries are keyed to the epoch. A removed member must not be able to read entries published after they left.
 
@@ -162,7 +162,7 @@ fun test_set_board_empty_members_aborts() {
 // test_add_member_duplicate_aborts
 let payload = add_member::new(MEMBER_B); // MEMBER_B is already on the board
 // ... submit, vote, ticket_from_vote ...
-member_ops::execute_add_member(&mut dao, ticket); // Abort governance::EDuplicateBoardMember
+member_ops::execute_add_member(&mut ou, ticket); // Abort governance::EDuplicateBoardMember
 ```
 
 `test_remove_nonmember_aborts` (`governance::ENotBoardMember`) and `test_remove_last_member_aborts` (`governance::EEmptyBoard`) cover RemoveMember.
@@ -179,8 +179,8 @@ member_ops::execute_add_member(&mut dao, ticket); // Abort governance::EDuplicat
 // test_batch_add_members_existing_member_skipped
 let payload = batch_add_members::new(vector[BATCH_MEMBER_1, MEMBER_B]); // MEMBER_B already a member
 // ... submit, vote, ticket_from_vote ...
-member_ops::execute_batch_add_members(&mut dao, ticket);
-let gov = dao.governance();
+member_ops::execute_batch_add_members(&mut ou, ticket);
+let gov = ou.governance();
 assert!(gov.is_board_member(BATCH_MEMBER_1));
 assert!(gov.is_board_member(MEMBER_B));
 ```
@@ -197,10 +197,10 @@ assert!(gov.is_board_member(MEMBER_B));
 
 ---
 
-### The roster does not grow the DAO root
+### The roster does not grow the OU root
 
-**Requirement:** The roster is a `Table`, so the DAO object's serialized size is independent of the board's size.
+**Requirement:** The roster is a `Table`, so the OU object's serialized size is independent of the board's size.
 
-**Why it matters:** Sui charges storage and computation on the whole object on every write; a board stored inline would make every DAO transaction more expensive as the board grows.
+**Why it matters:** Sui charges storage and computation on the whole object on every write; a board stored inline would make every OU transaction more expensive as the board grows.
 
-`dao_tests::test_root_size_independent_of_board_size` adds a batch of 20 members and removes them, asserting `member_count` and that `std::bcs::to_bytes(&dao).length()` is unchanged at each step.
+`ou_tests::test_root_size_independent_of_board_size` adds a batch of 20 members and removes them, asserting `member_count` and that `std::bcs::to_bytes(&ou).length()` is unchanged at each step.

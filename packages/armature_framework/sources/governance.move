@@ -19,7 +19,7 @@ const BOARD_MEMBER_VOTE_WEIGHT: u64 = 1;
 /// Board governance: one member, one vote. The roster may be mutated by
 /// authorized proposal handlers.
 ///
-/// The roster lives in a `Table`, not inline, so the DAO root's size does not
+/// The roster lives in a `Table`, not inline, so the OU root's size does not
 /// grow with the board: Sui charges the non-refundable storage fee and per-byte
 /// computation on the whole object on every write.
 ///
@@ -52,15 +52,15 @@ public struct Tenure has copy, drop, store {
     left: Option<u64>,
 }
 
-/// Initialization payload for creating a DAO with a specific governance model.
-/// Consumed once during DAO creation.
+/// Initialization payload for creating an OU with a specific governance model.
+/// Consumed once during OU creation.
 public enum GovernanceTypeInit has copy, drop, store {
     InitBoard { initial_members: vector<address> },
 }
 
 // === GovernanceTypeInit constructors ===
 
-/// Create an InitBoard payload for DAO creation.
+/// Create an InitBoard payload for OU creation.
 public fun init_board(initial_members: vector<address>): GovernanceTypeInit {
     GovernanceTypeInit::InitBoard { initial_members }
 }

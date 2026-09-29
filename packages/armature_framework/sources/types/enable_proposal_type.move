@@ -4,16 +4,16 @@ use armature::proposal::ProposalConfig;
 use std::internal::{Self, Permit};
 use std::type_name::TypeName;
 
-/// Enable a new proposal type on the DAO with mandatory config.
+/// Enable a new proposal type on the OU with mandatory config.
 ///
 /// `type_name` pins the exact Move type the voters approved. The handler
 /// (`admin_ops::execute_enable_proposal_type<NewType>`) asserts that
 /// `NewType` matches it, so an executor cannot register a different payload
 /// type under the display key the board voted on.
 ///
-/// Proposals of this type need an 80% approval threshold (dao floor).
+/// Proposals of this type need an 80% approval threshold (ou floor).
 public struct EnableProposalType has drop, store {
-    /// Human-readable label shown in events and the UI. Unique per DAO.
+    /// Human-readable label shown in events and the UI. Unique per OU.
     type_key: std::ascii::String,
     /// Canonical Move type (`std::type_name::with_defining_ids<T>()`) being enabled.
     type_name: TypeName,

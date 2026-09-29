@@ -1,4 +1,4 @@
-module armature::dao;
+module armature::ou;
 
 use armature::add_member::AddMember;
 use armature::batch_add_members::BatchAddMembers;
@@ -6,7 +6,7 @@ use armature::batch_remove_members::BatchRemoveMembers;
 use armature::capability_vault;
 use armature::charter;
 use armature::composite_payload::CompositePayload;
-use armature::create_subdao::CreateSubDAO;
+use armature::create_subou::CreateSubOU;
 use armature::disable_bypass_type::DisableBypassType;
 use armature::disable_proposal_type::DisableProposalType;
 use armature::emergency;
@@ -17,8 +17,8 @@ use armature::permissions;
 use armature::proposal::{Self, ExecutionRequest, ProposalConfig};
 use armature::remove_member::RemoveMember;
 use armature::set_board::SetBoard;
-use armature::spawn_dao::SpawnDAO;
-use armature::spin_out_subdao::SpinOutSubDAO;
+use armature::spawn_ou::SpawnOU;
+use armature::spin_out_subou::SpinOutSubOU;
 use armature::transfer_assets::TransferAssets;
 use armature::transfer_freeze_admin::TransferFreezeAdmin;
 use armature::treasury_vault;
@@ -35,7 +35,7 @@ use sui::event;
 // === Errors ===
 
 const EInvalidName: u64 = 0;
-const EDAOIdMismatch: u64 = 2;
+const EOUIdMismatch: u64 = 2;
 const ENotMigrating: u64 = 3;
 const ETreasuryIdMismatch: u64 = 4;
 const EVaultIdMismatch: u64 = 5;
@@ -47,9 +47,9 @@ const EEntryIdNotFound: u64 = 9;
 const EBlockedProposalType: u64 = 11;
 /// Override sets approval_threshold below the hardcoded minimum for the type.
 const EThresholdBelowMinimum: u64 = 12;
-/// The proposal type has no slot on this DAO (not enabled).
+/// The proposal type has no slot on this OU (not enabled).
 const ETypeNotEnabled: u64 = 13;
-/// The proposal type already has a slot on this DAO.
+/// The proposal type already has a slot on this OU.
 const ETypeAlreadyEnabled: u64 = 14;
 /// Another enabled type already uses this display key.
 const EDisplayKeyTaken: u64 = 15;
@@ -105,39 +105,39 @@ const HIGH_PERMISSION_MIN_THRESHOLD: u16 = 8_000;
 
 // === Enums ===
 
-/// DAO lifecycle status.
-public enum DAOStatus has copy, drop, store {
+/// OU lifecycle status.
+public enum OUStatus has copy, drop, store {
     Active,
-    Migrating { successor_dao_id: ID },
+    Migrating { successor_ou_id: ID },
 }
 
 /// Returns true if the status is Active.
-public fun is_active(self: &DAOStatus): bool {
+public fun is_active(self: &OUStatus): bool {
     match (self) {
-        DAOStatus::Active => true,
+        OUStatus::Active => true,
         _ => false,
     }
 }
 
 /// Returns true if the status is Migrating.
-public fun is_migrating(self: &DAOStatus): bool {
+public fun is_migrating(self: &OUStatus): bool {
     match (self) {
-        DAOStatus::Migrating { .. } => true,
+        OUStatus::Migrating { .. } => true,
         _ => false,
     }
 }
 
-/// Returns the successor DAO ID if the status is Migrating.
-public fun successor_dao_id(self: &DAOStatus): ID {
+/// Returns the successor OU ID if the status is Migrating.
+public fun successor_ou_id(self: &OUStatus): ID {
     match (self) {
-        DAOStatus::Migrating { successor_dao_id } => *successor_dao_id,
+        OUStatus::Migrating { successor_ou_id } => *successor_ou_id,
         _ => abort 0,
     }
 }
 
 // === Structs ===
 
-/// The core DAO shared object. Holds governance configuration, lifecycle
+/// The core OU shared object. Holds governance configuration, lifecycle
 /// flags and references to companion objects.
 ///
 /// The proposal-type registry is NOT stored inline. Each enabled proposal
@@ -151,9 +151,9 @@ public fun successor_dao_id(self: &DAOStatus): ID {
 /// regardless of how many types are enabled. Sui charges the non-refundable
 /// storage fee and per-byte computation on the whole object written, so the
 /// hot path (submit, execute) only ever touches the root plus one slot.
-public struct DAO has key, store {
+public struct OU has key, store {
     id: UID,
-    status: DAOStatus,
+    status: OUStatus,
     governance: GovernanceConfig,
     treasury_id: ID,
     capability_vault_id: ID,
@@ -181,7 +181,7 @@ public struct DisplayKey has copy, drop, store {
 /// Registry entry for one enabled proposal type. One dynamic field per type.
 ///
 /// `display_key` is the human-readable label carried in events and
-/// `Proposal.type_key`; it is unique per DAO but carries no authority. The
+/// `Proposal.type_key`; it is unique per OU but carries no authority. The
 /// slot key (the Move type) is the only thing submission and execution consult,
 /// so a payload of type `Q` can never be submitted under `P`'s slot.
 public struct ProposalType has store {
@@ -194,7 +194,7 @@ public struct ProposalType has store {
 /// Construction-time initializer for a proposal-type slot: the type to enable,
 /// its display key and its config. Build one per type with `new_type_init<T>`
 /// and pass a vector of them as `config_overrides` to the `*_configured`
-/// constructors and `tribe::create_wired_subdao`.
+/// constructors and `tribe::create_wired_subou`.
 public struct ProposalTypeInit has copy, drop, store {
     type_name: TypeName,
     display_key: std::ascii::String,
@@ -203,9 +203,9 @@ public struct ProposalTypeInit has copy, drop, store {
 
 // === Events ===
 
-/// Emitted when a new DAO is created.
-public struct DAOCreated has copy, drop {
-    dao_id: ID,
+/// Emitted when a new OU is created.
+public struct OUCreated has copy, drop {
+    ou_id: ID,
     treasury_id: ID,
     capability_vault_id: ID,
     charter_id: ID,
@@ -213,26 +213,26 @@ public struct DAOCreated has copy, drop {
     creator: address,
 }
 
-/// Emitted immediately after DAOCreated to record the initial board members.
-/// Kept as a separate event so DAOCreated's layout remains stable across upgrades.
-public struct DAOBoardInitialized has copy, drop {
-    dao_id: ID,
+/// Emitted immediately after OUCreated to record the initial board members.
+/// Kept as a separate event so OUCreated's layout remains stable across upgrades.
+public struct OUBoardInitialized has copy, drop {
+    ou_id: ID,
     initial_members: vector<address>,
 }
 
-/// Emitted whenever a proposal-type slot is added to a DAO: at construction
+/// Emitted whenever a proposal-type slot is added to an OU: at construction
 /// for the default types, and on every EnableProposalType / EnableBypassType /
 /// spin-out enable afterwards. `type_name` is the canonical Move type.
 public struct TypeSlotAdded has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     type_name: std::ascii::String,
     display_key: std::ascii::String,
     config: ProposalConfig,
 }
 
-/// Emitted whenever a proposal-type slot is removed from a DAO.
+/// Emitted whenever a proposal-type slot is removed from an OU.
 public struct TypeSlotRemoved has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     type_name: std::ascii::String,
     display_key: std::ascii::String,
 }
@@ -240,7 +240,7 @@ public struct TypeSlotRemoved has copy, drop {
 /// Emitted whenever a slot's config is replaced (UpdateProposalConfig or a
 /// construction-time override of a default type).
 public struct TypeSlotConfigUpdated has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     type_name: std::ascii::String,
     display_key: std::ascii::String,
     config: ProposalConfig,
@@ -249,20 +249,20 @@ public struct TypeSlotConfigUpdated has copy, drop {
 /// Emitted when the encryption epoch is incremented, either automatically on
 /// member removal via SetBoard or explicitly via rotate_encryption_epoch.
 public struct EncryptionEpochRotated has copy, drop {
-    dao_id: ID,
+    ou_id: ID,
     old_epoch: u64,
     new_epoch: u64,
 }
 
-/// Emitted when a Migrating DAO is permanently destroyed.
-public struct DAODestroyed has copy, drop {
-    dao_id: ID,
-    successor_dao_id: ID,
+/// Emitted when a Migrating OU is permanently destroyed.
+public struct OUDestroyed has copy, drop {
+    ou_id: ID,
+    successor_ou_id: ID,
 }
 
 // === Constructors ===
 
-/// Create a new DAO with all companion objects.
+/// Create a new OU with all companion objects.
 /// The governance type is determined by `gov_init` and is immutable after creation.
 /// All companion objects are shared. The FreezeAdminCap is transferred to the creator.
 public fun create(
@@ -271,7 +271,7 @@ public fun create(
     metadata_uri: String,
     ctx: &mut TxContext,
 ): ID {
-    let (dao, treasury, cap_vault, dao_charter, freeze, freeze_admin_cap) = build(
+    let (ou, treasury, cap_vault, ou_charter, freeze, freeze_admin_cap) = build(
         gov_init,
         name,
         metadata_uri,
@@ -279,23 +279,23 @@ public fun create(
         vector[],
         ctx,
     );
-    let dao_id = object::id(&dao);
+    let ou_id = object::id(&ou);
 
-    transfer::share_object(dao);
+    transfer::share_object(ou);
     treasury_vault::share(treasury);
     capability_vault::share(cap_vault);
-    charter::share(dao_charter);
+    charter::share(ou_charter);
     emergency::share(freeze);
 
     emergency::transfer_admin_cap(freeze_admin_cap, ctx.sender());
 
-    dao_id
+    ou_id
 }
 
-/// Create a parent DAO without sharing the CapabilityVault.
+/// Create a parent OU without sharing the CapabilityVault.
 /// All other companion objects are shared; the freeze admin cap is transferred
-/// to the creator. Returns the dao_id and the un-shared vault so the caller
-/// can populate it with SubDAOControls before sharing.
+/// to the creator. Returns the ou_id and the un-shared vault so the caller
+/// can populate it with SubOUControls before sharing.
 /// Only callable within the framework package.
 public(package) fun create_returning_vault(
     gov_init: &GovernanceTypeInit,
@@ -309,7 +309,7 @@ public(package) fun create_returning_vault(
 /// Like `create_returning_vault` but applies `config_overrides` over the default
 /// proposal-type slots before sharing. Existing types have their config replaced;
 /// types not yet enabled are inserted and enabled. No types are blocked for parent
-/// DAOs — hierarchy-altering types (CreateSubDAO, SpawnDAO, etc.) are legitimately
+/// OUs — hierarchy-altering types (CreateSubOU, SpawnOU, etc.) are legitimately
 /// part of a parent's config. Only callable within the framework package.
 public(package) fun create_returning_vault_configured(
     gov_init: &GovernanceTypeInit,
@@ -318,7 +318,7 @@ public(package) fun create_returning_vault_configured(
     config_overrides: vector<ProposalTypeInit>,
     ctx: &mut TxContext,
 ): (ID, capability_vault::CapabilityVault) {
-    let (dao, treasury, cap_vault, dao_charter, freeze, freeze_admin_cap) = build(
+    let (ou, treasury, cap_vault, ou_charter, freeze, freeze_admin_cap) = build(
         gov_init,
         name,
         metadata_uri,
@@ -326,30 +326,30 @@ public(package) fun create_returning_vault_configured(
         config_overrides,
         ctx,
     );
-    let dao_id = object::id(&dao);
+    let ou_id = object::id(&ou);
 
-    transfer::share_object(dao);
+    transfer::share_object(ou);
     treasury_vault::share(treasury);
-    charter::share(dao_charter);
+    charter::share(ou_charter);
     emergency::share(freeze);
 
     emergency::transfer_admin_cap(freeze_admin_cap, ctx.sender());
 
-    (dao_id, cap_vault)
+    (ou_id, cap_vault)
 }
 
-/// Like `create_subdao_returning_vault` but applies `config_overrides` over the
-/// subdao default slots before construction completes. Existing types have their
+/// Like `create_subou_returning_vault` but applies `config_overrides` over the
+/// subou default slots before construction completes. Existing types have their
 /// config replaced; non-blocked types not yet enabled are inserted and enabled.
 /// Blocked types abort with EBlockedProposalType. Only callable within the framework package.
-public(package) fun create_subdao_returning_vault_configured(
+public(package) fun create_subou_returning_vault_configured(
     gov_init: &GovernanceTypeInit,
     name: String,
     metadata_uri: String,
     config_overrides: vector<ProposalTypeInit>,
     ctx: &mut TxContext,
-): (DAO, emergency::FreezeAdminCap, capability_vault::CapabilityVault) {
-    let (dao, treasury, cap_vault, dao_charter, freeze, freeze_admin_cap) = build(
+): (OU, emergency::FreezeAdminCap, capability_vault::CapabilityVault) {
+    let (ou, treasury, cap_vault, ou_charter, freeze, freeze_admin_cap) = build(
         gov_init,
         name,
         metadata_uri,
@@ -359,51 +359,51 @@ public(package) fun create_subdao_returning_vault_configured(
     );
 
     treasury_vault::share(treasury);
-    charter::share(dao_charter);
+    charter::share(ou_charter);
     emergency::share(freeze);
 
-    (dao, freeze_admin_cap, cap_vault)
+    (ou, freeze_admin_cap, cap_vault)
 }
 
-/// Like `create_subdao` but returns the CapabilityVault un-shared so the caller
+/// Like `create_subou` but returns the CapabilityVault un-shared so the caller
 /// can store capabilities in it before sharing. Treasury, charter, and emergency
 /// freeze are shared internally; the FreezeAdminCap is returned to the caller.
 /// Only callable within the framework package.
-public(package) fun create_subdao_returning_vault(
+public(package) fun create_subou_returning_vault(
     gov_init: &GovernanceTypeInit,
     name: String,
     metadata_uri: String,
     ctx: &mut TxContext,
-): (DAO, emergency::FreezeAdminCap, capability_vault::CapabilityVault) {
-    create_subdao_returning_vault_configured(gov_init, name, metadata_uri, vector[], ctx)
+): (OU, emergency::FreezeAdminCap, capability_vault::CapabilityVault) {
+    create_subou_returning_vault_configured(gov_init, name, metadata_uri, vector[], ctx)
 }
 
-/// Create a new SubDAO with Board governance and filtered proposal types.
-/// Returns the un-shared DAO and FreezeAdminCap. The caller must set
-/// controller_cap_id via `share_subdao()` before sharing.
+/// Create a new SubOU with Board governance and filtered proposal types.
+/// Returns the un-shared OU and FreezeAdminCap. The caller must set
+/// controller_cap_id via `share_subou()` before sharing.
 /// Companion objects (treasury, vault, charter, emergency) are shared internally.
-/// Hierarchy-altering proposal types (SpawnDAO, SpinOutSubDAO, CreateSubDAO)
-/// and the bypass meta-types are excluded from the SubDAO's default slots.
-public fun create_subdao(
+/// Hierarchy-altering proposal types (SpawnOU, SpinOutSubOU, CreateSubOU)
+/// and the bypass meta-types are excluded from the SubOU's default slots.
+public fun create_subou(
     gov_init: &GovernanceTypeInit,
     name: String,
     metadata_uri: String,
     ctx: &mut TxContext,
-): (DAO, emergency::FreezeAdminCap) {
-    create_subdao_configured(gov_init, name, metadata_uri, vector[], ctx)
+): (OU, emergency::FreezeAdminCap) {
+    create_subou_configured(gov_init, name, metadata_uri, vector[], ctx)
 }
 
-/// Like `create_subdao` but applies `config_overrides` over the subdao default
+/// Like `create_subou` but applies `config_overrides` over the subou default
 /// slots. Existing types have their config replaced; non-blocked types not yet
 /// enabled are inserted and enabled. Blocked types abort with EBlockedProposalType.
-public fun create_subdao_configured(
+public fun create_subou_configured(
     gov_init: &GovernanceTypeInit,
     name: String,
     metadata_uri: String,
     config_overrides: vector<ProposalTypeInit>,
     ctx: &mut TxContext,
-): (DAO, emergency::FreezeAdminCap) {
-    let (dao, treasury, cap_vault, dao_charter, freeze, freeze_admin_cap) = build(
+): (OU, emergency::FreezeAdminCap) {
+    let (ou, treasury, cap_vault, ou_charter, freeze, freeze_admin_cap) = build(
         gov_init,
         name,
         metadata_uri,
@@ -414,43 +414,43 @@ public fun create_subdao_configured(
 
     treasury_vault::share(treasury);
     capability_vault::share(cap_vault);
-    charter::share(dao_charter);
+    charter::share(ou_charter);
     emergency::share(freeze);
 
-    (dao, freeze_admin_cap)
+    (ou, freeze_admin_cap)
 }
 
-/// Share a SubDAO after setting its controller_cap_id.
-/// Consumes the DAO by value — can only be called on an un-shared DAO.
+/// Share a SubOU after setting its controller_cap_id.
+/// Consumes the OU by value — can only be called on an un-shared OU.
 #[allow(lint(custom_state_change, share_owned))]
-public fun share_subdao(mut dao: DAO, controller_cap_id: ID) {
-    dao.controller_cap_id = option::some(controller_cap_id);
-    transfer::share_object(dao);
+public fun share_subou(mut ou: OU, controller_cap_id: ID) {
+    ou.controller_cap_id = option::some(controller_cap_id);
+    transfer::share_object(ou);
 }
 
-/// Permissionless cleanup of a Migrating DAO.
-/// Destroys the DAO and all companion objects. Aborts if the DAO is not
+/// Permissionless cleanup of a Migrating OU.
+/// Destroys the OU and all companion objects. Aborts if the OU is not
 /// in Migrating status or if the treasury/vault still hold assets.
-/// The caller must pass the exact companion objects referenced by the DAO.
+/// The caller must pass the exact companion objects referenced by the OU.
 ///
 /// Proposal-type slots are dynamic fields and cannot be enumerated from Move;
 /// they are left attached to the deleted UID (a few hundred bytes per type).
 public fun destroy(
-    dao: DAO,
+    ou: OU,
     treasury: treasury_vault::TreasuryVault,
     vault: capability_vault::CapabilityVault,
     charter: charter::Charter,
     freeze: emergency::EmergencyFreeze,
 ) {
-    assert!(dao.status.is_migrating(), ENotMigrating);
-    assert!(object::id(&treasury) == dao.treasury_id, ETreasuryIdMismatch);
-    assert!(object::id(&vault) == dao.capability_vault_id, EVaultIdMismatch);
-    assert!(object::id(&charter) == dao.charter_id, ECharterIdMismatch);
-    assert!(object::id(&freeze) == dao.emergency_freeze_id, EFreezeIdMismatch);
-    assert!(dao.entries.is_empty(), EEntriesNotEmpty);
+    assert!(ou.status.is_migrating(), ENotMigrating);
+    assert!(object::id(&treasury) == ou.treasury_id, ETreasuryIdMismatch);
+    assert!(object::id(&vault) == ou.capability_vault_id, EVaultIdMismatch);
+    assert!(object::id(&charter) == ou.charter_id, ECharterIdMismatch);
+    assert!(object::id(&freeze) == ou.emergency_freeze_id, EFreezeIdMismatch);
+    assert!(ou.entries.is_empty(), EEntriesNotEmpty);
 
-    let successor_dao_id = dao.status.successor_dao_id();
-    let dao_id = object::id(&dao);
+    let successor_ou_id = ou.status.successor_ou_id();
+    let ou_id = object::id(&ou);
 
     // Destroy companion objects (asserts vaults are empty internally)
     treasury_vault::destroy_empty(treasury);
@@ -458,8 +458,8 @@ public fun destroy(
     charter::destroy(charter);
     emergency::destroy(freeze);
 
-    // Destroy the DAO itself
-    let DAO {
+    // Destroy the OU itself
+    let OU {
         id,
         status: _,
         governance,
@@ -472,57 +472,57 @@ public fun destroy(
         controller_paused: _,
         encrypt_epoch: _,
         entries: _,
-    } = dao;
+    } = ou;
     governance.destroy();
     id.delete();
 
-    event::emit(DAODestroyed { dao_id, successor_dao_id });
+    event::emit(OUDestroyed { ou_id, successor_ou_id });
 }
 
 // === Accessors ===
 
-/// Returns the DAO's current status.
-public fun status(self: &DAO): &DAOStatus { &self.status }
+/// Returns the OU's current status.
+public fun status(self: &OU): &OUStatus { &self.status }
 
-/// Returns the DAO's governance configuration.
-public fun governance(self: &DAO): &GovernanceConfig { &self.governance }
+/// Returns the OU's governance configuration.
+public fun governance(self: &OU): &GovernanceConfig { &self.governance }
 
 /// Returns a mutable reference to the governance config. Package-internal only.
-public(package) fun governance_mut(self: &mut DAO): &mut GovernanceConfig { &mut self.governance }
+public(package) fun governance_mut(self: &mut OU): &mut GovernanceConfig { &mut self.governance }
 
 /// Returns the treasury vault ID.
-public fun treasury_id(self: &DAO): ID { self.treasury_id }
+public fun treasury_id(self: &OU): ID { self.treasury_id }
 
 /// Returns the capability vault ID.
-public fun capability_vault_id(self: &DAO): ID { self.capability_vault_id }
+public fun capability_vault_id(self: &OU): ID { self.capability_vault_id }
 
 /// Returns the charter ID.
-public fun charter_id(self: &DAO): ID { self.charter_id }
+public fun charter_id(self: &OU): ID { self.charter_id }
 
 /// Returns the emergency freeze ID.
-public fun emergency_freeze_id(self: &DAO): ID { self.emergency_freeze_id }
+public fun emergency_freeze_id(self: &OU): ID { self.emergency_freeze_id }
 
-/// Returns whether proposal execution is paused on this DAO.
-public fun is_execution_paused(self: &DAO): bool { self.execution_paused }
+/// Returns whether proposal execution is paused on this OU.
+public fun is_execution_paused(self: &OU): bool { self.execution_paused }
 
-/// Returns the controller capability ID if this DAO is a SubDAO.
-public fun controller_cap_id(self: &DAO): &Option<ID> { &self.controller_cap_id }
+/// Returns the controller capability ID if this OU is a SubOU.
+public fun controller_cap_id(self: &OU): &Option<ID> { &self.controller_cap_id }
 
-/// Returns whether the controller has paused this SubDAO's execution.
-public fun is_controller_paused(self: &DAO): bool { self.controller_paused }
+/// Returns whether the controller has paused this SubOU's execution.
+public fun is_controller_paused(self: &OU): bool { self.controller_paused }
 
-/// Returns the DAO's object ID.
-public fun id(self: &DAO): ID { object::id(self) }
+/// Returns the OU's object ID.
+public fun id(self: &OU): ID { object::id(self) }
 
 /// Returns the current encryption epoch. Increments on any board-member removal.
-public fun encrypt_epoch(self: &DAO): u64 { self.encrypt_epoch }
+public fun encrypt_epoch(self: &OU): u64 { self.encrypt_epoch }
 
 /// Returns the on-chain index of published EncryptedEntry IDs (at most 32).
-public fun entries(self: &DAO): &vector<ID> { &self.entries }
+public fun entries(self: &OU): &vector<ID> { &self.entries }
 
 /// Returns true if addr is a current board member (encryption grantee).
 /// Former members are not: their roster entry is kept, but closed.
-public fun is_governance_member(self: &DAO, addr: address): bool {
+public fun is_governance_member(self: &OU, addr: address): bool {
     self.governance.is_board_member(addr)
 }
 
@@ -530,11 +530,11 @@ public fun is_governance_member(self: &DAO, addr: address): bool {
 /// Called by set_board_governance (on member removal) and by
 /// encrypted_entry::rotate_encryption_epoch (explicit out-of-band rotation).
 /// Emitting the event here keeps it tied to the module that defines the type.
-public(package) fun increment_encrypt_epoch(self: &mut DAO) {
+public(package) fun increment_encrypt_epoch(self: &mut OU) {
     let old = self.encrypt_epoch;
     self.encrypt_epoch = old + 1;
     event::emit(EncryptionEpochRotated {
-        dao_id: self.id(),
+        ou_id: self.id(),
         old_epoch: old,
         new_epoch: self.encrypt_epoch,
     });
@@ -542,7 +542,7 @@ public(package) fun increment_encrypt_epoch(self: &mut DAO) {
 
 /// Append an entry ID to the on-chain index.
 /// Called by encrypted_entry::publish_entry after creating the EncryptedEntry.
-public(package) fun push_entry(self: &mut DAO, entry_id: ID) {
+public(package) fun push_entry(self: &mut OU, entry_id: ID) {
     self.entries.push_back(entry_id);
 }
 
@@ -550,7 +550,7 @@ public(package) fun push_entry(self: &mut DAO, entry_id: ID) {
 /// Called by encrypted_entry::remove_entry before deleting the EncryptedEntry.
 /// Aborts if the ID is absent — index divergence would corrupt the cap count
 /// and break the migration entries.is_empty() guard.
-public(package) fun remove_entry_id(self: &mut DAO, target: ID) {
+public(package) fun remove_entry_id(self: &mut OU, target: ID) {
     let (found, idx) = self.entries.index_of(&target);
     assert!(found, EEntryIdNotFound);
     self.entries.remove(idx);
@@ -562,52 +562,52 @@ public(package) fun remove_entry_id(self: &mut DAO, target: ID) {
 /// is stable across upgrades of the package that defines `P`).
 public fun type_name_of<P>(): TypeName { type_name::with_defining_ids<P>() }
 
-/// Returns true if proposal type `P` has a slot on this DAO.
-public fun is_type_enabled<P>(self: &DAO): bool {
+/// Returns true if proposal type `P` has a slot on this OU.
+public fun is_type_enabled<P>(self: &OU): bool {
     self.is_type_name_enabled(&type_name_of<P>())
 }
 
-/// Returns true if the proposal type named `name` has a slot on this DAO.
-public fun is_type_name_enabled(self: &DAO, name: &TypeName): bool {
+/// Returns true if the proposal type named `name` has a slot on this OU.
+public fun is_type_name_enabled(self: &OU, name: &TypeName): bool {
     df::exists(&self.id, TypeSlot { name: *name })
 }
 
 /// Returns the ProposalConfig of type `P`. Aborts with ETypeNotEnabled if absent.
-public fun type_config<P>(self: &DAO): ProposalConfig {
+public fun type_config<P>(self: &OU): ProposalConfig {
     self.type_config_by_name(&type_name_of<P>())
 }
 
 /// Returns the ProposalConfig of the type named `name`. Aborts with ETypeNotEnabled if absent.
-public fun type_config_by_name(self: &DAO, name: &TypeName): ProposalConfig {
+public fun type_config_by_name(self: &OU, name: &TypeName): ProposalConfig {
     self.slot(name).config
 }
 
 /// Returns the display key of type `P`. Aborts with ETypeNotEnabled if absent.
-public fun type_display_key<P>(self: &DAO): std::ascii::String {
+public fun type_display_key<P>(self: &OU): std::ascii::String {
     self.type_display_key_by_name(&type_name_of<P>())
 }
 
 /// Returns the display key of the type named `name`. Aborts with ETypeNotEnabled if absent.
-public fun type_display_key_by_name(self: &DAO, name: &TypeName): std::ascii::String {
+public fun type_display_key_by_name(self: &OU, name: &TypeName): std::ascii::String {
     self.slot(name).display_key
 }
 
 /// Returns the last execution timestamp of type `P`, if it has ever executed.
 /// Aborts with ETypeNotEnabled if the type has no slot.
-public fun last_executed_ms<P>(self: &DAO): Option<u64> {
+public fun last_executed_ms<P>(self: &OU): Option<u64> {
     self.last_executed_ms_by_name(&type_name_of<P>())
 }
 
 /// Returns the last execution timestamp of the type named `name`, if any.
 /// Aborts with ETypeNotEnabled if the type has no slot.
-public fun last_executed_ms_by_name(self: &DAO, name: &TypeName): Option<u64> {
+public fun last_executed_ms_by_name(self: &OU, name: &TypeName): Option<u64> {
     self.slot(name).last_executed_ms
 }
 
 /// Resolve a display key to the enabled type that carries it, if any.
 /// This is the only string-addressed lookup in the registry and is meant for
 /// cold admin paths (config updates, disables) where a human names the type.
-public fun type_for_display_key(self: &DAO, key: &std::ascii::String): Option<TypeName> {
+public fun type_for_display_key(self: &OU, key: &std::ascii::String): Option<TypeName> {
     if (df::exists(&self.id, DisplayKey { key: *key })) {
         option::some(*df::borrow(&self.id, DisplayKey { key: *key }))
     } else {
@@ -617,24 +617,24 @@ public fun type_for_display_key(self: &DAO, key: &std::ascii::String): Option<Ty
 
 // === Permissions ===
 
-/// Whether a request may perform mutations requiring `bits` on this DAO: it
-/// belongs to this DAO and is privileged or carries every bit (the bits its
+/// Whether a request may perform mutations requiring `bits` on this OU: it
+/// belongs to this OU and is privileged or carries every bit (the bits its
 /// type's slot held when the request was minted).
-public fun is_permitted<P>(self: &DAO, bits: u64, req: &ExecutionRequest<P>): bool {
-    self.id() == req.req_dao_id() && req.req_has_permission(bits)
+public fun is_permitted<P>(self: &OU, bits: u64, req: &ExecutionRequest<P>): bool {
+    self.id() == req.req_ou_id() && req.req_has_permission(bits)
 }
 
-/// The authorization check every DAO mutator runs before acting on a request.
-/// Aborts with EDAOIdMismatch if `req` belongs to another DAO and with
+/// The authorization check every OU mutator runs before acting on a request.
+/// Aborts with EOUIdMismatch if `req` belongs to another OU and with
 /// proposal::EPermissionDenied unless it is privileged or carries `bits`.
 ///
 /// Holding a ticket for one type must not authorize mutations that type was
-/// never granted: without this check, any request for the DAO would do.
-/// Modules `dao` depends on (treasury_vault, capability_vault, charter,
-/// emergency) cannot take `&DAO`; they call `proposal::assert_permitted` on
-/// the request directly after their own DAO check.
-public fun assert_permitted<P>(self: &DAO, bits: u64, req: &ExecutionRequest<P>) {
-    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+/// never granted: without this check, any request for the OU would do.
+/// Modules `ou` depends on (treasury_vault, capability_vault, charter,
+/// emergency) cannot take `&OU`; they call `proposal::assert_permitted` on
+/// the request directly after their own OU check.
+public fun assert_permitted<P>(self: &OU, bits: u64, req: &ExecutionRequest<P>) {
+    assert!(self.id() == req.req_ou_id(), EOUIdMismatch);
     req.assert_permitted(bits);
 }
 
@@ -672,9 +672,9 @@ public fun is_framework_type(name: &TypeName): bool {
         || n == type_name_of<UpdateFreezeConfig>()
         || n == type_name_of<UpdateFreezeExemptTypes>()
         || n == type_name_of<CompositePayload>()
-        || n == type_name_of<SpawnDAO>()
-        || n == type_name_of<SpinOutSubDAO>()
-        || n == type_name_of<CreateSubDAO>()
+        || n == type_name_of<SpawnOU>()
+        || n == type_name_of<SpinOutSubOU>()
+        || n == type_name_of<CreateSubOU>()
         || n == type_name_of<TransferAssets>()
 }
 
@@ -692,10 +692,10 @@ public fun is_framework_type(name: &TypeName): bool {
 /// - DisableBypassType: TYPE_ADMIN + VAULT_EXTRACT (extracts the cap to destroy it).
 /// - TransferFreezeAdmin (unfreeze_all), UnfreezeProposalType, UpdateFreezeConfig,
 /// UpdateFreezeExemptTypes: FREEZE (governance changes to the EmergencyFreeze).
-/// - SpawnDAO: MIGRATE (set_migrating).
-/// - CreateSubDAO: VAULT_STORE + VAULT_EXTRACT (creates and stores a SubDAOControl,
-/// stores the SubDAO's FreezeAdminCap).
-/// - SpinOutSubDAO: VAULT_BORROW + VAULT_EXTRACT (loans the SubDAOControl, then
+/// - SpawnOU: MIGRATE (set_migrating).
+/// - CreateSubOU: VAULT_STORE + VAULT_EXTRACT (creates and stores a SubOUControl,
+/// stores the SubOU's FreezeAdminCap).
+/// - SpinOutSubOU: VAULT_BORROW + VAULT_EXTRACT (loans the SubOUControl, then
 /// extracts the FreezeAdminCap and destroys the control).
 /// - TransferAssets: TREASURY_WITHDRAW + VAULT_EXTRACT (moves coins and caps out).
 /// - CompositePayload: none; its ticket is consumed by begin_pipeline.
@@ -726,11 +726,11 @@ public fun framework_permissions(name: &TypeName): u64 {
             || n == type_name_of<UpdateFreezeExemptTypes>()
     ) {
         permissions::emergency_freeze()
-    } else if (n == type_name_of<SpawnDAO>()) {
+    } else if (n == type_name_of<SpawnOU>()) {
         permissions::migrate()
-    } else if (n == type_name_of<CreateSubDAO>()) {
+    } else if (n == type_name_of<CreateSubOU>()) {
         permissions::vault_store() | permissions::vault_extract()
-    } else if (n == type_name_of<SpinOutSubDAO>()) {
+    } else if (n == type_name_of<SpinOutSubOU>()) {
         permissions::vault_borrow() | permissions::vault_extract()
     } else if (n == type_name_of<TransferAssets>()) {
         permissions::treasury_withdraw() | permissions::vault_extract()
@@ -740,11 +740,11 @@ public fun framework_permissions(name: &TypeName): u64 {
 }
 
 /// The fixed borrow scope of a framework type: the capability types its
-/// handler borrows or loans. SpinOutSubDAO loans the SubDAOControl; no other
+/// handler borrows or loans. SpinOutSubOU loans the SubOUControl; no other
 /// framework type borrows. Returns empty for any other type.
 public fun framework_borrow_scope(name: &TypeName): vector<TypeName> {
-    if (*name == type_name_of<SpinOutSubDAO>()) {
-        vector[type_name_of<capability_vault::SubDAOControl>()]
+    if (*name == type_name_of<SpinOutSubOU>()) {
+        vector[type_name_of<capability_vault::SubOUControl>()]
     } else {
         vector[]
     }
@@ -810,12 +810,12 @@ fun assert_may_change_permissions<P>(
     );
 }
 
-/// Abort unless `req` is a controller override (privileged) for this DAO:
-/// EDAOIdMismatch for another DAO, ENotPrivileged otherwise. Guards the
-/// mutators only a parent DAO's controller may call (set_controller_paused,
+/// Abort unless `req` is a controller override (privileged) for this OU:
+/// EOUIdMismatch for another OU, ENotPrivileged otherwise. Guards the
+/// mutators only a parent OU's controller may call (set_controller_paused,
 /// clear_controller); no permission bit grants them.
-public fun assert_controller<P>(self: &DAO, req: &ExecutionRequest<P>) {
-    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+public fun assert_controller<P>(self: &OU, req: &ExecutionRequest<P>) {
+    assert!(self.id() == req.req_ou_id(), EOUIdMismatch);
     assert!(req.req_is_privileged(), ENotPrivileged);
 }
 
@@ -837,11 +837,11 @@ public fun init_config(self: &ProposalTypeInit): &ProposalConfig { &self.config 
 
 // === Public Mutators (ExecutionRequest-gated) ===
 
-/// Add `to_add` to and remove `to_remove` from the DAO's board as one change.
+/// Add `to_add` to and remove `to_remove` from the OU's board as one change.
 /// Requires BOARD_SET (`assert_permitted`).
 /// Auto-increments encrypt_epoch if any member was removed, providing forward security.
 public fun set_board_governance<P>(
-    self: &mut DAO,
+    self: &mut OU,
     to_add: vector<address>,
     to_remove: vector<address>,
     req: &ExecutionRequest<P>,
@@ -854,10 +854,10 @@ public fun set_board_governance<P>(
     };
 }
 
-/// Add a single member to the DAO's board.
+/// Add a single member to the OU's board.
 /// Requires BOARD_ADD (`assert_permitted`).
 public fun add_board_member_governance<P>(
-    self: &mut DAO,
+    self: &mut OU,
     member: address,
     req: &ExecutionRequest<P>,
 ) {
@@ -865,7 +865,7 @@ public fun add_board_member_governance<P>(
     self.governance.add_board_member(member);
 }
 
-/// Add multiple members to the DAO's board, skipping any address already
+/// Add multiple members to the OU's board, skipping any address already
 /// present. Returns (added, skipped) in input order.
 ///
 /// IMPORTANT: This diverges from `add_board_member_governance`, which aborts
@@ -882,7 +882,7 @@ public fun add_board_member_governance<P>(
 ///
 /// Requires BOARD_ADD (`assert_permitted`).
 public fun add_board_members_governance<P>(
-    self: &mut DAO,
+    self: &mut OU,
     new_members: vector<address>,
     req: &ExecutionRequest<P>,
 ): (vector<address>, vector<address>) {
@@ -890,11 +890,11 @@ public fun add_board_members_governance<P>(
     self.governance.add_board_members(new_members)
 }
 
-/// Remove a single member from the DAO's board.
+/// Remove a single member from the OU's board.
 /// Requires BOARD_REMOVE (`assert_permitted`).
 /// Auto-increments encrypt_epoch for forward security.
 public fun remove_board_member_governance<P>(
-    self: &mut DAO,
+    self: &mut OU,
     member: address,
     req: &ExecutionRequest<P>,
 ) {
@@ -903,11 +903,11 @@ public fun remove_board_member_governance<P>(
     self.increment_encrypt_epoch();
 }
 
-/// Remove multiple members from the DAO's board atomically.
+/// Remove multiple members from the OU's board atomically.
 /// Requires BOARD_REMOVE (`assert_permitted`).
 /// Auto-increments encrypt_epoch once for the batch.
 public fun remove_board_members_governance<P>(
-    self: &mut DAO,
+    self: &mut OU,
     members: vector<address>,
     req: &ExecutionRequest<P>,
 ): vector<address> {
@@ -923,7 +923,7 @@ public fun remove_board_members_governance<P>(
 /// bits that `P` may not grant (`assert_may_change_permissions`).
 /// Requires TYPE_ADMIN (`assert_permitted`).
 public fun enable_proposal_type<NewType, P>(
-    self: &mut DAO,
+    self: &mut OU,
     display_key: std::ascii::String,
     config: ProposalConfig,
     req: &ExecutionRequest<P>,
@@ -933,8 +933,8 @@ public fun enable_proposal_type<NewType, P>(
     let config = with_fixed_permissions(&name, config);
     assert_config_floors(&name, &config);
     assert_may_change_permissions(0, config.permissions(), &vector[], &config.borrow_scope(), req);
-    let dao_id = self.id();
-    add_slot(&mut self.id, dao_id, new_type_init<NewType>(display_key, config));
+    let ou_id = self.id();
+    add_slot(&mut self.id, ou_id, new_type_init<NewType>(display_key, config));
 }
 
 /// Remove the slot (config, display key, cooldown state) of the type named `name`.
@@ -944,10 +944,10 @@ public fun enable_proposal_type<NewType, P>(
 /// execution is not subject to the cooldown. Re-enabling requires an
 /// EnableProposalType or EnableBypassType vote (both 80% floor).
 /// Requires TYPE_ADMIN (`assert_permitted`).
-public fun disable_proposal_type<P>(self: &mut DAO, name: TypeName, req: &ExecutionRequest<P>) {
+public fun disable_proposal_type<P>(self: &mut OU, name: TypeName, req: &ExecutionRequest<P>) {
     self.assert_permitted(permissions::type_admin(), req);
-    let dao_id = self.id();
-    remove_slot(&mut self.id, dao_id, name);
+    let ou_id = self.id();
+    remove_slot(&mut self.id, ou_id, name);
 }
 
 /// Replace the ProposalConfig of the type named `name`.
@@ -956,7 +956,7 @@ public fun disable_proposal_type<P>(self: &mut DAO, name: TypeName, req: &Execut
 /// way `P` may not (`assert_may_change_permissions`).
 /// Requires TYPE_ADMIN (`assert_permitted`).
 public fun update_proposal_config<P>(
-    self: &mut DAO,
+    self: &mut OU,
     name: TypeName,
     new_config: ProposalConfig,
     req: &ExecutionRequest<P>,
@@ -977,82 +977,82 @@ public fun update_proposal_config<P>(
         &new_config.borrow_scope(),
         req,
     );
-    let dao_id = self.id();
+    let ou_id = self.id();
     let entry = self.slot_mut(&name);
     entry.config = new_config;
     event::emit(TypeSlotConfigUpdated {
-        dao_id,
+        ou_id,
         type_name: name.into_string(),
         display_key: entry.display_key,
         config: new_config,
     });
 }
 
-/// Pause or resume proposal execution on this DAO.
+/// Pause or resume proposal execution on this OU.
 /// Requires PAUSE (`assert_permitted`).
-public fun set_execution_paused<P>(self: &mut DAO, paused: bool, req: &ExecutionRequest<P>) {
+public fun set_execution_paused<P>(self: &mut OU, paused: bool, req: &ExecutionRequest<P>) {
     self.assert_permitted(permissions::pause(), req);
     self.execution_paused = paused;
 }
 
-/// Set or clear controller-initiated pause on this SubDAO.
+/// Set or clear controller-initiated pause on this SubOU.
 /// Controller override only: requires a privileged request (`assert_controller`).
-public fun set_controller_paused<P>(self: &mut DAO, paused: bool, req: &ExecutionRequest<P>) {
+public fun set_controller_paused<P>(self: &mut OU, paused: bool, req: &ExecutionRequest<P>) {
     self.assert_controller(req);
     self.controller_paused = paused;
 }
 
-/// Clear the controller relationship (for SpinOutSubDAO).
+/// Clear the controller relationship (for SpinOutSubOU).
 /// Resets controller_cap_id to none and controller_paused to false.
 /// Controller override only: requires a privileged request (`assert_controller`).
-public fun clear_controller<P>(self: &mut DAO, req: &ExecutionRequest<P>) {
+public fun clear_controller<P>(self: &mut OU, req: &ExecutionRequest<P>) {
     self.assert_controller(req);
     self.controller_cap_id = option::none();
     self.controller_paused = false;
 }
 
-/// Transition the DAO to Migrating status (irreversible).
+/// Transition the OU to Migrating status (irreversible).
 /// Requires MIGRATE (`assert_permitted`).
-public fun set_migrating<P>(self: &mut DAO, successor_dao_id: ID, req: &ExecutionRequest<P>) {
+public fun set_migrating<P>(self: &mut OU, successor_ou_id: ID, req: &ExecutionRequest<P>) {
     self.assert_permitted(permissions::migrate(), req);
-    self.status = DAOStatus::Migrating { successor_dao_id };
+    self.status = OUStatus::Migrating { successor_ou_id };
 }
 
 // === ProposalTypeState ===
 
 /// Check if type state exists for proposal type P.
-public fun has_type_state<P>(self: &DAO): bool {
+public fun has_type_state<P>(self: &OU): bool {
     df::exists(&self.id, type_name::with_defining_ids<P>())
 }
 
 /// Borrow immutable reference to type state for proposal type P.
-public fun borrow_type_state<P, S: store>(self: &DAO): &S {
+public fun borrow_type_state<P, S: store>(self: &OU): &S {
     df::borrow(&self.id, type_name::with_defining_ids<P>())
 }
 
 /// Borrow mutable reference to type state. Requires ExecutionRequest for authorization.
-public fun borrow_type_state_mut<P, S: store>(self: &mut DAO, req: &ExecutionRequest<P>): &mut S {
-    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+public fun borrow_type_state_mut<P, S: store>(self: &mut OU, req: &ExecutionRequest<P>): &mut S {
+    assert!(self.id() == req.req_ou_id(), EOUIdMismatch);
     df::borrow_mut(&mut self.id, type_name::with_defining_ids<P>())
 }
 
 /// Initialize type state for proposal type P (lazy-init on first execution).
 /// Requires ExecutionRequest for authorization.
-public fun init_type_state<P, S: store>(self: &mut DAO, state: S, req: &ExecutionRequest<P>) {
-    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+public fun init_type_state<P, S: store>(self: &mut OU, state: S, req: &ExecutionRequest<P>) {
+    assert!(self.id() == req.req_ou_id(), EOUIdMismatch);
     df::add(&mut self.id, type_name::with_defining_ids<P>(), state);
 }
 
 /// Remove type state for proposal type P. Requires ExecutionRequest for authorization.
-public fun remove_type_state<P, S: store>(self: &mut DAO, req: &ExecutionRequest<P>): S {
-    assert!(self.id() == req.req_dao_id(), EDAOIdMismatch);
+public fun remove_type_state<P, S: store>(self: &mut OU, req: &ExecutionRequest<P>): S {
+    assert!(self.id() == req.req_ou_id(), EOUIdMismatch);
     df::remove(&mut self.id, type_name::with_defining_ids<P>())
 }
 
 /// Record the execution timestamp for the type named `name`.
 /// Called after a successful execute() to update cooldown tracking.
 /// Aborts with ETypeNotEnabled if the type has no slot.
-public(package) fun record_execution(self: &mut DAO, name: TypeName, timestamp_ms: u64) {
+public(package) fun record_execution(self: &mut OU, name: TypeName, timestamp_ms: u64) {
     self.slot_mut(&name).last_executed_ms = option::some(timestamp_ms);
 }
 
@@ -1070,15 +1070,15 @@ public fun is_undisableable_type(name: &TypeName): bool {
         || n == type_name_of<UnfreezeProposalType>()
 }
 
-/// Returns true if the type is blocked for controlled SubDAOs: hierarchy-altering
-/// operations reserved for independent DAOs, plus bypass-meta types that would let
-/// a SubDAO autonomously escalate its own execution privileges.
-/// SubDAOs with `controller_cap_id.is_some()` cannot enable these types.
-public fun is_subdao_blocked_type(name: &TypeName): bool {
+/// Returns true if the type is blocked for controlled SubOUs: hierarchy-altering
+/// operations reserved for independent OUs, plus bypass-meta types that would let
+/// a SubOU autonomously escalate its own execution privileges.
+/// SubOUs with `controller_cap_id.is_some()` cannot enable these types.
+public fun is_subou_blocked_type(name: &TypeName): bool {
     let n = *name;
-    n == type_name_of<SpawnDAO>()
-        || n == type_name_of<SpinOutSubDAO>()
-        || n == type_name_of<CreateSubDAO>()
+    n == type_name_of<SpawnOU>()
+        || n == type_name_of<SpinOutSubOU>()
+        || n == type_name_of<CreateSubOU>()
         || n == type_name_of<EnableBypassType>()
         || n == type_name_of<DisableBypassType>()
 }
@@ -1106,18 +1106,18 @@ public fun min_approval_threshold_for_type(name: &TypeName): u16 {
 
 // === Internal: construction ===
 
-/// Build a DAO and its companion objects, seed the default proposal-type slots
+/// Build an OU and its companion objects, seed the default proposal-type slots
 /// and apply `overrides`. Nothing is shared here; each public constructor
 /// decides what to share and what to return.
 fun build(
     gov_init: &GovernanceTypeInit,
     name: String,
     metadata_uri: String,
-    is_subdao: bool,
+    is_subou: bool,
     overrides: vector<ProposalTypeInit>,
     ctx: &mut TxContext,
 ): (
-    DAO,
+    OU,
     treasury_vault::TreasuryVault,
     capability_vault::CapabilityVault,
     charter::Charter,
@@ -1132,28 +1132,28 @@ fun build(
     let governance = governance::new_board(gov_init, ctx);
     let initial_members = gov_init.init_members();
 
-    // Create a placeholder DAO ID so companion objects can reference it
-    let dao_uid = object::new(ctx);
-    let dao_id = dao_uid.to_inner();
+    // Create a placeholder OU ID so companion objects can reference it
+    let ou_uid = object::new(ctx);
+    let ou_id = ou_uid.to_inner();
 
     // Create companion objects
-    let treasury = treasury_vault::new(dao_id, ctx);
+    let treasury = treasury_vault::new(ou_id, ctx);
     let treasury_id = object::id(&treasury);
 
-    let cap_vault = capability_vault::new(dao_id, ctx);
+    let cap_vault = capability_vault::new(ou_id, ctx);
     let capability_vault_id = object::id(&cap_vault);
 
-    let dao_charter = charter::new(dao_id, name, metadata_uri, ctx);
-    let charter_id = object::id(&dao_charter);
+    let ou_charter = charter::new(ou_id, name, metadata_uri, ctx);
+    let charter_id = object::id(&ou_charter);
 
-    let freeze = emergency::new(dao_id, ctx);
+    let freeze = emergency::new(ou_id, ctx);
     let emergency_freeze_id = object::id(&freeze);
 
-    let freeze_admin_cap = emergency::new_admin_cap(dao_id, ctx);
+    let freeze_admin_cap = emergency::new_admin_cap(ou_id, ctx);
 
-    let mut dao = DAO {
-        id: dao_uid,
-        status: DAOStatus::Active,
+    let mut ou = OU {
+        id: ou_uid,
+        status: OUStatus::Active,
         governance,
         treasury_id,
         capability_vault_id,
@@ -1166,31 +1166,31 @@ fun build(
         entries: vector[],
     };
 
-    event::emit(DAOCreated {
-        dao_id,
+    event::emit(OUCreated {
+        ou_id,
         treasury_id,
         capability_vault_id,
         charter_id,
         emergency_freeze_id,
         creator,
     });
-    event::emit(DAOBoardInitialized { dao_id, initial_members });
+    event::emit(OUBoardInitialized { ou_id, initial_members });
 
     // Seed the registry: defaults first, then construction-time overrides.
-    let defaults = default_type_inits(is_subdao);
+    let defaults = default_type_inits(is_subou);
     let mut i = 0;
     while (i < defaults.length()) {
-        add_slot(&mut dao.id, dao_id, defaults[i]);
+        add_slot(&mut ou.id, ou_id, defaults[i]);
         i = i + 1;
     };
-    apply_type_overrides(&mut dao.id, dao_id, overrides, is_subdao);
+    apply_type_overrides(&mut ou.id, ou_id, overrides, is_subou);
 
-    (dao, treasury, cap_vault, dao_charter, freeze, freeze_admin_cap)
+    (ou, treasury, cap_vault, ou_charter, freeze, freeze_admin_cap)
 }
 
-/// Default proposal-type slots every DAO starts with. SubDAOs omit the bypass
-/// meta-types (they are SubDAO-blocked).
-fun default_type_inits(is_subdao: bool): vector<ProposalTypeInit> {
+/// Default proposal-type slots every OU starts with. SubOUs omit the bypass
+/// meta-types (they are SubOU-blocked).
+fun default_type_inits(is_subou: bool): vector<ProposalTypeInit> {
     let mut v = vector[
         default_init<SetBoard>(b"SetBoard"),
         default_init<AddMember>(b"AddMember"),
@@ -1200,7 +1200,7 @@ fun default_type_inits(is_subdao: bool): vector<ProposalTypeInit> {
         default_init<UpdateMetadata>(b"CharterUpdate"),
         default_init<EnableProposalType>(b"EnableProposalType"),
     ];
-    if (!is_subdao) {
+    if (!is_subou) {
         v.push_back(default_init<EnableBypassType>(b"EnableBypassType"));
         v.push_back(default_init<DisableBypassType>(b"DisableBypassType"));
     };
@@ -1260,21 +1260,21 @@ fun config_for_type(name: &TypeName): ProposalConfig {
 /// The override's display key must equal the slot's (EDisplayKeyMismatch otherwise);
 /// default display keys cannot be renamed at construction time.
 /// - Type not yet enabled: add its slot (enables the type at construction time).
-/// - Type is a SubDAO-blocked type AND `check_subdao_blocked` is true: abort with
-/// EBlockedProposalType. Pass false for parent DAOs, which legitimately have these
-/// types (e.g. CreateSubDAO).
+/// - Type is a SubOU-blocked type AND `check_subou_blocked` is true: abort with
+/// EBlockedProposalType. Pass false for parent OUs, which legitimately have these
+/// types (e.g. CreateSubOU).
 /// - The resulting config misses a floor (`assert_config_floors`): abort.
 fun apply_type_overrides(
     id: &mut UID,
-    dao_id: ID,
+    ou_id: ID,
     overrides: vector<ProposalTypeInit>,
-    check_subdao_blocked: bool,
+    check_subou_blocked: bool,
 ) {
     let mut i = 0;
     while (i < overrides.length()) {
         let init = overrides[i];
         assert!(
-            !check_subdao_blocked || !is_subdao_blocked_type(&init.type_name),
+            !check_subou_blocked || !is_subou_blocked_type(&init.type_name),
             EBlockedProposalType,
         );
         if (df::exists(id, TypeSlot { name: init.type_name })) {
@@ -1291,7 +1291,7 @@ fun apply_type_overrides(
             assert_config_floors(&init.type_name, &config);
             entry.config = config;
             event::emit(TypeSlotConfigUpdated {
-                dao_id,
+                ou_id,
                 type_name: init.type_name.into_string(),
                 display_key: entry.display_key,
                 config: entry.config,
@@ -1303,7 +1303,7 @@ fun apply_type_overrides(
                 config: with_fixed_permissions(&init.type_name, init.config),
             };
             assert_config_floors(&init.type_name, &init.config);
-            add_slot(id, dao_id, init);
+            add_slot(id, ou_id, init);
         };
         i = i + 1;
     };
@@ -1311,7 +1311,7 @@ fun apply_type_overrides(
 
 // === Internal: registry ===
 
-fun add_slot(id: &mut UID, dao_id: ID, init: ProposalTypeInit) {
+fun add_slot(id: &mut UID, ou_id: ID, init: ProposalTypeInit) {
     let ProposalTypeInit { type_name, display_key, config } = init;
     assert!(display_key.length() > 0, EEmptyDisplayKey);
     assert!(!df::exists(id, TypeSlot { name: type_name }), ETypeAlreadyEnabled);
@@ -1323,29 +1323,29 @@ fun add_slot(id: &mut UID, dao_id: ID, init: ProposalTypeInit) {
     );
     df::add(id, DisplayKey { key: display_key }, type_name);
     event::emit(TypeSlotAdded {
-        dao_id,
+        ou_id,
         type_name: type_name.into_string(),
         display_key,
         config,
     });
 }
 
-fun remove_slot(id: &mut UID, dao_id: ID, name: TypeName) {
+fun remove_slot(id: &mut UID, ou_id: ID, name: TypeName) {
     assert!(df::exists(id, TypeSlot { name }), ETypeNotEnabled);
     let ProposalType { display_key, config: _, last_executed_ms: _ } = df::remove(
         id,
         TypeSlot { name },
     );
     let _: TypeName = df::remove(id, DisplayKey { key: display_key });
-    event::emit(TypeSlotRemoved { dao_id, type_name: name.into_string(), display_key });
+    event::emit(TypeSlotRemoved { ou_id, type_name: name.into_string(), display_key });
 }
 
-fun slot(self: &DAO, name: &TypeName): &ProposalType {
+fun slot(self: &OU, name: &TypeName): &ProposalType {
     assert!(df::exists(&self.id, TypeSlot { name: *name }), ETypeNotEnabled);
     df::borrow(&self.id, TypeSlot { name: *name })
 }
 
-fun slot_mut(self: &mut DAO, name: &TypeName): &mut ProposalType {
+fun slot_mut(self: &mut OU, name: &TypeName): &mut ProposalType {
     assert!(df::exists(&self.id, TypeSlot { name: *name }), ETypeNotEnabled);
     df::borrow_mut(&mut self.id, TypeSlot { name: *name })
 }
@@ -1353,36 +1353,36 @@ fun slot_mut(self: &mut DAO, name: &TypeName): &mut ProposalType {
 // === Test Helpers ===
 
 #[test_only]
-/// Enable proposal type `T` on the DAO without an ExecutionRequest or floor
+/// Enable proposal type `T` on the OU without an ExecutionRequest or floor
 /// checks. A framework type gets its fixed bits, as on every real path.
 public fun test_enable_type<T>(
-    self: &mut DAO,
+    self: &mut OU,
     display_key: std::ascii::String,
     config: ProposalConfig,
 ) {
-    let dao_id = self.id();
+    let ou_id = self.id();
     let config = with_fixed_permissions(&type_name_of<T>(), config);
-    add_slot(&mut self.id, dao_id, new_type_init<T>(display_key, config));
+    add_slot(&mut self.id, ou_id, new_type_init<T>(display_key, config));
 }
 
 #[test_only]
 /// Replace the config of an already-enabled proposal type `T`, without floor
 /// checks. A framework type keeps its fixed bits, as on every real path.
-public fun test_update_config<T>(self: &mut DAO, config: ProposalConfig) {
+public fun test_update_config<T>(self: &mut OU, config: ProposalConfig) {
     let name = type_name_of<T>();
     self.slot_mut(&name).config = with_fixed_permissions(&name, config);
 }
 
 #[test_only]
-/// Register `control_id` as this SubDAO's controller without sharing it, for
-/// tests that call `controller::privileged_submit` on an unshared SubDAO.
-public fun set_controller_for_testing(self: &mut DAO, control_id: ID) {
+/// Register `control_id` as this SubOU's controller without sharing it, for
+/// tests that call `controller::privileged_submit` on an unshared SubOU.
+public fun set_controller_for_testing(self: &mut OU, control_id: ID) {
     self.controller_cap_id = option::some(control_id);
 }
 
 #[test_only]
-/// Disable proposal type `T` on the DAO without an ExecutionRequest.
-public fun test_disable_type<T>(self: &mut DAO) {
-    let dao_id = self.id();
-    remove_slot(&mut self.id, dao_id, type_name_of<T>());
+/// Disable proposal type `T` on the OU without an ExecutionRequest.
+public fun test_disable_type<T>(self: &mut OU) {
+    let ou_id = self.id();
+    remove_slot(&mut self.id, ou_id, type_name_of<T>());
 }

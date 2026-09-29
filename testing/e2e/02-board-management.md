@@ -2,11 +2,11 @@
 
 > **Tool:** Playwright (Chromium)
 > **Network:** Sui localnet
-> **Route:** `/dao/$daoId/proposals/new?type=SetBoard`, `/dao/$daoId/board`
+> **Route:** `/ou/$ouId/proposals/new?type=SetBoard`, `/ou/$ouId/board`
 
 ## Prerequisites
 
-- DAO created with 3 board members: A (creator), B, C
+- OU created with 3 board members: A (creator), B, C
 - All wallets funded
 - SetBoard proposal type enabled (default)
 
@@ -15,7 +15,7 @@
 ### 2.1 — Add a new board member
 
 1. Connect as wallet A
-2. Navigate to `/dao/$daoId/proposals/new?type=SetBoard`
+2. Navigate to `/ou/$ouId/proposals/new?type=SetBoard`
 3. Form pre-fills current members [A, B, C]
 4. Add member D's address
 5. Fill metadata description
@@ -39,7 +39,7 @@
 **Expected:**
 
 - Proposal status: Executed
-- Navigate to `/dao/$daoId/board` — shows 4 members [A, B, C, D]
+- Navigate to `/ou/$ouId/board` — shows 4 members [A, B, C, D]
 - `BoardUpdated` event emitted
 
 ### 2.2 — Remove a board member
@@ -77,7 +77,7 @@
 ### 2.5 — Negative: Non-board-member submits SetBoard
 
 1. Connect as wallet X (not a board member)
-2. Navigate to `/dao/$daoId/proposals/new?type=SetBoard`
+2. Navigate to `/ou/$ouId/proposals/new?type=SetBoard`
 3. Fill form and attempt to submit
 
 **Expected:**

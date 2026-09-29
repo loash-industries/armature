@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * localnet-setup.mjs — Publish packages, create test DAO, output .env.local
+ * localnet-setup.mjs — Publish packages, create test OU, output .env.local
  *
  * Usage:
  *   node scripts/localnet-setup.mjs                  # full setup
@@ -182,38 +182,38 @@ const moduleCount = published.modules?.length ?? 0;
 ok(`Packages published: ${PACKAGE_ID} (${moduleCount} modules)`);
 
 // ---------------------------------------------------------------------------
-// Step 5: Create test DAO
+// Step 5: Create test OU
 // ---------------------------------------------------------------------------
 
-step("Creating test DAO");
+step("Creating test OU");
 
-const daoResult = sui(
+const ouResult = sui(
   `client ptb` +
   ` --make-move-vec "<address>" "[@${activeAddress}, @${user2Address}, @${user3Address}]"` +
   ` --assign members` +
   ` --move-call ${PACKAGE_ID}::governance::init_board members` +
   ` --assign gov_init` +
-  ` --move-call ${PACKAGE_ID}::dao::create gov_init '"Test DAO"' '"A test DAO for local e2e testing"' '"https://example.com/dao-logo.png"'` +
+  ` --move-call ${PACKAGE_ID}::ou::create gov_init '"Test OU"' '"A test OU for local e2e testing"' '"https://example.com/ou-logo.png"'` +
   ` --gas-budget 100000000`,
   { json: true },
 );
 
 // PTB --json uses event_json (parsed) rather than events[].parsedJson
-const eventJson = daoResult.event_json;
-if (!Array.isArray(eventJson) || eventJson.length === 0 || !eventJson[0].dao_id) {
-  err("DAOCreated event not found in transaction output:");
-  console.error(JSON.stringify(daoResult, null, 2));
+const eventJson = ouResult.event_json;
+if (!Array.isArray(eventJson) || eventJson.length === 0 || !eventJson[0].ou_id) {
+  err("OUCreated event not found in transaction output:");
+  console.error(JSON.stringify(ouResult, null, 2));
   process.exit(1);
 }
 
 const ids = eventJson[0];
-const DAO_ID = ids.dao_id;
+const OU_ID = ids.ou_id;
 const TREASURY_ID = ids.treasury_id;
 const CAP_VAULT_ID = ids.capability_vault_id;
 const CHARTER_ID = ids.charter_id;
 const FREEZE_ID = ids.emergency_freeze_id;
 
-ok(`DAO created: ${DAO_ID}`);
+ok(`OU created: ${OU_ID}`);
 info(`  Treasury:         ${TREASURY_ID}`);
 info(`  Capability Vault: ${CAP_VAULT_ID}`);
 info(`  Charter:          ${CHARTER_ID}`);
@@ -241,8 +241,8 @@ VITE_WALLET_KEY_1=${walletKey1}
 VITE_WALLET_MNEMONIC_2=${user2Mnemonic}
 VITE_WALLET_MNEMONIC_3=${user3Mnemonic}
 
-# Test DAO object IDs
-VITE_TEST_DAO_ID=${DAO_ID}
+# Test OU object IDs
+VITE_TEST_OU_ID=${OU_ID}
 VITE_TEST_TREASURY_ID=${TREASURY_ID}
 VITE_TEST_CAP_VAULT_ID=${CAP_VAULT_ID}
 VITE_TEST_CHARTER_ID=${CHARTER_ID}
@@ -271,6 +271,6 @@ info(`  User 1 (creator): ${activeAddress}`);
 info(`  User 2 (board):   ${user2Address}`);
 info(`  User 3 (board):   ${user3Address}`);
 console.log();
-info(`DAO ID: ${DAO_ID}`);
-info(`Navigate to: http://localhost:5173/dao/${DAO_ID}`);
+info(`OU ID: ${OU_ID}`);
+info(`Navigate to: http://localhost:5173/ou/${OU_ID}`);
 console.log();

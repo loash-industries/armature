@@ -19,23 +19,23 @@ Without these primitives, players default to Discord channels and spreadsheets. 
 
 ## The Thesis
 
-**The DAO is the organizational primitive.**
+**The OU is the organizational primitive.**
 
 Not a product. Not a voting tool. A *substrate* — the smallest unit of coordinated decision-making that can compose in every direction:
 
-- **Downward** — A DAO spawns SubDAOs as departments with delegated authority, scoped budgets, and controller-managed boards.
-- **Upward** — Independent DAOs federate into alliances, pooling resources and coordinating strategy while retaining sovereignty.
-- **Laterally** — A single DAO can simultaneously be a SubDAO of one organization, a federation member of another, and a controller of its own SubDAOs.
+- **Downward** — An OU spawns SubOUs as departments with delegated authority, scoped budgets, and controller-managed boards.
+- **Upward** — Independent OUs federate into alliances, pooling resources and coordinating strategy while retaining sovereignty.
+- **Laterally** — A single OU can simultaneously be a SubOU of one organization, a federation member of another, and a controller of its own SubOUs.
 
-This composability is not incidental. It is the core design goal. Every organizational form that players might need — from a solo founder's treasury to an interstellar trade federation — should be expressible as a configuration of DAOs connected by capability objects.
+This composability is not incidental. It is the core design goal. Every organizational form that players might need — from a solo founder's treasury to an interstellar trade federation — should be expressible as a configuration of OUs connected by capability objects.
 
-**To a DAO, everything is a proposal.** Spending treasury funds, changing the board, updating the charter, joining a federation, spinning out a department, issuing a project token — all of these are typed proposals that flow through the same governance pipeline. The proposal system *is* the permission system: each proposal type holds exactly the permissions governance granted it, and nothing else. There are no admin keys, no special roles outside of governance, no backdoors. Authority flows exclusively through on-chain governance — voted-upon actions, or execution paths a vote explicitly opened (such as a self-join that checks tribe membership).
+**To an OU, everything is a proposal.** Spending treasury funds, changing the board, updating the charter, joining a federation, spinning out a department, issuing a project token — all of these are typed proposals that flow through the same governance pipeline. The proposal system *is* the permission system: each proposal type holds exactly the permissions governance granted it, and nothing else. There are no admin keys, no special roles outside of governance, no backdoors. Authority flows exclusively through on-chain governance — voted-upon actions, or execution paths a vote explicitly opened (such as a self-join that checks tribe membership).
 
 ---
 
-## The DAO Atom
+## The OU Atom
 
-A DAO is an atom — the indivisible unit of on-chain organization. Remove any component and it ceases to function. The atom has four parts:
+An OU is an atom — the indivisible unit of on-chain organization. Remove any component and it ceases to function. The atom has four parts:
 
 ```mermaid
 graph TD
@@ -67,11 +67,11 @@ graph TD
 - **Treasury** — The assets under collective custody: coins, multicoin balances, capability objects, `TreasuryCap`s. Anyone can deposit; proposals are the only way out.
 - **Charter** — The constitution: the organization's name and a pointer to the document that defines its purpose and rules. Today the parameters that shape how proposals behave live in each proposal type's config; moving them into the charter, so that the charter parametrizes proposals on-chain, is a planned feature ([stretch/10](stretch/10_charter_parametrization.md)). Proposals are the only way to change the charter.
 
-The key insight is the **self-referential loop**: proposals can expand or reduce the set of proposal types the DAO recognizes, reconfigure those types (including the ones that do the reconfiguring), and edit the charter. This circularity is what makes a DAO a *living* organizational unit rather than a static contract. The atom governs itself, amends itself, and defines the boundaries of its own authority. Safety floors keep the loop from dissolving itself: the types that change the rules require an 80% vote.
+The key insight is the **self-referential loop**: proposals can expand or reduce the set of proposal types the OU recognizes, reconfigure those types (including the ones that do the reconfiguring), and edit the charter. This circularity is what makes an OU a *living* organizational unit rather than a static contract. The atom governs itself, amends itself, and defines the boundaries of its own authority. Safety floors keep the loop from dissolving itself: the types that change the rules require an 80% vote.
 
-The outer boundary of the atom maps directly to blast-radius isolation (Pillar 7). Everything inside the circle is the DAO's sovereign domain. Cross-DAO operations — SubDAO control, federation membership, inter-DAO transfers — cross atom boundaries. An atom's assets and authority leave it only by its own governance action (receiving is permissionless), and a controller acts on a SubDAO only through the `SubDAOControl` it holds.
+The outer boundary of the atom maps directly to blast-radius isolation (Pillar 7). Everything inside the circle is the OU's sovereign domain. Cross-OU operations — SubOU control, federation membership, inter-OU transfers — cross atom boundaries. An atom's assets and authority leave it only by its own governance action (receiving is permissionless), and a controller acts on a SubOU only through the `SubOUControl` it holds.
 
-Atoms compose into molecules: a SubDAO hierarchy is a chain of atoms connected by `SubDAOControl` capability edges. A federation (planned) is a cluster of atoms connected by `FederationSeat` edges. The atom is always the unit of sovereignty — no matter how many bonds it forms, its internal governance remains its own.
+Atoms compose into molecules: a SubOU hierarchy is a chain of atoms connected by `SubOUControl` capability edges. A federation (planned) is a cluster of atoms connected by `FederationSeat` edges. The atom is always the unit of sovereignty — no matter how many bonds it forms, its internal governance remains its own.
 
 ---
 
@@ -79,21 +79,21 @@ Atoms compose into molecules: a SubDAO hierarchy is a chain of atoms connected b
 
 ### 1. Composability over Hierarchy
 
-The original SubDAO spec models a strict top-down tree: controllers own SubDAOs, SubDAOs cannot act upward. This is necessary but insufficient. Real organizations exist in webs of relationships — a logistics guild is simultaneously a department of Tribe A, a member of the Haulers' Alliance, and a controller of its own regional sub-offices.
+The original SubOU spec models a strict top-down tree: controllers own SubOUs, SubOUs cannot act upward. This is necessary but insufficient. Real organizations exist in webs of relationships — a logistics guild is simultaneously a department of Tribe A, a member of the Haulers' Alliance, and a controller of its own regional sub-offices.
 
-The protocol must support this by making the DAO a *node in a directed graph*, where edges are capability objects stored in vaults. `SubDAOControl` edges point downward (controller → owned). `FederationSeat` edges (planned) point upward (member → federation). The graph is not meant to be a tree but a DAG. The framework's creation paths only ever produce trees; keeping the graph acyclic afterwards is a governance rule (see [04 SubDAO Hierarchy](04_subdao_hierarchy.md) §7).
+The protocol must support this by making the OU a *node in a directed graph*, where edges are capability objects stored in vaults. `SubOUControl` edges point downward (controller → owned). `FederationSeat` edges (planned) point upward (member → federation). The graph is not meant to be a tree but a DAG. The framework's creation paths only ever produce trees; keeping the graph acyclic afterwards is a governance rule (see [04 SubOU Hierarchy](04_subdao_hierarchy.md) §7).
 
 ### 2. Immutable Governance Model, Mutable State
 
-A DAO's governance model is sealed at creation; today Board is the only model. The governance *state* — the board roster — is mutable through authorized proposals, and every change is versioned so a proposal's voters stay fixed at its creation. Changing the governance model would require a full migration via `SpawnDAO`, which creates a successor DAO and transfers all assets. This makes governance predictable: participants always know what kind of organization they are in.
+An OU's governance model is sealed at creation; today Board is the only model. The governance *state* — the board roster — is mutable through authorized proposals, and every change is versioned so a proposal's voters stay fixed at its creation. Changing the governance model would require a full migration via `SpawnOU`, which creates a successor OU and transfers all assets. This makes governance predictable: participants always know what kind of organization they are in.
 
 ### 3. Charter as Constitution
 
-Every DAO has a Charter — its name and a pointer to a human-readable document that defines the organization's purpose, operating agreements and membership rules. Changing it is a governance action (`UpdateMetadata`), and every change is on the record. A Walrus-backed charter with a content hash, version history and a dedicated amendment process is planned ([05 Charter](05_charter.md) Part B). Constitutional governance means the rules by which the DAO operates are themselves subject to governance.
+Every OU has a Charter — its name and a pointer to a human-readable document that defines the organization's purpose, operating agreements and membership rules. Changing it is a governance action (`UpdateMetadata`), and every change is on the record. A Walrus-backed charter with a content hash, version history and a dedicated amendment process is planned ([05 Charter](05_charter.md) Part B). Constitutional governance means the rules by which the OU operates are themselves subject to governance.
 
 ### 4. Typed Proposals as Permissions
 
-Rather than implementing a separate role-based permission layer, the protocol encodes permissions through typed proposals. Each type holds permission bits naming exactly what its execution may touch (add board members, withdraw from the treasury, borrow a named capability type), and its own governance configuration (threshold, quorum, delay, cooldown). Types that hold high-impact bits need an 80% vote; others can run on lighter configs. An `AddMember` type at 50%, a `SendSmallPayment` type capped by a rolling spend limit, and a `ProposeUpgrade` type with a long delay encode different permission levels using the same mechanism. SubDAOs scope these permissions to their own treasury and capabilities — an Engineering department's `SendCoin` only touches the Engineering budget.
+Rather than implementing a separate role-based permission layer, the protocol encodes permissions through typed proposals. Each type holds permission bits naming exactly what its execution may touch (add board members, withdraw from the treasury, borrow a named capability type), and its own governance configuration (threshold, quorum, delay, cooldown). Types that hold high-impact bits need an 80% vote; others can run on lighter configs. An `AddMember` type at 50%, a `SendSmallPayment` type capped by a rolling spend limit, and a `ProposeUpgrade` type with a long delay encode different permission levels using the same mechanism. SubOUs scope these permissions to their own treasury and capabilities — an Engineering department's `SendCoin` only touches the Engineering budget.
 
 ### 5. Hot-Potato Execution Integrity
 
@@ -101,11 +101,11 @@ Every proposal execution produces an `ExecutionTicket` wrapping an `ExecutionReq
 
 ### 6. Minimal Trust Surface
 
-The only admin-like capability in the system is the `FreezeAdminCap` — a circuit breaker that can temporarily pause specific proposal types for up to a bounded duration. It cannot execute proposals, cannot access the treasury, and cannot change governance. It exists solely to buy time when a vulnerability is discovered. It starts with the DAO's creator (or the admin named at creation), governance can transfer it or override its freezes, and every freeze expires on its own.
+The only admin-like capability in the system is the `FreezeAdminCap` — a circuit breaker that can temporarily pause specific proposal types for up to a bounded duration. It cannot execute proposals, cannot access the treasury, and cannot change governance. It exists solely to buy time when a vulnerability is discovered. It starts with the OU's creator (or the admin named at creation), governance can transfer it or override its freezes, and every freeze expires on its own.
 
 ### 7. Blast Radius Isolation
 
-Every DAO has its own `TreasuryVault`, `CapabilityVault`, and `Charter` as separate shared objects, and every gated operation checks that its authorization belongs to the DAO it touches. A compromised SubDAO cannot access its controller's treasury. A rogue federation member cannot access other members' vaults. The damage from any single compromise is bounded to the compromised DAO's own assets (and, for a controller, the SubDAOs it controls). Assets and authority leave a DAO only through its own governance.
+Every OU has its own `TreasuryVault`, `CapabilityVault`, and `Charter` as separate shared objects, and every gated operation checks that its authorization belongs to the OU it touches. A compromised SubOU cannot access its controller's treasury. A rogue federation member cannot access other members' vaults. The damage from any single compromise is bounded to the compromised OU's own assets (and, for a controller, the SubOUs it controls). Assets and authority leave an OU only through its own governance.
 
 ---
 
@@ -113,13 +113,13 @@ Every DAO has its own `TreasuryVault`, `CapabilityVault`, and `Charter` as separ
 
 The protocol is the governance layer. Everything else builds on top:
 
-- **Project funding** — Kickstarter-style campaigns where a project is a SubDAO, backers form the board, and revenue flows through treasury vaults.
-- **Markets** — Token issuance with `TreasuryCap` held in DAO vaults and governed by proposals.
-- **Logistics** — Hauling services, gate networks, and storage depots operated as DAO-governed infrastructure projects.
+- **Project funding** — Kickstarter-style campaigns where a project is a SubOU, backers form the board, and revenue flows through treasury vaults.
+- **Markets** — Token issuance with `TreasuryCap` held in OU vaults and governed by proposals.
+- **Logistics** — Hauling services, gate networks, and storage depots operated as OU-governed infrastructure projects.
 - **Inter-tribe trade** — Federations that coordinate trade agreements, shared infrastructure, and dispute resolution across sovereign tribes.
 - **Constitutional governance** — Charters that encode operating agreements, with high-threshold amendment processes that protect minority stakeholders.
-- **Open extension** — Third-party packages define their own proposal types; a DAO enables one by an 80% vote and grants it only the permissions its handler needs.
+- **Open extension** — Third-party packages define their own proposal types; an OU enables one by an 80% vote and grants it only the permissions its handler needs.
 
-The DAO protocol does not implement any of these directly. It provides the primitives — governance, treasury, capabilities, composition — from which all of them can be built.
+The OU protocol does not implement any of these directly. It provides the primitives — governance, treasury, capabilities, composition — from which all of them can be built.
 
-> **Status:** Implemented: Board governance, the SubDAO hierarchy (including one-transaction tribe creation), charter metadata, per-type permissions, composite proposals, execution without a vote for types a DAO opts into (including EVE Frontier tribe self-join through `armature_world_bridge`), and treasury, currency and upgrade proposal types. Federation, project funding, Walrus-backed charters, charter parametrization and other governance models are stretch features. See [07 Roadmap](07_roadmap.md) for phasing and the [stretch features index](stretch/00_index.md) for full design.
+> **Status:** Implemented: Board governance, the SubOU hierarchy (including one-transaction tribe creation), charter metadata, per-type permissions, composite proposals, execution without a vote for types an OU opts into (including EVE Frontier tribe self-join through `armature_world_bridge`), and treasury, currency and upgrade proposal types. Federation, project funding, Walrus-backed charters, charter parametrization and other governance models are stretch features. See [07 Roadmap](07_roadmap.md) for phasing and the [stretch features index](stretch/00_index.md) for full design.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# localnet-setup.sh — Publish packages, create test DAO, output .env.local
+# localnet-setup.sh — Publish packages, create test OU, output .env.local
 #
 # Usage:
 #   ./scripts/localnet-setup.sh          # full setup
@@ -200,39 +200,39 @@ fi
 ok "armature_proposals published: $PROPOSALS_PACKAGE_ID"
 
 # ---------------------------------------------------------------------------
-# Step 6: Create test DAO
+# Step 6: Create test OU
 # ---------------------------------------------------------------------------
 
-step "Creating test DAO"
+step "Creating test OU"
 
-DAO_FILE="$TMP_DIR/dao_create.json"
+OU_FILE="$TMP_DIR/ou_create.json"
 sui client ptb \
   --make-move-vec "<address>" "[@${ACTIVE_ADDRESS}, @${USER2_ADDRESS}, @${USER3_ADDRESS}]" \
   --assign members \
   --move-call "${FRAMEWORK_PACKAGE_ID}::governance::init_board" members \
   --assign gov_init \
-  --move-call "${FRAMEWORK_PACKAGE_ID}::dao::create" gov_init '"Test DAO"' '"A test DAO for local e2e testing"' '"https://example.com/dao-logo.png"' \
+  --move-call "${FRAMEWORK_PACKAGE_ID}::ou::create" gov_init '"Test OU"' '"A test OU for local e2e testing"' '"https://example.com/ou-logo.png"' \
   --gas-budget 100000000 \
-  --json > "$DAO_FILE" 2>/dev/null
+  --json > "$OU_FILE" 2>/dev/null
 
-# Parse DAOCreated event
-DAO_ID=$(json_get_file "$DAO_FILE" "
-  const evt = d.events.find(e => e.type.includes('::dao::DAOCreated'));
-  evt ? evt.parsedJson.dao_id : 'EVENT_NOT_FOUND'
+# Parse OUCreated event
+OU_ID=$(json_get_file "$OU_FILE" "
+  const evt = d.events.find(e => e.type.includes('::ou::OUCreated'));
+  evt ? evt.parsedJson.ou_id : 'EVENT_NOT_FOUND'
 ")
 
-if [ "$DAO_ID" = "EVENT_NOT_FOUND" ] || [ -z "$DAO_ID" ]; then
-  err "DAOCreated event not found in transaction output:"
-  cat "$DAO_FILE"
+if [ "$OU_ID" = "EVENT_NOT_FOUND" ] || [ -z "$OU_ID" ]; then
+  err "OUCreated event not found in transaction output:"
+  cat "$OU_FILE"
   exit 1
 fi
 
-TREASURY_ID=$(json_get_file "$DAO_FILE" "d.events.find(e=>e.type.includes('::dao::DAOCreated')).parsedJson.treasury_id")
-CAP_VAULT_ID=$(json_get_file "$DAO_FILE" "d.events.find(e=>e.type.includes('::dao::DAOCreated')).parsedJson.capability_vault_id")
-CHARTER_ID=$(json_get_file "$DAO_FILE" "d.events.find(e=>e.type.includes('::dao::DAOCreated')).parsedJson.charter_id")
-FREEZE_ID=$(json_get_file "$DAO_FILE" "d.events.find(e=>e.type.includes('::dao::DAOCreated')).parsedJson.emergency_freeze_id")
+TREASURY_ID=$(json_get_file "$OU_FILE" "d.events.find(e=>e.type.includes('::ou::OUCreated')).parsedJson.treasury_id")
+CAP_VAULT_ID=$(json_get_file "$OU_FILE" "d.events.find(e=>e.type.includes('::ou::OUCreated')).parsedJson.capability_vault_id")
+CHARTER_ID=$(json_get_file "$OU_FILE" "d.events.find(e=>e.type.includes('::ou::OUCreated')).parsedJson.charter_id")
+FREEZE_ID=$(json_get_file "$OU_FILE" "d.events.find(e=>e.type.includes('::ou::OUCreated')).parsedJson.emergency_freeze_id")
 
-ok "DAO created: $DAO_ID"
+ok "OU created: $OU_ID"
 info "  Treasury:         $TREASURY_ID"
 info "  Capability Vault: $CAP_VAULT_ID"
 info "  Charter:          $CHARTER_ID"
@@ -260,8 +260,8 @@ VITE_WALLET_KEY_1=$WALLET_KEY_1
 VITE_WALLET_KEY_2=$USER2_KEY
 VITE_WALLET_KEY_3=$USER3_KEY
 
-# Test DAO object IDs
-VITE_TEST_DAO_ID=$DAO_ID
+# Test OU object IDs
+VITE_TEST_OU_ID=$OU_ID
 VITE_TEST_TREASURY_ID=$TREASURY_ID
 VITE_TEST_CAP_VAULT_ID=$CAP_VAULT_ID
 VITE_TEST_CHARTER_ID=$CHARTER_ID
@@ -289,5 +289,5 @@ info "  User 1 (creator): $ACTIVE_ADDRESS"
 info "  User 2 (board):   $USER2_ADDRESS"
 info "  User 3 (board):   $USER3_ADDRESS"
 echo ""
-info "DAO ID: $DAO_ID"
+info "OU ID: $OU_ID"
 echo ""

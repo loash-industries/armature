@@ -14,7 +14,7 @@ use sui::vec_set::{Self, VecSet};
 // === Errors ===
 
 const EInsufficientBalance: u64 = 0;
-const EDAOIdMismatch: u64 = 1;
+const EOUIdMismatch: u64 = 1;
 const EVaultNotEmpty: u64 = 2;
 
 // === Events ===
@@ -22,7 +22,7 @@ const EVaultNotEmpty: u64 = 2;
 /// Emitted when a coin is deposited into the vault.
 public struct CoinDeposited has copy, drop {
     vault_id: ID,
-    dao_id: ID,
+    ou_id: ID,
     coin_type: std::ascii::String,
     amount: u64,
     depositor: address,
@@ -31,7 +31,7 @@ public struct CoinDeposited has copy, drop {
 /// Emitted when a coin is withdrawn from the vault via a proposal execution.
 public struct CoinWithdrawn has copy, drop {
     vault_id: ID,
-    dao_id: ID,
+    ou_id: ID,
     coin_type: std::ascii::String,
     amount: u64,
     recipient: address,
@@ -40,7 +40,7 @@ public struct CoinWithdrawn has copy, drop {
 /// Emitted when a coin directly transferred to the vault is claimed.
 public struct CoinClaimed has copy, drop {
     vault_id: ID,
-    dao_id: ID,
+    ou_id: ID,
     coin_type: std::ascii::String,
     amount: u64,
     claimer: address,
@@ -49,7 +49,7 @@ public struct CoinClaimed has copy, drop {
 /// Emitted when a multicoin balance is deposited into the vault.
 public struct MultiCoinDeposited has copy, drop {
     vault_id: ID,
-    dao_id: ID,
+    ou_id: ID,
     collection_id: ID,
     asset_id: u64,
     amount: u64,
@@ -59,7 +59,7 @@ public struct MultiCoinDeposited has copy, drop {
 /// Emitted when a multicoin balance is withdrawn from the vault via a proposal execution.
 public struct MultiCoinWithdrawn has copy, drop {
     vault_id: ID,
-    dao_id: ID,
+    ou_id: ID,
     collection_id: ID,
     asset_id: u64,
     amount: u64,
@@ -91,10 +91,10 @@ public struct CollectionRecord has key, store {
 /// Coin balances: dynamic fields keyed by type name string.
 /// Multicoin balances: two-level DOF tree — CollectionRecord per collection_id,
 /// MultiCoinBalance per asset_id within each CollectionRecord.
-/// Created as a shared object during DAO creation.
+/// Created as a shared object during OU creation.
 public struct TreasuryVault has key, store {
     id: UID,
-    dao_id: ID,
+    ou_id: ID,
     coin_types: VecSet<std::ascii::String>,
     multicoin_collection_count: u64,
 }
@@ -102,10 +102,10 @@ public struct TreasuryVault has key, store {
 // === Constructor ===
 
 /// Create a new empty TreasuryVault. Only callable within the framework package.
-public(package) fun new(dao_id: ID, ctx: &mut TxContext): TreasuryVault {
+public(package) fun new(ou_id: ID, ctx: &mut TxContext): TreasuryVault {
     TreasuryVault {
         id: object::new(ctx),
-        dao_id,
+        ou_id,
         coin_types: vec_set::empty(),
         multicoin_collection_count: 0,
     }
@@ -140,7 +140,7 @@ public fun deposit<T>(self: &mut TreasuryVault, coin: Coin<T>, ctx: &mut TxConte
 
     event::emit(CoinDeposited {
         vault_id: object::uid_to_inner(&self.id),
-        dao_id: self.dao_id,
+        ou_id: self.ou_id,
         coin_type: type_key,
         amount,
         depositor: ctx.sender(),
@@ -156,7 +156,7 @@ public fun withdraw<T, P>(
     req: &ExecutionRequest<P>,
     ctx: &mut TxContext,
 ): Coin<T> {
-    assert!(self.dao_id == req.req_dao_id(), EDAOIdMismatch);
+    assert!(self.ou_id == req.req_ou_id(), EOUIdMismatch);
     req.assert_permitted(permissions::treasury_withdraw());
     let type_key = std::type_name::with_original_ids<T>().into_string();
 
@@ -181,7 +181,7 @@ public fun withdraw<T, P>(
 
     event::emit(CoinWithdrawn {
         vault_id: object::uid_to_inner(&self.id),
-        dao_id: self.dao_id,
+        ou_id: self.ou_id,
         coin_type: type_key,
         amount,
         recipient: ctx.sender(),
@@ -204,7 +204,7 @@ public fun claim_coin<T>(
 
     event::emit(CoinClaimed {
         vault_id: object::uid_to_inner(&self.id),
-        dao_id: self.dao_id,
+        ou_id: self.ou_id,
         coin_type: type_key,
         amount,
         claimer: ctx.sender(),
@@ -260,7 +260,7 @@ public fun deposit_multicoin(
 
     event::emit(MultiCoinDeposited {
         vault_id: object::uid_to_inner(&self.id),
-        dao_id: self.dao_id,
+        ou_id: self.ou_id,
         collection_id,
         asset_id,
         amount,
@@ -280,7 +280,7 @@ public fun withdraw_multicoin<P>(
     req: &ExecutionRequest<P>,
     ctx: &mut TxContext,
 ): MultiCoinBalance {
-    assert!(self.dao_id == req.req_dao_id(), EDAOIdMismatch);
+    assert!(self.ou_id == req.req_ou_id(), EOUIdMismatch);
     req.assert_permitted(permissions::treasury_withdraw());
 
     let coll_key = CollectionKey { collection_id };
@@ -321,7 +321,7 @@ public fun withdraw_multicoin<P>(
 
     event::emit(MultiCoinWithdrawn {
         vault_id: object::uid_to_inner(&self.id),
-        dao_id: self.dao_id,
+        ou_id: self.ou_id,
         collection_id,
         asset_id,
         amount,
@@ -333,8 +333,8 @@ public fun withdraw_multicoin<P>(
 
 // === Accessors ===
 
-/// Returns the DAO ID this vault belongs to.
-public fun dao_id(self: &TreasuryVault): ID { self.dao_id }
+/// Returns the OU ID this vault belongs to.
+public fun ou_id(self: &TreasuryVault): ID { self.ou_id }
 
 /// Returns the set of coin type names currently held.
 public fun coin_types(self: &TreasuryVault): &VecSet<std::ascii::String> { &self.coin_types }
@@ -391,7 +391,7 @@ public fun is_empty(self: &TreasuryVault): bool {
 /// Destroy an empty TreasuryVault. Aborts with `EVaultNotEmpty` if the
 /// vault still holds any coin or multicoin balances.
 public(package) fun destroy_empty(vault: TreasuryVault) {
-    let TreasuryVault { id, dao_id: _, coin_types, multicoin_collection_count } = vault;
+    let TreasuryVault { id, ou_id: _, coin_types, multicoin_collection_count } = vault;
     assert!(coin_types.is_empty(), EVaultNotEmpty);
     assert!(multicoin_collection_count == 0, EVaultNotEmpty);
     id.delete();

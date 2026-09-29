@@ -2,17 +2,17 @@
 module armature::tribe_tests;
 
 use armature::add_member::AddMember;
-use armature::capability_vault::{Self, CapabilityVault, SubDAOControl};
+use armature::capability_vault::{Self, CapabilityVault, SubOUControl};
 use armature::charter::Charter;
-use armature::create_subdao::CreateSubDAO;
-use armature::dao::{Self, DAO};
+use armature::create_subou::CreateSubOU;
+use armature::ou::{Self, OU};
 use armature::emergency::{EmergencyFreeze, FreezeAdminCap};
 use armature::enable_proposal_type::EnableProposalType;
 use armature::governance;
 use armature::proposal;
 use armature::remove_member::RemoveMember;
 use armature::set_board::SetBoard;
-use armature::spawn_dao::SpawnDAO;
+use armature::spawn_ou::SpawnOU;
 use armature::treasury_vault::TreasuryVault;
 use armature::tribe;
 use armature::update_metadata::UpdateMetadata;
@@ -47,7 +47,7 @@ fun do_create_tribe(scenario: &mut test_scenario::Scenario): (ID, ID, ID) {
         vector[CREATOR, TRIBE_MEMBER],
         vector[OFFICER_A, OFFICER_B],
         vector[MEMBER_A, MEMBER_B],
-        string::utf8(b"Tribe DAO"),
+        string::utf8(b"Tribe OU"),
         string::utf8(b"Officers"),
         string::utf8(b"Members"),
         string::utf8(b"https://tribe.example/logo.png"),
@@ -63,7 +63,7 @@ fun do_create_tribe(scenario: &mut test_scenario::Scenario): (ID, ID, ID) {
 
 #[test]
 /// create_tribe returns three distinct IDs.
-fun create_tribe_returns_distinct_dao_ids() {
+fun create_tribe_returns_distinct_ou_ids() {
     let mut scenario = test_scenario::begin(CREATOR);
     let (owner_id, officer_id, member_id) = do_create_tribe(&mut scenario);
 
@@ -74,39 +74,39 @@ fun create_tribe_returns_distinct_dao_ids() {
     scenario.end();
 }
 
-// === Test 2: all three DAOs are active with the correct boards ===
+// === Test 2: all three OUs are active with the correct boards ===
 
 #[test]
-/// Each DAO is Active and seeded with the correct board members.
-fun create_tribe_daos_are_active_with_correct_boards() {
+/// Each OU is Active and seeded with the correct board members.
+fun create_tribe_ous_are_active_with_correct_boards() {
     let mut scenario = test_scenario::begin(CREATOR);
     let (owner_id, officer_id, member_id) = do_create_tribe(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
-        let tribe_dao = scenario.take_shared_by_id<DAO>(owner_id);
-        let officer_dao = scenario.take_shared_by_id<DAO>(officer_id);
-        let member_dao = scenario.take_shared_by_id<DAO>(member_id);
+        let tribe_ou = scenario.take_shared_by_id<OU>(owner_id);
+        let officer_ou = scenario.take_shared_by_id<OU>(officer_id);
+        let member_ou = scenario.take_shared_by_id<OU>(member_id);
 
-        assert!(tribe_dao.status().is_active());
-        assert!(officer_dao.status().is_active());
-        assert!(member_dao.status().is_active());
+        assert!(tribe_ou.status().is_active());
+        assert!(officer_ou.status().is_active());
+        assert!(member_ou.status().is_active());
 
-        assert!(tribe_dao.governance().is_board_member(CREATOR));
-        assert!(tribe_dao.governance().is_board_member(TRIBE_MEMBER));
-        assert!(!tribe_dao.governance().is_board_member(OFFICER_A));
+        assert!(tribe_ou.governance().is_board_member(CREATOR));
+        assert!(tribe_ou.governance().is_board_member(TRIBE_MEMBER));
+        assert!(!tribe_ou.governance().is_board_member(OFFICER_A));
 
-        assert!(officer_dao.governance().is_board_member(OFFICER_A));
-        assert!(officer_dao.governance().is_board_member(OFFICER_B));
-        assert!(!officer_dao.governance().is_board_member(CREATOR));
+        assert!(officer_ou.governance().is_board_member(OFFICER_A));
+        assert!(officer_ou.governance().is_board_member(OFFICER_B));
+        assert!(!officer_ou.governance().is_board_member(CREATOR));
 
-        assert!(member_dao.governance().is_board_member(MEMBER_A));
-        assert!(member_dao.governance().is_board_member(MEMBER_B));
-        assert!(!member_dao.governance().is_board_member(CREATOR));
+        assert!(member_ou.governance().is_board_member(MEMBER_A));
+        assert!(member_ou.governance().is_board_member(MEMBER_B));
+        assert!(!member_ou.governance().is_board_member(CREATOR));
 
-        test_scenario::return_shared(tribe_dao);
-        test_scenario::return_shared(officer_dao);
-        test_scenario::return_shared(member_dao);
+        test_scenario::return_shared(tribe_ou);
+        test_scenario::return_shared(officer_ou);
+        test_scenario::return_shared(member_ou);
     };
 
     scenario.end();
@@ -115,53 +115,53 @@ fun create_tribe_daos_are_active_with_correct_boards() {
 // === Test 3: control hierarchy — tribe→officers→members ===
 
 #[test]
-/// Tribe vault holds one SubDAOControl pointing at the Officers SubDAO.
-/// Officers vault holds one SubDAOControl pointing at the Members SubDAO.
+/// Tribe vault holds one SubOUControl pointing at the Officers SubOU.
+/// Officers vault holds one SubOUControl pointing at the Members SubOU.
 fun create_tribe_control_hierarchy_is_tribe_officers_members() {
     let mut scenario = test_scenario::begin(CREATOR);
     let (owner_id, officer_id, member_id) = do_create_tribe(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
-        let tribe_dao = scenario.take_shared_by_id<DAO>(owner_id);
-        let officer_dao = scenario.take_shared_by_id<DAO>(officer_id);
-        let tribe_vault_id = tribe_dao.capability_vault_id();
-        let officer_vault_id = officer_dao.capability_vault_id();
-        test_scenario::return_shared(tribe_dao);
-        test_scenario::return_shared(officer_dao);
+        let tribe_ou = scenario.take_shared_by_id<OU>(owner_id);
+        let officer_ou = scenario.take_shared_by_id<OU>(officer_id);
+        let tribe_vault_id = tribe_ou.capability_vault_id();
+        let officer_vault_id = officer_ou.capability_vault_id();
+        test_scenario::return_shared(tribe_ou);
+        test_scenario::return_shared(officer_ou);
 
-        // Tribe vault: exactly one control, pointing at the Officers SubDAO.
+        // Tribe vault: exactly one control, pointing at the Officers SubOU.
         let mut tribe_vault = scenario.take_shared_by_id<CapabilityVault>(tribe_vault_id);
-        let tribe_ctrl_ids = tribe_vault.ids_for_type<SubDAOControl>();
+        let tribe_ctrl_ids = tribe_vault.ids_for_type<SubOUControl>();
         assert!(tribe_ctrl_ids.length() == 1);
 
         let req = proposal::new_execution_request_for_testing<TestProposal>(
-            tribe_vault.dao_id(),
+            tribe_vault.ou_id(),
             object::id_from_address(@0xBEEF),
-        ).with_borrow_scope_for_testing(vector[std::type_name::with_defining_ids<SubDAOControl>()]);
-        let (tribe_ctrl, tribe_loan) = tribe_vault.loan_cap<SubDAOControl, TestProposal>(
+        ).with_borrow_scope_for_testing(vector[std::type_name::with_defining_ids<SubOUControl>()]);
+        let (tribe_ctrl, tribe_loan) = tribe_vault.loan_cap<SubOUControl, TestProposal>(
             tribe_ctrl_ids[0],
             &req,
         );
-        assert!(tribe_ctrl.subdao_id() == officer_id);
+        assert!(tribe_ctrl.subou_id() == officer_id);
         tribe_vault.return_cap(tribe_ctrl, tribe_loan);
         proposal::consume(req);
         test_scenario::return_shared(tribe_vault);
 
-        // Officers vault: exactly one control, pointing at the Members SubDAO.
+        // Officers vault: exactly one control, pointing at the Members SubOU.
         let mut officer_vault = scenario.take_shared_by_id<CapabilityVault>(officer_vault_id);
-        let officer_ctrl_ids = officer_vault.ids_for_type<SubDAOControl>();
+        let officer_ctrl_ids = officer_vault.ids_for_type<SubOUControl>();
         assert!(officer_ctrl_ids.length() == 1);
 
         let req = proposal::new_execution_request_for_testing<TestProposal>(
-            officer_vault.dao_id(),
+            officer_vault.ou_id(),
             object::id_from_address(@0xBEEF),
-        ).with_borrow_scope_for_testing(vector[std::type_name::with_defining_ids<SubDAOControl>()]);
-        let (officer_ctrl, officer_loan) = officer_vault.loan_cap<SubDAOControl, TestProposal>(
+        ).with_borrow_scope_for_testing(vector[std::type_name::with_defining_ids<SubOUControl>()]);
+        let (officer_ctrl, officer_loan) = officer_vault.loan_cap<SubOUControl, TestProposal>(
             officer_ctrl_ids[0],
             &req,
         );
-        assert!(officer_ctrl.subdao_id() == member_id);
+        assert!(officer_ctrl.subou_id() == member_id);
         officer_vault.return_cap(officer_ctrl, officer_loan);
         proposal::consume(req);
         test_scenario::return_shared(officer_vault);
@@ -205,39 +205,39 @@ fun create_tribe_freeze_caps_routed_correctly() {
 // === Test 5: all fifteen companion objects are shared ===
 
 #[test]
-/// Each of the three DAOs has its four companion objects shared on-chain.
+/// Each of the three OUs has its four companion objects shared on-chain.
 fun create_tribe_all_companion_objects_are_shared() {
     let mut scenario = test_scenario::begin(CREATOR);
     let (owner_id, officer_id, member_id) = do_create_tribe(&mut scenario);
 
-    // Verify IDs stored on each DAO reference distinct shared objects.
+    // Verify IDs stored on each OU reference distinct shared objects.
     scenario.next_tx(CREATOR);
     {
-        let tribe_dao = scenario.take_shared_by_id<DAO>(owner_id);
-        let officer_dao = scenario.take_shared_by_id<DAO>(officer_id);
-        let member_dao = scenario.take_shared_by_id<DAO>(member_id);
+        let tribe_ou = scenario.take_shared_by_id<OU>(owner_id);
+        let officer_ou = scenario.take_shared_by_id<OU>(officer_id);
+        let member_ou = scenario.take_shared_by_id<OU>(member_id);
 
-        // All companion IDs are non-zero and distinct from their parent DAO.
-        assert!(tribe_dao.treasury_id()         != owner_id);
-        assert!(tribe_dao.capability_vault_id() != owner_id);
-        assert!(tribe_dao.charter_id()          != owner_id);
-        assert!(tribe_dao.emergency_freeze_id() != owner_id);
+        // All companion IDs are non-zero and distinct from their parent OU.
+        assert!(tribe_ou.treasury_id()         != owner_id);
+        assert!(tribe_ou.capability_vault_id() != owner_id);
+        assert!(tribe_ou.charter_id()          != owner_id);
+        assert!(tribe_ou.emergency_freeze_id() != owner_id);
 
-        assert!(officer_dao.treasury_id()         != officer_id);
-        assert!(officer_dao.capability_vault_id() != officer_id);
-        assert!(officer_dao.charter_id()          != officer_id);
-        assert!(officer_dao.emergency_freeze_id() != officer_id);
+        assert!(officer_ou.treasury_id()         != officer_id);
+        assert!(officer_ou.capability_vault_id() != officer_id);
+        assert!(officer_ou.charter_id()          != officer_id);
+        assert!(officer_ou.emergency_freeze_id() != officer_id);
 
-        assert!(member_dao.treasury_id()         != member_id);
-        assert!(member_dao.capability_vault_id() != member_id);
-        assert!(member_dao.charter_id()          != member_id);
-        assert!(member_dao.emergency_freeze_id() != member_id);
+        assert!(member_ou.treasury_id()         != member_id);
+        assert!(member_ou.capability_vault_id() != member_id);
+        assert!(member_ou.charter_id()          != member_id);
+        assert!(member_ou.emergency_freeze_id() != member_id);
 
-        let tribe_vault_id = tribe_dao.capability_vault_id();
+        let tribe_vault_id = tribe_ou.capability_vault_id();
 
-        test_scenario::return_shared(tribe_dao);
-        test_scenario::return_shared(officer_dao);
-        test_scenario::return_shared(member_dao);
+        test_scenario::return_shared(tribe_ou);
+        test_scenario::return_shared(officer_ou);
+        test_scenario::return_shared(member_ou);
 
         // Spot-check: each shared type can actually be taken.
         let vault = scenario.take_shared_by_id<CapabilityVault>(tribe_vault_id);
@@ -272,7 +272,7 @@ fun create_tribe_all_companion_objects_are_shared() {
 // === Test 6: empty tribe board aborts ===
 
 #[test, expected_failure(abort_code = governance::EEmptyBoard)]
-/// Passing an empty tribe_board vector causes an abort during DAO creation.
+/// Passing an empty tribe_board vector causes an abort during OU creation.
 fun create_tribe_aborts_on_empty_tribe_board() {
     let mut scenario = test_scenario::begin(CREATOR);
     scenario.next_tx(CREATOR);
@@ -280,7 +280,7 @@ fun create_tribe_aborts_on_empty_tribe_board() {
         vector[],
         vector[OFFICER_A],
         vector[MEMBER_A],
-        string::utf8(b"Tribe DAO"),
+        string::utf8(b"Tribe OU"),
         string::utf8(b"Officers"),
         string::utf8(b"Members"),
         string::utf8(b"https://tribe.example/logo.png"),
@@ -296,7 +296,7 @@ fun create_tribe_aborts_on_empty_tribe_board() {
 // === Test 7: empty officers array aborts ===
 
 #[test, expected_failure(abort_code = governance::EEmptyBoard)]
-/// Passing an empty officers vector causes an abort during SubDAO creation.
+/// Passing an empty officers vector causes an abort during SubOU creation.
 fun create_tribe_aborts_on_empty_officer_board() {
     let mut scenario = test_scenario::begin(CREATOR);
     scenario.next_tx(CREATOR);
@@ -304,7 +304,7 @@ fun create_tribe_aborts_on_empty_officer_board() {
         vector[CREATOR],
         vector[],
         vector[MEMBER_A],
-        string::utf8(b"Tribe DAO"),
+        string::utf8(b"Tribe OU"),
         string::utf8(b"Officers"),
         string::utf8(b"Members"),
         string::utf8(b"https://tribe.example/logo.png"),
@@ -320,7 +320,7 @@ fun create_tribe_aborts_on_empty_officer_board() {
 // === Test 8: empty members array aborts ===
 
 #[test, expected_failure(abort_code = governance::EEmptyBoard)]
-/// Passing an empty members vector causes an abort during SubDAO creation.
+/// Passing an empty members vector causes an abort during SubOU creation.
 fun create_tribe_aborts_on_empty_member_board() {
     let mut scenario = test_scenario::begin(CREATOR);
     scenario.next_tx(CREATOR);
@@ -328,7 +328,7 @@ fun create_tribe_aborts_on_empty_member_board() {
         vector[CREATOR],
         vector[OFFICER_A],
         vector[],
-        string::utf8(b"Tribe DAO"),
+        string::utf8(b"Tribe OU"),
         string::utf8(b"Officers"),
         string::utf8(b"Members"),
         string::utf8(b"https://tribe.example/logo.png"),
@@ -342,33 +342,33 @@ fun create_tribe_aborts_on_empty_member_board() {
 }
 
 // ============================================================
-// create_wired_subdao tests
+// create_wired_subou tests
 // ============================================================
 
-const SUBDAO_ADMIN: address = @0x20;
+const SUBOU_ADMIN: address = @0x20;
 
 // Minimum valid config reused across tests.
 fun default_config(): proposal::ProposalConfig {
     proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0)
 }
 
-/// Create a parent DAO (vault kept un-shared), wire a SubDAO into it, then share
-/// the vault. Returns (parent_dao_id, subdao_id).
-fun do_create_parent_and_wired_subdao(scenario: &mut test_scenario::Scenario): (ID, ID) {
+/// Create a parent OU (vault kept un-shared), wire a SubOU into it, then share
+/// the vault. Returns (parent_ou_id, subou_id).
+fun do_create_parent_and_wired_subou(scenario: &mut test_scenario::Scenario): (ID, ID) {
     scenario.next_tx(CREATOR);
     let gov = governance::init_board(vector[CREATOR, TRIBE_MEMBER]);
-    let (parent_id, mut parent_vault) = dao::create_returning_vault(
+    let (parent_id, mut parent_vault) = ou::create_returning_vault(
         &gov,
-        string::utf8(b"Parent DAO"),
+        string::utf8(b"Parent OU"),
         string::utf8(b"https://example.com/parent.png"),
         scenario.ctx(),
     );
     let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
-    let subdao_id = tribe::create_wired_subdao(
+    let subou_id = tribe::create_wired_subou(
         vector[OFFICER_A],
-        string::utf8(b"SubDAO"),
+        string::utf8(b"SubOU"),
         string::utf8(b"https://example.com/sub.png"),
-        SUBDAO_ADMIN,
+        SUBOU_ADMIN,
         &mut parent_vault,
         &req,
         vector[],
@@ -376,53 +376,53 @@ fun do_create_parent_and_wired_subdao(scenario: &mut test_scenario::Scenario): (
     );
     proposal::consume(req);
     capability_vault::share(parent_vault);
-    (parent_id, subdao_id)
+    (parent_id, subou_id)
 }
 
-// === Test 9: create_wired_subdao returns a non-zero ID ===
+// === Test 9: create_wired_subou returns a non-zero ID ===
 
 #[test]
-/// create_wired_subdao returns an ID that matches the shared SubDAO object.
-fun create_wired_subdao_returns_correct_subdao_id() {
+/// create_wired_subou returns an ID that matches the shared SubOU object.
+fun create_wired_subou_returns_correct_subou_id() {
     let mut scenario = test_scenario::begin(CREATOR);
-    let (_, subdao_id) = do_create_parent_and_wired_subdao(&mut scenario);
+    let (_, subou_id) = do_create_parent_and_wired_subou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
-        let subdao = scenario.take_shared_by_id<DAO>(subdao_id);
-        assert!(subdao.id() == subdao_id);
-        assert!(subdao.status().is_active());
-        test_scenario::return_shared(subdao);
+        let subou = scenario.take_shared_by_id<OU>(subou_id);
+        assert!(subou.id() == subou_id);
+        assert!(subou.status().is_active());
+        test_scenario::return_shared(subou);
     };
 
     scenario.end();
 }
 
-// === Test 10: parent vault contains exactly one SubDAOControl pointing at the new subdao ===
+// === Test 10: parent vault contains exactly one SubOUControl pointing at the new subou ===
 
 #[test]
-/// After create_wired_subdao the parent vault holds exactly one SubDAOControl
-/// whose subdao_id matches the returned subdao ID.
-fun create_wired_subdao_wires_control_into_parent_vault() {
+/// After create_wired_subou the parent vault holds exactly one SubOUControl
+/// whose subou_id matches the returned subou ID.
+fun create_wired_subou_wires_control_into_parent_vault() {
     let mut scenario = test_scenario::begin(CREATOR);
-    let (parent_id, subdao_id) = do_create_parent_and_wired_subdao(&mut scenario);
+    let (parent_id, subou_id) = do_create_parent_and_wired_subou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
-        let parent_dao = scenario.take_shared_by_id<DAO>(parent_id);
-        let vault_id = parent_dao.capability_vault_id();
-        test_scenario::return_shared(parent_dao);
+        let parent_ou = scenario.take_shared_by_id<OU>(parent_id);
+        let vault_id = parent_ou.capability_vault_id();
+        test_scenario::return_shared(parent_ou);
 
         let mut vault = scenario.take_shared_by_id<CapabilityVault>(vault_id);
-        let ctrl_ids = vault.ids_for_type<SubDAOControl>();
+        let ctrl_ids = vault.ids_for_type<SubOUControl>();
         assert!(ctrl_ids.length() == 1);
 
         let req = proposal::new_execution_request_for_testing<TestProposal>(
-            vault.dao_id(),
+            vault.ou_id(),
             object::id_from_address(@0xBEEF),
-        ).with_borrow_scope_for_testing(vector[std::type_name::with_defining_ids<SubDAOControl>()]);
-        let (ctrl, loan) = vault.loan_cap<SubDAOControl, TestProposal>(ctrl_ids[0], &req);
-        assert!(ctrl.subdao_id() == subdao_id);
+        ).with_borrow_scope_for_testing(vector[std::type_name::with_defining_ids<SubOUControl>()]);
+        let (ctrl, loan) = vault.loan_cap<SubOUControl, TestProposal>(ctrl_ids[0], &req);
+        assert!(ctrl.subou_id() == subou_id);
         vault.return_cap(ctrl, loan);
         proposal::consume(req);
         test_scenario::return_shared(vault);
@@ -431,19 +431,19 @@ fun create_wired_subdao_wires_control_into_parent_vault() {
     scenario.end();
 }
 
-// === Test 11: new subdao has controller_cap_id set ===
+// === Test 11: new subou has controller_cap_id set ===
 
 #[test]
-/// The wired SubDAO has controller_cap_id populated (it is a controlled subdao).
-fun create_wired_subdao_subdao_is_controlled() {
+/// The wired SubOU has controller_cap_id populated (it is a controlled subou).
+fun create_wired_subou_subou_is_controlled() {
     let mut scenario = test_scenario::begin(CREATOR);
-    let (_, subdao_id) = do_create_parent_and_wired_subdao(&mut scenario);
+    let (_, subou_id) = do_create_parent_and_wired_subou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
-        let subdao = scenario.take_shared_by_id<DAO>(subdao_id);
-        assert!(subdao.controller_cap_id().is_some());
-        test_scenario::return_shared(subdao);
+        let subou = scenario.take_shared_by_id<OU>(subou_id);
+        assert!(subou.controller_cap_id().is_some());
+        test_scenario::return_shared(subou);
     };
 
     scenario.end();
@@ -452,12 +452,12 @@ fun create_wired_subdao_subdao_is_controlled() {
 // === Test 12: FreezeAdminCap goes to freeze_admin ===
 
 #[test]
-/// create_wired_subdao transfers the SubDAO FreezeAdminCap to the freeze_admin address.
-fun create_wired_subdao_freeze_cap_routed_to_admin() {
+/// create_wired_subou transfers the SubOU FreezeAdminCap to the freeze_admin address.
+fun create_wired_subou_freeze_cap_routed_to_admin() {
     let mut scenario = test_scenario::begin(CREATOR);
-    do_create_parent_and_wired_subdao(&mut scenario);
+    do_create_parent_and_wired_subou(&mut scenario);
 
-    scenario.next_tx(SUBDAO_ADMIN);
+    scenario.next_tx(SUBOU_ADMIN);
     {
         let cap = scenario.take_from_sender<FreezeAdminCap>();
         test_scenario::return_to_sender(&scenario, cap);
@@ -466,29 +466,29 @@ fun create_wired_subdao_freeze_cap_routed_to_admin() {
     scenario.end();
 }
 
-// === Test 13: subdao companion objects are shared ===
+// === Test 13: subou companion objects are shared ===
 
 #[test]
-/// create_wired_subdao shares the SubDAO's treasury, charter, and emergency freeze.
-fun create_wired_subdao_companion_objects_are_shared() {
+/// create_wired_subou shares the SubOU's treasury, charter, and emergency freeze.
+fun create_wired_subou_companion_objects_are_shared() {
     let mut scenario = test_scenario::begin(CREATOR);
-    let (_, subdao_id) = do_create_parent_and_wired_subdao(&mut scenario);
+    let (_, subou_id) = do_create_parent_and_wired_subou(&mut scenario);
 
     scenario.next_tx(CREATOR);
     {
-        let subdao = scenario.take_shared_by_id<DAO>(subdao_id);
+        let subou = scenario.take_shared_by_id<OU>(subou_id);
 
-        // Companion IDs are populated and distinct from the subdao itself.
-        assert!(subdao.treasury_id()         != subdao_id);
-        assert!(subdao.capability_vault_id() != subdao_id);
-        assert!(subdao.charter_id()          != subdao_id);
-        assert!(subdao.emergency_freeze_id() != subdao_id);
+        // Companion IDs are populated and distinct from the subou itself.
+        assert!(subou.treasury_id()         != subou_id);
+        assert!(subou.capability_vault_id() != subou_id);
+        assert!(subou.charter_id()          != subou_id);
+        assert!(subou.emergency_freeze_id() != subou_id);
 
-        let treasury_id = subdao.treasury_id();
-        let vault_id = subdao.capability_vault_id();
-        let charter_id = subdao.charter_id();
-        let freeze_id = subdao.emergency_freeze_id();
-        test_scenario::return_shared(subdao);
+        let treasury_id = subou.treasury_id();
+        let vault_id = subou.capability_vault_id();
+        let charter_id = subou.charter_id();
+        let freeze_id = subou.emergency_freeze_id();
+        test_scenario::return_shared(subou);
 
         // Each companion can be taken as a shared object.
         let treasury = scenario.take_shared_by_id<TreasuryVault>(treasury_id);
@@ -504,39 +504,39 @@ fun create_wired_subdao_companion_objects_are_shared() {
     scenario.end();
 }
 
-// === Test 14: config override is reflected in the subdao ===
+// === Test 14: config override is reflected in the subou ===
 
 #[test]
-/// A config override passed to create_wired_subdao is applied to the resulting SubDAO.
-fun create_wired_subdao_config_override_applied() {
+/// A config override passed to create_wired_subou is applied to the resulting SubOU.
+fun create_wired_subou_config_override_applied() {
     let mut scenario = test_scenario::begin(CREATOR);
 
-    let subdao_id: ID;
+    let subou_id: ID;
     scenario.next_tx(CREATOR);
     {
         let gov = governance::init_board(vector[CREATOR]);
-        let (parent_id, mut parent_vault) = dao::create_returning_vault(
+        let (parent_id, mut parent_vault) = ou::create_returning_vault(
             &gov,
-            string::utf8(b"Parent DAO"),
+            string::utf8(b"Parent OU"),
             string::utf8(b"https://example.com/parent.png"),
             scenario.ctx(),
         );
 
         // Override the SetBoard config with a custom quorum.
         let overrides = vector[
-            dao::new_type_init<SetBoard>(
+            ou::new_type_init<SetBoard>(
                 b"SetBoard".to_ascii_string(),
                 proposal::new_config(7_500, 7_500, 0, 604_800_000, 0, 0),
             ),
         ];
 
         let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
-        subdao_id =
-            tribe::create_wired_subdao(
+        subou_id =
+            tribe::create_wired_subou(
                 vector[OFFICER_A],
-                string::utf8(b"SubDAO"),
+                string::utf8(b"SubOU"),
                 string::utf8(b"https://example.com/sub.png"),
-                SUBDAO_ADMIN,
+                SUBOU_ADMIN,
                 &mut parent_vault,
                 &req,
                 overrides,
@@ -548,11 +548,11 @@ fun create_wired_subdao_config_override_applied() {
 
     scenario.next_tx(CREATOR);
     {
-        let subdao = scenario.take_shared_by_id<DAO>(subdao_id);
-        let config = subdao.type_config<SetBoard>();
+        let subou = scenario.take_shared_by_id<OU>(subou_id);
+        let config = subou.type_config<SetBoard>();
         assert!(config.quorum() == 7_500);
         assert!(config.approval_threshold() == 7_500);
-        test_scenario::return_shared(subdao);
+        test_scenario::return_shared(subou);
     };
 
     scenario.end();
@@ -561,35 +561,35 @@ fun create_wired_subdao_config_override_applied() {
 // === Test 15: new type enabled via override ===
 
 #[test]
-/// An override for a type not in the subdao defaults is inserted and enabled on the subdao.
-fun create_wired_subdao_new_type_enabled_via_override() {
+/// An override for a type not in the subou defaults is inserted and enabled on the subou.
+fun create_wired_subou_new_type_enabled_via_override() {
     let mut scenario = test_scenario::begin(CREATOR);
 
-    let subdao_id: ID;
+    let subou_id: ID;
     scenario.next_tx(CREATOR);
     {
         let gov = governance::init_board(vector[CREATOR]);
-        let (parent_id, mut parent_vault) = dao::create_returning_vault(
+        let (parent_id, mut parent_vault) = ou::create_returning_vault(
             &gov,
-            string::utf8(b"Parent DAO"),
+            string::utf8(b"Parent OU"),
             string::utf8(b"https://example.com/parent.png"),
             scenario.ctx(),
         );
 
         let overrides = vector[
-            dao::new_type_init<CustomType>(
+            ou::new_type_init<CustomType>(
                 b"CustomType".to_ascii_string(),
                 default_config(),
             ),
         ];
 
         let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
-        subdao_id =
-            tribe::create_wired_subdao(
+        subou_id =
+            tribe::create_wired_subou(
                 vector[OFFICER_A],
-                string::utf8(b"SubDAO"),
+                string::utf8(b"SubOU"),
                 string::utf8(b"https://example.com/sub.png"),
-                SUBDAO_ADMIN,
+                SUBOU_ADMIN,
                 &mut parent_vault,
                 &req,
                 overrides,
@@ -601,10 +601,10 @@ fun create_wired_subdao_new_type_enabled_via_override() {
 
     scenario.next_tx(CREATOR);
     {
-        let subdao = scenario.take_shared_by_id<DAO>(subdao_id);
-        assert!(subdao.is_type_enabled<CustomType>());
-        assert!(subdao.type_display_key<CustomType>() == b"CustomType".to_ascii_string());
-        test_scenario::return_shared(subdao);
+        let subou = scenario.take_shared_by_id<OU>(subou_id);
+        assert!(subou.is_type_enabled<CustomType>());
+        assert!(subou.type_display_key<CustomType>() == b"CustomType".to_ascii_string());
+        test_scenario::return_shared(subou);
     };
 
     scenario.end();
@@ -612,33 +612,33 @@ fun create_wired_subdao_new_type_enabled_via_override() {
 
 // === Test 16: blocked proposal type in overrides aborts ===
 
-#[test, expected_failure(abort_code = dao::EBlockedProposalType)]
-/// Passing a blocked type (SpawnDAO) in config_overrides aborts with EBlockedProposalType.
-fun create_wired_subdao_aborts_on_blocked_type() {
+#[test, expected_failure(abort_code = ou::EBlockedProposalType)]
+/// Passing a blocked type (SpawnOU) in config_overrides aborts with EBlockedProposalType.
+fun create_wired_subou_aborts_on_blocked_type() {
     let mut scenario = test_scenario::begin(CREATOR);
     scenario.next_tx(CREATOR);
     {
         let gov = governance::init_board(vector[CREATOR]);
-        let (parent_id, mut parent_vault) = dao::create_returning_vault(
+        let (parent_id, mut parent_vault) = ou::create_returning_vault(
             &gov,
-            string::utf8(b"Parent DAO"),
+            string::utf8(b"Parent OU"),
             string::utf8(b"https://example.com/parent.png"),
             scenario.ctx(),
         );
 
         let overrides = vector[
-            dao::new_type_init<SpawnDAO>(
-                b"SpawnDAO".to_ascii_string(),
+            ou::new_type_init<SpawnOU>(
+                b"SpawnOU".to_ascii_string(),
                 default_config(),
             ),
         ];
 
         let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
-        tribe::create_wired_subdao(
+        tribe::create_wired_subou(
             vector[OFFICER_A],
-            string::utf8(b"SubDAO"),
+            string::utf8(b"SubOU"),
             string::utf8(b"https://example.com/sub.png"),
-            SUBDAO_ADMIN,
+            SUBOU_ADMIN,
             &mut parent_vault,
             &req,
             overrides,
@@ -652,33 +652,33 @@ fun create_wired_subdao_aborts_on_blocked_type() {
 
 // === Test 17: EnableProposalType below floor aborts ===
 
-#[test, expected_failure(abort_code = dao::EThresholdBelowMinimum)]
+#[test, expected_failure(abort_code = ou::EThresholdBelowMinimum)]
 /// Setting EnableProposalType threshold below 80% aborts with EThresholdBelowMinimum.
-fun create_wired_subdao_aborts_on_enable_proposal_type_below_floor() {
+fun create_wired_subou_aborts_on_enable_proposal_type_below_floor() {
     let mut scenario = test_scenario::begin(CREATOR);
     scenario.next_tx(CREATOR);
     {
         let gov = governance::init_board(vector[CREATOR]);
-        let (parent_id, mut parent_vault) = dao::create_returning_vault(
+        let (parent_id, mut parent_vault) = ou::create_returning_vault(
             &gov,
-            string::utf8(b"Parent DAO"),
+            string::utf8(b"Parent OU"),
             string::utf8(b"https://example.com/parent.png"),
             scenario.ctx(),
         );
 
         let overrides = vector[
-            dao::new_type_init<EnableProposalType>(
+            ou::new_type_init<EnableProposalType>(
                 b"EnableProposalType".to_ascii_string(),
                 proposal::new_config(5_000, 7_999, 0, 604_800_000, 0, 0),
             ),
         ];
 
         let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
-        tribe::create_wired_subdao(
+        tribe::create_wired_subou(
             vector[OFFICER_A],
-            string::utf8(b"SubDAO"),
+            string::utf8(b"SubOU"),
             string::utf8(b"https://example.com/sub.png"),
-            SUBDAO_ADMIN,
+            SUBOU_ADMIN,
             &mut parent_vault,
             &req,
             overrides,
@@ -692,33 +692,33 @@ fun create_wired_subdao_aborts_on_enable_proposal_type_below_floor() {
 
 // === Test 18: UpdateProposalConfig below floor aborts ===
 
-#[test, expected_failure(abort_code = dao::EThresholdBelowMinimum)]
+#[test, expected_failure(abort_code = ou::EThresholdBelowMinimum)]
 /// Setting UpdateProposalConfig threshold below 80% aborts with EThresholdBelowMinimum.
-fun create_wired_subdao_aborts_on_update_proposal_config_below_floor() {
+fun create_wired_subou_aborts_on_update_proposal_config_below_floor() {
     let mut scenario = test_scenario::begin(CREATOR);
     scenario.next_tx(CREATOR);
     {
         let gov = governance::init_board(vector[CREATOR]);
-        let (parent_id, mut parent_vault) = dao::create_returning_vault(
+        let (parent_id, mut parent_vault) = ou::create_returning_vault(
             &gov,
-            string::utf8(b"Parent DAO"),
+            string::utf8(b"Parent OU"),
             string::utf8(b"https://example.com/parent.png"),
             scenario.ctx(),
         );
 
         let overrides = vector[
-            dao::new_type_init<UpdateProposalConfig>(
+            ou::new_type_init<UpdateProposalConfig>(
                 b"UpdateProposalConfig".to_ascii_string(),
                 proposal::new_config(5_000, 7_999, 0, 604_800_000, 0, 0),
             ),
         ];
 
         let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
-        tribe::create_wired_subdao(
+        tribe::create_wired_subou(
             vector[OFFICER_A],
-            string::utf8(b"SubDAO"),
+            string::utf8(b"SubOU"),
             string::utf8(b"https://example.com/sub.png"),
-            SUBDAO_ADMIN,
+            SUBOU_ADMIN,
             &mut parent_vault,
             &req,
             overrides,
@@ -734,33 +734,33 @@ fun create_wired_subdao_aborts_on_update_proposal_config_below_floor() {
 
 #[test]
 /// Setting EnableProposalType threshold at exactly 80% (8000) succeeds.
-fun create_wired_subdao_enable_proposal_type_at_floor_passes() {
+fun create_wired_subou_enable_proposal_type_at_floor_passes() {
     let mut scenario = test_scenario::begin(CREATOR);
-    let subdao_id: ID;
+    let subou_id: ID;
     scenario.next_tx(CREATOR);
     {
         let gov = governance::init_board(vector[CREATOR]);
-        let (parent_id, mut parent_vault) = dao::create_returning_vault(
+        let (parent_id, mut parent_vault) = ou::create_returning_vault(
             &gov,
-            string::utf8(b"Parent DAO"),
+            string::utf8(b"Parent OU"),
             string::utf8(b"https://example.com/parent.png"),
             scenario.ctx(),
         );
 
         let overrides = vector[
-            dao::new_type_init<EnableProposalType>(
+            ou::new_type_init<EnableProposalType>(
                 b"EnableProposalType".to_ascii_string(),
                 proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0),
             ),
         ];
 
         let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
-        subdao_id =
-            tribe::create_wired_subdao(
+        subou_id =
+            tribe::create_wired_subou(
                 vector[OFFICER_A],
-                string::utf8(b"SubDAO"),
+                string::utf8(b"SubOU"),
                 string::utf8(b"https://example.com/sub.png"),
-                SUBDAO_ADMIN,
+                SUBOU_ADMIN,
                 &mut parent_vault,
                 &req,
                 overrides,
@@ -772,10 +772,10 @@ fun create_wired_subdao_enable_proposal_type_at_floor_passes() {
 
     scenario.next_tx(CREATOR);
     {
-        let subdao = scenario.take_shared_by_id<DAO>(subdao_id);
-        let config = subdao.type_config<EnableProposalType>();
+        let subou = scenario.take_shared_by_id<OU>(subou_id);
+        let config = subou.type_config<EnableProposalType>();
         assert!(config.approval_threshold() == 8_000);
-        test_scenario::return_shared(subdao);
+        test_scenario::return_shared(subou);
     };
 
     scenario.end();
@@ -791,7 +791,7 @@ fun do_create_tribe_configured(scenario: &mut test_scenario::Scenario): (ID, ID,
         vector[CREATOR, TRIBE_MEMBER],
         vector[OFFICER_A, OFFICER_B],
         vector[MEMBER_A, MEMBER_B],
-        string::utf8(b"Tribe DAO"),
+        string::utf8(b"Tribe OU"),
         string::utf8(b"Officers"),
         string::utf8(b"Members"),
         string::utf8(b"https://tribe.example/logo.png"),
@@ -810,7 +810,7 @@ fun do_create_tribe_configured(scenario: &mut test_scenario::Scenario): (ID, ID,
 
 #[test]
 /// create_tribe_configured with all-empty override vectors produces the same
-/// three-DAO structure (distinct IDs, correct boards, control hierarchy) as create_tribe.
+/// three-OU structure (distinct IDs, correct boards, control hierarchy) as create_tribe.
 fun create_tribe_configured_empty_overrides_matches_create_tribe() {
     let mut scenario = test_scenario::begin(CREATOR);
     let (owner_id, officer_id, member_id) = do_create_tribe_configured(&mut scenario);
@@ -821,9 +821,9 @@ fun create_tribe_configured_empty_overrides_matches_create_tribe() {
 
     scenario.next_tx(CREATOR);
     {
-        let tribe = scenario.take_shared_by_id<DAO>(owner_id);
-        let officer = scenario.take_shared_by_id<DAO>(officer_id);
-        let member = scenario.take_shared_by_id<DAO>(member_id);
+        let tribe = scenario.take_shared_by_id<OU>(owner_id);
+        let officer = scenario.take_shared_by_id<OU>(officer_id);
+        let member = scenario.take_shared_by_id<OU>(member_id);
 
         assert!(tribe.status().is_active());
         assert!(officer.status().is_active());
@@ -844,18 +844,18 @@ fun create_tribe_configured_empty_overrides_matches_create_tribe() {
     scenario.end();
 }
 
-// === Test 21: override applied to tribe DAO ===
+// === Test 21: override applied to tribe OU ===
 
 #[test]
-/// A config override for the tribe DAO is reflected in its type slot.
-fun create_tribe_configured_override_applied_to_tribe_dao() {
+/// A config override for the tribe OU is reflected in its type slot.
+fun create_tribe_configured_override_applied_to_tribe_ou() {
     let mut scenario = test_scenario::begin(CREATOR);
 
     let owner_id: ID;
     scenario.next_tx(CREATOR);
     {
         let tribe_overrides = vector[
-            dao::new_type_init<AddMember>(
+            ou::new_type_init<AddMember>(
                 b"AddMember".to_ascii_string(),
                 proposal::new_config(8_000, 8_000, 0, 604_800_000, 0, 0),
             ),
@@ -866,7 +866,7 @@ fun create_tribe_configured_override_applied_to_tribe_dao() {
                 vector[CREATOR],
                 vector[OFFICER_A],
                 vector[MEMBER_A],
-                string::utf8(b"Tribe DAO"),
+                string::utf8(b"Tribe OU"),
                 string::utf8(b"Officers"),
                 string::utf8(b"Members"),
                 string::utf8(b"https://tribe.example/logo.png"),
@@ -883,7 +883,7 @@ fun create_tribe_configured_override_applied_to_tribe_dao() {
 
     scenario.next_tx(CREATOR);
     {
-        let tribe = scenario.take_shared_by_id<DAO>(owner_id);
+        let tribe = scenario.take_shared_by_id<OU>(owner_id);
         let config = tribe.type_config<AddMember>();
         assert!(config.quorum() == 8_000);
         assert!(config.approval_threshold() == 8_000);
@@ -893,18 +893,18 @@ fun create_tribe_configured_override_applied_to_tribe_dao() {
     scenario.end();
 }
 
-// === Test 22: override applied to officer subdao ===
+// === Test 22: override applied to officer subou ===
 
 #[test]
-/// A config override for the officer SubDAO is reflected in its type slot.
-fun create_tribe_configured_override_applied_to_officer_subdao() {
+/// A config override for the officer SubOU is reflected in its type slot.
+fun create_tribe_configured_override_applied_to_officer_subou() {
     let mut scenario = test_scenario::begin(CREATOR);
 
     let officer_id: ID;
     scenario.next_tx(CREATOR);
     {
         let officer_overrides = vector[
-            dao::new_type_init<RemoveMember>(
+            ou::new_type_init<RemoveMember>(
                 b"RemoveMember".to_ascii_string(),
                 proposal::new_config(9_000, 9_000, 0, 604_800_000, 0, 0),
             ),
@@ -915,7 +915,7 @@ fun create_tribe_configured_override_applied_to_officer_subdao() {
                 vector[CREATOR],
                 vector[OFFICER_A],
                 vector[MEMBER_A],
-                string::utf8(b"Tribe DAO"),
+                string::utf8(b"Tribe OU"),
                 string::utf8(b"Officers"),
                 string::utf8(b"Members"),
                 string::utf8(b"https://tribe.example/logo.png"),
@@ -932,7 +932,7 @@ fun create_tribe_configured_override_applied_to_officer_subdao() {
 
     scenario.next_tx(CREATOR);
     {
-        let officer = scenario.take_shared_by_id<DAO>(officer_id);
+        let officer = scenario.take_shared_by_id<OU>(officer_id);
         let config = officer.type_config<RemoveMember>();
         assert!(config.quorum() == 9_000);
         assert!(config.approval_threshold() == 9_000);
@@ -945,7 +945,7 @@ fun create_tribe_configured_override_applied_to_officer_subdao() {
 // === Test 23: new type enabled via member override ===
 
 #[test]
-/// A non-default type in member_config_overrides is inserted and enabled on the member SubDAO.
+/// A non-default type in member_config_overrides is inserted and enabled on the member SubOU.
 fun create_tribe_configured_new_type_enabled_via_member_override() {
     let mut scenario = test_scenario::begin(CREATOR);
 
@@ -953,7 +953,7 @@ fun create_tribe_configured_new_type_enabled_via_member_override() {
     scenario.next_tx(CREATOR);
     {
         let member_overrides = vector[
-            dao::new_type_init<CustomType>(
+            ou::new_type_init<CustomType>(
                 b"CustomType".to_ascii_string(),
                 default_config(),
             ),
@@ -964,7 +964,7 @@ fun create_tribe_configured_new_type_enabled_via_member_override() {
                 vector[CREATOR],
                 vector[OFFICER_A],
                 vector[MEMBER_A],
-                string::utf8(b"Tribe DAO"),
+                string::utf8(b"Tribe OU"),
                 string::utf8(b"Officers"),
                 string::utf8(b"Members"),
                 string::utf8(b"https://tribe.example/logo.png"),
@@ -981,7 +981,7 @@ fun create_tribe_configured_new_type_enabled_via_member_override() {
 
     scenario.next_tx(CREATOR);
     {
-        let member = scenario.take_shared_by_id<DAO>(member_id);
+        let member = scenario.take_shared_by_id<OU>(member_id);
         assert!(member.is_type_enabled<CustomType>());
         test_scenario::return_shared(member);
     };
@@ -991,14 +991,14 @@ fun create_tribe_configured_new_type_enabled_via_member_override() {
 
 // === Test 25: UpdateProposalConfig below floor in officer overrides aborts ===
 
-#[test, expected_failure(abort_code = dao::EThresholdBelowMinimum)]
+#[test, expected_failure(abort_code = ou::EThresholdBelowMinimum)]
 /// Setting UpdateProposalConfig threshold below 80% in officer overrides aborts.
 fun create_tribe_configured_aborts_on_update_config_below_floor() {
     let mut scenario = test_scenario::begin(CREATOR);
     scenario.next_tx(CREATOR);
     {
         let officer_overrides = vector[
-            dao::new_type_init<UpdateProposalConfig>(
+            ou::new_type_init<UpdateProposalConfig>(
                 b"UpdateProposalConfig".to_ascii_string(),
                 proposal::new_config(5_000, 7_999, 0, 604_800_000, 0, 0),
             ),
@@ -1008,7 +1008,7 @@ fun create_tribe_configured_aborts_on_update_config_below_floor() {
             vector[CREATOR],
             vector[OFFICER_A],
             vector[MEMBER_A],
-            string::utf8(b"Tribe DAO"),
+            string::utf8(b"Tribe OU"),
             string::utf8(b"Officers"),
             string::utf8(b"Members"),
             string::utf8(b"https://tribe.example/logo.png"),
@@ -1027,14 +1027,14 @@ fun create_tribe_configured_aborts_on_update_config_below_floor() {
 
 // === Test 26: EnableProposalType below floor in member overrides aborts ===
 
-#[test, expected_failure(abort_code = dao::EThresholdBelowMinimum)]
+#[test, expected_failure(abort_code = ou::EThresholdBelowMinimum)]
 /// Setting EnableProposalType threshold below 80% in member overrides aborts.
 fun create_tribe_configured_aborts_on_enable_type_below_floor() {
     let mut scenario = test_scenario::begin(CREATOR);
     scenario.next_tx(CREATOR);
     {
         let member_overrides = vector[
-            dao::new_type_init<EnableProposalType>(
+            ou::new_type_init<EnableProposalType>(
                 b"EnableProposalType".to_ascii_string(),
                 proposal::new_config(5_000, 7_999, 0, 604_800_000, 0, 0),
             ),
@@ -1044,7 +1044,7 @@ fun create_tribe_configured_aborts_on_enable_type_below_floor() {
             vector[CREATOR],
             vector[OFFICER_A],
             vector[MEMBER_A],
-            string::utf8(b"Tribe DAO"),
+            string::utf8(b"Tribe OU"),
             string::utf8(b"Officers"),
             string::utf8(b"Members"),
             string::utf8(b"https://tribe.example/logo.png"),
@@ -1072,7 +1072,7 @@ fun create_tribe_configured_update_config_at_floor_passes() {
     scenario.next_tx(CREATOR);
     {
         let tribe_overrides = vector[
-            dao::new_type_init<UpdateProposalConfig>(
+            ou::new_type_init<UpdateProposalConfig>(
                 b"UpdateProposalConfig".to_ascii_string(),
                 proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0),
             ),
@@ -1083,7 +1083,7 @@ fun create_tribe_configured_update_config_at_floor_passes() {
                 vector[CREATOR],
                 vector[OFFICER_A],
                 vector[MEMBER_A],
-                string::utf8(b"Tribe DAO"),
+                string::utf8(b"Tribe OU"),
                 string::utf8(b"Officers"),
                 string::utf8(b"Members"),
                 string::utf8(b"https://tribe.example/logo.png"),
@@ -1100,7 +1100,7 @@ fun create_tribe_configured_update_config_at_floor_passes() {
 
     scenario.next_tx(CREATOR);
     {
-        let tribe = scenario.take_shared_by_id<DAO>(owner_id);
+        let tribe = scenario.take_shared_by_id<OU>(owner_id);
         let config = tribe.type_config<UpdateProposalConfig>();
         assert!(config.approval_threshold() == 8_000);
         test_scenario::return_shared(tribe);
@@ -1112,37 +1112,37 @@ fun create_tribe_configured_update_config_at_floor_passes() {
 // === Test 28: composable_allowed preserved when overriding a composable type ===
 
 #[test]
-/// Overriding AddMember (composable by default) via create_wired_subdao must not
+/// Overriding AddMember (composable by default) via create_wired_subou must not
 /// silently strip composable_allowed — it should remain true after the override.
-fun create_wired_subdao_preserves_composable_allowed_on_override() {
+fun create_wired_subou_preserves_composable_allowed_on_override() {
     let mut scenario = test_scenario::begin(CREATOR);
 
-    let subdao_id: ID;
+    let subou_id: ID;
     scenario.next_tx(CREATOR);
     {
         let gov = governance::init_board(vector[CREATOR]);
-        let (parent_id, mut parent_vault) = dao::create_returning_vault(
+        let (parent_id, mut parent_vault) = ou::create_returning_vault(
             &gov,
-            string::utf8(b"Parent DAO"),
+            string::utf8(b"Parent OU"),
             string::utf8(b"https://example.com/parent.png"),
             scenario.ctx(),
         );
 
         // Override AddMember with a higher quorum — composable_allowed must be preserved.
         let overrides = vector[
-            dao::new_type_init<AddMember>(
+            ou::new_type_init<AddMember>(
                 b"AddMember".to_ascii_string(),
                 proposal::new_config(7_500, 7_500, 0, 604_800_000, 0, 0),
             ),
         ];
 
         let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
-        subdao_id =
-            tribe::create_wired_subdao(
+        subou_id =
+            tribe::create_wired_subou(
                 vector[OFFICER_A],
-                string::utf8(b"SubDAO"),
+                string::utf8(b"SubOU"),
                 string::utf8(b"https://example.com/sub.png"),
-                SUBDAO_ADMIN,
+                SUBOU_ADMIN,
                 &mut parent_vault,
                 &req,
                 overrides,
@@ -1154,31 +1154,31 @@ fun create_wired_subdao_preserves_composable_allowed_on_override() {
 
     scenario.next_tx(CREATOR);
     {
-        let subdao = scenario.take_shared_by_id<DAO>(subdao_id);
-        let config = subdao.type_config<AddMember>();
+        let subou = scenario.take_shared_by_id<OU>(subou_id);
+        let config = subou.type_config<AddMember>();
         assert!(config.quorum() == 7_500);
         assert!(config.approval_threshold() == 7_500);
         assert!(config.composable_allowed());
-        test_scenario::return_shared(subdao);
+        test_scenario::return_shared(subou);
     };
 
     scenario.end();
 }
 
-// === Test 29: parent DAO can override a subdao-blocked type at construction ===
+// === Test 29: parent OU can override a subou-blocked type at construction ===
 
 #[test]
-/// CreateSubDAO is blocked for SubDAOs but must be overridable for a parent tribe DAO,
+/// CreateSubOU is blocked for SubOUs but must be overridable for a parent tribe OU,
 /// which legitimately has it enabled by default.
-fun create_tribe_configured_parent_can_override_subdao_blocked_type() {
+fun create_tribe_configured_parent_can_override_subou_blocked_type() {
     let mut scenario = test_scenario::begin(CREATOR);
 
     let owner_id: ID;
     scenario.next_tx(CREATOR);
     {
         let tribe_overrides = vector[
-            dao::new_type_init<CreateSubDAO>(
-                b"CreateSubDAO".to_ascii_string(),
+            ou::new_type_init<CreateSubOU>(
+                b"CreateSubOU".to_ascii_string(),
                 proposal::new_config(8_000, 8_000, 0, 604_800_000, 0, 0),
             ),
         ];
@@ -1188,7 +1188,7 @@ fun create_tribe_configured_parent_can_override_subdao_blocked_type() {
                 vector[CREATOR],
                 vector[OFFICER_A],
                 vector[MEMBER_A],
-                string::utf8(b"Tribe DAO"),
+                string::utf8(b"Tribe OU"),
                 string::utf8(b"Officers"),
                 string::utf8(b"Members"),
                 string::utf8(b"https://tribe.example/logo.png"),
@@ -1205,8 +1205,8 @@ fun create_tribe_configured_parent_can_override_subdao_blocked_type() {
 
     scenario.next_tx(CREATOR);
     {
-        let tribe = scenario.take_shared_by_id<DAO>(owner_id);
-        let config = tribe.type_config<CreateSubDAO>();
+        let tribe = scenario.take_shared_by_id<OU>(owner_id);
+        let config = tribe.type_config<CreateSubOU>();
         assert!(config.quorum() == 8_000);
         assert!(config.approval_threshold() == 8_000);
         test_scenario::return_shared(tribe);
@@ -1215,18 +1215,18 @@ fun create_tribe_configured_parent_can_override_subdao_blocked_type() {
     scenario.end();
 }
 
-// === Test 30: subdao path still rejects subdao-blocked types ===
+// === Test 30: subou path still rejects subou-blocked types ===
 
-#[test, expected_failure(abort_code = dao::EBlockedProposalType)]
-/// Passing CreateSubDAO in officer_config_overrides (a SubDAO) still aborts —
-/// the fix only relaxes the check on the parent DAO path.
-fun create_tribe_configured_subdao_still_rejects_blocked_type() {
+#[test, expected_failure(abort_code = ou::EBlockedProposalType)]
+/// Passing CreateSubOU in officer_config_overrides (a SubOU) still aborts —
+/// the fix only relaxes the check on the parent OU path.
+fun create_tribe_configured_subou_still_rejects_blocked_type() {
     let mut scenario = test_scenario::begin(CREATOR);
     scenario.next_tx(CREATOR);
     {
         let officer_overrides = vector[
-            dao::new_type_init<CreateSubDAO>(
-                b"CreateSubDAO".to_ascii_string(),
+            ou::new_type_init<CreateSubOU>(
+                b"CreateSubOU".to_ascii_string(),
                 proposal::new_config(8_000, 8_000, 0, 604_800_000, 0, 0),
             ),
         ];
@@ -1235,7 +1235,7 @@ fun create_tribe_configured_subdao_still_rejects_blocked_type() {
             vector[CREATOR],
             vector[OFFICER_A],
             vector[MEMBER_A],
-            string::utf8(b"Tribe DAO"),
+            string::utf8(b"Tribe OU"),
             string::utf8(b"Officers"),
             string::utf8(b"Members"),
             string::utf8(b"https://tribe.example/logo.png"),
@@ -1254,7 +1254,7 @@ fun create_tribe_configured_subdao_still_rejects_blocked_type() {
 
 // === Test 31: override of a default type must keep its display key ===
 
-#[test, expected_failure(abort_code = dao::EDisplayKeyMismatch)]
+#[test, expected_failure(abort_code = ou::EDisplayKeyMismatch)]
 /// UpdateMetadata is seeded as "CharterUpdate". An override naming a different
 /// display key aborts rather than silently keeping the default key.
 fun create_tribe_configured_default_type_display_key_mismatch_aborts() {
@@ -1262,7 +1262,7 @@ fun create_tribe_configured_default_type_display_key_mismatch_aborts() {
     scenario.next_tx(CREATOR);
     {
         let tribe_overrides = vector[
-            dao::new_type_init<UpdateMetadata>(
+            ou::new_type_init<UpdateMetadata>(
                 b"UpdateMetadata".to_ascii_string(),
                 proposal::new_config(5_000, 5_000, 0, 604_800_000, 0, 0),
             ),
@@ -1272,7 +1272,7 @@ fun create_tribe_configured_default_type_display_key_mismatch_aborts() {
             vector[CREATOR],
             vector[OFFICER_A],
             vector[MEMBER_A],
-            string::utf8(b"Tribe DAO"),
+            string::utf8(b"Tribe OU"),
             string::utf8(b"Officers"),
             string::utf8(b"Members"),
             string::utf8(b"https://tribe.example/logo.png"),
