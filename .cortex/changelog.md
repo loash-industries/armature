@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-09-29 — fresh publish of armature_framework and armature_proposals to Sui testnet
+
+- Fresh-published both packages to Sui testnet under the `testnet_wip` env: `armature_framework` at `0x0a9eee47251a9f8a264a18804b1d5e553514720c4f4f765a481d1f12b492624c` (tx `DcYgLqXEfHE8tRogxhhJQ1sDfukDhUABYY3X4uhGsA5U`) and `armature_proposals` at `0x19ccd64e194ed97a07c929459be44a06357f2eeef774d2800626f51d7ed0b599` (tx `EuqXKHpmif2fLWM9TyVsbPNdBxTQPoguXwqrkBGq9kKW`). Added the generated `Published.toml` records for each package. No source changes.
+
 ## 2026-09-29 — Move coverage harness; tests for uncovered freeze-admin and disable paths
 
 - Added `scripts/move_coverage.py` (`make coverage`): runs both packages' tests with `--coverage --trace` in a scratch copy of `packages/` and reports per-file line, function, branch and bytecode coverage, from each package's own tests and combined (proposals tests drive most framework `handlers/` and `types/`). Writes LCOV and `summary.json` to `coverage/` (gitignored); `--min` fails below a combined line threshold. Needs a Sui CLI built with the `tracing` feature (suiup release builds have it).
