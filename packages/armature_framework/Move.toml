@@ -5,5 +5,4 @@ version = "0.0.1"
 [dependencies]
 
 [environments]
-testnet_wip = "4c78adac"
 testnet_stillness = "4c78adac"

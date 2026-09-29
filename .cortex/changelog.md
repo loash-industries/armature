@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-09-29 — re-home testnet publication from testnet_wip to testnet_stillness
+
+- Re-pointed the fresh testnet publication of `armature_framework` (`0x0a9eee47…`) and `armature_proposals` (`0x19ccd64e…`) from the `testnet_wip` env to `testnet_stillness` with no redeploy: the packages have no world dependency, so the on-chain bytecode is env-independent. Removed `testnet_wip` from every package's `Move.toml`, pointed the local `armature`/`armature_proposals` deps at `testnet_stillness`, and dropped the now-redundant `[dep-replacements.testnet_stillness]` blocks; `Published.toml` entries renamed accordingly. No source changes.
+
 ## 2026-09-29 — fresh publish of armature_framework and armature_proposals to Sui testnet
 
 - Fresh-published both packages to Sui testnet under the `testnet_wip` env: `armature_framework` at `0x0a9eee47251a9f8a264a18804b1d5e553514720c4f4f765a481d1f12b492624c` (tx `DcYgLqXEfHE8tRogxhhJQ1sDfukDhUABYY3X4uhGsA5U`) and `armature_proposals` at `0x19ccd64e194ed97a07c929459be44a06357f2eeef774d2800626f51d7ed0b599` (tx `EuqXKHpmif2fLWM9TyVsbPNdBxTQPoguXwqrkBGq9kKW`). Added the generated `Published.toml` records for each package. No source changes.

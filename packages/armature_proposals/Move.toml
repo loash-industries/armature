@@ -4,11 +4,7 @@ edition = "2024"
 version = "0.0.1"
 
 [dependencies]
-armature = { local = "../armature_framework", env = "testnet_wip" }
+armature = { local = "../armature_framework", env = "testnet_stillness" }
 
 [environments]
-testnet_wip = "4c78adac"
 testnet_stillness = "4c78adac"
-
-[dep-replacements.testnet_stillness]
-armature = { local = "../armature_framework" }
