@@ -72,6 +72,18 @@ const EGrantFloorNotMet: u64 = 21;
 const EFixedPermissions: u64 = 23;
 /// A controller-only mutator was called with an unprivileged request.
 const ENotPrivileged: u64 = 24;
+/// An EnableBypassType config whose quorum × approval_threshold is below
+/// ENABLE_BYPASS_TYPE_MIN_THRESHOLD × 100%: a vote could pass on it yet fail
+/// the execution-time floor on the whole board's weight.
+const EBypassQuorumTooLow: u64 = 25;
+/// An EnableProposalType config whose quorum × approval_threshold is below
+/// ENABLE_PROPOSAL_TYPE_MIN_THRESHOLD × 100%: a minority of the board could
+/// pass it and enable a type with high-impact bits.
+const EEnableQuorumTooLow: u64 = 26;
+/// An UpdateProposalConfig config whose quorum × approval_threshold is below
+/// UPDATE_PROPOSAL_CONFIG_MIN_THRESHOLD × 100%: a minority of the board could
+/// pass it and make any enabled type single-vote.
+const EUpdateConfigQuorumTooLow: u64 = 27;
 
 // === Constants ===
 
@@ -97,6 +109,15 @@ const UPDATE_PROPOSAL_CONFIG_MIN_THRESHOLD: u16 = 8_000;
 /// Minimum approval_threshold for EnableBypassType — must be >= the 80% execution
 /// floor enforced by external_execution::execute_enable_bypass_type.
 const ENABLE_BYPASS_TYPE_MIN_THRESHOLD: u16 = 8_000;
+
+/// Default quorum and approval_threshold for the whole-board types
+/// (EnableBypassType, EnableProposalType, UpdateProposalConfig). quorum ×
+/// threshold = 80% of the board, the least `assert_config_floors` accepts:
+/// the proposal passes once 80% of the board has voted, all YES, without
+/// waiting on the rest. Trade-off: with a 100% threshold, a single NO vote
+/// means the proposal can never pass; it expires and must be resubmitted.
+const WHOLE_BOARD_DEFAULT_QUORUM: u16 = 8_000;
+const WHOLE_BOARD_DEFAULT_APPROVAL_THRESHOLD: u16 = 10_000;
 
 /// Minimum approval_threshold for a config holding any high-impact bit
 /// (TYPE_ADMIN, MIGRATE, TREASURY_WITHDRAW, VAULT_BORROW, VAULT_EXTRACT).
@@ -768,10 +789,46 @@ fun with_fixed_permissions(name: &TypeName, config: ProposalConfig): ProposalCon
 /// meets both the type's own floor (`min_approval_threshold_for_type`) and the
 /// floor of the bits it holds (`permission_floor`). Every path that stores a
 /// config runs this, so no caller can skip it.
+///
+/// EnableBypassType's execution floor counts YES against the whole board, not
+/// votes cast, and a proposal stops taking votes once it passes. Its config
+/// must therefore make passing imply the floor: YES ≥ quorum × threshold of the
+/// board, so quorum × threshold must be at least 80% (EBypassQuorumTooLow).
+///
+/// EnableProposalType is held to the same whole-board rule (EEnableQuorumTooLow):
+/// it can grant any bit, including TREASURY_WITHDRAW and VAULT_EXTRACT, so a
+/// type must not be enabled by less than 80% of the board's weight. The 80%
+/// threshold alone counts votes cast, which one YES meets on any board.
+///
+/// UpdateProposalConfig is held to it too (EUpdateConfigQuorumTooLow): it can
+/// rewrite any enabled type's quorum and threshold, e.g. make a
+/// treasury-withdrawing type single-vote, which is a grant of power as real as
+/// enabling a type.
 fun assert_config_floors(name: &TypeName, config: &ProposalConfig) {
     let threshold = config.approval_threshold();
     assert!(threshold >= min_approval_threshold_for_type(name), EThresholdBelowMinimum);
     assert!(threshold >= permission_floor(config.permissions()), EThresholdBelowMinimum);
+    if (*name == type_name_of<EnableBypassType>()) {
+        assert!(
+            (config.quorum() as u64) * (threshold as u64)
+                >= (ENABLE_BYPASS_TYPE_MIN_THRESHOLD as u64) * 10_000,
+            EBypassQuorumTooLow,
+        );
+    };
+    if (*name == type_name_of<EnableProposalType>()) {
+        assert!(
+            (config.quorum() as u64) * (threshold as u64)
+                >= (ENABLE_PROPOSAL_TYPE_MIN_THRESHOLD as u64) * 10_000,
+            EEnableQuorumTooLow,
+        );
+    };
+    if (*name == type_name_of<UpdateProposalConfig>()) {
+        assert!(
+            (config.quorum() as u64) * (threshold as u64)
+                >= (UPDATE_PROPOSAL_CONFIG_MIN_THRESHOLD as u64) * 10_000,
+            EUpdateConfigQuorumTooLow,
+        );
+    };
 }
 
 /// Abort unless a request of type `P` may change a type's grant from
@@ -1224,17 +1281,30 @@ fun default_init<T>(display_key: vector<u8>): ProposalTypeInit {
 /// Return the per-type default ProposalConfig for a given type.
 /// It carries the type's fixed bits (`framework_permissions`), and its
 /// threshold is the default raised to the type's own floor and the floor of
-/// its bits, so the config threshold is never misleadingly low.
+/// its bits, so the config threshold is never misleadingly low. EnableBypassType,
+/// EnableProposalType and UpdateProposalConfig instead get an 80% quorum and a
+/// 100% threshold, so their defaults pass `assert_config_floors`.
 /// composable_allowed is true for single-operation types that make sense as steps
 /// inside a CompositeFrame. Batch types (BatchAddMembers, BatchRemoveMembers) are
 /// excluded: they have no _step handler variant and BatchAddMembers carries an
 /// explicit regression test guarding its deny-by-default status.
 fun config_for_type(name: &TypeName): ProposalConfig {
     let bits = framework_permissions(name);
-    let approval_threshold = DEFAULT_APPROVAL_THRESHOLD
-        .max(min_approval_threshold_for_type(name))
-        .max(permission_floor(bits));
     let n = *name;
+    let whole_board =
+        n == type_name_of<EnableBypassType>()
+        || n == type_name_of<EnableProposalType>()
+        || n == type_name_of<UpdateProposalConfig>();
+    let (quorum, approval_threshold) = if (whole_board) {
+        (WHOLE_BOARD_DEFAULT_QUORUM, WHOLE_BOARD_DEFAULT_APPROVAL_THRESHOLD)
+    } else {
+        (
+            DEFAULT_QUORUM,
+            DEFAULT_APPROVAL_THRESHOLD
+                .max(min_approval_threshold_for_type(name))
+                .max(permission_floor(bits)),
+        )
+    };
     let composable =
         n == type_name_of<AddMember>()
         || n == type_name_of<RemoveMember>()
@@ -1242,7 +1312,7 @@ fun config_for_type(name: &TypeName): ProposalConfig {
         || n == type_name_of<UpdateMetadata>()
         || n == type_name_of<EnableProposalType>();
     proposal::new_config(
-        DEFAULT_QUORUM,
+        quorum,
         approval_threshold,
         DEFAULT_PROPOSE_THRESHOLD,
         DEFAULT_EXPIRY_MS,

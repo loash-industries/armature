@@ -200,8 +200,11 @@ fun test_default_proposal_types() {
         assert!(config.cooldown_ms() == 0);
         assert!(config.composable_allowed());
 
-        // Floor-gated types start at their floor; batch types are not composable.
-        assert!(ou.type_config<EnableProposalType>().approval_threshold() == 8_000);
+        // Floor-gated types start at their floor (whole-board types: 80% quorum,
+        // 100% threshold); batch types are not composable.
+        assert!(ou.type_config<EnableProposalType>().approval_threshold() == 10_000);
+        assert!(ou.type_config<EnableProposalType>().quorum() == 8_000);
+        assert!(ou.type_config<UpdateProposalConfig>().quorum() == 8_000);
         // TYPE_ADMIN holders start at the 80% permission floor.
         assert!(ou.type_config<DisableProposalType>().approval_threshold() == 8_000);
         assert!(ou.type_config<DisableBypassType>().approval_threshold() == 8_000);
@@ -219,8 +222,11 @@ fun test_default_proposal_types() {
                 == permissions::emergency_freeze(),
         );
         assert!(ou.type_config<CompositePayload>().permissions() == 0);
-        assert!(ou.type_config<UpdateProposalConfig>().approval_threshold() == 8_000);
-        assert!(ou.type_config<EnableBypassType>().approval_threshold() == 8_000);
+        assert!(ou.type_config<UpdateProposalConfig>().approval_threshold() == 10_000);
+        assert!(ou.type_config<EnableBypassType>().approval_threshold() == 10_000);
+        // 80% quorum × 100% threshold: a passing vote has YES from 80% of the board.
+        assert!(ou.type_config<EnableBypassType>().quorum() == 8_000);
+        assert!(ou.type_config<AddMember>().quorum() == 5_000);
         assert!(!ou.type_config<BatchAddMembers>().composable_allowed());
 
         // Nothing has executed yet.

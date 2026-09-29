@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-29 — tribe setup with usable controls; whole-board vote for type admin
+
+- Added `armature_proposals::tribe_setup`: `create_tribe` / `create_tribe_configured` wrap `armature::tribe` and enable the controller types on the Tribe OU and the Officers SubOU, each with its `type_permissions` bits, `SubOUControl` borrow scope and an 80% threshold. `ControllerBatchAddMembers`, `ControllerBatchRemoveMembers` and `PauseSubOUExecution` are single-vote (quorum 1 bps); `UnpauseSubOUExecution`, `ReclaimCapFromSubOU` and `TransferCapToSubOU` need 50% quorum. Before this, a new tribe's `SubOUControl`s could not be used until each parent passed an `EnableProposalType` vote.
+- `EnableBypassType`, `EnableProposalType` and `UpdateProposalConfig` now need YES from 80% of the whole board: every stored config must satisfy `quorum × approval_threshold ≥ 80%` (`ou::EBypassQuorumTooLow` 25, `ou::EEnableQuorumTooLow` 26, `ou::EUpdateConfigQuorumTooLow` 27). Their default config is quorum 80%, threshold 100%: a proposal passes once 80% of the board has voted, all YES, and a single NO means it cannot pass. This fixes `EnableBypassType` proposals that passed the vote and then failed its whole-board execution floor, with no way to add votes, and stops 40% of a board (or one member, with a quorum-1 config) from enabling types or rewriting type configs.
+- Added `armature_external_type_tests::tribe_e2e_tests`, which runs the tribe flow on three-member boards.
+- Rewrote `docs/tribe-creation.md` and `docs/tribe_configuration_proposals_config.md` for the current API and policy; updated `docs/proposal-types.md` and `specs/06_security.md` §3.4.
+
 ## 2026-09-29 — rename DAO to OU (organizational unit)
 
 - Replaced the DAO terminology with OU across the Move packages, scripts and docs: module `armature::dao` is now `armature::ou`, `DAO` is `OU`, `DAOCreated` is `OUCreated`, and `SubDAO*` types, functions and error constants are `SubOU*`; the top-level OU is called the "org". Test-only top-level names use `org` (`org_id`, `cannot_deposit_into_org_vault`).

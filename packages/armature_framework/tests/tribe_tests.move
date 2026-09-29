@@ -6,6 +6,7 @@ use armature::capability_vault::{Self, CapabilityVault, SubOUControl};
 use armature::charter::Charter;
 use armature::create_subou::CreateSubOU;
 use armature::emergency::{EmergencyFreeze, FreezeAdminCap};
+use armature::enable_bypass_type::EnableBypassType;
 use armature::enable_proposal_type::EnableProposalType;
 use armature::governance;
 use armature::ou::{Self, OU};
@@ -750,7 +751,7 @@ fun create_wired_subou_enable_proposal_type_at_floor_passes() {
         let overrides = vector[
             ou::new_type_init<EnableProposalType>(
                 b"EnableProposalType".to_ascii_string(),
-                proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0),
+                proposal::new_config(10_000, 8_000, 0, 604_800_000, 0, 0),
             ),
         ];
 
@@ -1074,7 +1075,7 @@ fun create_tribe_configured_update_config_at_floor_passes() {
         let tribe_overrides = vector[
             ou::new_type_init<UpdateProposalConfig>(
                 b"UpdateProposalConfig".to_ascii_string(),
-                proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0),
+                proposal::new_config(10_000, 8_000, 0, 604_800_000, 0, 0),
             ),
         ];
 
@@ -1285,6 +1286,263 @@ fun create_tribe_configured_default_type_display_key_mismatch_aborts() {
             vector[],
             scenario.ctx(),
         );
+    };
+    scenario.end();
+}
+
+// === Test 32: EnableBypassType quorum × threshold must reach the 80% floor ===
+
+/// Create a tribe whose Tribe OU overrides EnableBypassType with `config`.
+fun create_tribe_with_bypass_config(
+    scenario: &mut test_scenario::Scenario,
+    config: proposal::ProposalConfig,
+): ID {
+    scenario.next_tx(CREATOR);
+    let (owner_id, _, _) = tribe::create_tribe_configured(
+        vector[CREATOR, TRIBE_MEMBER],
+        vector[OFFICER_A, OFFICER_B],
+        vector[MEMBER_A, MEMBER_B],
+        string::utf8(b"Tribe OU"),
+        string::utf8(b"Officers"),
+        string::utf8(b"Members"),
+        string::utf8(b"https://tribe.example/logo.png"),
+        string::utf8(b"https://tribe.example/officers.png"),
+        string::utf8(b"https://tribe.example/members.png"),
+        OFFICER_ADMIN,
+        MEMBER_ADMIN,
+        vector[ou::new_type_init<EnableBypassType>(b"EnableBypassType".to_ascii_string(), config)],
+        vector[],
+        vector[],
+        scenario.ctx(),
+    );
+    owner_id
+}
+
+#[test, expected_failure(abort_code = ou::EBypassQuorumTooLow)]
+/// 50% quorum × 80% threshold = 40% of the board: a vote could pass and then
+/// fail the execution floor, so the config is refused.
+fun create_tribe_configured_aborts_on_bypass_quorum_too_low() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    create_tribe_with_bypass_config(
+        &mut scenario,
+        proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0),
+    );
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = ou::EBypassQuorumTooLow)]
+/// The single-vote shape (1 bps quorum) is refused for EnableBypassType.
+fun create_tribe_configured_aborts_on_bypass_single_vote_config() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    create_tribe_with_bypass_config(
+        &mut scenario,
+        proposal::new_config(1, 10_000, 0, 3_600_000, 0, 0),
+    );
+    scenario.end();
+}
+
+#[test]
+/// 90% quorum × 90% threshold = 81% ≥ 80%: accepted and stored.
+fun create_tribe_configured_accepts_bypass_quorum_at_floor() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let owner_id = create_tribe_with_bypass_config(
+        &mut scenario,
+        proposal::new_config(9_000, 9_000, 0, 604_800_000, 0, 0),
+    );
+    scenario.next_tx(CREATOR);
+    {
+        let owner = scenario.take_shared_by_id<OU>(owner_id);
+        assert!(owner.type_config<EnableBypassType>().quorum() == 9_000);
+        assert!(owner.type_config<EnableBypassType>().approval_threshold() == 9_000);
+        test_scenario::return_shared(owner);
+    };
+    scenario.end();
+}
+
+// === Test 33: EnableProposalType quorum × threshold must reach 80% of the board ===
+
+/// Create a tribe whose Officers SubOU overrides EnableProposalType with `config`.
+fun create_tribe_with_officer_enable_config(
+    scenario: &mut test_scenario::Scenario,
+    config: proposal::ProposalConfig,
+): ID {
+    scenario.next_tx(CREATOR);
+    let (_, officer_id, _) = tribe::create_tribe_configured(
+        vector[CREATOR, TRIBE_MEMBER],
+        vector[OFFICER_A, OFFICER_B],
+        vector[MEMBER_A, MEMBER_B],
+        string::utf8(b"Tribe OU"),
+        string::utf8(b"Officers"),
+        string::utf8(b"Members"),
+        string::utf8(b"https://tribe.example/logo.png"),
+        string::utf8(b"https://tribe.example/officers.png"),
+        string::utf8(b"https://tribe.example/members.png"),
+        OFFICER_ADMIN,
+        MEMBER_ADMIN,
+        vector[],
+        vector[
+            ou::new_type_init<EnableProposalType>(
+                b"EnableProposalType".to_ascii_string(),
+                config,
+            ),
+        ],
+        vector[],
+        scenario.ctx(),
+    );
+    officer_id
+}
+
+#[test]
+/// Every OU's default EnableProposalType config needs YES from 80% of the
+/// whole board: 80% quorum × 100% threshold.
+fun create_tribe_enable_proposal_type_default_is_whole_board() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let (owner_id, officer_id, member_id) = do_create_tribe(&mut scenario);
+    scenario.next_tx(CREATOR);
+    {
+        let owner = scenario.take_shared_by_id<OU>(owner_id);
+        let officers = scenario.take_shared_by_id<OU>(officer_id);
+        let members = scenario.take_shared_by_id<OU>(member_id);
+        assert!(owner.type_config<EnableProposalType>().quorum() == 8_000);
+        assert!(officers.type_config<EnableProposalType>().quorum() == 8_000);
+        assert!(members.type_config<EnableProposalType>().quorum() == 8_000);
+        assert!(officers.type_config<EnableProposalType>().approval_threshold() == 10_000);
+        test_scenario::return_shared(members);
+        test_scenario::return_shared(officers);
+        test_scenario::return_shared(owner);
+    };
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = ou::EEnableQuorumTooLow)]
+/// 50% quorum × 80% threshold = 40% of the board: refused.
+fun create_tribe_configured_aborts_on_enable_quorum_too_low() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    create_tribe_with_officer_enable_config(
+        &mut scenario,
+        proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0),
+    );
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = ou::EEnableQuorumTooLow)]
+/// The single-vote shape (1 bps quorum) is refused for EnableProposalType.
+fun create_tribe_configured_aborts_on_enable_single_vote_config() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    create_tribe_with_officer_enable_config(
+        &mut scenario,
+        proposal::new_config(1, 10_000, 0, 3_600_000, 0, 0),
+    );
+    scenario.end();
+}
+
+#[test]
+/// 90% quorum × 90% threshold = 81% ≥ 80%: accepted and stored.
+fun create_tribe_configured_accepts_enable_quorum_at_floor() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let officer_id = create_tribe_with_officer_enable_config(
+        &mut scenario,
+        proposal::new_config(9_000, 9_000, 0, 604_800_000, 0, 0),
+    );
+    scenario.next_tx(CREATOR);
+    {
+        let officers = scenario.take_shared_by_id<OU>(officer_id);
+        assert!(officers.type_config<EnableProposalType>().quorum() == 9_000);
+        test_scenario::return_shared(officers);
+    };
+    scenario.end();
+}
+
+// === Test 34: UpdateProposalConfig quorum × threshold must reach 80% of the board ===
+
+/// Create a tribe whose Officers SubOU overrides UpdateProposalConfig with `config`.
+fun create_tribe_with_officer_update_config(
+    scenario: &mut test_scenario::Scenario,
+    config: proposal::ProposalConfig,
+): ID {
+    scenario.next_tx(CREATOR);
+    let (_, officer_id, _) = tribe::create_tribe_configured(
+        vector[CREATOR, TRIBE_MEMBER],
+        vector[OFFICER_A, OFFICER_B],
+        vector[MEMBER_A, MEMBER_B],
+        string::utf8(b"Tribe OU"),
+        string::utf8(b"Officers"),
+        string::utf8(b"Members"),
+        string::utf8(b"https://tribe.example/logo.png"),
+        string::utf8(b"https://tribe.example/officers.png"),
+        string::utf8(b"https://tribe.example/members.png"),
+        OFFICER_ADMIN,
+        MEMBER_ADMIN,
+        vector[],
+        vector[
+            ou::new_type_init<UpdateProposalConfig>(
+                b"UpdateProposalConfig".to_ascii_string(),
+                config,
+            ),
+        ],
+        vector[],
+        scenario.ctx(),
+    );
+    officer_id
+}
+
+#[test]
+/// Every OU's default UpdateProposalConfig config needs YES from 80% of the
+/// whole board: 80% quorum × 100% threshold.
+fun create_tribe_update_config_default_is_whole_board() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let (owner_id, officer_id, member_id) = do_create_tribe(&mut scenario);
+    scenario.next_tx(CREATOR);
+    {
+        let owner = scenario.take_shared_by_id<OU>(owner_id);
+        let officers = scenario.take_shared_by_id<OU>(officer_id);
+        let members = scenario.take_shared_by_id<OU>(member_id);
+        assert!(owner.type_config<UpdateProposalConfig>().quorum() == 8_000);
+        assert!(officers.type_config<UpdateProposalConfig>().quorum() == 8_000);
+        assert!(members.type_config<UpdateProposalConfig>().quorum() == 8_000);
+        assert!(officers.type_config<UpdateProposalConfig>().approval_threshold() == 10_000);
+        test_scenario::return_shared(members);
+        test_scenario::return_shared(officers);
+        test_scenario::return_shared(owner);
+    };
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = ou::EUpdateConfigQuorumTooLow)]
+/// 50% quorum × 80% threshold = 40% of the board: refused.
+fun create_tribe_configured_aborts_on_update_config_quorum_too_low() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    create_tribe_with_officer_update_config(
+        &mut scenario,
+        proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0),
+    );
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = ou::EUpdateConfigQuorumTooLow)]
+/// The single-vote shape (1 bps quorum) is refused for UpdateProposalConfig.
+fun create_tribe_configured_aborts_on_update_config_single_vote_config() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    create_tribe_with_officer_update_config(
+        &mut scenario,
+        proposal::new_config(1, 10_000, 0, 3_600_000, 0, 0),
+    );
+    scenario.end();
+}
+
+#[test]
+/// 90% quorum × 90% threshold = 81% ≥ 80%: accepted and stored.
+fun create_tribe_configured_accepts_update_config_quorum_at_floor() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let officer_id = create_tribe_with_officer_update_config(
+        &mut scenario,
+        proposal::new_config(9_000, 9_000, 0, 604_800_000, 0, 0),
+    );
+    scenario.next_tx(CREATOR);
+    {
+        let officers = scenario.take_shared_by_id<OU>(officer_id);
+        assert!(officers.type_config<UpdateProposalConfig>().quorum() == 9_000);
+        test_scenario::return_shared(officers);
     };
     scenario.end();
 }

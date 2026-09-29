@@ -1517,3 +1517,188 @@ fun ticket_from_cap_forbidden_bits_aborts() {
     clock.destroy_for_testing();
     scenario.end();
 }
+
+// === Default EnableBypassType config on a multi-member board ===
+
+const BOARD_5: vector<address> = vector[@0xA, @0xB1, @0xB2, @0xB3, @0xB4];
+
+/// Create a 5-member OU with default configs, submit EnableBypassType for
+/// DummyBypass, and cast `votes[i]` for BOARD_5[i] (only the first
+/// `votes.length()` members vote).
+fun submit_and_vote_bypass_on_board_5(
+    scenario: &mut test_scenario::Scenario,
+    clock: &mut clock::Clock,
+    votes: vector<bool>,
+) {
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(BOARD_5);
+        ou::create(
+            &init,
+            string::utf8(b"Test OU"),
+            string::utf8(b"https://example.com/logo.png"),
+            scenario.ctx(),
+        );
+    };
+
+    clock.set_for_testing(1000);
+    scenario.next_tx(CREATOR);
+    {
+        let ou = scenario.take_shared<OU>();
+        let config = proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0);
+        let payload = external_execution::new_enable_bypass_type(
+            b"MyBypass".to_ascii_string(),
+            type_name::with_defining_ids<DummyBypass>(),
+            config,
+        );
+        board_voting::submit_proposal(&ou, option::none(), payload, clock, scenario.ctx());
+        test_scenario::return_shared(ou);
+    };
+
+    clock.set_for_testing(2000);
+    votes.length().do!(|i| {
+        scenario.next_tx(BOARD_5[i]);
+        let mut proposal = scenario.take_shared<Proposal<EnableBypassType>>();
+        let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
+        board_voting::vote(&mut proposal, &vote_ou, votes[i], clock, scenario.ctx());
+        test_scenario::return_shared(vote_ou);
+        test_scenario::return_shared(proposal);
+    });
+}
+
+#[test]
+/// Regression: with the default config (80% quorum, 100% threshold), 4 YES on
+/// a 5-member board passes and executes (4/5 = 80% of the whole board); the
+/// fifth member need not vote. Previously the default 50% quorum let 3 YES
+/// pass the vote, after which execution aborted with EApprovalFloorNotMet and
+/// no further votes could be cast.
+fun enable_bypass_type_default_config_multi_member_executes() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    submit_and_vote_bypass_on_board_5(
+        &mut scenario,
+        &mut clock,
+        vector[true, true, true, true],
+    );
+
+    clock.set_for_testing(3000);
+    scenario.next_tx(CREATOR);
+    {
+        let mut ou = scenario.take_shared<OU>();
+        let mut vault = scenario.take_shared<CapabilityVault>();
+        let proposal = scenario.take_shared<Proposal<EnableBypassType>>();
+        assert!(proposal.status().is_passed());
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+
+        let ticket = board_voting::ticket_from_vote(
+            &mut ou,
+            proposal,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        external_execution::execute_enable_bypass_type<DummyBypass>(
+            &mut ou,
+            &mut vault,
+            ticket,
+            scenario.ctx(),
+        );
+        assert!(vault.ids_for_type<ExternalExecutionCap<DummyBypass>>().length() == 1);
+
+        test_scenario::return_shared(freeze);
+        test_scenario::return_shared(vault);
+        test_scenario::return_shared(ou);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+/// With the default config, 3 YES of 5 (60% of the board) no longer passes
+/// the vote: the proposal stays Active and can still gather votes, instead of
+/// passing into a state it cannot execute from.
+fun enable_bypass_type_default_config_below_floor_stays_active() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    submit_and_vote_bypass_on_board_5(&mut scenario, &mut clock, vector[true, true, true]);
+
+    scenario.next_tx(CREATOR);
+    {
+        let proposal = scenario.take_shared<Proposal<EnableBypassType>>();
+        assert!(proposal.status().is_active());
+        test_scenario::return_shared(proposal);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+/// The default config's trade-off: with a 100% threshold, one NO means the
+/// proposal can never pass, even when every other member votes YES.
+fun enable_bypass_type_default_config_single_no_blocks() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let mut clock = clock::create_for_testing(scenario.ctx());
+    submit_and_vote_bypass_on_board_5(
+        &mut scenario,
+        &mut clock,
+        vector[false, true, true, true, true],
+    );
+
+    scenario.next_tx(CREATOR);
+    {
+        let proposal = scenario.take_shared<Proposal<EnableBypassType>>();
+        assert!(proposal.status().is_active());
+        test_scenario::return_shared(proposal);
+    };
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::board_voting::EInsufficientVotingWeight)]
+/// Single-vote-execute of EnableBypassType on a multi-member board now fails
+/// at submission rather than after the vote.
+fun enable_bypass_type_sve_multi_member_aborts_at_submission() {
+    let mut scenario = test_scenario::begin(CREATOR);
+    let clock = clock::create_for_testing(scenario.ctx());
+    scenario.next_tx(CREATOR);
+    {
+        let init = governance::init_board(BOARD_5);
+        ou::create(
+            &init,
+            string::utf8(b"Test OU"),
+            string::utf8(b"https://example.com/logo.png"),
+            scenario.ctx(),
+        );
+    };
+
+    scenario.next_tx(CREATOR);
+    {
+        let mut ou = scenario.take_shared<OU>();
+        let mut vault = scenario.take_shared<CapabilityVault>();
+        let freeze = scenario.take_shared<EmergencyFreeze>();
+        let config = proposal::new_config(5_000, 8_000, 0, 604_800_000, 0, 0);
+        let payload = external_execution::new_enable_bypass_type(
+            b"MyBypass".to_ascii_string(),
+            type_name::with_defining_ids<DummyBypass>(),
+            config,
+        );
+        let ticket = board_voting::submit_vote_execute(
+            &mut ou,
+            option::none(),
+            payload,
+            &freeze,
+            &clock,
+            scenario.ctx(),
+        );
+        external_execution::execute_enable_bypass_type<DummyBypass>(
+            &mut ou,
+            &mut vault,
+            ticket,
+            scenario.ctx(),
+        );
+        abort 0
+    }
+}
