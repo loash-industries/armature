@@ -1,9 +1,9 @@
 #[test_only]
 module armature::encrypted_entry_tests;
 
-use armature::ou::{Self, OU};
 use armature::encrypted_entry::{Self, EncryptedEntry};
 use armature::governance;
+use armature::ou::{Self, OU};
 use armature::proposal;
 use std::string;
 use sui::test_scenario;

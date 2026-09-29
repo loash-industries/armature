@@ -2,9 +2,9 @@ module armature::admin_ops;
 
 use armature::board_voting;
 use armature::charter::Charter;
-use armature::ou::{Self, OU};
 use armature::disable_proposal_type::{Self, DisableProposalType};
 use armature::enable_proposal_type::{Self, EnableProposalType};
+use armature::ou::{Self, OU};
 use armature::proposal::{Self, ExecutionRequest, ExecutionTicket};
 use armature::update_metadata::{Self, UpdateMetadata};
 use armature::update_proposal_config::{Self, UpdateProposalConfig};

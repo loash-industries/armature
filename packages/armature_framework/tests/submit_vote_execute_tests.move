@@ -2,17 +2,17 @@
 module armature::submit_vote_execute_tests;
 
 use armature::board_voting;
-use armature::ou::{Self, OU};
 use armature::emergency::{EmergencyFreeze, FreezeAdminCap};
 use armature::enable_proposal_type::{Self, EnableProposalType};
 use armature::governance;
+use armature::ou::{Self, OU};
 use armature::proposal::{
     Self,
     ProposalCreated,
     ProposalExecuted,
     ProposalPassed,
     ProposalPayloadCreated,
-    VoteCast,
+    VoteCast
 };
 use std::internal;
 use std::string;

@@ -8,11 +8,11 @@
 module armature::gate_tests;
 
 use armature::capability_vault::{Self, CapabilityVault};
-use armature::controller;
 use armature::charter::Charter;
-use armature::ou::{Self, OU};
+use armature::controller;
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
+use armature::ou::{Self, OU};
 use armature::permissions;
 use armature::proposal::{Self, ExecutionRequest};
 use armature::treasury_vault::TreasuryVault;

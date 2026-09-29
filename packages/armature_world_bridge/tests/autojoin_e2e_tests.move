@@ -9,9 +9,9 @@ module armature_world_bridge::autojoin_e2e_tests;
 
 use armature::board_voting;
 use armature::capability_vault::{Self, CapabilityVault};
-use armature::ou::{Self, OU};
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
+use armature::ou::{Self, OU};
 use armature::permissions;
 use armature::proposal::{Self, ExecutionRequest, Proposal};
 use armature::treasury_vault::TreasuryVault;

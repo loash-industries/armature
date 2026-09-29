@@ -1,9 +1,9 @@
 module armature_proposals::currency_ops;
 
 use armature::capability_vault::CapabilityVault;
-use armature::ou::OU;
 use armature::emergency::EmergencyFreeze;
 use armature::external_execution;
+use armature::ou::OU;
 use armature::proposal::{ExecutionRequest, ExecutionTicket};
 use armature::treasury_vault::TreasuryVault;
 use armature_proposals::adopt_currency::{Self, AdoptCurrency};

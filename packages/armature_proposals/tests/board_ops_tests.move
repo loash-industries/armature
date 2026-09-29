@@ -3,9 +3,9 @@ module armature_proposals::board_ops_tests;
 
 use armature::board_ops;
 use armature::board_voting;
-use armature::ou::{Self, OU};
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
+use armature::ou::{Self, OU};
 use armature::proposal::{Self, Proposal};
 use armature::set_board::{Self, SetBoard};
 use std::string;

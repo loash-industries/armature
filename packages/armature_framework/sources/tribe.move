@@ -1,9 +1,9 @@
 module armature::tribe;
 
 use armature::capability_vault;
-use armature::ou::{Self, ProposalTypeInit};
 use armature::emergency;
 use armature::governance;
+use armature::ou::{Self, ProposalTypeInit};
 use armature::permissions;
 use armature::proposal::ExecutionRequest;
 use std::string::String;

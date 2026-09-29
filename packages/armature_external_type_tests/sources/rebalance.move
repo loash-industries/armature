@@ -2,9 +2,9 @@
 /// defined outside the armature packages and a handler that consumes its ticket.
 module armature_external_type_tests::rebalance;
 
-use armature::ou::OU;
 use armature::emergency::EmergencyFreeze;
 use armature::external_execution;
+use armature::ou::OU;
 use armature::proposal::{ExecutionTicket, ExternalExecutionCap};
 use std::internal;
 use sui::clock::Clock;

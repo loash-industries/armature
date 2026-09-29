@@ -3,8 +3,8 @@ module armature::composite_tests;
 
 use armature::composite::{Self, CompositeFrame};
 use armature::composite_payload;
-use armature::ou::{Self, OU};
 use armature::governance;
+use armature::ou::{Self, OU};
 use std::string;
 use sui::test_scenario;
 

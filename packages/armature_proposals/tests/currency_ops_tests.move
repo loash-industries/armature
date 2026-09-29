@@ -3,11 +3,11 @@ module armature_proposals::currency_ops_tests;
 
 use armature::board_voting;
 use armature::capability_vault::CapabilityVault;
-use armature::ou::{Self, OU};
 use armature::emergency::EmergencyFreeze;
 use armature::enable_bypass_type::EnableBypassType;
 use armature::external_execution;
 use armature::governance;
+use armature::ou::{Self, OU};
 use armature::proposal::{Self, ExternalExecutionCap, Proposal};
 use armature::treasury_vault::TreasuryVault;
 use armature_proposals::adopt_currency::{Self, AdoptCurrency};

@@ -1,8 +1,8 @@
 module armature::board_voting;
 
-use armature::ou::{Self, OU};
 use armature::emergency::EmergencyFreeze;
 use armature::enable_proposal_type::EnableProposalType;
+use armature::ou::{Self, OU};
 use armature::proposal::{Self, ExecutionTicket, Proposal, ProposalConfig};
 use std::string::String;
 use std::type_name::{Self, TypeName};
@@ -252,8 +252,7 @@ fun ticket_from_vote_core<P: store>(
 ): ExecutionTicket<P> {
     let name = type_name::with_defining_ids<P>();
     let is_active = ou.status().is_active();
-    let is_migration_ok =
-        ou.status().is_migrating()
+    let is_migration_ok = ou.status().is_migrating()
         && ou::is_migration_allowed_type(&name);
     assert!(is_active || is_migration_ok, EOUNotActive);
     assert!(prop.ou_id() == ou.id(), EOUIdMismatch);
@@ -292,8 +291,7 @@ fun ticket_from_vote_core<P: store>(
 /// must have a slot.
 fun assert_submittable(ou: &OU, name: &TypeName) {
     let is_active = ou.status().is_active();
-    let is_migration_ok =
-        ou.status().is_migrating()
+    let is_migration_ok = ou.status().is_migrating()
         && ou::is_migration_allowed_type(name);
     assert!(is_active || is_migration_ok, EOUNotActive);
     assert!(ou.is_type_name_enabled(name), ETypeNotEnabled);

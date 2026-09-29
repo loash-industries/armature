@@ -15,9 +15,9 @@
 module armature::composite;
 
 use armature::composite_payload::{Self, CompositePayload};
-use armature::ou::OU;
 use armature::emergency::EmergencyFreeze;
 use armature::enable_proposal_type::EnableProposalType;
+use armature::ou::OU;
 use armature::proposal::{Self, ExecutionTicket, ProposalConfig};
 use armature::update_proposal_config::UpdateProposalConfig;
 use std::string::String;

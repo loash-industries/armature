@@ -56,12 +56,7 @@ public struct EntryRemoved has copy, drop {
 /// The caller must encrypt the content off-chain with the current epoch key and
 /// upload the ciphertext blob before calling this. Aborts if the 32-entry cap is reached.
 #[allow(lint(share_owned))]
-public fun publish_entry(
-    ou: &mut OU,
-    location: String,
-    description: String,
-    ctx: &mut TxContext,
-) {
+public fun publish_entry(ou: &mut OU, location: String, description: String, ctx: &mut TxContext) {
     assert!(ou.status().is_active(), EOUNotActive);
     assert!(ou.is_governance_member(ctx.sender()), ENotMember);
     assert!(ou.entries().length() < MAX_ENTRIES, EEntriesCapReached);
@@ -115,12 +110,7 @@ public fun update_entry(
 
 /// Update the blob location within the same epoch (no re-keying required).
 /// Use when re-pinning or migrating storage without a key rotation.
-public fun edit_entry(
-    ou: &OU,
-    entry: &mut EncryptedEntry,
-    new_location: String,
-    ctx: &TxContext,
-) {
+public fun edit_entry(ou: &OU, entry: &mut EncryptedEntry, new_location: String, ctx: &TxContext) {
     assert!(ou.is_governance_member(ctx.sender()), ENotMember);
     assert!(entry.ou_id == ou.id(), EOuMismatch);
 

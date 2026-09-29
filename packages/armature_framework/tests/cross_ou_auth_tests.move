@@ -11,10 +11,10 @@ use armature::capability_vault::{Self, CapabilityVault, SubOUControl};
 use armature::composite::{Self, CompositeFrame};
 use armature::composite_payload::CompositePayload;
 use armature::controller;
-use armature::ou::{Self, OU};
 use armature::emergency::{Self, EmergencyFreeze, FreezeAdminCap};
 use armature::external_execution;
 use armature::governance;
+use armature::ou::{Self, OU};
 use armature::permissions;
 use armature::proposal::{Self, Proposal};
 use armature::treasury_vault::TreasuryVault;
@@ -486,7 +486,9 @@ fun composite_setup(s: &mut Scenario, clock: &mut Clock): (ID, ID) {
     enable<VPayload>(
         s,
         atk_id,
-        zero_delay().with_composable_allowed(true).with_permissions(permissions::treasury_withdraw()),
+        zero_delay()
+            .with_composable_allowed(true)
+            .with_permissions(permissions::treasury_withdraw()),
     );
     clock.set_for_testing(1_000);
     passed_composite(s, clock, victim_id);

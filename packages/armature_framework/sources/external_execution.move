@@ -19,10 +19,10 @@
 module armature::external_execution;
 
 use armature::capability_vault::CapabilityVault;
-use armature::ou::{Self, OU};
 use armature::disable_bypass_type::{Self, DisableBypassType};
 use armature::emergency::EmergencyFreeze;
 use armature::enable_bypass_type::{Self, EnableBypassType};
+use armature::ou::{Self, OU};
 use armature::permissions;
 use armature::proposal::{Self, ExecutionTicket, ExternalExecutionCap, ProposalConfig};
 use armature::utils;

@@ -97,8 +97,5 @@ public fun receive_cap_from_controller<T: key + store, P>(
 /// control: only the object recorded by `ou::share_subou` passes.
 public fun assert_registered_control(control: &SubOUControl, subou: &OU) {
     assert!(control.subou_id() == subou.id(), EControlMismatch);
-    assert!(
-        subou.controller_cap_id() == &option::some(object::id(control)),
-        ENotController,
-    );
+    assert!(subou.controller_cap_id() == &option::some(object::id(control)), ENotController);
 }

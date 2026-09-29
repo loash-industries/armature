@@ -7,13 +7,13 @@ use armature::batch_remove_members::BatchRemoveMembers;
 use armature::capability_vault::{Self, CapabilityVault};
 use armature::charter::Charter;
 use armature::composite_payload::CompositePayload;
-use armature::ou::{Self, OU};
 use armature::disable_bypass_type::DisableBypassType;
 use armature::disable_proposal_type::DisableProposalType;
 use armature::emergency::{EmergencyFreeze, FreezeAdminCap};
 use armature::enable_bypass_type::EnableBypassType;
 use armature::enable_proposal_type::EnableProposalType;
 use armature::governance;
+use armature::ou::{Self, OU};
 use armature::permissions;
 use armature::proposal;
 use armature::remove_member::RemoveMember;
@@ -166,9 +166,7 @@ fun test_default_proposal_types() {
             ou.type_display_key<EnableProposalType>() == b"EnableProposalType".to_ascii_string(),
         );
         assert!(ou.type_display_key<EnableBypassType>() == b"EnableBypassType".to_ascii_string());
-        assert!(
-            ou.type_display_key<DisableBypassType>() == b"DisableBypassType".to_ascii_string(),
-        );
+        assert!(ou.type_display_key<DisableBypassType>() == b"DisableBypassType".to_ascii_string());
         assert!(
             ou.type_display_key<DisableProposalType>() == b"DisableProposalType".to_ascii_string(),
         );

@@ -2,8 +2,8 @@
 module armature::proposal_tests;
 
 use armature::board_voting;
-use armature::ou::{Self, OU};
 use armature::governance;
+use armature::ou::{Self, OU};
 use armature::proposal::{Self, Proposal};
 use std::internal;
 use std::string;

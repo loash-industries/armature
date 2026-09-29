@@ -34,9 +34,9 @@
 module armature_world_bridge::autojoin_ops;
 
 use armature::capability_vault::CapabilityVault;
-use armature::ou::OU;
 use armature::emergency::EmergencyFreeze;
 use armature::external_execution;
+use armature::ou::OU;
 use armature::permissions;
 use armature_world_bridge::configure_autojoin::ConfigureAutojoin;
 use armature_world_bridge::tribe_allowlist::TribeIdAllowlist;

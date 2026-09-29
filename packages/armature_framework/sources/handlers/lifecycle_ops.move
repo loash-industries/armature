@@ -7,9 +7,9 @@ module armature::lifecycle_ops;
 use armature::capability_vault::{CapabilityVault, SubOUControl};
 use armature::controller;
 use armature::create_subou::{Self, CreateSubOU};
-use armature::ou::{Self, OU};
 use armature::emergency;
 use armature::governance;
+use armature::ou::{Self, OU};
 use armature::proposal::ExecutionTicket;
 use armature::spawn_ou::{Self, SpawnOU};
 use armature::spin_out_subou::{Self, SpinOutSubOU};
@@ -116,11 +116,7 @@ public fun execute_create_subou(
 }
 
 /// Execute a SpawnOU proposal.
-public fun execute_spawn_ou(
-    ou: &mut OU,
-    ticket: ExecutionTicket<SpawnOU>,
-    ctx: &mut TxContext,
-) {
+public fun execute_spawn_ou(ou: &mut OU, ticket: ExecutionTicket<SpawnOU>, ctx: &mut TxContext) {
     assert!(ou.id() == ticket.ticket_ou_id(), EOUMismatch);
 
     let payload = ticket.ticket_payload();

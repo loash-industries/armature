@@ -3,10 +3,10 @@ module armature_proposals::emergency_freeze_tests;
 
 use armature::board_ops;
 use armature::board_voting;
-use armature::ou::{Self, OU};
 use armature::emergency::{Self, EmergencyFreeze, FreezeAdminCap};
 use armature::freeze_ops;
 use armature::governance;
+use armature::ou::{Self, OU};
 use armature::proposal::{Self, Proposal};
 use armature::set_board::{Self, SetBoard};
 use armature::transfer_freeze_admin::TransferFreezeAdmin;

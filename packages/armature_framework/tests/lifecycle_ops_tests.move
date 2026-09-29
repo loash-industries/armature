@@ -5,10 +5,10 @@ module armature::lifecycle_ops_tests;
 
 use armature::board_voting;
 use armature::capability_vault::CapabilityVault;
-use armature::ou::{Self, OU};
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
 use armature::lifecycle_ops::{Self, AssetTransfer};
+use armature::ou::{Self, OU};
 use armature::proposal;
 use armature::transfer_assets::{Self, TransferAssets};
 use armature::treasury_vault::TreasuryVault;

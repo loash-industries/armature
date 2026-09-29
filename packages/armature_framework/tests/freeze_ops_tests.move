@@ -5,10 +5,10 @@
 module armature::freeze_ops_tests;
 
 use armature::board_voting;
-use armature::ou::{Self, OU};
 use armature::emergency::{Self, EmergencyFreeze, FreezeAdminCap};
 use armature::freeze_ops;
 use armature::governance;
+use armature::ou::{Self, OU};
 use armature::permissions;
 use armature::proposal::{Self, Proposal};
 use armature::set_board::SetBoard;

@@ -8,9 +8,9 @@ module armature::borrow_scope_tests;
 
 use armature::board_voting;
 use armature::capability_vault::{CapabilityVault, SubOUControl};
-use armature::ou::{Self, OU};
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
+use armature::ou::{Self, OU};
 use armature::permissions;
 use armature::proposal;
 use armature::spin_out_subou::SpinOutSubOU;

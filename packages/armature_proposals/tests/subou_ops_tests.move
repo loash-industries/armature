@@ -4,10 +4,10 @@ module armature_proposals::subou_ops_tests;
 use armature::board_voting;
 use armature::capability_vault::{Self, CapabilityVault, SubOUControl};
 use armature::create_subou::{Self, CreateSubOU};
-use armature::ou::{Self, OU};
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
 use armature::lifecycle_ops;
+use armature::ou::{Self, OU};
 use armature::proposal::{Self, Proposal};
 use armature_proposals::controller_batch_add_members::{Self, ControllerBatchAddMembers};
 use armature_proposals::controller_batch_remove_members::{Self, ControllerBatchRemoveMembers};
@@ -801,9 +801,7 @@ fun pause_and_unpause_subou_e2e() {
 
     scenario.next_tx(CREATOR);
     {
-        let mut proposal = scenario.take_shared<
-            Proposal<pause_execution::UnpauseSubOUExecution>,
-        >();
+        let mut proposal = scenario.take_shared<Proposal<pause_execution::UnpauseSubOUExecution>>();
         clock.set_for_testing(21_000);
         let vote_ou = scenario.take_shared_by_id<OU>(proposal.ou_id());
         board_voting::vote(&mut proposal, &vote_ou, true, &clock, scenario.ctx());
@@ -817,9 +815,7 @@ fun pause_and_unpause_subou_e2e() {
         let mut vault = scenario.take_shared_by_id<
             CapabilityVault,
         >(parent_ou.capability_vault_id());
-        let mut proposal = scenario.take_shared<
-            Proposal<pause_execution::UnpauseSubOUExecution>,
-        >();
+        let mut proposal = scenario.take_shared<Proposal<pause_execution::UnpauseSubOUExecution>>();
         let freeze = scenario.take_shared_by_id<EmergencyFreeze>(parent_ou.emergency_freeze_id());
         let mut subou = scenario.take_shared_by_id<OU>(subou_id);
         clock.set_for_testing(22_000);

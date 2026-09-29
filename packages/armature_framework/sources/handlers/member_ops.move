@@ -101,10 +101,7 @@ public fun execute_batch_add_members(ou: &mut OU, ticket: ExecutionTicket<BatchA
 /// - any address not on the board (`governance::ENotBoardMember`)
 /// - any duplicate address in the batch (`governance::EDuplicateBoardMember`)
 /// - removal would leave the board empty (`governance::EEmptyBoard`)
-public fun execute_batch_remove_members(
-    ou: &mut OU,
-    ticket: ExecutionTicket<BatchRemoveMembers>,
-) {
+public fun execute_batch_remove_members(ou: &mut OU, ticket: ExecutionTicket<BatchRemoveMembers>) {
     assert!(ou.id() == ticket.ticket_ou_id(), EOuMismatch);
     let payload = ticket.ticket_payload();
     let members = payload.members();

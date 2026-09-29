@@ -3,9 +3,9 @@ module armature_proposals::upgrade_ops_tests;
 
 use armature::board_voting;
 use armature::capability_vault::CapabilityVault;
-use armature::ou::{Self, OU};
 use armature::emergency::EmergencyFreeze;
 use armature::governance;
+use armature::ou::{Self, OU};
 use armature::proposal::{Self, Proposal};
 use armature_proposals::propose_upgrade::{Self, ProposeUpgrade};
 use armature_proposals::type_permissions;

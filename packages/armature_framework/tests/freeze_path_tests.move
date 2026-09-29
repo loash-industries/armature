@@ -5,10 +5,10 @@
 module armature::freeze_path_tests;
 
 use armature::board_voting;
-use armature::ou::{Self, OU};
 use armature::emergency::{Self, EmergencyFreeze, FreezeAdminCap};
 use armature::external_execution;
 use armature::governance;
+use armature::ou::{Self, OU};
 use armature::proposal::{Self, Proposal};
 use std::internal;
 use std::string;

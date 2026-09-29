@@ -1,8 +1,8 @@
 #[test_only]
 module armature::treasury_vault_multicoin_tests;
 
-use armature::ou;
 use armature::governance;
+use armature::ou;
 use armature::proposal;
 use armature::treasury_vault::{Self, TreasuryVault};
 use multicoin::multicoin;
