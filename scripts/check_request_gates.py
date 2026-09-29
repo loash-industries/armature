@@ -20,6 +20,11 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 SOURCES = ROOT / "packages/armature_framework/sources"
 GATE_TESTS = ROOT / "packages/armature_framework/tests/gate_tests.move"
 GRANT_TESTS = ROOT / "packages/armature_framework/tests/grant_tests.move"
+PROPOSALS_SOURCES = ROOT / "packages/armature_proposals/sources"
+TYPE_PERMISSION_TESTS = ROOT / "packages/armature_proposals/tests/type_permission_tests.move"
+
+# armature_proposals payload types whose `type_permissions` entry is 0.
+NO_BITS = {"ConfigureMintAllowance"}
 
 GATES = ("assert_permitted(", "assert_controller(")
 
@@ -72,6 +77,26 @@ def strip_comments(src: str) -> str:
     return re.sub(r"//[^\n]*", "", src)
 
 
+def snake(name: str) -> str:
+    name = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", name)
+    return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name).lower()
+
+
+def check_proposal_types(errors: list) -> int:
+    """Every handled armature_proposals payload type has grant and gate tests."""
+    tests = TYPE_PERMISSION_TESTS.read_text()
+    types = set()
+    for path in sorted(PROPOSALS_SOURCES.rglob("*.move")):
+        types |= set(re.findall(r"ExecutionTicket<(\w+)", strip_comments(path.read_text())))
+    for t in sorted(types):
+        prefix = snake(t)
+        if not re.search(rf"^fun {prefix}_grant\(", tests, re.M):
+            errors.append(f"armature_proposals {t} has no {prefix}_grant test")
+        if t not in NO_BITS and not re.search(rf"^fun {prefix}_needs_\w+\(", tests, re.M):
+            errors.append(f"armature_proposals {t} has no {prefix}_needs_* test")
+    return len(types)
+
+
 def main() -> int:
     tests = GATE_TESTS.read_text()
     grants = GRANT_TESTS.read_text()
@@ -103,13 +128,15 @@ def main() -> int:
                 errors.append(f"{module}::{name} has no grant test in grant_tests.move")
     for module, name in sorted(PERMIT_REQUIRED - permit_seen):
         errors.append(f"{module}::{name} not found; update PERMIT_REQUIRED")
+    proposal_types = check_proposal_types(errors)
     for e in errors:
         print(f"error: {e}")
     if errors:
         return 1
     print(
         f"ok: {gated} gated functions, {len(ALLOWED)} allowed without a gate, "
-        f"{len(PERMIT_REQUIRED)} Permit-gated ticket entry points"
+        f"{len(PERMIT_REQUIRED)} Permit-gated ticket entry points, "
+        f"{proposal_types} armature_proposals payload types covered"
     )
     return 0
 

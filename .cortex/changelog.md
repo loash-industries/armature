@@ -5,6 +5,7 @@
 - Added `armature_framework/tests/grant_tests.move`: for every request-gated framework mutator, a request carrying exactly the documented permission bits (and borrow scope, for the borrow paths) succeeds and the mutation lands. With `gate_tests` (every bit but the required one is denied), each mutator is pinned to its bit: necessary and sufficient.
 - Added the missing gate test `create_wired_subou_needs_vault_store`; only the missing-VAULT_EXTRACT case was covered.
 - `scripts/check_request_gates.py` now also scans `public(package)` functions and requires a grant test for every gated function. Four package-internal request plumbing functions (`new_ticket_standalone`, `new_ticket_external`, `new_external_execution_cap`, `destroy_external_execution_cap`) are allow-listed with the reason each needs no gate. No source changes.
+- Added `armature_proposals/tests/type_permission_tests.move`, which covers all 16 `armature_proposals` payload types through the real path (`test_enable_type` config, then `submit_vote_execute`, then the handler). `<type>_grant` shows the `type_permissions` bits and borrow scope are sufficient, and the effect lands. `<type>_needs_<bit>` / `<type>_needs_scope` show each bit and the scope are necessary (`EPermissionDenied` / `EBorrowScopeDenied`). `check_request_gates.py` now requires both for every payload type an `armature_proposals` handler takes a ticket for; ConfigureMintAllowance holds no bits and needs only the grant test.
 
 ## 2026-09-29 — remove the multicoin dependency
 

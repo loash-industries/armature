@@ -396,9 +396,9 @@ fun receive_cap_from_controller_with_vault_extract() {
     let mut scenario = test_scenario::begin(CREATOR);
     create_ou(&mut scenario);
     let parent = scenario.take_shared<OU>();
-    let mut parent_vault = scenario.take_shared_by_id<CapabilityVault>(
-        parent.capability_vault_id(),
-    );
+    let mut parent_vault = scenario.take_shared_by_id<
+        CapabilityVault,
+    >(parent.capability_vault_id());
     let wire = only(&parent, permissions::vault_store() | permissions::vault_extract());
     let subou_id = tribe::create_wired_subou(
         vector[CREATOR],
@@ -414,9 +414,7 @@ fun receive_cap_from_controller_with_vault_extract() {
 
     scenario.next_tx(CREATOR);
     let subou = scenario.take_shared_by_id<OU>(subou_id);
-    let mut subou_vault = scenario.take_shared_by_id<CapabilityVault>(
-        subou.capability_vault_id(),
-    );
+    let mut subou_vault = scenario.take_shared_by_id<CapabilityVault>(subou.capability_vault_id());
     let cap = TestCap { id: object::new(scenario.ctx()) };
     let cap_id = object::id(&cap);
     let r = only(&parent, permissions::vault_extract());
