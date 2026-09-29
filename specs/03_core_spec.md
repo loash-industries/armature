@@ -518,7 +518,8 @@ Proposed on the controller OU; the SubOU-side effect runs on a privileged reques
 | Any member removal increments `encrypt_epoch`. |
 | Submission, execution and bypass paths select the type's slot by `P`; a type without a slot aborts `ETypeNotEnabled`. |
 | Display keys are non-empty and unique per OU. |
-| `DisableProposalType`'s handler refuses to disable `EnableProposalType`, `DisableProposalType`, `EnableBypassType`, `DisableBypassType`, `TransferFreezeAdmin` or `UnfreezeProposalType` (`admin_ops::EUndisableableType`). `ou::disable_proposal_type` itself checks only `TYPE_ADMIN`. |
+| `EnableProposalType`, `DisableProposalType`, `EnableBypassType`, `DisableBypassType`, `TransferFreezeAdmin` and `UnfreezeProposalType` cannot be disabled. `ou::disable_proposal_type` enforces this for every caller (`ou::EUndisableableType`); `DisableProposalType`'s handler checks first (`admin_ops::EUndisableableType`). |
+| SubOU-blocked types cannot be enabled on an OU with a controller. `ou::enable_proposal_type` enforces this for every caller, including privileged requests (`ou::EBlockedProposalType`); the `EnableProposalType` and `EnableBypassType` handlers check first (`ESubOUBlockedType`). |
 | `EnableProposalType`, `UpdateProposalConfig`, `EnableBypassType`: 80% floor on every stored config (`ou::min_approval_threshold_for_type`). |
 | Every stored config meets `ou::permission_floor(permissions)`. |
 | `ProposalConfig` validation: `quorum ∈ [1, 10000]`, `approval_threshold ∈ [5000, 10000]`, `expiry_ms ≥ 3,600,000`. |
