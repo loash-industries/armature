@@ -7,7 +7,8 @@
 /// Extension packages that gate execution on *external state* — Character
 /// ownership, token balance, soulbound attestation, oracle assertion, ZK proof —
 /// implement their own authorization check, then present the OU's
-/// `ExternalExecutionCap<P>` (which the OU received via `EnableBypassType<P>`)
+/// `ExternalExecutionCap<P>` (which the OU received via `EnableBypassType<P>`,
+/// or, for a controlled SubOU, via its controller's `ControllerEnableBypassType<P>`)
 /// to `ticket_from_cap` to mint the `ExecutionTicket<P>`.
 ///
 /// All the safety machinery a vote-then-execute path runs through
@@ -18,7 +19,10 @@
 /// of type `P` execute via this path, regardless of the extension package.
 module armature::external_execution;
 
-use armature::capability_vault::CapabilityVault;
+use armature::capability_vault::{CapabilityVault, SubOUControl};
+use armature::controller;
+use armature::controller_disable_bypass_type::{Self, ControllerDisableBypassType};
+use armature::controller_enable_bypass_type::{Self, ControllerEnableBypassType};
 use armature::disable_bypass_type::{Self, DisableBypassType};
 use armature::emergency::EmergencyFreeze;
 use armature::enable_bypass_type::{Self, EnableBypassType};
@@ -58,11 +62,13 @@ const ECooldownRequiresMutableOU: u64 = 14;
 /// freeze). Checked when the bypass is enabled and again at every mint, so a
 /// later UpdateProposalConfig grant cannot open it either.
 const EBypassForbiddenBits: u64 = 15;
+/// The SubOU (or its vault) is not the one named in a controller bypass payload.
+const ESubOUMismatch: u64 = 16;
 
 // === Constants ===
 
-/// 80% approval floor for EnableBypassType (basis points), enforced at execute
-/// time against the whole board's weight. Mirrored by
+/// 80% approval floor for EnableBypassType and ControllerEnableBypassType (basis
+/// points), enforced at execute time against the whole board's weight. Mirrored by
 /// `ou::ENABLE_BYPASS_TYPE_MIN_THRESHOLD`; the two MUST stay in sync. `ou`
 /// holds every stored EnableBypassType config to quorum × threshold ≥ this
 /// floor, so a proposal that passes its vote always clears this check.
@@ -296,6 +302,178 @@ public fun execute_disable_bypass_type<NewType: store>(
     ticket.discharge(disable_bypass_type::permit());
 }
 
+// === ControllerEnableBypassType / ControllerDisableBypassType ===
+//
+// A controlled SubOU cannot pass EnableBypassType or DisableBypassType itself
+// (SubOU-blocked), so the grant comes from its controller instead: the
+// controller's board votes, the handler loans the SubOUControl from the
+// controller's vault and makes the SubOU-side change on a privileged request,
+// as SpinOutSubOU does. The controller can already do anything on the SubOU
+// through that control; these handlers only add the cap mint and destroy,
+// which are package-only. The cap is scoped to the SubOU, so it works with
+// `ticket_from_cap` on the SubOU and nowhere else.
+
+/// Build a `ControllerEnableBypassType` payload. `type_name` must be
+/// `std::type_name::with_defining_ids<NewType>()` for the type the controller's
+/// board is approving; the handler asserts the executor's `NewType` matches it.
+public fun new_controller_enable_bypass_type(
+    subou_id: ID,
+    control_cap_id: ID,
+    type_key: std::ascii::String,
+    type_name: TypeName,
+    config: ProposalConfig,
+): ControllerEnableBypassType {
+    controller_enable_bypass_type::new(subou_id, control_cap_id, type_key, type_name, config)
+}
+
+public fun new_controller_disable_bypass_type(
+    subou_id: ID,
+    control_cap_id: ID,
+    type_key: std::ascii::String,
+    cap_id: ID,
+): ControllerDisableBypassType {
+    controller_disable_bypass_type::new(subou_id, control_cap_id, type_key, cap_id)
+}
+
+/// Execute a `ControllerEnableBypassType` proposal passed on the controller OU:
+/// enable `NewType` on the SubOU AND mint an `ExternalExecutionCap<NewType>`
+/// scoped to the SubOU into the SubOU's `CapabilityVault`.
+///
+/// `vault` is the controller's vault (it holds the SubOUControl). Runs the
+/// same checks as `execute_enable_bypass_type` (self-bootstrap denylist, 80%
+/// whole-board floor on the controller's vote, type pin, composability vs
+/// cooldown, bypass-safe bits, SubOU-blocked types), plus: the SubOU and its
+/// vault must be the ones in the payload, and the control must be the SubOU's
+/// registered controller (`controller::privileged_submit`).
+public fun execute_controller_enable_bypass_type<NewType: store>(
+    vault: &mut CapabilityVault,
+    subou: &mut OU,
+    subou_vault: &mut CapabilityVault,
+    ticket: ExecutionTicket<ControllerEnableBypassType>,
+    ctx: &mut TxContext,
+) {
+    assert!(vault.ou_id() == ticket.ticket_ou_id(), EVaultOUMismatch);
+
+    assert_not_bypass_forbidden<NewType>();
+    assert_approval_floor_ticket(&ticket, ENABLE_BYPASS_APPROVAL_FLOOR_BPS);
+
+    let payload = ticket.ticket_payload();
+    assert!(subou.id() == payload.subou_id(), ESubOUMismatch);
+    assert!(subou_vault.ou_id() == subou.id(), ESubOUMismatch);
+    let new_type = type_name::with_defining_ids<NewType>();
+    assert!(new_type == payload.type_name(), ETypeMismatch);
+    let display_key = payload.type_key();
+    let config = *payload.config();
+
+    assert!(config.cooldown_ms() == 0 || !config.composable_allowed(), EComposableCooldownConflict);
+    assert_bypass_safe_bits(config.permissions());
+    assert!(!ou::is_subou_blocked_type(&new_type), ESubOUBlockedType);
+
+    let req = ticket.ticket_request(controller_enable_bypass_type::permit());
+    let (control, loan) = vault.loan_cap<SubOUControl, ControllerEnableBypassType>(
+        payload.control_cap_id(),
+        req,
+    );
+
+    let subou_req = controller::privileged_submit(
+        &control,
+        subou,
+        b"ControllerEnableBypassType".to_ascii_string(),
+        option::none(),
+        controller_enable_bypass_type::new(
+            payload.subou_id(),
+            payload.control_cap_id(),
+            display_key,
+            new_type,
+            config,
+        ),
+        ctx,
+    );
+
+    subou.enable_proposal_type<NewType, ControllerEnableBypassType>(
+        display_key,
+        config,
+        &subou_req,
+    );
+
+    let cap = proposal::new_external_execution_cap<ControllerEnableBypassType, NewType>(
+        &subou_req,
+        ctx,
+    );
+    let cap_id = object::id(&cap);
+    subou_vault.store_cap(cap, &subou_req);
+
+    controller::privileged_consume(subou_req, &control);
+    vault.return_cap(control, loan);
+
+    event::emit(BypassEnabled { ou_id: subou.id(), type_key: display_key, cap_id });
+
+    ticket.discharge(controller_enable_bypass_type::permit());
+}
+
+/// Execute a `ControllerDisableBypassType` proposal passed on the controller
+/// OU: extract the SubOU's `ExternalExecutionCap<NewType>`, destroy it, and
+/// remove `NewType`'s slot on the SubOU in one atomic step.
+///
+/// `vault` is the controller's vault (it holds the SubOUControl). The
+/// payload's display key must match `NewType`'s slot on the SubOU
+/// (ETypeMismatch), so the executor cannot disable a different type than the
+/// board approved.
+public fun execute_controller_disable_bypass_type<NewType: store>(
+    vault: &mut CapabilityVault,
+    subou: &mut OU,
+    subou_vault: &mut CapabilityVault,
+    ticket: ExecutionTicket<ControllerDisableBypassType>,
+    ctx: &mut TxContext,
+) {
+    assert!(vault.ou_id() == ticket.ticket_ou_id(), EVaultOUMismatch);
+
+    let payload = ticket.ticket_payload();
+    assert!(subou.id() == payload.subou_id(), ESubOUMismatch);
+    assert!(subou_vault.ou_id() == subou.id(), ESubOUMismatch);
+    let display_key = payload.type_key();
+    let cap_id = payload.cap_id();
+
+    let name = type_name::with_defining_ids<NewType>();
+    assert!(subou.is_type_name_enabled(&name), ETypeNotEnabled);
+    assert!(subou.type_display_key_by_name(&name) == display_key, ETypeMismatch);
+
+    let cap_ids = subou_vault.ids_for_type<ExternalExecutionCap<NewType>>();
+    assert!(cap_ids.contains(&cap_id), ECapNotFound);
+
+    let req = ticket.ticket_request(controller_disable_bypass_type::permit());
+    let (control, loan) = vault.loan_cap<SubOUControl, ControllerDisableBypassType>(
+        payload.control_cap_id(),
+        req,
+    );
+
+    let subou_req = controller::privileged_submit(
+        &control,
+        subou,
+        b"ControllerDisableBypassType".to_ascii_string(),
+        option::none(),
+        controller_disable_bypass_type::new(
+            payload.subou_id(),
+            payload.control_cap_id(),
+            display_key,
+            cap_id,
+        ),
+        ctx,
+    );
+
+    let cap: ExternalExecutionCap<NewType> = subou_vault.extract_cap(cap_id, &subou_req);
+    proposal::destroy_external_execution_cap(cap, &subou_req);
+
+    subou.disable_proposal_type<ControllerDisableBypassType>(name, &subou_req);
+
+    controller::privileged_consume(subou_req, &control);
+    vault.return_cap(control, loan);
+
+    event::emit(BypassDisabled { ou_id: subou.id(), type_key: display_key, cap_id });
+
+    ticket.discharge(controller_disable_bypass_type::permit());
+}
+
 // === Internal ===
 
 /// Shared body of `ticket_from_cap` and `ticket_from_cap_readonly`: every check
@@ -363,6 +541,14 @@ fun assert_not_bypass_forbidden<NewType>() {
     let new_type = type_name::with_defining_ids<NewType>();
     assert!(new_type != type_name::with_defining_ids<EnableBypassType>(), ESelfBootstrapDenied);
     assert!(new_type != type_name::with_defining_ids<DisableBypassType>(), ESelfBootstrapDenied);
+    assert!(
+        new_type != type_name::with_defining_ids<ControllerEnableBypassType>(),
+        ESelfBootstrapDenied,
+    );
+    assert!(
+        new_type != type_name::with_defining_ids<ControllerDisableBypassType>(),
+        ESelfBootstrapDenied,
+    );
 }
 
 /// Approval floor check for Standalone (vote-path) tickets.

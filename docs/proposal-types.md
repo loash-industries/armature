@@ -31,6 +31,9 @@ Remove a proposal type from the OU's enabled set. The handler rejects attempts t
 ### `EnableBypassType` / `DisableBypassType`
 Enable a type and mint its `ExternalExecutionCap` into the vault (so it executes without a vote via `ticket_from_cap`), or extract and destroy the cap and disable the type. `EnableBypassType` sets the new type's bits from its payload config and checks 80% on the actual vote weights. Not available on SubOUs.
 
+### `ControllerEnableBypassType` / `ControllerDisableBypassType`
+The controller-side bypass grant for a SubOU, which cannot pass `EnableBypassType` itself. Proposed on the controller OU and handled by `external_execution::execute_controller_enable_bypass_type<NewType>` / `execute_controller_disable_bypass_type<NewType>`, which loan the `SubOUControl` and act on the SubOU on a privileged request. Enable checks 80% of the controller's whole board on the actual vote weights and the same rails as `EnableBypassType`, then mints an `ExternalExecutionCap<NewType>` scoped to the SubOU into the SubOU's vault; disable destroys it and removes the slot. Fixed bits `VAULT_BORROW`, borrow scope `SubOUControl`. Opt-in on any OU that holds a control, including a SubOU such as Officers. See [specs/04](../specs/04_subou_hierarchy.md) §2.1.
+
 **Bits:** `TYPE_ADMIN` + `VAULT_STORE` / `TYPE_ADMIN` + `VAULT_EXTRACT` (fixed). **Floor:** 80%.
 
 ---
@@ -223,7 +226,7 @@ A config holding any 80% bit must have `approval_threshold >= 8000` (`ou::permis
 
 ### Borrow scope
 
-`VAULT_BORROW` says a type may borrow from the vault; `ProposalConfig.borrow_scope` says which capability types. It is a list of `std::type_name::with_defining_ids` names, set with `with_borrow_scope(scope)`, and deny-by-default: an empty scope borrows nothing. The vault checks it on `borrow_cap`, `borrow_cap_mut` and `loan_cap` after the bit (`proposal::EBorrowScopeDenied`, 22). It rides on the request exactly like the bits, and changing it follows the same grant rules: only the three type-admin meta-types or a privileged request may set or change a scope, never inside a composite, and framework types hold a fixed scope (`ou::framework_borrow_scope`; only `SpinOutSubOU` borrows, and only `SubOUControl`). A scope names cap types per instantiation, so `MintCoin<T>` scoped to `TreasuryCap<T>` cannot borrow another coin's cap, the `UpgradeCap` or a `SubOUControl` in the same vault, whatever its handler does. `armature_proposals::type_permissions` publishes each built-in type's scope beside its bits.
+`VAULT_BORROW` says a type may borrow from the vault; `ProposalConfig.borrow_scope` says which capability types. It is a list of `std::type_name::with_defining_ids` names, set with `with_borrow_scope(scope)`, and deny-by-default: an empty scope borrows nothing. The vault checks it on `borrow_cap`, `borrow_cap_mut` and `loan_cap` after the bit (`proposal::EBorrowScopeDenied`, 22). It rides on the request exactly like the bits, and changing it follows the same grant rules: only the three type-admin meta-types or a privileged request may set or change a scope, never inside a composite, and framework types hold a fixed scope (`ou::framework_borrow_scope`; only `SpinOutSubOU`, `ControllerEnableBypassType` and `ControllerDisableBypassType` borrow, and only `SubOUControl`). A scope names cap types per instantiation, so `MintCoin<T>` scoped to `TreasuryCap<T>` cannot borrow another coin's cap, the `UpgradeCap` or a `SubOUControl` in the same vault, whatever its handler does. `armature_proposals::type_permissions` publishes each built-in type's scope beside its bits.
 
 ### Bypass-safe bits
 

@@ -188,7 +188,7 @@ armature_framework/  (armature::)            -- kernel; not touched after a rele
 ├── governance.move         // Board roster: Table of members, tenures, roster_version
 ├── proposal.move           // ProposalConfig, Proposal<P>, ExecutionRequest/Ticket, ExternalExecutionCap
 ├── board_voting.move       // submit_proposal, vote, ticket_from_vote(_readonly), submit_vote_execute(_readonly)
-├── external_execution.move // ticket_from_cap(_readonly); EnableBypassType / DisableBypassType handlers
+├── external_execution.move // ticket_from_cap(_readonly); EnableBypassType / DisableBypassType and Controller* handlers
 ├── composite.move          // CompositeFrame + Pipeline
 ├── controller.move         // privileged_submit / privileged_consume / privileged_extract / receive_cap_from_controller
 ├── permissions.move        // permission bits
@@ -398,7 +398,7 @@ Two hot potatoes are alive at once in the same PTB: the controller's ticket and 
 
 ### 4.7 Bypass Execution (`ticket_from_cap`)
 
-An OU opts a type into execution without a vote by passing `EnableBypassType`, which enables the type and stores an `ExternalExecutionCap<P>` in its vault (80% on the actual vote weights; not available on SubOUs). `DisableBypassType` extracts and destroys the cap and disables the type.
+An OU opts a type into execution without a vote by passing `EnableBypassType`, which enables the type and stores an `ExternalExecutionCap<P>` in its vault (80% on the actual vote weights; not available on SubOUs). `DisableBypassType` extracts and destroys the cap and disables the type. A SubOU gets a bypass type from its controller instead: `ControllerEnableBypassType` / `ControllerDisableBypassType`, voted on the controller, grant and revoke it ([04](04_subou_hierarchy.md) §2.1).
 
 `external_execution::ticket_from_cap<P>(cap, ou, freeze, metadata_ipfs, payload, permit: Permit<P>, clock, ctx) → ExecutionTicket<P>`:
 - Checks the cap is for this OU, the OU is `Active`, `P` is enabled, execution and controller are not paused, the slot holds no bypass-forbidden bits, `P` is not frozen, and the cooldown has elapsed. It checks neither the sender nor board membership.
@@ -433,6 +433,8 @@ About 40 types across three packages. Bits and floors per type: [`docs/proposal-
 | `UpdateProposalConfig` | ✅ | 80% floor; may change bits and scope; cannot change a framework type's bits |
 | `EnableBypassType` | ✅* | 80% floor on actual vote weights; refuses bypass-forbidden bits; undisableable; SubOU-blocked |
 | `DisableBypassType` | ✅* | 80% floor (`TYPE_ADMIN`); undisableable; SubOU-blocked |
+| `ControllerEnableBypassType` | ⬜ | Voted on the controller; 80% floor on the controller's actual vote weights; `VAULT_BORROW` with `SubOUControl` scope; same rails as `EnableBypassType`; mints the cap into the SubOU's vault |
+| `ControllerDisableBypassType` | ⬜ | Voted on the controller; 80% floor (`VAULT_BORROW`); destroys the SubOU's cap and slot |
 
 ### 5.2 Board and Metadata (framework, `board_ops` / `member_ops` / `admin_ops`)
 
@@ -520,7 +522,7 @@ Proposed on the controller OU; the SubOU-side effect runs on a privileged reques
 | Display keys are non-empty and unique per OU. |
 | `EnableProposalType`, `DisableProposalType`, `EnableBypassType`, `DisableBypassType`, `TransferFreezeAdmin` and `UnfreezeProposalType` cannot be disabled. `ou::disable_proposal_type` enforces this for every caller (`ou::EUndisableableType`); `DisableProposalType`'s handler checks first (`admin_ops::EUndisableableType`). |
 | SubOU-blocked types cannot be enabled on an OU with a controller. `ou::enable_proposal_type` enforces this for every caller, including privileged requests (`ou::EBlockedProposalType`); the `EnableProposalType` and `EnableBypassType` handlers check first (`ESubOUBlockedType`). |
-| `EnableProposalType`, `UpdateProposalConfig`, `EnableBypassType`: 80% floor on every stored config (`ou::min_approval_threshold_for_type`). |
+| `EnableProposalType`, `UpdateProposalConfig`, `EnableBypassType`, `ControllerEnableBypassType`: 80% floor on every stored config (`ou::min_approval_threshold_for_type`). |
 | Every stored config meets `ou::permission_floor(permissions)`. |
 | `ProposalConfig` validation: `quorum ∈ [1, 10000]`, `approval_threshold ∈ [5000, 10000]`, `expiry_ms ≥ 3,600,000`. |
 
@@ -573,7 +575,8 @@ Proposed on the controller OU; the SubOU-side effect runs on a privileged reques
 
 | Invariant |
 |---|
-| An OU with a controller cannot enable `SpawnOU`, `SpinOutSubOU`, `CreateSubOU`, `EnableBypassType` or `DisableBypassType` at creation (`ou::EBlockedProposalType`) or through the `EnableProposalType` / `EnableBypassType` handlers (`ESubOUBlockedType`). `ou::enable_proposal_type` itself checks only `TYPE_ADMIN`, so a privileged request, or a type the SubOU has granted `TYPE_ADMIN`, is not bound by the list. |
+| An OU with a controller cannot enable `SpawnOU`, `SpinOutSubOU`, `CreateSubOU`, `EnableBypassType` or `DisableBypassType` at creation or through `ou::enable_proposal_type` with any request, privileged included (`ou::EBlockedProposalType`); the `EnableProposalType`, `EnableBypassType` and `ControllerEnableBypassType` handlers check first (`ESubOUBlockedType`). |
+| A SubOU's `ExternalExecutionCap` is minted only by its registered controller's `ControllerEnableBypassType` (80% of the controller's whole board) and destroyed by `ControllerDisableBypassType`, or by its own `DisableBypassType` after spin-out. |
 | `controller_cap_id` is set when the SubOU is shared and cleared at spin-out. |
 | `privileged_submit` requires a `&SubOUControl` whose `subou_id` is the target OU (`EControlMismatch`) and whose ID is the target's `controller_cap_id` (`ENotController`), and an `Active` target. |
 | `controller_paused` is set or cleared only by a privileged request (`ou::assert_controller`). |
