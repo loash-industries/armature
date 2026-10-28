@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-28 — publish armature_world_bridge to testnet_stillness
+
+- Published `armature_world_bridge` to Sui testnet under the `testnet_stillness` env at `0xd00fbd1136ebae2f58677adffbca0532a5be564226b706b8e0dc4e197470cebe` (tx `FkVJFFBYc5xty4GiYVSTLcGPQeUmEXwMD2x2rS6XWcwp`, UpgradeCap `0x4d8bdcc5b4926bb80c86fdb514036c017169795f6d6f741288353369e406b8a9`, sui 1.74.1). Added the generated `Published.toml` record for the package. No source changes.
+
 ## 2026-09-29 — re-home testnet publication from testnet_wip to testnet_stillness
 
 - Re-pointed the fresh testnet publication of `armature_framework` (`0x0a9eee47…`) and `armature_proposals` (`0x19ccd64e…`) from the `testnet_wip` env to `testnet_stillness` with no redeploy: the packages have no world dependency, so the on-chain bytecode is env-independent. Removed `testnet_wip` from every package's `Move.toml`, pointed the local `armature`/`armature_proposals` deps at `testnet_stillness`, and dropped the now-redundant `[dep-replacements.testnet_stillness]` blocks; `Published.toml` entries renamed accordingly. No source changes.
