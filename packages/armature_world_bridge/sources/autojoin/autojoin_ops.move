@@ -3,9 +3,11 @@
 /// allowlist of in-game tribe IDs synonymous with it.
 ///
 /// Flow (single PTB, no vote):
-///   1. OU has previously passed `EnableBypassType { type_key: "AutojoinOU", .. }`
-///      with `NewType = AutojoinOU`, depositing an `ExternalExecutionCap<AutojoinOU>`
-///      in the OU's CapabilityVault.
+///   1. The OU holds an `ExternalExecutionCap<AutojoinOU>` in its CapabilityVault.
+///      An independent OU gets it by passing `EnableBypassType { type_key: "AutojoinOU", .. }`
+///      with `NewType = AutojoinOU`. A controlled SubOU (e.g. a tribe's Members)
+///      cannot; its controller passes `ControllerEnableBypassType` for it instead
+///      (see tests/tribe_autojoin_e2e_tests.move).
 ///   2. OU has previously passed `EnableProposalType { type_key: "ConfigureAutojoin", .. }`
 ///      with `NewType = ConfigureAutojoin`, then `ConfigureAutojoin { add_tribe_ids: [N],
 /// set_enabled: some(true), .. }`

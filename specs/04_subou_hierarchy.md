@@ -26,15 +26,25 @@ Both call `controller::assert_registered_control`: `control.subou_id` must name 
 | `ControllerBatchAddMembers` / `ControllerBatchRemoveMembers` (`armature_proposals`) | Add or remove up to 100 board members |
 | `PauseSubOUExecution` / `UnpauseSubOUExecution` (`armature_proposals`) | Set or clear `controller_paused` |
 | `ReclaimCapFromSubOU` (`armature_proposals`) | Move a capability from the SubOU's vault into the controller's |
+| `ControllerEnableBypassType` / `ControllerDisableBypassType` (framework) | Grant or revoke bypass execution for a type on the SubOU (§2.1) |
 | `SpinOutSubOU` (framework) | Grant independence (§6); destroys the `SubOUControl` |
 
-The SubOU's `controller_cap_id: Option<ID>` records the `SubOUControl` that governs it, so the relationship is readable from the SubOU itself without inspecting vaults. While it is set, the SubOU is treated as controlled: it cannot enable the hierarchy-altering or bypass meta-types (§7).
+The SubOU's `controller_cap_id: Option<ID>` records the `SubOUControl` that governs it, so the relationship is readable from the SubOU itself without inspecting vaults. While it is set, the SubOU is treated as controlled: it cannot enable the hierarchy-altering or bypass meta-types (§7). Its controller can still grant it a bypass type (§2.1).
 
 ---
 
 ## 2. SubOU Governance
 
 All SubOUs use **Board governance**. A SubOU starts with the standard default proposal types except `EnableBypassType` and `DisableBypassType`, so its board runs day-to-day operations (and, unless the types are disabled or overridden at creation, its own membership changes) through ordinary Board voting. The controller can change the SubOU's board at any time through `ControllerBatchAddMembers` / `ControllerBatchRemoveMembers`, whatever the SubOU's own configuration.
+
+### 2.1 Bypass Execution on a SubOU
+
+A SubOU cannot opt into bypass execution itself: `EnableBypassType` is SubOU-blocked, so it cannot hold an `ExternalExecutionCap`, and a cap its controller mints for itself is scoped to the controller (`borrow_external_cap` and `ticket_from_cap` check the cap's OU). The controller grants it instead:
+
+- **`ControllerEnableBypassType`** (framework, `VAULT_BORROW` with `SubOUControl` scope; 80% floor and the whole-board rule, like `EnableBypassType`) is proposed on the controller. `external_execution::execute_controller_enable_bypass_type<NewType>(controller_vault, subou, subou_vault, ticket, ctx)` checks 80% of the controller's whole board on the actual vote weights, then the same rails as `EnableBypassType` (self-bootstrap denylist, type pin, composability vs cooldown, bypass-safe bits, SubOU-blocked types). It loans the `SubOUControl`, enables `NewType` on the SubOU on a privileged request, and stores an `ExternalExecutionCap<NewType>` scoped to the SubOU in the SubOU's vault. Emits `BypassEnabled` with the SubOU's ID.
+- **`ControllerDisableBypassType`** (framework, `VAULT_BORROW` with `SubOUControl` scope; 80% threshold) is the revoke: it destroys the SubOU's cap and removes `NewType`'s slot. Emits `BypassDisabled`.
+
+Neither type is a default, and neither is SubOU-blocked, so the Officers SubOU of a tribe can hold them and grant bypass types to Members. A controller already passes every permission check on its SubOU through `privileged_submit`; the grant adds only the cap mint, which is framework-internal. The SubOU cannot grant itself: the handler loans the control from the vault of the OU that passed the vote (`EVaultOUMismatch`), and a SubOU never holds its own control. The controller can also stop a granted bypass with `PauseSubOUExecution` (bypass mints check `controller_paused`) or the freeze. After spin-out the cap stays with the now independent OU.
 
 ---
 
@@ -119,7 +129,7 @@ These invariants keep the organizational graph well-formed:
 
 | Invariant | Rationale |
 |---|---|
-| An OU with a controller cannot enable `SpawnOU`, `SpinOutSubOU`, `CreateSubOU`, `EnableBypassType` or `DisableBypassType`, at creation or through the `EnableProposalType` / `EnableBypassType` handlers | Prevents unilateral independence, hierarchy manipulation, and self-granted no-vote execution. The check lives in those handlers and in the creation path; `ou::enable_proposal_type` itself checks only `TYPE_ADMIN`, so it does not bind a privileged request or a type the SubOU has granted `TYPE_ADMIN` |
+| An OU with a controller cannot enable `SpawnOU`, `SpinOutSubOU`, `CreateSubOU`, `EnableBypassType` or `DisableBypassType`, at creation, through the `EnableProposalType` / `EnableBypassType` / `ControllerEnableBypassType` handlers, or through `ou::enable_proposal_type` with any request, privileged included | Prevents unilateral independence, hierarchy manipulation, and self-granted no-vote execution. A controller grants bypass types through `ControllerEnableBypassType` (§2.1) instead |
 | `controller_cap_id` is set when the SubOU is shared and cleared at spinout | On-chain record of the control relationship |
 | A SubOU records at most one controller (`controller_cap_id` is a single `Option<ID>`) | Single controller per SubOU |
 | `privileged_submit` and `privileged_extract` require the `SubOUControl` whose `subou_id` is the target OU and whose ID is the target's `controller_cap_id` | Control is bound to one SubOU; a forged or spun-out control is refused |

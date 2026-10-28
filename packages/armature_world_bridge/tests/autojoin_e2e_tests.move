@@ -3,7 +3,8 @@
 /// hooks (cross-package #[test_only] are accessible) plus armature's
 /// test seams (`test_enable_type<T>`) and the
 /// `ExternalExecutionCap` test helper from #143 to avoid the 80%
-/// governance setup. Focuses coverage on bridge logic.
+/// governance setup. Focuses coverage on bridge logic; the governed flow on a
+/// real tribe hierarchy is in tribe_autojoin_e2e_tests.move.
 #[test_only]
 module armature_world_bridge::autojoin_e2e_tests;
 

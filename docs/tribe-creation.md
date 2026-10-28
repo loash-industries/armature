@@ -26,6 +26,17 @@ The Tribe OU holds a `SubOUControl` for the Officers SubOU inside its `Capabilit
 
 A parent uses its control through a controller proposal type from `armature_proposals`. `PauseSubOUExecution`, `UnpauseSubOUExecution`, `ControllerBatchAddMembers` and `ControllerBatchRemoveMembers` loan the `SubOUControl` from the vault, which needs `VAULT_BORROW` (`type_permissions::subou_control()`) with `SubOUControl` in the type's borrow scope (`type_permissions::subou_control_scope()`). `ReclaimCapFromSubOU` loans it the same way and also stores the reclaimed cap, so it needs `VAULT_BORROW | VAULT_STORE`. `TransferCapToSubOU` does not touch the `SubOUControl`: it extracts a cap from the parent's vault and hands it to the SubOU's vault, so it needs only `VAULT_EXTRACT` and has no borrow scope. The `VAULT_BORROW` and `VAULT_EXTRACT` bits put all of these types under the 80% permission floor. None of these types are enabled by default, and the framework cannot enable them because they live in `armature_proposals`. `tribe_setup` does.
 
+### Bypass types on Members (e.g. autojoin)
+
+Members and Officers are SubOUs, so neither can pass `EnableBypassType` for itself. To let a bypass type such as `armature_world_bridge`'s `AutojoinOU` run on Members, Officers grants it with the framework's `ControllerEnableBypassType` (see [specs/04](../specs/04_subou_hierarchy.md) §2.1):
+
+1. Officers enables `ControllerEnableBypassType` (and `ControllerDisableBypassType`, to be able to revoke) by an `EnableProposalType` vote, or as `create_tribe_configured` officer overrides. `ControllerEnableBypassType` needs the whole-board config (`quorum × approval_threshold ≥ 80%`, e.g. 80% / 100%).
+2. Officers passes `ControllerEnableBypassType { subou_id: members, control_cap_id, type_key: "AutojoinOU", type_name: AutojoinOU, config }` with YES from 80% of its board, and executes `external_execution::execute_controller_enable_bypass_type<AutojoinOU>(officers_vault, members, members_vault, ticket, ctx)`. The `ExternalExecutionCap<AutojoinOU>` lands in the Members vault.
+3. Members enables `ConfigureAutojoin` and passes a `ConfigureAutojoin` that allowlists the in-game tribe ID and turns the kill-switch on.
+4. Players call `autojoin_ops::autojoin(members, members_vault, cap_id, character, freeze, clock, ctx)`.
+
+`ControllerDisableBypassType` on Officers revokes the grant. `packages/armature_world_bridge/tests/tribe_autojoin_e2e_tests.move` runs this flow end to end.
+
 ---
 
 ## Objects Created
