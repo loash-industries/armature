@@ -6,6 +6,8 @@ use armature::batch_remove_members::BatchRemoveMembers;
 use armature::capability_vault;
 use armature::charter;
 use armature::composite_payload::CompositePayload;
+use armature::controller_disable_bypass_type::ControllerDisableBypassType;
+use armature::controller_enable_bypass_type::ControllerEnableBypassType;
 use armature::create_subou::CreateSubOU;
 use armature::disable_bypass_type::DisableBypassType;
 use armature::disable_proposal_type::DisableProposalType;
@@ -72,9 +74,9 @@ const EGrantFloorNotMet: u64 = 21;
 const EFixedPermissions: u64 = 23;
 /// A controller-only mutator was called with an unprivileged request.
 const ENotPrivileged: u64 = 24;
-/// An EnableBypassType config whose quorum × approval_threshold is below
-/// ENABLE_BYPASS_TYPE_MIN_THRESHOLD × 100%: a vote could pass on it yet fail
-/// the execution-time floor on the whole board's weight.
+/// An EnableBypassType or ControllerEnableBypassType config whose quorum ×
+/// approval_threshold is below ENABLE_BYPASS_TYPE_MIN_THRESHOLD × 100%: a vote
+/// could pass on it yet fail the execution-time floor on the whole board's weight.
 const EBypassQuorumTooLow: u64 = 25;
 /// An EnableProposalType config whose quorum × approval_threshold is below
 /// ENABLE_PROPOSAL_TYPE_MIN_THRESHOLD × 100%: a minority of the board could
@@ -108,8 +110,10 @@ const ENABLE_PROPOSAL_TYPE_MIN_THRESHOLD: u16 = 8_000;
 /// admin_ops::propose_update_proposal_config (self-targeting).
 const UPDATE_PROPOSAL_CONFIG_MIN_THRESHOLD: u16 = 8_000;
 
-/// Minimum approval_threshold for EnableBypassType — must be >= the 80% execution
-/// floor enforced by external_execution::execute_enable_bypass_type.
+/// Minimum approval_threshold for EnableBypassType and ControllerEnableBypassType —
+/// must be >= the 80% execution floor enforced by
+/// external_execution::execute_enable_bypass_type and
+/// external_execution::execute_controller_enable_bypass_type.
 const ENABLE_BYPASS_TYPE_MIN_THRESHOLD: u16 = 8_000;
 
 /// Default quorum and approval_threshold for the whole-board types
@@ -690,6 +694,8 @@ public fun is_framework_type(name: &TypeName): bool {
         || n == type_name_of<UpdateProposalConfig>()
         || n == type_name_of<EnableBypassType>()
         || n == type_name_of<DisableBypassType>()
+        || n == type_name_of<ControllerEnableBypassType>()
+        || n == type_name_of<ControllerDisableBypassType>()
         || n == type_name_of<TransferFreezeAdmin>()
         || n == type_name_of<UnfreezeProposalType>()
         || n == type_name_of<UpdateFreezeConfig>()
@@ -713,6 +719,9 @@ public fun is_framework_type(name: &TypeName): bool {
 /// - EnableProposalType, DisableProposalType, UpdateProposalConfig: TYPE_ADMIN.
 /// - EnableBypassType: TYPE_ADMIN + VAULT_STORE (stores the new ExternalExecutionCap).
 /// - DisableBypassType: TYPE_ADMIN + VAULT_EXTRACT (extracts the cap to destroy it).
+/// - ControllerEnableBypassType, ControllerDisableBypassType: VAULT_BORROW
+/// (they act on a SubOU through the SubOUControl chain; the SubOU-side change
+/// runs on a privileged request).
 /// - TransferFreezeAdmin (unfreeze_all), UnfreezeProposalType, UpdateFreezeConfig,
 /// UpdateFreezeExemptTypes: FREEZE (governance changes to the EmergencyFreeze).
 /// - SpawnOU: MIGRATE (set_migrating).
@@ -743,6 +752,11 @@ public fun framework_permissions(name: &TypeName): u64 {
     } else if (n == type_name_of<DisableBypassType>()) {
         permissions::type_admin() | permissions::vault_extract()
     } else if (
+        n == type_name_of<ControllerEnableBypassType>()
+            || n == type_name_of<ControllerDisableBypassType>()
+    ) {
+        permissions::vault_borrow()
+    } else if (
         n == type_name_of<TransferFreezeAdmin>()
             || n == type_name_of<UnfreezeProposalType>()
             || n == type_name_of<UpdateFreezeConfig>()
@@ -763,10 +777,17 @@ public fun framework_permissions(name: &TypeName): u64 {
 }
 
 /// The fixed borrow scope of a framework type: the capability types its
-/// handler borrows or loans. SpinOutSubOU loans the SubOUControl; no other
-/// framework type borrows. Returns empty for any other type.
+/// handler borrows or loans. SpinOutSubOU loans the SubOUControl;
+/// ControllerEnableBypassType and ControllerDisableBypassType act through it
+/// (a controller chain). No other framework type borrows. Returns empty for
+/// any other type.
 public fun framework_borrow_scope(name: &TypeName): vector<TypeName> {
-    if (*name == type_name_of<SpinOutSubOU>()) {
+    let n = *name;
+    if (
+        n == type_name_of<SpinOutSubOU>()
+            || n == type_name_of<ControllerEnableBypassType>()
+            || n == type_name_of<ControllerDisableBypassType>()
+    ) {
         vector[type_name_of<capability_vault::SubOUControl>()]
     } else {
         vector[]
@@ -796,6 +817,7 @@ fun with_fixed_permissions(name: &TypeName, config: ProposalConfig): ProposalCon
 /// votes cast, and a proposal stops taking votes once it passes. Its config
 /// must therefore make passing imply the floor: YES ≥ quorum × threshold of the
 /// board, so quorum × threshold must be at least 80% (EBypassQuorumTooLow).
+/// ControllerEnableBypassType has the same execution floor and the same rule.
 ///
 /// EnableProposalType is held to the same whole-board rule (EEnableQuorumTooLow):
 /// it can grant any bit, including TREASURY_WITHDRAW and VAULT_EXTRACT, so a
@@ -810,7 +832,10 @@ fun assert_config_floors(name: &TypeName, config: &ProposalConfig) {
     let threshold = config.approval_threshold();
     assert!(threshold >= min_approval_threshold_for_type(name), EThresholdBelowMinimum);
     assert!(threshold >= permission_floor(config.permissions()), EThresholdBelowMinimum);
-    if (*name == type_name_of<EnableBypassType>()) {
+    if (
+        *name == type_name_of<EnableBypassType>()
+            || *name == type_name_of<ControllerEnableBypassType>()
+    ) {
         assert!(
             (config.quorum() as u64) * (threshold as u64)
                 >= (ENABLE_BYPASS_TYPE_MIN_THRESHOLD as u64) * 10_000,
@@ -1167,7 +1192,9 @@ public fun min_approval_threshold_for_type(name: &TypeName): u16 {
         ENABLE_PROPOSAL_TYPE_MIN_THRESHOLD
     } else if (n == type_name_of<UpdateProposalConfig>()) {
         UPDATE_PROPOSAL_CONFIG_MIN_THRESHOLD
-    } else if (n == type_name_of<EnableBypassType>()) {
+    } else if (
+        n == type_name_of<EnableBypassType>() || n == type_name_of<ControllerEnableBypassType>()
+    ) {
         ENABLE_BYPASS_TYPE_MIN_THRESHOLD
     } else {
         0u16
