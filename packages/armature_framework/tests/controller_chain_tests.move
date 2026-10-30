@@ -7,7 +7,7 @@ module armature::controller_chain_tests;
 
 use armature::admin_ops;
 use armature::board_voting;
-use armature::capability_vault::{CapabilityVault, SubOUControl};
+use armature::capability_vault::{Self, CapabilityVault, SubOUControl};
 use armature::controller_disable_bypass_type::ControllerDisableBypassType;
 use armature::controller_enable_bypass_type::ControllerEnableBypassType;
 use armature::disable_proposal_type;
@@ -16,9 +16,12 @@ use armature::enable_bypass_type::EnableBypassType;
 use armature::enable_proposal_type;
 use armature::external_execution::{Self, ControllerChain};
 use armature::governance;
+use armature::lifecycle_ops;
 use armature::ou::{Self, OU};
 use armature::permissions;
 use armature::proposal::{Self, ExecutionTicket, ExternalExecutionCap, ProposalConfig};
+use armature::transfer_assets::{Self, TransferAssets};
+use armature::treasury_vault::TreasuryVault;
 use armature::tribe;
 use std::internal;
 use std::string;
@@ -34,6 +37,9 @@ const EXPIRY_MS: u64 = 604_800_000;
 
 /// Stand-in for an extension's bypass type (e.g. world_bridge's AutojoinOU).
 public struct DummyBypass has drop, store {}
+
+/// Any vault-storable object that is not a SubOUControl.
+public struct Junk has key, store { id: UID }
 
 // === Helpers ===
 
@@ -746,4 +752,269 @@ fun revoke_is_pinned_to_the_voted_type() {
         scenario.ctx(),
     );
     abort 0
+}
+
+// === Audit regressions: forged controller pointer, revoke grant record ===
+
+/// The DummyBypass caps in OU `id`'s vault.
+fun caps_of(scenario: &mut Scenario, id: ID): vector<ID> {
+    scenario.next_tx(ADMIN);
+    let o = scenario.take_shared_by_id<OU>(id);
+    let vault = scenario.take_shared_by_id<CapabilityVault>(o.capability_vault_id());
+    let ids = dummy_caps(&vault);
+    ts::return_shared(vault);
+    ts::return_shared(o);
+    ids
+}
+
+/// The DummyBypass caps recorded as controller grants on OU `id`.
+fun grants_of(scenario: &mut Scenario, id: ID): vector<ID> {
+    scenario.next_tx(ADMIN);
+    let o = scenario.take_shared_by_id<OU>(id);
+    let ids = o.controller_grant_ids(type_name::with_defining_ids<DummyBypass>());
+    ts::return_shared(o);
+    ids
+}
+
+/// OU `id`'s single-member board enables TransferAssets on it.
+fun enable_transfer_assets(scenario: &mut Scenario, clock: &Clock, id: ID) {
+    scenario.next_tx(ADMIN);
+    let mut o = scenario.take_shared_by_id<OU>(id);
+    let freeze = scenario.take_shared_by_id<EmergencyFreeze>(o.emergency_freeze_id());
+    let config = proposal::new_config(5_000, 8_000, 0, EXPIRY_MS, 0, 0).with_permissions(
+        permissions::treasury_withdraw() | permissions::vault_extract(),
+    );
+    let ticket = board_voting::submit_vote_execute(
+        &mut o,
+        option::none(),
+        enable_proposal_type::new(
+            b"TransferAssets".to_ascii_string(),
+            type_name::with_defining_ids<TransferAssets>(),
+            config,
+        ),
+        &freeze,
+        clock,
+        scenario.ctx(),
+    );
+    admin_ops::execute_enable_proposal_type<TransferAssets>(&mut o, ticket);
+    ts::return_shared(freeze);
+    ts::return_shared(o);
+}
+
+/// One PTB: OU `id`'s single-member board mints `n` DummyBypass caps scoped to
+/// itself (EnableBypassType, then DisableProposalType to free the slot).
+fun mint_own_caps(scenario: &mut Scenario, clock: &Clock, id: ID, n: u64) {
+    scenario.next_tx(ADMIN);
+    let mut o = scenario.take_shared_by_id<OU>(id);
+    let mut vault = scenario.take_shared_by_id<CapabilityVault>(o.capability_vault_id());
+    let freeze = scenario.take_shared_by_id<EmergencyFreeze>(o.emergency_freeze_id());
+    let mut i = 0;
+    while (i < n) {
+        let ticket = board_voting::submit_vote_execute(
+            &mut o,
+            option::none(),
+            external_execution::new_enable_bypass_type(
+                b"DummyBypass".to_ascii_string(),
+                type_name::with_defining_ids<DummyBypass>(),
+                bypass_config(),
+            ),
+            &freeze,
+            clock,
+            scenario.ctx(),
+        );
+        external_execution::execute_enable_bypass_type<DummyBypass>(
+            &mut o,
+            &mut vault,
+            ticket,
+            scenario.ctx(),
+        );
+        let ticket = board_voting::submit_vote_execute(
+            &mut o,
+            option::none(),
+            disable_proposal_type::new(b"DummyBypass".to_ascii_string()),
+            &freeze,
+            clock,
+            scenario.ctx(),
+        );
+        admin_ops::execute_disable_proposal_type(&mut o, ticket);
+        i = i + 1;
+    };
+    ts::return_shared(freeze);
+    ts::return_shared(vault);
+    ts::return_shared(o);
+}
+
+/// One PTB: OU `from`'s board moves DummyBypass caps `cap_ids` into OU `to`'s
+/// vault with TransferAssets. `to` takes no part.
+fun push_caps(scenario: &mut Scenario, clock: &Clock, from: ID, to: ID, cap_ids: vector<ID>) {
+    scenario.next_tx(ADMIN);
+    let mut source = scenario.take_shared_by_id<OU>(from);
+    let mut source_vault = scenario.take_shared_by_id<
+        CapabilityVault,
+    >(source.capability_vault_id());
+    let source_treasury = scenario.take_shared_by_id<TreasuryVault>(source.treasury_id());
+    let target = scenario.take_shared_by_id<OU>(to);
+    let mut target_vault = scenario.take_shared_by_id<
+        CapabilityVault,
+    >(target.capability_vault_id());
+    let freeze = scenario.take_shared_by_id<EmergencyFreeze>(source.emergency_freeze_id());
+    let ticket = board_voting::submit_vote_execute(
+        &mut source,
+        option::none(),
+        transfer_assets::new(
+            target.id(),
+            target.treasury_id(),
+            target.capability_vault_id(),
+            vector[],
+            cap_ids,
+        ),
+        &freeze,
+        clock,
+        scenario.ctx(),
+    );
+    let mut transfer = lifecycle_ops::begin_transfer_assets(
+        &source_treasury,
+        &source_vault,
+        ticket,
+    );
+    cap_ids.do!(|cap_id| {
+        lifecycle_ops::transfer_cap<ExternalExecutionCap<DummyBypass>>(
+            &mut transfer,
+            &mut source_vault,
+            &mut target_vault,
+            cap_id,
+        );
+    });
+    lifecycle_ops::finish_transfer_assets(transfer);
+    ts::return_shared(freeze);
+    ts::return_shared(target_vault);
+    ts::return_shared(target);
+    ts::return_shared(source_treasury);
+    ts::return_shared(source_vault);
+    ts::return_shared(source);
+}
+
+#[test, expected_failure(abort_code = armature::external_execution::EChainBroken)]
+/// v1 `ou::share_subou` stays callable and lets anyone point a live OU's
+/// controller_cap_id at any ID. Pointed at an object the attacker's vault holds
+/// that is not a SubOUControl, the chain refuses the hop, so the attacker
+/// cannot grant itself a bypass on the victim.
+fun chain_rejects_a_pointer_to_a_non_control_object() {
+    let mut scenario = ts::begin(ADMIN);
+    let clock = new_clock(&mut scenario);
+    let victim = build_chain(&mut scenario, 1);
+    let attacker = build_chain(&mut scenario, 0);
+    enable_on_root(&mut scenario, &clock, attacker[0]);
+
+    scenario.next_tx(ADMIN);
+    let (mut ous, mut vaults) = take_all(&mut scenario, &attacker);
+    let junk = Junk { id: object::new(scenario.ctx()) };
+    let forged = object::id(&junk);
+    capability_vault::store_cap_for_testing(&mut vaults[0], junk);
+    let mut target = scenario.take_shared_by_id<OU>(victim[1]);
+    // Stands in for the attacker's call to v1 `ou::share_subou(target, forged)`.
+    target.set_controller_for_testing(forged);
+    let ticket = grant_ticket(&mut scenario, &clock, &mut ous[0], victim[1], forged);
+    let mut chain = external_execution::start_controller_chain(ticket);
+    external_execution::extend_controller_chain(&mut chain, &vaults[0], &target);
+    abort 0
+}
+
+#[test, expected_failure(abort_code = armature::external_execution::EChainBroken)]
+/// As above, but the forged pointer names a real SubOUControl in the
+/// attacker's vault, bound to the attacker's own SubOU. The chain still
+/// refuses the hop: the control is not bound to the victim.
+fun chain_rejects_a_control_bound_to_another_ou() {
+    let mut scenario = ts::begin(ADMIN);
+    let clock = new_clock(&mut scenario);
+    let victim = build_chain(&mut scenario, 1);
+    let attacker = build_chain(&mut scenario, 1);
+    enable_on_root(&mut scenario, &clock, attacker[0]);
+
+    scenario.next_tx(ADMIN);
+    let (mut ous, vaults) = take_all(&mut scenario, &attacker);
+    let forged = control_of(&ous[1]);
+    let mut target = scenario.take_shared_by_id<OU>(victim[1]);
+    // Stands in for the attacker's call to v1 `ou::share_subou(target, forged)`.
+    target.set_controller_for_testing(forged);
+    let ticket = grant_ticket(&mut scenario, &clock, &mut ous[0], victim[1], forged);
+    let mut chain = external_execution::start_controller_chain(ticket);
+    external_execution::extend_controller_chain(&mut chain, &vaults[0], &target);
+    abort 0
+}
+
+#[test, expected_failure(abort_code = armature::ou::EShareSubOUClosed)]
+/// `ou::share_subou` is closed in this version, so it cannot rewrite a live
+/// OU's controller_cap_id.
+fun share_subou_is_closed() {
+    let mut scenario = ts::begin(ADMIN);
+    let ids = build_chain(&mut scenario, 1);
+    scenario.next_tx(ADMIN);
+    let target = scenario.take_shared_by_id<OU>(ids[1]);
+    ou::share_subou(target, ids[0]);
+    abort 0
+}
+
+#[test]
+/// Anyone can push caps scoped to their own OU into a SubOU's vault
+/// (TransferAssets needs no consent from the receiver). The revoke reads only
+/// the SubOU's grant record, so it never loads the pushed caps: they cannot
+/// push it past the per-transaction object limit, and they are left alone.
+fun revoke_reads_only_the_grant_record() {
+    let mut scenario = ts::begin(ADMIN);
+    let clock = new_clock(&mut scenario);
+    let ids = build_chain(&mut scenario, 2);
+    enable_on_root(&mut scenario, &clock, ids[0]);
+    tx_grant(&mut scenario, &clock, &ids, 2);
+    let granted = caps_of(&mut scenario, ids[2]);
+    assert!(grants_of(&mut scenario, ids[2]) == granted);
+
+    // An unrelated OU mints caps scoped to itself and pushes them in.
+    let outsider = build_chain(&mut scenario, 0)[0];
+    enable_transfer_assets(&mut scenario, &clock, outsider);
+    mint_own_caps(&mut scenario, &clock, outsider, 10);
+    let pushed = caps_of(&mut scenario, outsider);
+    push_caps(&mut scenario, &clock, outsider, ids[2], pushed);
+    assert_state(&mut scenario, ids[2], true, 11);
+    assert!(grants_of(&mut scenario, ids[2]) == granted);
+
+    tx_revoke(&mut scenario, &clock, &ids, 2);
+    assert_state(&mut scenario, ids[2], false, 10);
+    let left = caps_of(&mut scenario, ids[2]);
+    assert!(left.length() == pushed.length() && pushed.all!(|id| left.contains(id)));
+    assert!(grants_of(&mut scenario, ids[2]).is_empty());
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+/// A granted cap that is out of the SubOU's vault when the revoke runs stays
+/// recorded, so a later revoke destroys it once it is back.
+fun revoke_keeps_an_absent_grant_recorded() {
+    let mut scenario = ts::begin(ADMIN);
+    let clock = new_clock(&mut scenario);
+    let ids = build_chain(&mut scenario, 2);
+    enable_on_root(&mut scenario, &clock, ids[0]);
+    tx_grant(&mut scenario, &clock, &ids, 2);
+    let granted = caps_of(&mut scenario, ids[2]);
+
+    // The SubOU parks the cap in an independent OU's vault.
+    let ally = build_chain(&mut scenario, 0)[0];
+    enable_transfer_assets(&mut scenario, &clock, ids[2]);
+    enable_transfer_assets(&mut scenario, &clock, ally);
+    push_caps(&mut scenario, &clock, ids[2], ally, granted);
+
+    tx_revoke(&mut scenario, &clock, &ids, 2);
+    assert_state(&mut scenario, ids[2], false, 0);
+    assert!(grants_of(&mut scenario, ids[2]) == granted);
+
+    push_caps(&mut scenario, &clock, ally, ids[2], granted);
+    assert_state(&mut scenario, ids[2], false, 1);
+    tx_revoke(&mut scenario, &clock, &ids, 2);
+    assert_state(&mut scenario, ids[2], false, 0);
+    assert!(grants_of(&mut scenario, ids[2]).is_empty());
+
+    clock.destroy_for_testing();
+    scenario.end();
 }

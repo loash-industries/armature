@@ -104,7 +104,7 @@ public fun execute_create_subou(
 
     let control_cap_id = vault.create_subou_control(subou_id, req, ctx);
     vault.store_cap(freeze_admin_cap, req);
-    ou::share_subou(subou, control_cap_id);
+    ou::share_wired_subou(subou, control_cap_id);
 
     event::emit(SubOUCreated {
         controller_ou_id: vault.ou_id(),

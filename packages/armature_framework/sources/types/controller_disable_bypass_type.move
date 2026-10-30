@@ -5,8 +5,9 @@ use std::type_name::TypeName;
 
 /// Controller-side `DisableBypassType`: proposed on an OU that controls a
 /// SubOU (directly or further down a controller chain), it destroys every
-/// `ExternalExecutionCap<NewType>` scoped to the SubOU in the SubOU's vault and
-/// removes `NewType`'s slot on the SubOU in one atomic step.
+/// `ExternalExecutionCap<NewType>` a controller chain granted the SubOU that is
+/// in the SubOU's vault and removes `NewType`'s slot on the SubOU in one
+/// atomic step.
 ///
 /// The counterpart of `ControllerEnableBypassType`. A SubOU cannot pass
 /// `DisableBypassType` itself (SubOU-blocked), so without this type a
@@ -15,9 +16,10 @@ use std::type_name::TypeName;
 /// `type_name` pins the Move type the voters approved, not the slot's display
 /// key: the SubOU controls its slots and could rename or remove one. The
 /// handler (`external_execution::finish_controller_disable_bypass_type`)
-/// destroys whatever caps are in the SubOU's vault and removes the slot if it
-/// exists, so neither one being gone blocks the other, and no cap ID has to be
-/// named: a duplicate or orphaned cap is swept with the rest.
+/// destroys whichever of the SubOU's recorded grants are in its vault and
+/// removes the slot if it exists, so neither one being gone blocks the other,
+/// and no cap ID has to be named: a duplicate or orphaned grant is destroyed
+/// with the rest.
 public struct ControllerDisableBypassType has drop, store {
     subou_id: ID,
     control_cap_id: ID,

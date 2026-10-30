@@ -94,7 +94,10 @@ public fun receive_cap_from_controller<T: key + store, P>(
 /// Abort unless `control` is bound to `subou` (EControlMismatch) and is the
 /// SubOU's registered controller (ENotController). The second check is what
 /// stops a SubOUControl minted elsewhere from acting on an OU it does not
-/// control: only the object recorded by `ou::share_subou` passes.
+/// control: only the object the framework registered for the SubOU passes.
+/// Both checks are needed: v1 `ou::share_subou` stays callable and can point
+/// an OU's controller_cap_id at any ID, so neither custody nor the registered
+/// ID alone proves control.
 public fun assert_registered_control(control: &SubOUControl, subou: &OU) {
     assert!(control.subou_id() == subou.id(), EControlMismatch);
     assert!(subou.controller_cap_id() == &option::some(object::id(control)), ENotController);

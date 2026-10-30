@@ -50,7 +50,7 @@ public fun create_wired_subou<P>(
     let ctrl_id = object::id(&ctrl);
     capability_vault::store_cap(parent_vault, ctrl, req);
 
-    ou::share_subou(subou, ctrl_id);
+    ou::share_wired_subou(subou, ctrl_id);
     emergency::transfer_admin_cap(freeze_cap, freeze_admin);
 
     subou_id
@@ -124,8 +124,8 @@ public fun create_tribe(
     // Share vaults (now populated), then share the SubOUs.
     capability_vault::share(tribe_vault);
     capability_vault::share(officer_vault);
-    ou::share_subou(officer_ou, officer_ctrl_id);
-    ou::share_subou(member_ou, member_ctrl_id);
+    ou::share_wired_subou(officer_ou, officer_ctrl_id);
+    ou::share_wired_subou(member_ou, member_ctrl_id);
 
     // Transfer SubOU freeze caps to their respective admins.
     emergency::transfer_admin_cap(officer_freeze_cap, officer_freeze_admin);
@@ -211,8 +211,8 @@ public fun create_tribe_configured(
     // Share vaults (now populated), then share the SubOUs.
     capability_vault::share(tribe_vault);
     capability_vault::share(officer_vault);
-    ou::share_subou(officer_ou, officer_ctrl_id);
-    ou::share_subou(member_ou, member_ctrl_id);
+    ou::share_wired_subou(officer_ou, officer_ctrl_id);
+    ou::share_wired_subou(member_ou, member_ctrl_id);
 
     // Transfer SubOU freeze caps to their respective admins.
     emergency::transfer_admin_cap(officer_freeze_cap, officer_freeze_admin);

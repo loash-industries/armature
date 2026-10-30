@@ -62,7 +62,7 @@ fun make_subou(s: &mut Scenario, parent_id: ID): (ID, ID) {
     let control = capability_vault::new_subou_control_for_testing(subou_id, s.ctx());
     let control_id = object::id(&control);
     parent_vault.store_cap_for_testing(control);
-    ou::share_subou(subou, control_id);
+    ou::share_subou_for_testing(subou, control_id);
     sui::test_utils::destroy(freeze_cap);
     test_scenario::return_shared(parent_vault);
     test_scenario::return_shared(parent);

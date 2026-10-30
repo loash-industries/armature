@@ -88,6 +88,8 @@ const EEnableQuorumTooLow: u64 = 26;
 const EUpdateConfigQuorumTooLow: u64 = 27;
 /// The type is one of the core undisableable types (`is_undisableable_type`).
 const EUndisableableType: u64 = 28;
+/// `share_subou` is closed: it let anyone rewrite a shared OU's controller_cap_id.
+const EShareSubOUClosed: u64 = 29;
 
 // === Constants ===
 
@@ -203,6 +205,14 @@ public struct TypeSlot has copy, drop, store {
 /// Dynamic-field key of the display-key reverse index (display key -> TypeName).
 public struct DisplayKey has copy, drop, store {
     key: std::ascii::String,
+}
+
+/// Dynamic-field key of a SubOU's controller-grant record: the IDs of the
+/// `ExternalExecutionCap`s for one Move type that a controller chain granted it
+/// (`external_execution::finish_controller_enable_bypass_type`). The revoke
+/// destroys exactly these, so it never loads caps others pushed into the vault.
+public struct ControllerGrantKey has copy, drop, store {
+    type_name: TypeName,
 }
 
 /// Registry entry for one enabled proposal type. One dynamic field per type.
@@ -406,8 +416,8 @@ public(package) fun create_subou_returning_vault(
 }
 
 /// Create a new SubOU with Board governance and filtered proposal types.
-/// Returns the un-shared OU and FreezeAdminCap. The caller must set
-/// controller_cap_id via `share_subou()` before sharing.
+/// Returns the un-shared OU and FreezeAdminCap. The framework registers its
+/// controller and shares it with `share_wired_subou`.
 /// Companion objects (treasury, vault, charter, emergency) are shared internally.
 /// Hierarchy-altering proposal types (SpawnOU, SpinOutSubOU, CreateSubOU)
 /// and the bypass meta-types are excluded from the SubOU's default slots.
@@ -447,10 +457,23 @@ public fun create_subou_configured(
     (ou, freeze_admin_cap)
 }
 
-/// Share a SubOU after setting its controller_cap_id.
-/// Consumes the OU by value — can only be called on an un-shared OU.
+/// Closed: always aborts with EShareSubOUClosed. Sui lets a shared object taken
+/// by value be re-shared, so this let anyone pass any live OU and point its
+/// controller_cap_id at any ID. The v1 version stays callable, so no check may
+/// treat custody of an object with an OU's controller_cap_id as proof of
+/// control: check the SubOUControl's binding too
+/// (`controller::assert_registered_control`,
+/// `capability_vault::holds_subou_control_for`). The framework wires SubOUs
+/// through `share_wired_subou`.
+public fun share_subou(_ou: OU, _controller_cap_id: ID) {
+    abort EShareSubOUClosed
+}
+
+/// Share a SubOU after setting its controller_cap_id. Framework only: the
+/// caller passes the ID of the SubOUControl it just minted for this OU, which
+/// has never been shared.
 #[allow(lint(custom_state_change, share_owned))]
-public fun share_subou(mut ou: OU, controller_cap_id: ID) {
+public(package) fun share_wired_subou(mut ou: OU, controller_cap_id: ID) {
     ou.controller_cap_id = option::some(controller_cap_id);
     transfer::share_object(ou);
 }
@@ -1106,6 +1129,35 @@ public fun clear_controller<P>(self: &mut OU, req: &ExecutionRequest<P>) {
     self.controller_paused = false;
 }
 
+// === Controller grant record ===
+
+/// The cap IDs recorded as controller-chain grants of `type_name` on this OU,
+/// in grant order. Empty if none.
+public fun controller_grant_ids(self: &OU, type_name: TypeName): vector<ID> {
+    let key = ControllerGrantKey { type_name };
+    if (df::exists(&self.id, key)) *df::borrow(&self.id, key)
+    else vector[]
+}
+
+/// Append `cap_ids` to this OU's controller-grant record for `type_name`.
+public(package) fun add_controller_grants(self: &mut OU, type_name: TypeName, cap_ids: vector<ID>) {
+    if (cap_ids.is_empty()) return;
+    let key = ControllerGrantKey { type_name };
+    if (df::exists(&self.id, key)) {
+        df::borrow_mut<ControllerGrantKey, vector<ID>>(&mut self.id, key).append(cap_ids);
+    } else {
+        df::add(&mut self.id, key, cap_ids);
+    }
+}
+
+/// Remove and return this OU's controller-grant record for `type_name`. Empty
+/// if none.
+public(package) fun take_controller_grants(self: &mut OU, type_name: TypeName): vector<ID> {
+    let key = ControllerGrantKey { type_name };
+    if (df::exists(&self.id, key)) df::remove(&mut self.id, key)
+    else vector[]
+}
+
 /// Transition the OU to Migrating status (irreversible).
 /// Requires MIGRATE (`assert_permitted`).
 public fun set_migrating<P>(self: &mut OU, successor_ou_id: ID, req: &ExecutionRequest<P>) {
@@ -1481,6 +1533,13 @@ public fun test_enable_type<T>(
 public fun test_update_config<T>(self: &mut OU, config: ProposalConfig) {
     let name = type_name_of<T>();
     self.slot_mut(&name).config = with_fixed_permissions(&name, config);
+}
+
+#[test_only]
+/// Share a SubOU with `controller_cap_id` registered, as `share_wired_subou`
+/// does, for tests that wire a SubOU by hand.
+public fun share_subou_for_testing(ou: OU, controller_cap_id: ID) {
+    share_wired_subou(ou, controller_cap_id)
 }
 
 #[test_only]

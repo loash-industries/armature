@@ -65,8 +65,8 @@ const EBypassForbiddenBits: u64 = 15;
 /// a controller bypass payload.
 const ESubOUMismatch: u64 = 16;
 /// A controller chain step does not connect: the vault is not the current
-/// tip's, or it does not hold the next OU's registered SubOUControl. Also
-/// raised when a chain is finished on an OU that is not its tip.
+/// tip's, or it does not hold the next OU's registered SubOUControl bound to
+/// that OU. Also raised when a chain is finished on an OU that is not its tip.
 const EChainBroken: u64 = 17;
 /// A controller chain is longer than MAX_CHAIN_DEPTH levels.
 const EChainTooDeep: u64 = 18;
@@ -324,12 +324,15 @@ public fun execute_disable_bypass_type<NewType: store>(
 //   -> finish_controller_enable_bypass_type<NewType> (or _disable_)
 //
 // Each step checks that the current tip's vault holds the next OU's registered
-// SubOUControl, the proof `controller::receive_cap_from_controller` already
-// accepts. Nothing is loaned or moved, and intermediate OUs and vaults are
-// read only. Each OU has one registered control, held in one vault, so the
-// chain from the voting OU to the payload's SubOU is unique: the executor
-// cannot route through anyone else. `finish` then acts on the SubOU on a
-// privileged request, as a direct controller's override would.
+// SubOUControl and that the control is bound to that OU, the two checks
+// `controller::assert_registered_control` makes. Custody of an object with the
+// registered ID is not enough: v1 `ou::share_subou` stays callable and lets
+// anyone point an OU's controller_cap_id at any ID. Nothing is loaned or
+// moved, and intermediate OUs and vaults are read only. Each OU has one bound
+// control, held in one vault, so the chain from the voting OU to the payload's
+// SubOU is unique: the executor cannot route through anyone else. `finish`
+// then acts on the SubOU on a privileged request, as a direct controller's
+// override would.
 
 /// Hot potato: the OU that passed `ticket` controls `tip_ou_id` through `hops`
 /// verified levels. Only the `finish_controller_*` functions consume it.
@@ -371,9 +374,9 @@ public fun start_controller_chain<P>(ticket: ExecutionTicket<P>): ControllerChai
 }
 
 /// Extend the chain one level: `tip_vault` must be the current tip's vault and
-/// hold `next`'s registered SubOUControl, so the tip controls `next`, which
-/// becomes the tip. `next` must be Active. Aborts with EChainTooDeep past
-/// MAX_CHAIN_DEPTH levels.
+/// hold `next`'s registered SubOUControl, bound to `next`, so the tip controls
+/// `next`, which becomes the tip. `next` must be Active. Aborts with
+/// EChainTooDeep past MAX_CHAIN_DEPTH levels.
 public fun extend_controller_chain<P>(
     chain: &mut ControllerChain<P>,
     tip_vault: &CapabilityVault,
@@ -381,7 +384,11 @@ public fun extend_controller_chain<P>(
 ) {
     assert!(tip_vault.ou_id() == chain.tip_ou_id, EChainBroken);
     let control_id = next.controller_cap_id();
-    assert!(control_id.is_some() && tip_vault.contains(*control_id.borrow()), EChainBroken);
+    assert!(
+        control_id.is_some()
+            && tip_vault.holds_subou_control_for(*control_id.borrow(), next.id()),
+        EChainBroken,
+    );
     assert!(next.status().is_active(), EOUNotActive);
     assert!(chain.hops < MAX_CHAIN_DEPTH, EChainTooDeep);
     chain.hops = chain.hops + 1;
@@ -442,6 +449,7 @@ public fun finish_controller_enable_bypass_type<NewType: store>(
     );
     let cap_id = object::id(&cap);
     subou_vault.store_cap(cap, &subou_req);
+    subou.add_controller_grants(new_type, vector[cap_id]);
     proposal::consume(subou_req);
 
     event::emit(BypassEnabled { ou_id: subou.id(), type_key: display_key, cap_id });
@@ -450,16 +458,22 @@ public fun finish_controller_enable_bypass_type<NewType: store>(
 }
 
 /// Finish a `ControllerDisableBypassType` chain whose tip is the payload's
-/// SubOU: destroy every `ExternalExecutionCap<NewType>` scoped to the SubOU in
-/// the SubOU's vault, and remove `NewType`'s slot on the SubOU.
+/// SubOU: destroy every `ExternalExecutionCap<NewType>` a controller chain
+/// granted the SubOU that is in the SubOU's vault, and remove `NewType`'s slot
+/// on the SubOU.
 ///
 /// Each half runs on whatever is there. The SubOU controls its slots, so
 /// requiring the slot (or its display key) would let it block the revoke by
 /// removing or renaming the slot first and later re-enable it to revive the
-/// cap. Sweeping every SubOU-scoped cap means a duplicate or orphaned cap
-/// cannot survive a revoke; a cap scoped to another OU is left alone. Emits
-/// one BypassDisabled per destroyed cap. Aborts with ECapNotFound only when
-/// there is neither a cap nor a slot. `NewType` must be the payload's type.
+/// cap. Destroying every recorded grant means a duplicate or orphaned grant
+/// cannot survive a revoke. The revoke reads the SubOU's grant record
+/// (`ou::take_controller_grants`), never every cap of the type in the vault:
+/// anyone can push caps scoped to other OUs into a vault (TransferAssets), and
+/// loading each one would let them push the revoke past the per-transaction
+/// object limit. A recorded cap that is not in the vault stays recorded, so a
+/// later revoke destroys it if it comes back. Emits one BypassDisabled per
+/// destroyed cap. Aborts with ECapNotFound only when there is neither a cap
+/// nor a slot. `NewType` must be the payload's type.
 public fun finish_controller_disable_bypass_type<NewType: store>(
     chain: ControllerChain<ControllerDisableBypassType>,
     subou: &mut OU,
@@ -475,11 +489,10 @@ public fun finish_controller_disable_bypass_type<NewType: store>(
     assert!(name == payload.type_name(), ETypeMismatch);
 
     let subou_id = subou.id();
-    let cap_ids = subou_vault
-        .ids_for_type<ExternalExecutionCap<NewType>>()
-        .filter!(
-            |id| subou_vault.borrow_external_cap<NewType>(subou_id, *id).cap_ou_id() == subou_id,
-        );
+    // `contains` reads the vault's ID set and loads no objects.
+    let recorded = subou.take_controller_grants(name);
+    let cap_ids = recorded.filter!(|id| subou_vault.contains(*id));
+    subou.add_controller_grants(name, recorded.filter!(|id| !subou_vault.contains(*id)));
     let has_slot = subou.is_type_name_enabled(&name);
     assert!(!cap_ids.is_empty() || has_slot, ECapNotFound);
     let type_key = if (has_slot) subou.type_display_key_by_name(&name) else name.into_string();
