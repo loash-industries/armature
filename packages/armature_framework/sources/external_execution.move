@@ -378,10 +378,12 @@ public fun start_controller_chain<P>(ticket: ExecutionTicket<P>): ControllerChai
 
 /// Extend the chain one level: `tip_vault` must be the current tip's vault and
 /// hold `next`'s registered SubOUControl, bound to `next`, so the tip controls
-/// `next`, which becomes the tip. `next` must be Active. Aborts with
-/// EChainTooDeep past MAX_CHAIN_DEPTH levels. Aborts with EChainBroken if
-/// `next`'s controller_cap_id was moved off its bound control; call
-/// `ou::restore_controller` first.
+/// `next`, which becomes the tip. `next` may be in any status: a hop only
+/// proves control, and a Migrating OU still controls its SubOUs (it cannot
+/// vote, so it cannot start a chain). `finish_controller_enable_bypass_type`
+/// requires an Active target. Aborts with EChainTooDeep past MAX_CHAIN_DEPTH
+/// levels. Aborts with EChainBroken if `next`'s controller_cap_id was moved off
+/// its bound control; call `ou::restore_controller` first.
 public fun extend_controller_chain<P>(
     chain: &mut ControllerChain<P>,
     tip_vault: &CapabilityVault,
@@ -394,7 +396,6 @@ public fun extend_controller_chain<P>(
             && tip_vault.holds_subou_control_for(*control_id.borrow(), next.id()),
         EChainBroken,
     );
-    assert!(next.status().is_active(), EOUNotActive);
     assert!(chain.hops < MAX_CHAIN_DEPTH, EChainTooDeep);
     chain.hops = chain.hops + 1;
     chain.tip_ou_id = next.id();
@@ -407,7 +408,8 @@ public fun extend_controller_chain<P>(
 /// Runs the same checks as `execute_enable_bypass_type`: self-bootstrap
 /// denylist, 80% of the voting OU's whole board on the actual vote weights,
 /// type pin, composability vs cooldown, bypass-safe bits, SubOU-blocked types.
-/// Plus: the SubOU, its vault and its registered control are the payload's.
+/// Plus: the SubOU is Active (EOUNotActive), and the SubOU, its vault and its
+/// registered control are the payload's.
 public fun finish_controller_enable_bypass_type<NewType: store>(
     chain: ControllerChain<ControllerEnableBypassType>,
     subou: &mut OU,
@@ -416,6 +418,7 @@ public fun finish_controller_enable_bypass_type<NewType: store>(
 ) {
     let ControllerChain { ticket, tip_ou_id, hops } = chain;
     assert!(hops > 0 && tip_ou_id == subou.id(), EChainBroken);
+    assert!(subou.status().is_active(), EOUNotActive);
 
     assert_not_bypass_forbidden<NewType>();
     assert_approval_floor_ticket(&ticket, ENABLE_BYPASS_APPROVAL_FLOOR_BPS);
@@ -478,7 +481,8 @@ public fun finish_controller_enable_bypass_type<NewType: store>(
 /// object limit. A recorded cap that is not in the vault stays recorded, so a
 /// later revoke destroys it if it comes back. Emits one BypassDisabled per
 /// destroyed cap. Aborts with ECapNotFound only when there is neither a cap
-/// nor a slot. `NewType` must be the payload's type.
+/// nor a slot. `NewType` must be the payload's type. Runs on a SubOU in any
+/// status.
 public fun finish_controller_disable_bypass_type<NewType: store>(
     chain: ControllerChain<ControllerDisableBypassType>,
     subou: &mut OU,

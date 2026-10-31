@@ -1265,8 +1265,10 @@ public fun is_undisableable_type(name: &TypeName): bool {
 }
 
 /// Returns true if the type is blocked for controlled SubOUs: hierarchy-altering
-/// operations reserved for independent OUs, plus bypass-meta types that would let
-/// a SubOU autonomously escalate its own execution privileges.
+/// operations reserved for independent OUs, plus the bypass meta-types, so a
+/// SubOU cannot grant bypass execution on itself. By design a SubOU can still
+/// grant it on its own SubOUs (ControllerEnableBypassType through a controller
+/// chain), so this keeps bypass caps off the SubOU, not out of its subtree.
 /// SubOUs with `controller_cap_id.is_some()` cannot enable these types.
 public fun is_subou_blocked_type(name: &TypeName): bool {
     let n = *name;

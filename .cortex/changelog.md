@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-31 — controller chain: pass through Migrating OUs; a grant needs an Active target
+
+- `extend_controller_chain` no longer requires each OU it reaches to be Active. A hop only proves that the tip's vault holds the next OU's bound `SubOUControl`, and a Migrating OU still controls its SubOUs. It cannot vote, so it cannot start a chain. `finish_controller_enable_bypass_type` now checks that the target is Active (`EOUNotActive`). `finish_controller_disable_bypass_type` runs on a target in any status.
+- Why: a SubOU could mark itself Migrating with its own MIGRATE-bit type, and every chain through it then aborted. Its controller could no longer revoke a bypass granted below it, and a controlled SubOU can create SubOUs and grant them bypasses by design.
+- `ou::is_subou_blocked_type` docs: the bypass meta-types are blocked so a SubOU cannot grant bypass execution on itself. A SubOU can still grant it on its own SubOUs through `ControllerEnableBypassType`.
+- Tests: 3 in the new `controller_chain_subtree_tests` (a SubOU creates a child and grants it a bypass, which pausing the SubOU does not stop; the root revokes it through the SubOU after the SubOU migrates; a grant to a Migrating SubOU aborts). Framework 481/481, proposals 164/164, external_type_tests 18/18, world_bridge 25/25.
+
 ## 2026-10-30 — `ou::restore_controller`: repair a moved controller pointer in the revoke's PTB
 
 - New `ou::restore_controller(subou, controller_vault, control_id)` points a SubOU's `controller_cap_id` back at the `SubOUControl` bound to it. It aborts with `ENoController` (30) if the SubOU has no controller, and with `ENotBoundControl` (31) unless the vault holds that control bound to the SubOU. Anyone may call it: the framework binds one control to an OU, at creation, and SpinOutSubOU destroys it. It emits `ControllerRestored` when it changes the pointer.
