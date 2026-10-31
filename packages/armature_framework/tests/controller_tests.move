@@ -73,7 +73,7 @@ fun privileged_submit_records_execution_in_events() {
         let control_id = object::id(&control);
         transfer::public_transfer(control, CREATOR);
         sui::test_utils::destroy(freeze_cap);
-        ou::share_subou(subou, control_id);
+        ou::share_subou_for_testing(subou, control_id);
         subou_id
     };
 

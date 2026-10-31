@@ -6,6 +6,8 @@ use armature::batch_remove_members::BatchRemoveMembers;
 use armature::capability_vault;
 use armature::charter;
 use armature::composite_payload::CompositePayload;
+use armature::controller_disable_bypass_type::ControllerDisableBypassType;
+use armature::controller_enable_bypass_type::ControllerEnableBypassType;
 use armature::create_subou::CreateSubOU;
 use armature::disable_bypass_type::DisableBypassType;
 use armature::disable_proposal_type::DisableProposalType;
@@ -72,9 +74,9 @@ const EGrantFloorNotMet: u64 = 21;
 const EFixedPermissions: u64 = 23;
 /// A controller-only mutator was called with an unprivileged request.
 const ENotPrivileged: u64 = 24;
-/// An EnableBypassType config whose quorum × approval_threshold is below
-/// ENABLE_BYPASS_TYPE_MIN_THRESHOLD × 100%: a vote could pass on it yet fail
-/// the execution-time floor on the whole board's weight.
+/// An EnableBypassType or ControllerEnableBypassType config whose quorum ×
+/// approval_threshold is below ENABLE_BYPASS_TYPE_MIN_THRESHOLD × 100%: a vote
+/// could pass on it yet fail the execution-time floor on the whole board's weight.
 const EBypassQuorumTooLow: u64 = 25;
 /// An EnableProposalType config whose quorum × approval_threshold is below
 /// ENABLE_PROPOSAL_TYPE_MIN_THRESHOLD × 100%: a minority of the board could
@@ -86,6 +88,13 @@ const EEnableQuorumTooLow: u64 = 26;
 const EUpdateConfigQuorumTooLow: u64 = 27;
 /// The type is one of the core undisableable types (`is_undisableable_type`).
 const EUndisableableType: u64 = 28;
+/// `share_subou` is closed: it let anyone rewrite a shared OU's controller_cap_id.
+const EShareSubOUClosed: u64 = 29;
+/// `restore_controller` was called on an OU with no controller.
+const ENoController: u64 = 30;
+/// `restore_controller`: the vault does not hold `control_id` as a
+/// SubOUControl bound to this OU.
+const ENotBoundControl: u64 = 31;
 
 // === Constants ===
 
@@ -108,8 +117,10 @@ const ENABLE_PROPOSAL_TYPE_MIN_THRESHOLD: u16 = 8_000;
 /// admin_ops::propose_update_proposal_config (self-targeting).
 const UPDATE_PROPOSAL_CONFIG_MIN_THRESHOLD: u16 = 8_000;
 
-/// Minimum approval_threshold for EnableBypassType — must be >= the 80% execution
-/// floor enforced by external_execution::execute_enable_bypass_type.
+/// Minimum approval_threshold for EnableBypassType and ControllerEnableBypassType —
+/// must be >= the 80% execution floor enforced by
+/// external_execution::execute_enable_bypass_type and
+/// external_execution::execute_controller_enable_bypass_type.
 const ENABLE_BYPASS_TYPE_MIN_THRESHOLD: u16 = 8_000;
 
 /// Default quorum and approval_threshold for the whole-board types
@@ -201,6 +212,14 @@ public struct DisplayKey has copy, drop, store {
     key: std::ascii::String,
 }
 
+/// Dynamic-field key of a SubOU's controller-grant record: the IDs of the
+/// `ExternalExecutionCap`s for one Move type that a controller chain granted it
+/// (`external_execution::finish_controller_enable_bypass_type`). The revoke
+/// destroys exactly these, so it never loads caps others pushed into the vault.
+public struct ControllerGrantKey has copy, drop, store {
+    type_name: TypeName,
+}
+
 /// Registry entry for one enabled proposal type. One dynamic field per type.
 ///
 /// `display_key` is the human-readable label carried in events and
@@ -275,6 +294,13 @@ public struct EncryptionEpochRotated has copy, drop {
     ou_id: ID,
     old_epoch: u64,
     new_epoch: u64,
+}
+
+/// Emitted when `restore_controller` points an OU's controller_cap_id back at
+/// the SubOUControl bound to it.
+public struct ControllerRestored has copy, drop {
+    ou_id: ID,
+    control_cap_id: ID,
 }
 
 /// Emitted when a Migrating OU is permanently destroyed.
@@ -402,8 +428,8 @@ public(package) fun create_subou_returning_vault(
 }
 
 /// Create a new SubOU with Board governance and filtered proposal types.
-/// Returns the un-shared OU and FreezeAdminCap. The caller must set
-/// controller_cap_id via `share_subou()` before sharing.
+/// Returns the un-shared OU and FreezeAdminCap. The framework registers its
+/// controller and shares it with `share_wired_subou`.
 /// Companion objects (treasury, vault, charter, emergency) are shared internally.
 /// Hierarchy-altering proposal types (SpawnOU, SpinOutSubOU, CreateSubOU)
 /// and the bypass meta-types are excluded from the SubOU's default slots.
@@ -443,10 +469,23 @@ public fun create_subou_configured(
     (ou, freeze_admin_cap)
 }
 
-/// Share a SubOU after setting its controller_cap_id.
-/// Consumes the OU by value — can only be called on an un-shared OU.
+/// Closed: always aborts with EShareSubOUClosed. Sui lets a shared object taken
+/// by value be re-shared, so this let anyone pass any live OU and point its
+/// controller_cap_id at any ID. The v1 version stays callable, so no check may
+/// treat custody of an object with an OU's controller_cap_id as proof of
+/// control: check the SubOUControl's binding too
+/// (`controller::assert_registered_control`,
+/// `capability_vault::holds_subou_control_for`). The framework wires SubOUs
+/// through `share_wired_subou`.
+public fun share_subou(_ou: OU, _controller_cap_id: ID) {
+    abort EShareSubOUClosed
+}
+
+/// Share a SubOU after setting its controller_cap_id. Framework only: the
+/// caller passes the ID of the SubOUControl it just minted for this OU, which
+/// has never been shared.
 #[allow(lint(custom_state_change, share_owned))]
-public fun share_subou(mut ou: OU, controller_cap_id: ID) {
+public(package) fun share_wired_subou(mut ou: OU, controller_cap_id: ID) {
     ou.controller_cap_id = option::some(controller_cap_id);
     transfer::share_object(ou);
 }
@@ -690,6 +729,8 @@ public fun is_framework_type(name: &TypeName): bool {
         || n == type_name_of<UpdateProposalConfig>()
         || n == type_name_of<EnableBypassType>()
         || n == type_name_of<DisableBypassType>()
+        || n == type_name_of<ControllerEnableBypassType>()
+        || n == type_name_of<ControllerDisableBypassType>()
         || n == type_name_of<TransferFreezeAdmin>()
         || n == type_name_of<UnfreezeProposalType>()
         || n == type_name_of<UpdateFreezeConfig>()
@@ -713,6 +754,9 @@ public fun is_framework_type(name: &TypeName): bool {
 /// - EnableProposalType, DisableProposalType, UpdateProposalConfig: TYPE_ADMIN.
 /// - EnableBypassType: TYPE_ADMIN + VAULT_STORE (stores the new ExternalExecutionCap).
 /// - DisableBypassType: TYPE_ADMIN + VAULT_EXTRACT (extracts the cap to destroy it).
+/// - ControllerEnableBypassType, ControllerDisableBypassType: VAULT_BORROW
+/// (they act on a SubOU through the SubOUControl chain; the SubOU-side change
+/// runs on a privileged request).
 /// - TransferFreezeAdmin (unfreeze_all), UnfreezeProposalType, UpdateFreezeConfig,
 /// UpdateFreezeExemptTypes: FREEZE (governance changes to the EmergencyFreeze).
 /// - SpawnOU: MIGRATE (set_migrating).
@@ -743,6 +787,11 @@ public fun framework_permissions(name: &TypeName): u64 {
     } else if (n == type_name_of<DisableBypassType>()) {
         permissions::type_admin() | permissions::vault_extract()
     } else if (
+        n == type_name_of<ControllerEnableBypassType>()
+            || n == type_name_of<ControllerDisableBypassType>()
+    ) {
+        permissions::vault_borrow()
+    } else if (
         n == type_name_of<TransferFreezeAdmin>()
             || n == type_name_of<UnfreezeProposalType>()
             || n == type_name_of<UpdateFreezeConfig>()
@@ -763,10 +812,17 @@ public fun framework_permissions(name: &TypeName): u64 {
 }
 
 /// The fixed borrow scope of a framework type: the capability types its
-/// handler borrows or loans. SpinOutSubOU loans the SubOUControl; no other
-/// framework type borrows. Returns empty for any other type.
+/// handler borrows or loans. SpinOutSubOU loans the SubOUControl;
+/// ControllerEnableBypassType and ControllerDisableBypassType act through it
+/// (a controller chain). No other framework type borrows. Returns empty for
+/// any other type.
 public fun framework_borrow_scope(name: &TypeName): vector<TypeName> {
-    if (*name == type_name_of<SpinOutSubOU>()) {
+    let n = *name;
+    if (
+        n == type_name_of<SpinOutSubOU>()
+            || n == type_name_of<ControllerEnableBypassType>()
+            || n == type_name_of<ControllerDisableBypassType>()
+    ) {
         vector[type_name_of<capability_vault::SubOUControl>()]
     } else {
         vector[]
@@ -796,6 +852,7 @@ fun with_fixed_permissions(name: &TypeName, config: ProposalConfig): ProposalCon
 /// votes cast, and a proposal stops taking votes once it passes. Its config
 /// must therefore make passing imply the floor: YES ≥ quorum × threshold of the
 /// board, so quorum × threshold must be at least 80% (EBypassQuorumTooLow).
+/// ControllerEnableBypassType has the same execution floor and the same rule.
 ///
 /// EnableProposalType is held to the same whole-board rule (EEnableQuorumTooLow):
 /// it can grant any bit, including TREASURY_WITHDRAW and VAULT_EXTRACT, so a
@@ -810,7 +867,10 @@ fun assert_config_floors(name: &TypeName, config: &ProposalConfig) {
     let threshold = config.approval_threshold();
     assert!(threshold >= min_approval_threshold_for_type(name), EThresholdBelowMinimum);
     assert!(threshold >= permission_floor(config.permissions()), EThresholdBelowMinimum);
-    if (*name == type_name_of<EnableBypassType>()) {
+    if (
+        *name == type_name_of<EnableBypassType>()
+            || *name == type_name_of<ControllerEnableBypassType>()
+    ) {
         assert!(
             (config.quorum() as u64) * (threshold as u64)
                 >= (ENABLE_BYPASS_TYPE_MIN_THRESHOLD as u64) * 10_000,
@@ -1081,6 +1141,70 @@ public fun clear_controller<P>(self: &mut OU, req: &ExecutionRequest<P>) {
     self.controller_paused = false;
 }
 
+/// Point this OU's controller_cap_id back at `control_id`, the SubOUControl
+/// bound to it that `controller_vault` holds. Takes the OU by mutable
+/// reference, so one PTB can restore the pointer and then act through it
+/// (`external_execution::extend_controller_chain`,
+/// `controller::privileged_submit`).
+///
+/// v1 `share_subou` stays callable, so anyone can point a live SubOU's
+/// controller_cap_id elsewhere. That locks its controller out of revokes and
+/// overrides while its bypass caps keep working. v1 can set the pointer back,
+/// but only by taking the OU by value, so the controller's next action would
+/// have to land in a later transaction and the rewrite could be repeated in
+/// between.
+///
+/// Anyone may call it. The framework binds one SubOUControl to an OU, when it
+/// creates the OU (CreateSubOU, `tribe`), and SpinOutSubOU destroys it, so this
+/// can only re-register the controller the OU was created under. Aborts with
+/// ENoController if the OU has no controller, so it does not re-attach a
+/// cleared OU on its own. (If a control outlived `clear_controller`, v1
+/// `share_subou` could set a pointer first; SpinOutSubOU destroys the control,
+/// so a spun-out OU cannot be re-attached.) Aborts with ENotBoundControl unless
+/// `controller_vault` holds `control_id` bound to this OU. A no-op if the
+/// pointer is already `control_id`.
+public fun restore_controller(
+    self: &mut OU,
+    controller_vault: &capability_vault::CapabilityVault,
+    control_id: ID,
+) {
+    assert!(self.controller_cap_id.is_some(), ENoController);
+    assert!(controller_vault.holds_subou_control_for(control_id, self.id()), ENotBoundControl);
+    let control = option::some(control_id);
+    if (self.controller_cap_id == control) return;
+    self.controller_cap_id = control;
+    event::emit(ControllerRestored { ou_id: self.id(), control_cap_id: control_id });
+}
+
+// === Controller grant record ===
+
+/// The cap IDs recorded as controller-chain grants of `type_name` on this OU,
+/// in grant order. Empty if none.
+public fun controller_grant_ids(self: &OU, type_name: TypeName): vector<ID> {
+    let key = ControllerGrantKey { type_name };
+    if (df::exists(&self.id, key)) *df::borrow(&self.id, key)
+    else vector[]
+}
+
+/// Append `cap_ids` to this OU's controller-grant record for `type_name`.
+public(package) fun add_controller_grants(self: &mut OU, type_name: TypeName, cap_ids: vector<ID>) {
+    if (cap_ids.is_empty()) return;
+    let key = ControllerGrantKey { type_name };
+    if (df::exists(&self.id, key)) {
+        df::borrow_mut<ControllerGrantKey, vector<ID>>(&mut self.id, key).append(cap_ids);
+    } else {
+        df::add(&mut self.id, key, cap_ids);
+    }
+}
+
+/// Remove and return this OU's controller-grant record for `type_name`. Empty
+/// if none.
+public(package) fun take_controller_grants(self: &mut OU, type_name: TypeName): vector<ID> {
+    let key = ControllerGrantKey { type_name };
+    if (df::exists(&self.id, key)) df::remove(&mut self.id, key)
+    else vector[]
+}
+
 /// Transition the OU to Migrating status (irreversible).
 /// Requires MIGRATE (`assert_permitted`).
 public fun set_migrating<P>(self: &mut OU, successor_ou_id: ID, req: &ExecutionRequest<P>) {
@@ -1141,8 +1265,10 @@ public fun is_undisableable_type(name: &TypeName): bool {
 }
 
 /// Returns true if the type is blocked for controlled SubOUs: hierarchy-altering
-/// operations reserved for independent OUs, plus bypass-meta types that would let
-/// a SubOU autonomously escalate its own execution privileges.
+/// operations reserved for independent OUs, plus the bypass meta-types, so a
+/// SubOU cannot grant bypass execution on itself. By design a SubOU can still
+/// grant it on its own SubOUs (ControllerEnableBypassType through a controller
+/// chain), so this keeps bypass caps off the SubOU, not out of its subtree.
 /// SubOUs with `controller_cap_id.is_some()` cannot enable these types.
 public fun is_subou_blocked_type(name: &TypeName): bool {
     let n = *name;
@@ -1167,7 +1293,9 @@ public fun min_approval_threshold_for_type(name: &TypeName): u16 {
         ENABLE_PROPOSAL_TYPE_MIN_THRESHOLD
     } else if (n == type_name_of<UpdateProposalConfig>()) {
         UPDATE_PROPOSAL_CONFIG_MIN_THRESHOLD
-    } else if (n == type_name_of<EnableBypassType>()) {
+    } else if (
+        n == type_name_of<EnableBypassType>() || n == type_name_of<ControllerEnableBypassType>()
+    ) {
         ENABLE_BYPASS_TYPE_MIN_THRESHOLD
     } else {
         0u16
@@ -1454,6 +1582,13 @@ public fun test_enable_type<T>(
 public fun test_update_config<T>(self: &mut OU, config: ProposalConfig) {
     let name = type_name_of<T>();
     self.slot_mut(&name).config = with_fixed_permissions(&name, config);
+}
+
+#[test_only]
+/// Share a SubOU with `controller_cap_id` registered, as `share_wired_subou`
+/// does, for tests that wire a SubOU by hand.
+public fun share_subou_for_testing(ou: OU, controller_cap_id: ID) {
+    share_wired_subou(ou, controller_cap_id)
 }
 
 #[test_only]

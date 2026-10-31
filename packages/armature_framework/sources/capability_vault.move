@@ -304,6 +304,18 @@ public fun destroy_subou_control<P>(
 /// Returns the sub-OU ID this control token is bound to.
 public fun subou_id(self: &SubOUControl): ID { self.subou_id }
 
+/// True if this vault holds `cap_id` and it is a SubOUControl bound to
+/// `subou_id`. Read only. Custody of an object with a given ID is not proof of
+/// control: v1 `ou::share_subou` can point any OU's controller_cap_id at any ID.
+public(package) fun holds_subou_control_for(
+    self: &CapabilityVault,
+    cap_id: ID,
+    subou_id: ID,
+): bool {
+    dof::exists_with_type<ID, SubOUControl>(&self.id, cap_id)
+        && dof::borrow<ID, SubOUControl>(&self.id, cap_id).subou_id == subou_id
+}
+
 /// Create a SubOUControl. Only callable within the framework package.
 public(package) fun new_subou_control(subou_id: ID, ctx: &mut TxContext): SubOUControl {
     SubOUControl {

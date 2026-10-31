@@ -57,7 +57,7 @@ fun create_and_share_subou(scenario: &mut test_scenario::Scenario) {
         );
         // Use the FreezeAdminCap's object ID as a stand-in controller cap ID.
         let controller_id = sui::object::id(&freeze_cap);
-        ou::share_subou(subou, controller_id);
+        ou::share_subou_for_testing(subou, controller_id);
         std::unit_test::destroy(freeze_cap);
     };
 }
