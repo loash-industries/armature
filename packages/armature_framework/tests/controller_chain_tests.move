@@ -8,6 +8,7 @@ module armature::controller_chain_tests;
 use armature::admin_ops;
 use armature::board_voting;
 use armature::capability_vault::{Self, CapabilityVault, SubOUControl};
+use armature::controller;
 use armature::controller_disable_bypass_type::ControllerDisableBypassType;
 use armature::controller_enable_bypass_type::ControllerEnableBypassType;
 use armature::disable_proposal_type;
@@ -1017,4 +1018,140 @@ fun revoke_keeps_an_absent_grant_recorded() {
 
     clock.destroy_for_testing();
     scenario.end();
+}
+
+// === Audit regressions: restoring a moved controller pointer ===
+
+/// OU `id`'s registered SubOUControl ID.
+fun control_id_of(scenario: &mut Scenario, id: ID): ID {
+    scenario.next_tx(ADMIN);
+    let o = scenario.take_shared_by_id<OU>(id);
+    let control = control_of(&o);
+    ts::return_shared(o);
+    control
+}
+
+/// One PTB: someone points OU `id`'s controller_cap_id at an ID that is not its
+/// bound control. Stands in for a call to v1 `ou::share_subou(subou, forged)`.
+fun tx_move_pointer(scenario: &mut Scenario, id: ID) {
+    scenario.next_tx(ADMIN);
+    let mut subou = scenario.take_shared_by_id<OU>(id);
+    subou.set_controller_for_testing(object::id_from_address(@0xF0));
+    ts::return_shared(subou);
+}
+
+#[test, expected_failure(abort_code = armature::external_execution::EChainBroken)]
+/// v1 `ou::share_subou` stays callable, so anyone can move a granted SubOU's
+/// controller_cap_id off its bound control. Without a restore, the revoke stops
+/// at that SubOU.
+fun revoke_stops_at_a_moved_pointer() {
+    let mut scenario = ts::begin(ADMIN);
+    let clock = new_clock(&mut scenario);
+    let ids = build_chain(&mut scenario, 2);
+    enable_on_root(&mut scenario, &clock, ids[0]);
+    tx_grant(&mut scenario, &clock, &ids, 2);
+    tx_move_pointer(&mut scenario, ids[2]);
+    tx_revoke(&mut scenario, &clock, &ids, 2);
+    abort 0
+}
+
+#[test]
+/// One PTB restores the moved pointer (`ou::restore_controller`) and revokes,
+/// so repeating the rewrite between two transactions cannot hold the revoke
+/// off.
+fun restore_and_revoke_in_one_ptb() {
+    let mut scenario = ts::begin(ADMIN);
+    let clock = new_clock(&mut scenario);
+    let ids = build_chain(&mut scenario, 2);
+    enable_on_root(&mut scenario, &clock, ids[0]);
+    tx_grant(&mut scenario, &clock, &ids, 2);
+    let control = control_id_of(&mut scenario, ids[2]);
+    tx_move_pointer(&mut scenario, ids[2]);
+
+    scenario.next_tx(ADMIN);
+    let (mut ous, mut vaults) = take_all(&mut scenario, &ids);
+    ou::restore_controller(&mut ous[2], &vaults[1], control);
+    revoke(&mut scenario, &clock, &mut ous, &mut vaults, 2);
+    return_all(ous, vaults);
+
+    assert_state(&mut scenario, ids[2], false, 0);
+    assert!(grants_of(&mut scenario, ids[2]).is_empty());
+    assert!(control_id_of(&mut scenario, ids[2]) == control);
+
+    clock.destroy_for_testing();
+    scenario.end();
+}
+
+#[test]
+/// The restore also brings the controller's overrides back: its control passes
+/// `controller::assert_registered_control` again, which `privileged_submit`
+/// runs. Restoring a pointer that is already right changes nothing.
+fun restore_reopens_controller_overrides() {
+    let mut scenario = ts::begin(ADMIN);
+    let ids = build_chain(&mut scenario, 1);
+    let control = control_id_of(&mut scenario, ids[1]);
+    tx_move_pointer(&mut scenario, ids[1]);
+
+    scenario.next_tx(ADMIN);
+    let (mut ous, vaults) = take_all(&mut scenario, &ids);
+    ou::restore_controller(&mut ous[1], &vaults[0], control);
+    ou::restore_controller(&mut ous[1], &vaults[0], control);
+    // Stands in for the controller's vote borrowing its SubOUControl.
+    let req = proposal::new_privileged_request_for_testing<DummyBypass>(ids[0], ids[0]);
+    let ctrl = vaults[0].borrow_cap<SubOUControl, DummyBypass>(control, &req);
+    controller::assert_registered_control(ctrl, &ous[1]);
+    proposal::consume_execution_request_for_testing(req);
+    return_all(ous, vaults);
+
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = armature::ou::ENotBoundControl)]
+/// The restore only re-registers a SubOUControl bound to the OU. A control
+/// bound to another OU is refused.
+fun restore_rejects_a_control_bound_to_another_ou() {
+    let mut scenario = ts::begin(ADMIN);
+    let victim = build_chain(&mut scenario, 1);
+    let other = build_chain(&mut scenario, 1);
+    tx_move_pointer(&mut scenario, victim[1]);
+
+    scenario.next_tx(ADMIN);
+    let (other_ous, other_vaults) = take_all(&mut scenario, &other);
+    let mut target = scenario.take_shared_by_id<OU>(victim[1]);
+    ou::restore_controller(&mut target, &other_vaults[0], control_of(&other_ous[1]));
+    abort 0
+}
+
+#[test, expected_failure(abort_code = armature::ou::ENotBoundControl)]
+/// The restore refuses an ID the vault holds that is not a SubOUControl.
+fun restore_rejects_a_non_control_object() {
+    let mut scenario = ts::begin(ADMIN);
+    let ids = build_chain(&mut scenario, 1);
+    tx_move_pointer(&mut scenario, ids[1]);
+
+    scenario.next_tx(ADMIN);
+    let (mut ous, mut vaults) = take_all(&mut scenario, &ids);
+    let junk = Junk { id: object::new(scenario.ctx()) };
+    let junk_id = object::id(&junk);
+    capability_vault::store_cap_for_testing(&mut vaults[0], junk);
+    ou::restore_controller(&mut ous[1], &vaults[0], junk_id);
+    abort 0
+}
+
+#[test, expected_failure(abort_code = armature::ou::ENoController)]
+/// The restore does not re-attach an OU whose controller was cleared, even
+/// while the controller's vault still holds a control bound to it.
+fun restore_refuses_an_ou_without_a_controller() {
+    let mut scenario = ts::begin(ADMIN);
+    let ids = build_chain(&mut scenario, 1);
+
+    scenario.next_tx(ADMIN);
+    let (mut ous, vaults) = take_all(&mut scenario, &ids);
+    let control = control_of(&ous[1]);
+    // Stands in for a controller override that clears the controller but keeps the control.
+    let req = proposal::new_privileged_request_for_testing<DummyBypass>(ids[1], ids[1]);
+    ous[1].clear_controller(&req);
+    proposal::consume_execution_request_for_testing(req);
+    ou::restore_controller(&mut ous[1], &vaults[0], control);
+    abort 0
 }

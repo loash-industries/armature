@@ -327,8 +327,11 @@ public fun execute_disable_bypass_type<NewType: store>(
 // SubOUControl and that the control is bound to that OU, the two checks
 // `controller::assert_registered_control` makes. Custody of an object with the
 // registered ID is not enough: v1 `ou::share_subou` stays callable and lets
-// anyone point an OU's controller_cap_id at any ID. Nothing is loaned or
-// moved, and intermediate OUs and vaults are read only. Each OU has one bound
+// anyone point an OU's controller_cap_id at any ID. If a level's pointer has
+// been moved off its bound control, the chain stops there until
+// `ou::restore_controller` points it back; the executor can call that first in
+// the same PTB. Nothing is loaned or moved, and intermediate OUs and vaults are
+// read only. Each OU has one bound
 // control, held in one vault, so the chain from the voting OU to the payload's
 // SubOU is unique: the executor cannot route through anyone else. `finish`
 // then acts on the SubOU on a privileged request, as a direct controller's
@@ -376,7 +379,9 @@ public fun start_controller_chain<P>(ticket: ExecutionTicket<P>): ControllerChai
 /// Extend the chain one level: `tip_vault` must be the current tip's vault and
 /// hold `next`'s registered SubOUControl, bound to `next`, so the tip controls
 /// `next`, which becomes the tip. `next` must be Active. Aborts with
-/// EChainTooDeep past MAX_CHAIN_DEPTH levels.
+/// EChainTooDeep past MAX_CHAIN_DEPTH levels. Aborts with EChainBroken if
+/// `next`'s controller_cap_id was moved off its bound control; call
+/// `ou::restore_controller` first.
 public fun extend_controller_chain<P>(
     chain: &mut ControllerChain<P>,
     tip_vault: &CapabilityVault,

@@ -90,6 +90,11 @@ const EUpdateConfigQuorumTooLow: u64 = 27;
 const EUndisableableType: u64 = 28;
 /// `share_subou` is closed: it let anyone rewrite a shared OU's controller_cap_id.
 const EShareSubOUClosed: u64 = 29;
+/// `restore_controller` was called on an OU with no controller.
+const ENoController: u64 = 30;
+/// `restore_controller`: the vault does not hold `control_id` as a
+/// SubOUControl bound to this OU.
+const ENotBoundControl: u64 = 31;
 
 // === Constants ===
 
@@ -289,6 +294,13 @@ public struct EncryptionEpochRotated has copy, drop {
     ou_id: ID,
     old_epoch: u64,
     new_epoch: u64,
+}
+
+/// Emitted when `restore_controller` points an OU's controller_cap_id back at
+/// the SubOUControl bound to it.
+public struct ControllerRestored has copy, drop {
+    ou_id: ID,
+    control_cap_id: ID,
 }
 
 /// Emitted when a Migrating OU is permanently destroyed.
@@ -1127,6 +1139,41 @@ public fun clear_controller<P>(self: &mut OU, req: &ExecutionRequest<P>) {
     self.assert_controller(req);
     self.controller_cap_id = option::none();
     self.controller_paused = false;
+}
+
+/// Point this OU's controller_cap_id back at `control_id`, the SubOUControl
+/// bound to it that `controller_vault` holds. Takes the OU by mutable
+/// reference, so one PTB can restore the pointer and then act through it
+/// (`external_execution::extend_controller_chain`,
+/// `controller::privileged_submit`).
+///
+/// v1 `share_subou` stays callable, so anyone can point a live SubOU's
+/// controller_cap_id elsewhere. That locks its controller out of revokes and
+/// overrides while its bypass caps keep working. v1 can set the pointer back,
+/// but only by taking the OU by value, so the controller's next action would
+/// have to land in a later transaction and the rewrite could be repeated in
+/// between.
+///
+/// Anyone may call it. The framework binds one SubOUControl to an OU, when it
+/// creates the OU (CreateSubOU, `tribe`), and SpinOutSubOU destroys it, so this
+/// can only re-register the controller the OU was created under. Aborts with
+/// ENoController if the OU has no controller, so it does not re-attach a
+/// cleared OU on its own. (If a control outlived `clear_controller`, v1
+/// `share_subou` could set a pointer first; SpinOutSubOU destroys the control,
+/// so a spun-out OU cannot be re-attached.) Aborts with ENotBoundControl unless
+/// `controller_vault` holds `control_id` bound to this OU. A no-op if the
+/// pointer is already `control_id`.
+public fun restore_controller(
+    self: &mut OU,
+    controller_vault: &capability_vault::CapabilityVault,
+    control_id: ID,
+) {
+    assert!(self.controller_cap_id.is_some(), ENoController);
+    assert!(controller_vault.holds_subou_control_for(control_id, self.id()), ENotBoundControl);
+    let control = option::some(control_id);
+    if (self.controller_cap_id == control) return;
+    self.controller_cap_id = control;
+    event::emit(ControllerRestored { ou_id: self.id(), control_cap_id: control_id });
 }
 
 // === Controller grant record ===

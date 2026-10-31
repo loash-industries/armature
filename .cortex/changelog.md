@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-30 — `ou::restore_controller`: repair a moved controller pointer in the revoke's PTB
+
+- New `ou::restore_controller(subou, controller_vault, control_id)` points a SubOU's `controller_cap_id` back at the `SubOUControl` bound to it. It aborts with `ENoController` (30) if the SubOU has no controller, and with `ENotBoundControl` (31) unless the vault holds that control bound to the SubOU. Anyone may call it: the framework binds one control to an OU, at creation, and SpinOutSubOU destroys it. It emits `ControllerRestored` when it changes the pointer.
+- Why: v1 `ou::share_subou` stays callable, so anyone can move a granted SubOU's `controller_cap_id` off its bound control. That stops the controller-chain revoke at that SubOU (`EChainBroken`) and fails `controller::privileged_submit`, while the SubOU's bypass caps keep working. v1 can set the pointer back only by taking the OU by value, so a revoke had to follow in a separate transaction and the rewrite could be repeated in between. `restore_controller` takes `&mut OU`, so one PTB can restore and revoke.
+- Tests: 6 in `controller_chain_tests` (the revoke stops at a moved pointer; restore and revoke in one PTB; restore re-opens controller overrides and is idempotent; a control bound to another OU, a non-control object and an OU with no controller are refused). Framework 478/478, proposals 164/164, external_type_tests 18/18, world_bridge 25/25.
+
 ## 2026-10-30 — controller-chain audit fixes: bound chain hops, grant-record revoke, `share_subou` closed
 
 - `extend_controller_chain` now requires the tip vault to hold a `SubOUControl` bound to the next OU (`capability_vault::holds_subou_control_for`), not just an object with the next OU's `controller_cap_id`. `ou::share_subou` was public, and Sui lets a shared object taken by value be re-shared, so anyone could point any OU's `controller_cap_id` at an object in their own vault and grant themselves a bypass on that OU through the chain.
