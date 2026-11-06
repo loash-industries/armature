@@ -23,8 +23,8 @@ jobs:
       move: ${{ steps.filter.outputs.move }}
       whitepaper: ${{ steps.filter.outputs.whitepaper }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3.0.4
         id: filter
         with:
           filters: |
@@ -42,7 +42,9 @@ jobs:
       - changes
     if: needs.changes.outputs.move == 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Install Homebrew
         run: |
@@ -53,7 +55,7 @@ jobs:
         run: /home/linuxbrew/.linuxbrew/bin/brew install sui
 
       - name: Setup Node.js (for prettier-move)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
 
@@ -97,16 +99,18 @@ jobs:
       - changes
     if: needs.changes.outputs.whitepaper == 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Install Typst
-        uses: typst-community/setup-typst@v4
+        uses: typst-community/setup-typst@48aeee7543d37f01afd1ffb27307dc277387ba13 # v4.3.1
 
       - name: Build whitepaper
         run: typst compile --root . whitepaper/main.typ whitepaper/paper.pdf
 
       - name: Upload whitepaper artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: whitepaper
           path: whitepaper/paper.pdf

@@ -12,7 +12,9 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       # The version in whitepaper/main.typ is the source of truth. Fail loudly
       # if someone tags a version the document itself does not claim to be.
@@ -28,7 +30,7 @@ jobs:
           echo "Releasing whitepaper $VERSION"
 
       - name: Install Typst
-        uses: typst-community/setup-typst@v4
+        uses: typst-community/setup-typst@48aeee7543d37f01afd1ffb27307dc277387ba13 # v4.3.1
 
       - name: Build whitepaper
         run: typst compile --root . whitepaper/main.typ armature-whitepaper.pdf
@@ -49,7 +51,7 @@ jobs:
           fi
 
       - name: Publish release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           name: "Whitepaper ${{ github.ref_name }}"
           files: armature-whitepaper.pdf
