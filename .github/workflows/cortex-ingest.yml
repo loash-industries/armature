@@ -10,7 +10,7 @@ on:
 
 jobs:
   cortex-ingest:
-    uses: loash-industries/public-workflows/.github/workflows/js-cortex-ingest.yaml@v0.2.2
+    uses: loash-industries/public-workflows/.github/workflows/js-cortex-ingest.yaml@7f3d345e01a92525698a5d6148497fa0e8e133e9 # v0.3.0
     if: github.ref == 'refs/heads/main'
     with:
       cortex_api_url: "https://cortex-relay-dev-api.trinary.exchange"
@@ -18,4 +18,3 @@ jobs:
       npm_client: yarn
     secrets:
       CORTEX_INGEST_TOKEN: ${{ secrets.CORTEX_INGEST_TOKEN }}
-      GH_AUTH_TOKEN: ${{ secrets.GH_AUTH_TOKEN }}
