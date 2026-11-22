@@ -236,7 +236,7 @@ public fun loan_cap<T: key + store, P>(
     let loan = CapLoan {
         cap_id,
         vault_id: object::id(self),
-        min_version: self.min_version,
+        min_version: version::raised(self.min_version),
     };
     (cap, loan)
 }
@@ -245,7 +245,7 @@ public fun loan_cap<T: key + store, P>(
 public fun return_cap<T: key + store>(self: &mut CapabilityVault, cap: T, loan: CapLoan) {
     self.check_version_mut();
     let CapLoan { cap_id, vault_id, min_version } = loan;
-    version::assert_supported(min_version);
+    version::assert_stamp_supported(min_version);
     assert!(object::id(&cap) == cap_id, ECapIdMismatch);
     assert!(object::id(self) == vault_id, EVaultIdMismatch);
     dof::add(&mut self.id, cap_id, cap);

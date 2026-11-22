@@ -623,6 +623,14 @@ fun enforce_version_retired_encrypted_entry() {
     abort
 }
 
+#[test, expected_failure(abort_code = version::EVersionRetired)]
+fun seal_approve_retired() {
+    let (mut sc, _) = begin();
+    let ou = retired_ou(&sc);
+    encrypted_entry::seal_approve(object::id_to_bytes(&ou.id()), &ou, sc.ctx());
+    abort
+}
+
 // === tribe ===
 
 #[test, expected_failure(abort_code = version::EVersionRetired)]

@@ -17,8 +17,16 @@
 /// its floor to `MIN_SUPPORTED` (`check_and_raise`), so objects in use move
 /// forward on their own.
 /// - Hot potatoes (`ExecutionRequest`, `CapLoan`, `Pipeline`, `AssetTransfer`)
-/// copy the floor of the object they came from, and every consumer checks it,
-/// so retired code cannot finish work that started on a newer floor.
+/// are stamped with the floor of the objects they came from, raised to the
+/// minting release's `MIN_SUPPORTED`. Every consumer checks the stamp both
+/// ways (`assert_stamp_supported`): retired code cannot finish work that
+/// started on a newer floor, and current code rejects a stamp below its own
+/// `MIN_SUPPORTED`, which only retired code can mint. Without the second half,
+/// a retired release could mint authority from an OU nobody has swept yet and
+/// current code would spend it against vaults that were already raised.
+/// - An unsealed `CompositeFrame` is owned, so a sweep can't reach it. Its floor
+///   is never raised; using it requires floor >= `MIN_SUPPORTED`, so frames
+///   built by a retired release are refused rather than laundered.
 /// - Each object module has a permissionless `enforce_version`, which only
 /// raises the floor to `MIN_SUPPORTED`. A security upgrade is followed by a
 /// sweep that calls it on every live object. There is no admin key and no
@@ -44,6 +52,15 @@ const MIN_SUPPORTED: u64 = 1;
 /// This package version is retired for the object (or hot potato) it was given:
 /// the object's `min_version` is above `VERSION`. Call the newest package.
 const EVersionRetired: u64 = 0;
+
+/// A hot potato (or an unsealed frame) carries a stamp below this release's
+/// `MIN_SUPPORTED`: it was minted by a retired release. Mint it again through
+/// the newest package.
+const EMintedByRetiredVersion: u64 = 1;
+
+/// This release was built with `MIN_SUPPORTED > VERSION`. Without this check
+/// such a release would let anyone raise floors above every published version.
+const EInvalidVersionConfig: u64 = 2;
 
 // === Events ===
 
@@ -75,8 +92,17 @@ public(package) fun assert_supported(min_version: u64) {
     assert!(VERSION >= min_version, EVersionRetired);
 }
 
+/// Abort unless this release may act on a hot potato (or unsealed frame)
+/// stamped `stamp`: `VERSION >= stamp` (`EVersionRetired`) and
+/// `stamp >= MIN_SUPPORTED` (`EMintedByRetiredVersion`).
+public(package) fun assert_stamp_supported(stamp: u64) {
+    assert_supported(stamp);
+    assert!(stamp >= MIN_SUPPORTED, EMintedByRetiredVersion);
+}
+
 /// `min_version` raised to this release's `MIN_SUPPORTED`; never lowered.
 public(package) fun raised(min_version: u64): u64 {
+    assert!(MIN_SUPPORTED <= VERSION, EInvalidVersionConfig);
     if (min_version < MIN_SUPPORTED) MIN_SUPPORTED else min_version
 }
 
@@ -101,6 +127,10 @@ public(package) fun check_and_raise(object_id: ID, min_version: u64): u64 {
 /// A floor this release can't act on: `VERSION + 1`.
 #[test_only]
 public fun retired_floor_for_testing(): u64 { VERSION + 1 }
+
+/// A stamp only a retired release could mint: `MIN_SUPPORTED - 1`.
+#[test_only]
+public fun stale_stamp_for_testing(): u64 { MIN_SUPPORTED - 1 }
 
 #[test_only]
 public fun floor_raised_event_for_testing(e: &VersionFloorRaised): (ID, u64, u64) {

@@ -437,7 +437,11 @@ public(package) fun create_subou_returning_vault(
 /// Companion objects (treasury, vault, charter, emergency) are shared internally.
 /// Hierarchy-altering proposal types (SpawnOU, SpinOutSubOU, CreateSubOU)
 /// and the bypass meta-types are excluded from the SubOU's default slots.
-public fun create_subou(
+///
+/// Framework-only, like `share_subou`: outside the framework a SubOU can only
+/// be made through CreateSubOU or `tribe::create_wired_subou`, which bind its
+/// controller. Tests outside the package use `create_subou_for_testing`.
+public(package) fun create_subou(
     gov_init: &GovernanceTypeInit,
     name: String,
     metadata_uri: String,
@@ -449,7 +453,8 @@ public fun create_subou(
 /// Like `create_subou` but applies `config_overrides` over the subou default
 /// slots. Existing types have their config replaced; non-blocked types not yet
 /// enabled are inserted and enabled. Blocked types abort with EBlockedProposalType.
-public fun create_subou_configured(
+/// Framework-only (see `create_subou`).
+public(package) fun create_subou_configured(
     gov_init: &GovernanceTypeInit,
     name: String,
     metadata_uri: String,
@@ -1564,6 +1569,17 @@ public fun set_controller_for_testing(self: &mut OU, control_id: ID) {
 /// `public(package)`.
 public fun share_subou_for_testing(ou: OU, controller_cap_id: ID) {
     share_subou(ou, controller_cap_id)
+}
+
+/// `create_subou` for tests outside the framework package.
+#[test_only]
+public fun create_subou_for_testing(
+    gov_init: &GovernanceTypeInit,
+    name: String,
+    metadata_uri: String,
+    ctx: &mut TxContext,
+): (OU, emergency::FreezeAdminCap) {
+    create_subou(gov_init, name, metadata_uri, ctx)
 }
 
 #[test_only]

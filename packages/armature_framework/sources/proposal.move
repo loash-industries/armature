@@ -417,7 +417,7 @@ public(package) fun create<P: store>(
         created_at_ms: clock.timestamp_ms(),
         passed_at_ms: option::none(),
         status: ProposalStatus::Active,
-        min_version,
+        min_version: version::floor_for_new(min_version),
     };
 
     let proposal_id = object::id(&proposal);
@@ -600,7 +600,7 @@ public(package) fun execute<P: store>(
             permissions,
             borrow_scope,
             privileged: false,
-            min_version,
+            min_version: version::raised(min_version),
         },
     )
 }
@@ -663,7 +663,7 @@ public(package) fun execute_single_vote<P: store>(
             permissions: config.permissions,
             borrow_scope: config.borrow_scope,
             privileged: false,
-            min_version,
+            min_version: version::raised(min_version),
         },
         payload,
         yes_weight,
@@ -701,7 +701,14 @@ public(package) fun privileged_execute<P: store>(
     event::emit(ProposalPayloadCreated { proposal_id, ou_id, payload_bcs });
     event::emit(ProposalExecuted { proposal_id, ou_id, executor: proposer });
 
-    ExecutionRequest { ou_id, proposal_id, permissions, borrow_scope, privileged, min_version }
+    ExecutionRequest {
+        ou_id,
+        proposal_id,
+        permissions,
+        borrow_scope,
+        privileged,
+        min_version: version::raised(min_version),
+    }
 }
 
 /// Mint a proposal ID for an execution that has no Proposal object. It comes
@@ -726,7 +733,7 @@ public(package) fun new_execution_request<P>(
         permissions: 0,
         borrow_scope: vector[],
         privileged: false,
-        min_version,
+        min_version: version::raised(min_version),
     }
 }
 
@@ -781,7 +788,7 @@ public(package) fun consume<P>(req: ExecutionRequest<P>) {
         privileged: _,
         min_version,
     } = req;
-    version::assert_supported(min_version);
+    version::assert_stamp_supported(min_version);
 }
 
 // === ExternalExecutionCap ===
@@ -897,7 +904,7 @@ public fun discharge<P: store + drop>(ticket: ExecutionTicket<P>, _: Permit<P>) 
         privileged: _,
         min_version,
     } = request;
-    version::assert_supported(min_version);
+    version::assert_stamp_supported(min_version);
 }
 
 /// Like `discharge` but returns the payload instead of dropping it.
@@ -913,7 +920,7 @@ public fun discharge_returning_payload<P: store>(ticket: ExecutionTicket<P>, _: 
         privileged: _,
         min_version,
     } = request;
-    version::assert_supported(min_version);
+    version::assert_stamp_supported(min_version);
     payload
 }
 
@@ -949,7 +956,7 @@ public(package) fun new_ticket_composite<P>(
             permissions,
             borrow_scope,
             privileged: false,
-            min_version,
+            min_version: version::raised(min_version),
         },
         payload,
         closeout: Closeout::Composite,
@@ -983,12 +990,12 @@ public fun enforce_proposal_version<P: store>(self: &mut Proposal<P>) {
 
 /// Abort `version::EVersionRetired` if this release is retired for the request.
 public(package) fun check_request_version<P>(self: &ExecutionRequest<P>) {
-    version::assert_supported(self.min_version)
+    version::assert_stamp_supported(self.min_version)
 }
 
 /// Abort `version::EVersionRetired` if this release is retired for the ticket.
 public(package) fun check_ticket_version<P>(ticket: &ExecutionTicket<P>) {
-    version::assert_supported(ticket.request.min_version)
+    version::assert_stamp_supported(ticket.request.min_version)
 }
 
 /// Abort `version::EVersionRetired` if this release is retired for the proposal.
