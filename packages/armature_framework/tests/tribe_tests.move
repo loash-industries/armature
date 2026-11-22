@@ -362,6 +362,7 @@ fun do_create_parent_and_wired_subou(scenario: &mut test_scenario::Scenario): (I
         &gov,
         string::utf8(b"Parent OU"),
         string::utf8(b"https://example.com/parent.png"),
+        armature::version::min_supported(),
         scenario.ctx(),
     );
     let req = proposal::new_execution_request_for_testing<TestProposal>(parent_id, parent_id);
@@ -520,6 +521,7 @@ fun create_wired_subou_config_override_applied() {
             &gov,
             string::utf8(b"Parent OU"),
             string::utf8(b"https://example.com/parent.png"),
+            armature::version::min_supported(),
             scenario.ctx(),
         );
 
@@ -574,6 +576,7 @@ fun create_wired_subou_new_type_enabled_via_override() {
             &gov,
             string::utf8(b"Parent OU"),
             string::utf8(b"https://example.com/parent.png"),
+            armature::version::min_supported(),
             scenario.ctx(),
         );
 
@@ -624,6 +627,7 @@ fun create_wired_subou_aborts_on_blocked_type() {
             &gov,
             string::utf8(b"Parent OU"),
             string::utf8(b"https://example.com/parent.png"),
+            armature::version::min_supported(),
             scenario.ctx(),
         );
 
@@ -664,6 +668,7 @@ fun create_wired_subou_aborts_on_enable_proposal_type_below_floor() {
             &gov,
             string::utf8(b"Parent OU"),
             string::utf8(b"https://example.com/parent.png"),
+            armature::version::min_supported(),
             scenario.ctx(),
         );
 
@@ -704,6 +709,7 @@ fun create_wired_subou_aborts_on_update_proposal_config_below_floor() {
             &gov,
             string::utf8(b"Parent OU"),
             string::utf8(b"https://example.com/parent.png"),
+            armature::version::min_supported(),
             scenario.ctx(),
         );
 
@@ -745,6 +751,7 @@ fun create_wired_subou_enable_proposal_type_at_floor_passes() {
             &gov,
             string::utf8(b"Parent OU"),
             string::utf8(b"https://example.com/parent.png"),
+            armature::version::min_supported(),
             scenario.ctx(),
         );
 
@@ -1126,6 +1133,7 @@ fun create_wired_subou_preserves_composable_allowed_on_override() {
             &gov,
             string::utf8(b"Parent OU"),
             string::utf8(b"https://example.com/parent.png"),
+            armature::version::min_supported(),
             scenario.ctx(),
         );
 

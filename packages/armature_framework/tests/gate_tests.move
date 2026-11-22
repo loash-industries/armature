@@ -279,7 +279,11 @@ fun receive_cap_needs_vault_extract_on_sender() {
 fun receive_cap_from_controller_needs_vault_extract() {
     run!(|ou, _, vault, _, _, ctx| {
         let r = all_but(ou, permissions::vault_extract());
-        let controller_vault = capability_vault::new(ou.id(), ctx);
+        let controller_vault = capability_vault::new(
+            ou.id(),
+            armature::version::min_supported(),
+            ctx,
+        );
         controller::receive_cap_from_controller(
             vault,
             TestCap { id: object::new(ctx) },
