@@ -443,10 +443,16 @@ public fun create_subou_configured(
     (ou, freeze_admin_cap)
 }
 
-/// Share a SubOU after setting its controller_cap_id.
-/// Consumes the OU by value — can only be called on an un-shared OU.
+/// Share a SubOU after setting its controller_cap_id. Framework-only.
+///
+/// It was `public` through Cycle 7. Sui lets a transaction take an
+/// already-shared object by value as long as it re-shares it, so anyone could
+/// pass a live OU and overwrite its `controller_cap_id`: marking a root OU as
+/// controlled for good, or moving a SubOU's pointer off its bound control
+/// (ARMATURE-45). Its callers (`tribe`, `lifecycle_ops`) pass only OUs they
+/// have just created.
 #[allow(lint(custom_state_change, share_owned))]
-public fun share_subou(mut ou: OU, controller_cap_id: ID) {
+public(package) fun share_subou(mut ou: OU, controller_cap_id: ID) {
     ou.controller_cap_id = option::some(controller_cap_id);
     transfer::share_object(ou);
 }
@@ -1461,6 +1467,13 @@ public fun test_update_config<T>(self: &mut OU, config: ProposalConfig) {
 /// tests that call `controller::privileged_submit` on an unshared SubOU.
 public fun set_controller_for_testing(self: &mut OU, control_id: ID) {
     self.controller_cap_id = option::some(control_id);
+}
+
+#[test_only]
+/// `share_subou` for tests outside the framework package, now that it is
+/// `public(package)`.
+public fun share_subou_for_testing(ou: OU, controller_cap_id: ID) {
+    share_subou(ou, controller_cap_id)
 }
 
 #[test_only]
