@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-22 — one version abort test per gated function (ARMATURE-45)
+
+Three new test modules (`version_gate_tests`, `version_gate_tests_handlers`, `version_gate_tests_proposals`, 98 tests) give every one of the 97 functions `scripts/check_version_gates.py` counts as gated a test that raises an object's or hot potato's floor to `version::retired_floor_for_testing()` and expects `version::EVersionRetired`. The script now also fails when a gated function has no test named `<function>_retired*`. New test-only helpers stamp a retired floor on a `CapLoan` (`capability_vault::cap_loan_with_min_version_for_testing`), a `Pipeline` (`composite::pipeline_with_min_version_for_testing`) and an `AssetTransfer` (`lifecycle_ops::asset_transfer_with_min_version_for_testing`). `armature_framework` 561/561.
+
 ## 2026-11-22 — localnet rehearsal of version gating (ARMATURE-45)
 
 New `scripts/rehearse_version_gating.sh`: starts a throwaway localnet with its own client config, publishes `armature_framework` v1 plus `armature_proposals` and a probe package linked to v1, and runs a routine upgrade (VERSION 2, MIN_SUPPORTED 1: v1, v2 and the v1-linked probe keep working, floors don't move) and a security upgrade (VERSION 3, MIN_SUPPORTED 3, sweeping one OU: v1, v2 and the probe abort in `version::assert_supported` on the swept OU and still work on the unswept one; v3 works on both and raises the unswept OU's floor). All 22 checks pass on sui 1.73.1. `docs/version-gating.md` gains a Rehearsal section.

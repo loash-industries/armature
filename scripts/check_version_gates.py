@@ -18,15 +18,24 @@ It also checks that each shared type has a `min_version` field, a public
 `min_version`-style getter and a permissionless `enforce` function, and that
 each hot potato that needs one carries a `min_version` field.
 
+Every gated function also needs an abort test in
+packages/armature_framework/tests/version_gate_tests*.move: a test marked
+`#[test, expected_failure(abort_code = version::EVersionRetired)]`, named
+`<function>_retired` (`<function>_retired_<module>` when the name is gated in
+more than one module, e.g. `enforce_version`), that calls the function.
+
 Run from the repo root: python3 scripts/check_version_gates.py
 """
 
+import collections
 import pathlib
 import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SOURCES = ROOT / "packages/armature_framework/sources"
+TESTS = ROOT / "packages/armature_framework/tests"
+ABORT_TESTS = "version_gate_tests*.move"
 
 SHARED = {
     "OU": "ou",
@@ -75,6 +84,10 @@ FUN_RE = re.compile(
     r"^public fun (?P<name>\w+)(?:<[^>]*>)?\((?P<params>[^)]*)\)[^{]*\{",
     re.M | re.S,
 )
+TEST_FUN_RE = re.compile(r"^fun (?P<name>\w+)\(\)\s*\{", re.M)
+RETIRED_ATTR_RE = re.compile(
+    r"#\[test\s*,\s*expected_failure\(\s*abort_code\s*=\s*(?:armature::)?version::EVersionRetired\s*\)\]"
+)
 
 
 def strip_line_comments(src: str) -> str:
@@ -122,9 +135,25 @@ def body_of(src: str, start: int) -> str:
     return src[start:i]
 
 
+def abort_tests() -> dict:
+    """name -> body of each test in ABORT_TESTS that expects EVersionRetired."""
+    tests = {}
+    for path in sorted(TESTS.glob(ABORT_TESTS)):
+        code = strip_line_comments(path.read_text())
+        for m in TEST_FUN_RE.finditer(code):
+            above = []
+            for line in reversed(code[: m.start()].split("\n")[:-1]):
+                if not line.strip().startswith(("///", "#[")):
+                    break
+                above.append(line.strip())
+            if any(RETIRED_ATTR_RE.search(line) for line in above):
+                tests[m.group("name")] = body_of(code, m.end())
+    return tests
+
+
 def main() -> int:
     errors = []
-    gated = 0
+    gated = []
     sources = {}
     for path in sorted(SOURCES.rglob("*.move")):
         src = path.read_text()
@@ -143,9 +172,21 @@ def main() -> int:
             # A hot potato passed by reference to a getter (req_ou_id, ...) is fine.
             if not needs or (module, name) in ALLOWED:
                 continue
-            gated += 1
+            gated.append((module, name))
             if not CHECK_RE.search(body_of(code, m.end())):
                 errors.append(f"{module}::{name} changes gated state but calls no version check")
+
+    tests = abort_tests()
+    modules_per_name = collections.Counter(name for _, name in gated)
+    for module, name in gated:
+        prefix = f"{name}_retired" + (f"_{module}" if modules_per_name[name] > 1 else "")
+        calls = re.compile(rf"\b{name}\s*[<(]")
+        if not any(t.startswith(prefix) and calls.search(body) for t, body in tests.items()):
+            errors.append(
+                f"{module}::{name} has no abort test: add `fun {prefix}()` that calls it, "
+                f"marked #[test, expected_failure(abort_code = version::EVersionRetired)], "
+                f"to tests/{ABORT_TESTS}"
+            )
 
     for ty, module in SHARED.items():
         src = sources[module]
@@ -168,7 +209,8 @@ def main() -> int:
     if errors:
         return 1
     print(
-        f"ok: {gated} public functions check the version floor, "
+        f"ok: {len(gated)} public functions check the version floor and have an abort test "
+        f"({len(tests)} tests), "
         f"{len(SHARED)} shared types and {len(HOT_POTATOES)} hot potatoes carry it"
     )
     return 0
