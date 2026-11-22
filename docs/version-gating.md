@@ -8,9 +8,15 @@ Every published version of a Sui package stays callable forever, and an object m
 |---|---|---|
 | `VERSION`, `MIN_SUPPORTED` | `sources/version.move` | This release's version, and the oldest version it still trusts. |
 | `min_version: u64` | `OU`, `CapabilityVault`, `TreasuryVault`, `Charter`, `EmergencyFreeze`, `Proposal`, `CompositeFrame`, `EncryptedEntry` | The oldest version allowed to act on the object. Starts at `MIN_SUPPORTED`, or the parent's floor for a SubOU, a SpawnOU successor and an OU's companions. |
-| Stamp | `ExecutionRequest`, `CapLoan`, `Pipeline` (and `ExecutionTicket`, `AssetTransfer` through the request they wrap) | The floor of the object that minted it. Every consumer checks it. |
-| Check | 89 public functions that change state, plus the `enforce` functions | `VERSION >= min_version`, else `version::EVersionRetired`. `&mut` paths also raise the floor to `MIN_SUPPORTED`. |
+| Stamp | `ExecutionRequest`, `CapLoan`, `Pipeline` (and `ExecutionTicket`, `AssetTransfer` through the request they wrap) | The highest floor among the objects that minted it, raised to the minting release's `MIN_SUPPORTED`. Every consumer checks it both ways (`version::assert_stamp_supported`). |
+| Check | 89 public functions that change state, `encrypted_entry::seal_approve`, and the `enforce` functions | `VERSION >= min_version`, else `version::EVersionRetired`. `&mut` paths also raise the floor to `MIN_SUPPORTED`. A hot-potato stamp below `MIN_SUPPORTED` aborts with `version::EMintedByRetiredVersion`. |
 | `enforce_version` / `enforce_proposal_version` | each object module | Permissionless. Raises the floor to `MIN_SUPPORTED`, never lowers it, and emits `version::VersionFloorRaised` when it moves. |
+
+Why stamps are checked both ways: an object's floor only rises when something touches it, so right after a security upgrade an OU can still sit at the old floor while its treasury has already been raised (anyone can call `deposit`). Without the lower bound, retired code could mint a ticket from the unswept OU, and current code would accept it and spend it against the raised treasury. Only a retired release can mint a stamp below the current `MIN_SUPPORTED`, so current code refuses it.
+
+An unsealed `CompositeFrame` is an owned object, so the sweep can't reach it. Its floor is never raised while it is unsealed. `add_step*`, `submit_composite` and `enforce_version` refuse a frame below `MIN_SUPPORTED` (`EMintedByRetiredVersion`), so a frame whose steps a retired `add_step` checked has to be rebuilt. Sealed frames are shared and are raised like any other object.
+
+`encrypted_entry::seal_approve` is gated even though it only reads: Seal key servers accept `seal_approve` from any version of the package, so without the check a retired version's key-release policy would hold forever.
 
 Getters stay ungated, so dependents linked to an older framework can always read. `scripts/check_version_gates.py` (run in CI) fails if a public function that takes a gated object `&mut` or by value, takes a hot potato by value, or is one of the read-only authority paths (vault borrows, ticket mints, `ticket_request`) skips the check.
 
@@ -31,7 +37,15 @@ Root OUs (`ou::create`, `tribe::create_tribe*`) and composite frames (`composite
 5. Check every object reads `min_version >= MIN_SUPPORTED` (the indexer can track `VersionFloorRaised`). Re-sweep objects created since step 4.
 6. Point the SDK and apps at the new package ID, and map `version::EVersionRetired` to "update the app".
 
+Sweep OUs, proposals and companions together. Until an OU is swept, retired code can still mint requests from it, though current code refuses them and retired code can't use them on objects that are already swept.
+
 Until an object is swept, retired code can still act on it. Any object used in the meantime moves forward on its own, because gated `&mut` paths raise the floor. Dependents linked below the new floor abort on swept objects until they relink, which is why they upgrade straight after the framework.
+
+## UpgradeCap custody during a security upgrade (interim)
+
+`ProposeUpgrade` and its handler live in `armature_proposals`, which is linked to one framework version. After a security upgrade, anyone can call `enforce_version` on the governing OU or its vault, and so can ordinary traffic to the new package. From then on the old-linked handler aborts in `ticket_request` and `loan_cap`. The relink vote can't start before the new framework exists, because the upgrade digest names it. So an UpgradeCap held in an OU vault would be stuck behind a handler that can't run.
+
+Until the handler moves into the framework (ARMATURE-48), keep package UpgradeCaps (the framework's and every dependent's) outside OU vaults, for example in a multisig. If one is already vault-held, move it out of the vault before you publish a security upgrade. Routine upgrades are unaffected, because they leave `MIN_SUPPORTED` alone.
 
 ## Rehearsal
 

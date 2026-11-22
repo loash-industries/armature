@@ -49,7 +49,7 @@ fun create_and_share_subou(scenario: &mut test_scenario::Scenario) {
     scenario.next_tx(CREATOR);
     {
         let init = governance::init_board(vector[CREATOR]);
-        let (subou, freeze_cap) = ou::create_subou(
+        let (subou, freeze_cap) = ou::create_subou_for_testing(
             &init,
             string::utf8(b"Sub OU"),
             string::utf8(b"https://example.com/sub.png"),

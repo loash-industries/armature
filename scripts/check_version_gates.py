@@ -70,6 +70,8 @@ READONLY_GATED = {
     ("external_execution", "ticket_from_cap_readonly"),
     ("controller", "privileged_submit"),
     ("admin_ops", "propose_update_proposal_config"),
+    # Seal key servers run seal_approve from any package version.
+    ("encrypted_entry", "seal_approve"),
 }
 
 # (module, function) that match a rule above but need no check, and why.
@@ -79,9 +81,9 @@ ENFORCE = {
     "Proposal": "enforce_proposal_version",
 }
 
-CHECK_RE = re.compile(r"check_\w*version\w*\(|version::assert_supported\(")
+CHECK_RE = re.compile(r"check_\w*version\w*\(|version::assert_(?:stamp_)?supported\(")
 FUN_RE = re.compile(
-    r"^public fun (?P<name>\w+)(?:<[^>]*>)?\((?P<params>[^)]*)\)[^{]*\{",
+    r"^(?:public |entry |public entry )fun (?P<name>\w+)(?:<[^>]*>)?\((?P<params>[^)]*)\)[^{]*\{",
     re.M | re.S,
 )
 TEST_FUN_RE = re.compile(r"^fun (?P<name>\w+)\(\)\s*\{", re.M)

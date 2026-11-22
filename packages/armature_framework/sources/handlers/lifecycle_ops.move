@@ -131,12 +131,15 @@ public fun execute_spawn_ou(ou: &mut OU, ticket: ExecutionTicket<SpawnOU>, ctx: 
 
     let payload = ticket.ticket_payload();
 
-    // The successor inherits its predecessor's version floor.
+    // The successor inherits the higher of its predecessor's and the ticket's
+    // version floor.
+    let ticket_floor = ticket.ticket_min_version();
+    let successor_floor = if (ou.min_version() > ticket_floor) ou.min_version() else ticket_floor;
     let successor_id = ou::create_with_floor(
         payload.governance_init(),
         *payload.name(),
         *payload.metadata_uri(),
-        ou.min_version(),
+        successor_floor,
         ctx,
     );
 

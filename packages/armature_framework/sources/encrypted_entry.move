@@ -175,6 +175,9 @@ public fun remove_entry(ou: &mut OU, entry: EncryptedEntry, ctx: &TxContext) {
 /// decryption-key release for a board member.
 /// `id` must be: ou_uid_bytes (32 bytes) || random nonce.
 entry fun seal_approve(id: vector<u8>, ou: &OU, ctx: &TxContext) {
+    // Seal key servers accept seal_approve from any version of this package,
+    // so the policy is retired like every other OU path.
+    ou.check_version();
     assert!(id.length() >= 32, EIdTooShort);
     let ou_id_bytes = object::id_to_bytes(&ou.id());
     let mut i = 0;
