@@ -472,7 +472,7 @@ fun test_destroy_empty_succeeds_on_empty_vault() {
     scenario.next_tx(CREATOR);
     {
         let ou_id = object::id_from_address(@0xDA0);
-        let vault = treasury_vault::new(ou_id, scenario.ctx());
+        let vault = treasury_vault::new(ou_id, armature::version::min_supported(), scenario.ctx());
         treasury_vault::destroy_empty(vault);
     };
     scenario.end();
@@ -487,7 +487,11 @@ fun test_destroy_empty_aborts_on_non_empty_vault() {
     scenario.next_tx(CREATOR);
     {
         let ou_id = object::id_from_address(@0xDA0);
-        let mut vault = treasury_vault::new(ou_id, scenario.ctx());
+        let mut vault = treasury_vault::new(
+            ou_id,
+            armature::version::min_supported(),
+            scenario.ctx(),
+        );
         let coin = coin::mint_for_testing<SUI>(100, scenario.ctx());
         vault.deposit(coin, scenario.ctx());
         treasury_vault::destroy_empty(vault);

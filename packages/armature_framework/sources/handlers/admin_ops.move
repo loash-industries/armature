@@ -63,6 +63,8 @@ public fun execute_disable_proposal_type(
     ou: &mut OU,
     ticket: ExecutionTicket<DisableProposalType>,
 ) {
+    ou.check_version_mut();
+    ticket.check_ticket_version();
     assert!(ou.id() == ticket.ticket_ou_id(), EOuMismatch);
     let type_key = ticket.ticket_payload().type_key();
     let name = resolve_display_key(ou, &type_key);
@@ -82,6 +84,8 @@ public fun execute_enable_proposal_type<NewType: store>(
     ou: &mut OU,
     ticket: ExecutionTicket<EnableProposalType>,
 ) {
+    ou.check_version_mut();
+    ticket.check_ticket_version();
     enable_proposal_type_impl<NewType>(
         ou,
         ticket.ticket_payload(),
@@ -96,6 +100,8 @@ public fun execute_update_proposal_config(
     ou: &mut OU,
     ticket: ExecutionTicket<UpdateProposalConfig>,
 ) {
+    ou.check_version_mut();
+    ticket.check_ticket_version();
     assert!(ou.id() == ticket.ticket_ou_id(), EOuMismatch);
 
     let payload = ticket.ticket_payload();
@@ -135,6 +141,8 @@ public fun execute_update_proposal_config(
 
 /// Execute an UpdateMetadata proposal: update the OU charter's IPFS CID.
 public fun execute_update_metadata(charter: &mut Charter, ticket: ExecutionTicket<UpdateMetadata>) {
+    charter.check_version_mut();
+    ticket.check_ticket_version();
     update_metadata_impl(
         charter,
         ticket.ticket_payload(),
@@ -207,6 +215,7 @@ public fun propose_update_proposal_config(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
+    ou.check_version();
     let self_type = type_name::with_defining_ids<UpdateProposalConfig>();
     let target = resolve_display_key(ou, &payload.target_type_key());
 

@@ -3,6 +3,7 @@ module armature::treasury_vault;
 
 use armature::permissions;
 use armature::proposal::ExecutionRequest;
+use armature::version;
 use sui::balance::Balance;
 use sui::coin::{Self, Coin};
 use sui::dynamic_field as df;
@@ -53,16 +54,19 @@ public struct TreasuryVault has key, store {
     id: UID,
     ou_id: ID,
     coin_types: VecSet<std::ascii::String>,
+    /// Version floor (see `version`): its OU's floor at creation.
+    min_version: u64,
 }
 
 // === Constructor ===
 
 /// Create a new empty TreasuryVault. Only callable within the framework package.
-public(package) fun new(ou_id: ID, ctx: &mut TxContext): TreasuryVault {
+public(package) fun new(ou_id: ID, min_version: u64, ctx: &mut TxContext): TreasuryVault {
     TreasuryVault {
         id: object::new(ctx),
         ou_id,
         coin_types: vec_set::empty(),
+        min_version,
     }
 }
 
@@ -77,6 +81,7 @@ public(package) fun share(vault: TreasuryVault) {
 /// Deposit a coin into the vault. Permissionless — anyone can deposit.
 /// Zero-value coins are destroyed as a no-op.
 public fun deposit<T>(self: &mut TreasuryVault, coin: Coin<T>, ctx: &mut TxContext) {
+    self.check_version_mut();
     let amount = coin.value();
     if (amount == 0) {
         coin.destroy_zero();
@@ -111,6 +116,8 @@ public fun withdraw<T, P>(
     req: &ExecutionRequest<P>,
     ctx: &mut TxContext,
 ): Coin<T> {
+    self.check_version_mut();
+    req.check_request_version();
     assert!(self.ou_id == req.req_ou_id(), EOUIdMismatch);
     req.assert_permitted(permissions::treasury_withdraw());
     let type_key = std::type_name::with_original_ids<T>().into_string();
@@ -153,6 +160,7 @@ public fun claim_coin<T>(
     coin_to_claim: transfer::Receiving<Coin<T>>,
     ctx: &mut TxContext,
 ) {
+    self.check_version_mut();
     let coin: Coin<T> = transfer::public_receive(&mut self.id, coin_to_claim);
     let amount = coin.value();
     let type_key = std::type_name::with_original_ids<T>().into_string();
@@ -195,7 +203,32 @@ public fun is_empty(self: &TreasuryVault): bool {
 /// Destroy an empty TreasuryVault. Aborts with `EVaultNotEmpty` if the
 /// vault still holds any coin balances.
 public(package) fun destroy_empty(vault: TreasuryVault) {
-    let TreasuryVault { id, ou_id: _, coin_types } = vault;
+    let TreasuryVault { id, ou_id: _, coin_types, min_version: _ } = vault;
     assert!(coin_types.is_empty(), EVaultNotEmpty);
     id.delete();
+}
+
+// === Version gate (ARMATURE-45, see `version`) ===
+
+/// The oldest framework version allowed to act on this TreasuryVault.
+public fun min_version(self: &TreasuryVault): u64 { self.min_version }
+
+/// Raise this TreasuryVault's floor to the running release's `MIN_SUPPORTED`. Anyone
+/// may call it; it never lowers the floor. Run by the sweep after a security
+/// upgrade.
+public fun enforce_version(self: &mut TreasuryVault) { self.check_version_mut() }
+
+/// Abort `version::EVersionRetired` if this release is retired for `self`.
+public(package) fun check_version(self: &TreasuryVault) {
+    version::assert_supported(self.min_version)
+}
+
+/// `check_version`, then raise the floor to `MIN_SUPPORTED`.
+public(package) fun check_version_mut(self: &mut TreasuryVault) {
+    self.min_version = version::check_and_raise(object::id(self), self.min_version);
+}
+
+#[test_only]
+public fun set_min_version_for_testing(self: &mut TreasuryVault, min_version: u64) {
+    self.min_version = min_version;
 }

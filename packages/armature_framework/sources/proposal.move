@@ -3,6 +3,7 @@ module armature::proposal;
 use armature::governance::{Self, GovernanceConfig};
 use armature::permissions;
 use armature::utils;
+use armature::version;
 use std::internal::Permit;
 use std::string::String;
 use std::type_name::TypeName;
@@ -101,6 +102,9 @@ public struct ExecutionRequest<phantom P> {
     /// P's slot `borrow_scope` when the request was minted (see ProposalConfig).
     borrow_scope: vector<TypeName>,
     privileged: bool,
+    /// Version floor (see `version`) of the object that minted it. Every
+    /// consumer checks it, so retired code can't finish work begun on it.
+    min_version: u64,
 }
 
 /// Capability that authorizes producing an `ExecutionRequest<P>` for a
@@ -161,6 +165,8 @@ public struct Proposal<P: store> has key {
     created_at_ms: u64,
     passed_at_ms: Option<u64>,
     status: ProposalStatus,
+    /// Version floor (see `version`): the OU's floor at submit.
+    min_version: u64,
 }
 
 // === Events ===
@@ -384,6 +390,7 @@ public(package) fun create<P: store>(
     config: ProposalConfig,
     governance: &GovernanceConfig,
     is_ou_active: bool,
+    min_version: u64,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
@@ -410,6 +417,7 @@ public(package) fun create<P: store>(
         created_at_ms: clock.timestamp_ms(),
         passed_at_ms: option::none(),
         status: ProposalStatus::Active,
+        min_version,
     };
 
     let proposal_id = object::id(&proposal);
@@ -499,6 +507,7 @@ public(package) fun record_vote<P: store>(
 ///
 /// P must have `drop`: the payload is destroyed, never handed to the caller.
 public fun delete_expired_proposal<P: store + drop>(proposal: Proposal<P>, clock: &Clock) {
+    proposal.check_proposal_version();
     let now = clock.timestamp_ms();
     let deadline = match (&proposal.status) {
         ProposalStatus::Active => proposal.voting_deadline_ms(),
@@ -544,9 +553,11 @@ public(package) fun execute<P: store>(
     execution_paused: bool,
     permissions: u64,
     borrow_scope: vector<TypeName>,
+    min_version: u64,
     clock: &Clock,
     ctx: &TxContext,
 ): (P, ExecutionRequest<P>) {
+    self.check_proposal_version();
     assert!(!execution_paused, EExecutionPaused);
     assert!(self.status.is_passed(), ENotPassed);
 
@@ -570,9 +581,10 @@ public(package) fun execute<P: store>(
     self.config.assert_cooldown_elapsed(last_executed_at_ms, now);
 
     // Deleting the object is the replay protection: nothing can execute it twice.
-    let Proposal { id, ou_id, payload, .. } = self;
+    let Proposal { id, ou_id, payload, min_version: proposal_floor, .. } = self;
     let proposal_id = id.to_inner();
     id.delete();
+    let min_version = if (proposal_floor > min_version) proposal_floor else min_version;
 
     event::emit(ProposalExecuted {
         proposal_id,
@@ -582,7 +594,14 @@ public(package) fun execute<P: store>(
 
     (
         payload,
-        ExecutionRequest<P> { ou_id, proposal_id, permissions, borrow_scope, privileged: false },
+        ExecutionRequest<P> {
+            ou_id,
+            proposal_id,
+            permissions,
+            borrow_scope,
+            privileged: false,
+            min_version,
+        },
     )
 }
 
@@ -614,6 +633,7 @@ public(package) fun execute_single_vote<P: store>(
     total_snapshot_weight: u64,
     last_executed_at_ms: Option<u64>,
     execution_paused: bool,
+    min_version: u64,
     clock: &Clock,
     ctx: &mut TxContext,
 ): ExecutionTicket<P> {
@@ -643,6 +663,7 @@ public(package) fun execute_single_vote<P: store>(
             permissions: config.permissions,
             borrow_scope: config.borrow_scope,
             privileged: false,
+            min_version,
         },
         payload,
         yes_weight,
@@ -670,6 +691,7 @@ public(package) fun privileged_execute<P: store>(
     permissions: u64,
     borrow_scope: vector<TypeName>,
     privileged: bool,
+    min_version: u64,
     ctx: &mut TxContext,
 ): ExecutionRequest<P> {
     let proposal_id = fresh_proposal_id(ctx);
@@ -679,7 +701,7 @@ public(package) fun privileged_execute<P: store>(
     event::emit(ProposalPayloadCreated { proposal_id, ou_id, payload_bcs });
     event::emit(ProposalExecuted { proposal_id, ou_id, executor: proposer });
 
-    ExecutionRequest { ou_id, proposal_id, permissions, borrow_scope, privileged }
+    ExecutionRequest { ou_id, proposal_id, permissions, borrow_scope, privileged, min_version }
 }
 
 /// Mint a proposal ID for an execution that has no Proposal object. It comes
@@ -693,13 +715,18 @@ fun fresh_proposal_id(ctx: &mut TxContext): ID {
 
 /// Create an unprivileged ExecutionRequest holding no bits. Only callable
 /// within the framework package.
-public(package) fun new_execution_request<P>(ou_id: ID, proposal_id: ID): ExecutionRequest<P> {
+public(package) fun new_execution_request<P>(
+    ou_id: ID,
+    proposal_id: ID,
+    min_version: u64,
+): ExecutionRequest<P> {
     ExecutionRequest {
         ou_id,
         proposal_id,
         permissions: 0,
         borrow_scope: vector[],
         privileged: false,
+        min_version,
     }
 }
 
@@ -752,7 +779,9 @@ public(package) fun consume<P>(req: ExecutionRequest<P>) {
         permissions: _,
         borrow_scope: _,
         privileged: _,
+        min_version,
     } = req;
+    version::assert_supported(min_version);
 }
 
 // === ExternalExecutionCap ===
@@ -807,6 +836,7 @@ public fun ticket_payload<P>(ticket: &ExecutionTicket<P>): &P {
 /// arguments it reads from the approved payload. A ticket holder cannot hand
 /// the request to a framework mutator with arguments of their own choosing.
 public fun ticket_request<P>(ticket: &ExecutionTicket<P>, _: Permit<P>): &ExecutionRequest<P> {
+    ticket.check_ticket_version();
     &ticket.request
 }
 
@@ -865,7 +895,9 @@ public fun discharge<P: store + drop>(ticket: ExecutionTicket<P>, _: Permit<P>) 
         permissions: _,
         borrow_scope: _,
         privileged: _,
+        min_version,
     } = request;
+    version::assert_supported(min_version);
 }
 
 /// Like `discharge` but returns the payload instead of dropping it.
@@ -879,7 +911,9 @@ public fun discharge_returning_payload<P: store>(ticket: ExecutionTicket<P>, _: 
         permissions: _,
         borrow_scope: _,
         privileged: _,
+        min_version,
     } = request;
+    version::assert_supported(min_version);
     payload
 }
 
@@ -906,6 +940,7 @@ public(package) fun new_ticket_composite<P>(
     payload: P,
     permissions: u64,
     borrow_scope: vector<TypeName>,
+    min_version: u64,
 ): ExecutionTicket<P> {
     ExecutionTicket {
         request: ExecutionRequest {
@@ -914,6 +949,7 @@ public(package) fun new_ticket_composite<P>(
             permissions,
             borrow_scope,
             privileged: false,
+            min_version,
         },
         payload,
         closeout: Closeout::Composite,
@@ -928,7 +964,83 @@ public(package) fun new_ticket_external<P>(
     ExecutionTicket { request, payload, closeout: Closeout::External }
 }
 
+// === Version gate (ARMATURE-45, see `version`) ===
+
+/// The version floor this request carries.
+public fun req_min_version<P>(self: &ExecutionRequest<P>): u64 { self.min_version }
+
+/// The version floor this ticket's request carries.
+public fun ticket_min_version<P>(ticket: &ExecutionTicket<P>): u64 { ticket.request.min_version }
+
+/// The oldest framework version allowed to act on this proposal.
+public fun proposal_min_version<P: store>(self: &Proposal<P>): u64 { self.min_version }
+
+/// Raise this proposal's floor to the running release's `MIN_SUPPORTED`.
+/// Anyone may call it; it never lowers the floor.
+public fun enforce_proposal_version<P: store>(self: &mut Proposal<P>) {
+    self.check_proposal_version_mut()
+}
+
+/// Abort `version::EVersionRetired` if this release is retired for the request.
+public(package) fun check_request_version<P>(self: &ExecutionRequest<P>) {
+    version::assert_supported(self.min_version)
+}
+
+/// Abort `version::EVersionRetired` if this release is retired for the ticket.
+public(package) fun check_ticket_version<P>(ticket: &ExecutionTicket<P>) {
+    version::assert_supported(ticket.request.min_version)
+}
+
+/// Abort `version::EVersionRetired` if this release is retired for the proposal.
+public(package) fun check_proposal_version<P: store>(self: &Proposal<P>) {
+    version::assert_supported(self.min_version)
+}
+
+/// `check_proposal_version`, then raise its floor to `MIN_SUPPORTED`.
+public(package) fun check_proposal_version_mut<P: store>(self: &mut Proposal<P>) {
+    self.min_version = version::check_and_raise(object::id(self), self.min_version);
+}
+
 // === Test Helpers ===
+
+#[test_only]
+/// Return `req` stamped with `min_version`, e.g. `version::retired_floor_for_testing()`.
+public fun with_min_version_for_testing<P>(
+    req: ExecutionRequest<P>,
+    min_version: u64,
+): ExecutionRequest<P> {
+    let ExecutionRequest {
+        ou_id,
+        proposal_id,
+        permissions,
+        borrow_scope,
+        privileged,
+        min_version: _,
+    } = req;
+    ExecutionRequest { ou_id, proposal_id, permissions, borrow_scope, privileged, min_version }
+}
+
+#[test_only]
+/// Return `ticket` with its request stamped with `min_version`.
+public fun ticket_with_min_version_for_testing<P>(
+    ticket: ExecutionTicket<P>,
+    min_version: u64,
+): ExecutionTicket<P> {
+    let ExecutionTicket { request, payload, closeout } = ticket;
+    ExecutionTicket {
+        request: with_min_version_for_testing(request, min_version),
+        payload,
+        closeout,
+    }
+}
+
+#[test_only]
+public fun set_proposal_min_version_for_testing<P: store>(
+    self: &mut Proposal<P>,
+    min_version: u64,
+) {
+    self.min_version = min_version;
+}
 
 #[test_only]
 public fun created_event_proposal_id(e: &ProposalCreated): ID { e.proposal_id }
@@ -976,6 +1088,7 @@ public fun new_execution_request_for_testing<P>(ou_id: ID, proposal_id: ID): Exe
         permissions: permissions::all(),
         borrow_scope: vector[],
         privileged: false,
+        min_version: version::min_supported(),
     }
 }
 
@@ -985,8 +1098,22 @@ public fun with_borrow_scope_for_testing<P>(
     req: ExecutionRequest<P>,
     scope: vector<TypeName>,
 ): ExecutionRequest<P> {
-    let ExecutionRequest { ou_id, proposal_id, permissions, borrow_scope: _, privileged } = req;
-    ExecutionRequest { ou_id, proposal_id, permissions, borrow_scope: scope, privileged }
+    let ExecutionRequest {
+        ou_id,
+        proposal_id,
+        permissions,
+        borrow_scope: _,
+        privileged,
+        min_version,
+    } = req;
+    ExecutionRequest {
+        ou_id,
+        proposal_id,
+        permissions,
+        borrow_scope: scope,
+        privileged,
+        min_version,
+    }
 }
 
 #[test_only]
@@ -1002,6 +1129,7 @@ public fun new_permitted_request_for_testing<P>(
         permissions: bits,
         borrow_scope: vector[],
         privileged: false,
+        min_version: version::min_supported(),
     }
 }
 
@@ -1014,6 +1142,7 @@ public fun new_privileged_request_for_testing<P>(ou_id: ID, proposal_id: ID): Ex
         permissions: 0,
         borrow_scope: vector[],
         privileged: true,
+        min_version: version::min_supported(),
     }
 }
 
@@ -1034,6 +1163,7 @@ public fun consume_execution_request_for_testing<P>(req: ExecutionRequest<P>) {
         permissions: _,
         borrow_scope: _,
         privileged: _,
+        min_version: _,
     } = req;
 }
 
@@ -1053,6 +1183,7 @@ public fun new_standalone_ticket_for_testing<P: store>(
         permissions: permissions::all(),
         borrow_scope: vector[],
         privileged: false,
+        min_version: version::min_supported(),
     };
     ExecutionTicket {
         request,
@@ -1096,6 +1227,7 @@ public fun privileged_create_for_testing<P: store>(
         permissions: permissions::all(),
         borrow_scope: vector[],
         privileged: false,
+        min_version: version::min_supported(),
     };
     ExecutionTicket {
         request,
@@ -1118,6 +1250,7 @@ public fun new_composite_ticket_for_testing<P: store>(
         permissions: permissions::all(),
         borrow_scope: vector[],
         privileged: false,
+        min_version: version::min_supported(),
     };
     ExecutionTicket { request, payload, closeout: Closeout::Composite }
 }
@@ -1136,6 +1269,7 @@ public fun new_external_ticket_for_testing<P: store>(
         permissions: permissions::all(),
         borrow_scope: vector[],
         privileged: false,
+        min_version: version::min_supported(),
     };
     ExecutionTicket { request, payload, closeout: Closeout::External }
 }

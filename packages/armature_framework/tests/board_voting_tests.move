@@ -87,6 +87,7 @@ fun submit_proposal_with_config(
             config,
             ou.governance(),
             ou.status().is_active(),
+            armature::version::min_supported(),
             clock,
             scenario.ctx(),
         );

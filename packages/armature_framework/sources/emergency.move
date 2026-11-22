@@ -4,6 +4,7 @@ use armature::permissions;
 use armature::proposal::ExecutionRequest;
 use armature::transfer_freeze_admin::TransferFreezeAdmin;
 use armature::unfreeze_proposal_type::UnfreezeProposalType;
+use armature::version;
 use std::type_name::{Self, TypeName};
 use sui::clock::Clock;
 use sui::event;
@@ -36,6 +37,8 @@ public struct EmergencyFreeze has key, store {
     frozen_types: VecMap<TypeName, u64>,
     max_freeze_duration_ms: u64,
     freeze_exempt_types: VecSet<TypeName>,
+    /// Version floor (see `version`): its OU's floor at creation.
+    min_version: u64,
 }
 
 /// Admin capability for triggering emergency freezes.
@@ -73,13 +76,14 @@ public struct FreezeExemptTypeRemoved has copy, drop {
 // === Constructor ===
 
 /// Create a new EmergencyFreeze. Only callable within the framework package.
-public(package) fun new(ou_id: ID, ctx: &mut TxContext): EmergencyFreeze {
+public(package) fun new(ou_id: ID, min_version: u64, ctx: &mut TxContext): EmergencyFreeze {
     EmergencyFreeze {
         id: object::new(ctx),
         ou_id,
         frozen_types: vec_map::empty(),
         max_freeze_duration_ms: DEFAULT_MAX_FREEZE_DURATION_MS,
         freeze_exempt_types: default_exempt_types(),
+        min_version,
     }
 }
 
@@ -137,6 +141,7 @@ public(package) fun destroy(freeze: EmergencyFreeze) {
         frozen_types,
         max_freeze_duration_ms: _,
         freeze_exempt_types: _,
+        min_version: _,
     } = freeze;
     assert!(frozen_types.is_empty());
     id.delete();
@@ -176,6 +181,7 @@ public fun is_exempt_by_name(self: &EmergencyFreeze, name: &TypeName): bool {
 /// The freeze expires at `now + max_freeze_duration_ms`.
 /// Cannot freeze exempt types (always including TransferFreezeAdmin and UnfreezeProposalType).
 public fun freeze_type<P>(self: &mut EmergencyFreeze, cap: &FreezeAdminCap, clock: &Clock) {
+    self.check_version_mut();
     assert!(cap.ou_id == self.ou_id, EOUMismatch);
     let name = type_name::with_defining_ids<P>();
     assert!(!self.freeze_exempt_types.contains(&name), EProtectedType);
@@ -200,6 +206,7 @@ public fun freeze_type<P>(self: &mut EmergencyFreeze, cap: &FreezeAdminCap, cloc
 
 /// Unfreeze proposal type `P` using the FreezeAdminCap.
 public fun unfreeze_type<P>(self: &mut EmergencyFreeze, cap: &FreezeAdminCap) {
+    self.check_version_mut();
     assert!(cap.ou_id == self.ou_id, EOUMismatch);
     self.remove_frozen(type_name::with_defining_ids<P>());
 }
@@ -207,11 +214,13 @@ public fun unfreeze_type<P>(self: &mut EmergencyFreeze, cap: &FreezeAdminCap) {
 /// Unfreeze a type via governance (UnfreezeProposalType execution).
 /// Only callable within the framework package.
 public(package) fun governance_unfreeze(self: &mut EmergencyFreeze, name: TypeName) {
+    self.check_version_mut();
     self.remove_frozen(name);
 }
 
 /// Update the max freeze duration. Only callable within the framework package.
 public(package) fun set_max_freeze_duration_ms(self: &mut EmergencyFreeze, new_max: u64) {
+    self.check_version_mut();
     self.max_freeze_duration_ms = new_max;
 }
 
@@ -224,6 +233,8 @@ public fun governance_unfreeze_type<P>(
     name: TypeName,
     req: &ExecutionRequest<P>,
 ) {
+    self.check_version_mut();
+    req.check_request_version();
     assert!(self.ou_id == req.req_ou_id(), EOUMismatch);
     req.assert_permitted(permissions::emergency_freeze());
     self.remove_frozen(name);
@@ -236,6 +247,8 @@ public fun update_freeze_duration<P>(
     new_max: u64,
     req: &ExecutionRequest<P>,
 ) {
+    self.check_version_mut();
+    req.check_request_version();
     assert!(self.ou_id == req.req_ou_id(), EOUMismatch);
     req.assert_permitted(permissions::emergency_freeze());
     self.max_freeze_duration_ms = new_max;
@@ -245,6 +258,8 @@ public fun update_freeze_duration<P>(
 /// Used as a side effect during FreezeAdminCap transfer.
 /// Requires FREEZE (`proposal::assert_permitted`).
 public fun unfreeze_all<P>(self: &mut EmergencyFreeze, req: &ExecutionRequest<P>) {
+    self.check_version_mut();
+    req.check_request_version();
     assert!(self.ou_id == req.req_ou_id(), EOUMismatch);
     req.assert_permitted(permissions::emergency_freeze());
 
@@ -266,6 +281,8 @@ public fun add_freeze_exempt_type<P>(
     name: TypeName,
     req: &ExecutionRequest<P>,
 ) {
+    self.check_version_mut();
+    req.check_request_version();
     assert!(self.ou_id == req.req_ou_id(), EOUMismatch);
     req.assert_permitted(permissions::emergency_freeze());
     self.freeze_exempt_types.insert(name);
@@ -280,6 +297,8 @@ public fun remove_freeze_exempt_type<P>(
     name: TypeName,
     req: &ExecutionRequest<P>,
 ) {
+    self.check_version_mut();
+    req.check_request_version();
     assert!(self.ou_id == req.req_ou_id(), EOUMismatch);
     req.assert_permitted(permissions::emergency_freeze());
     assert!(!is_mandatory_exempt(&name), EMandatoryExemptType);
@@ -319,7 +338,12 @@ fun default_exempt_types(): VecSet<TypeName> {
 
 #[test_only]
 public fun new_for_testing(ou_id: ID, ctx: &mut TxContext): EmergencyFreeze {
-    new(ou_id, ctx)
+    new(ou_id, version::min_supported(), ctx)
+}
+
+#[test_only]
+public fun set_min_version_for_testing(self: &mut EmergencyFreeze, min_version: u64) {
+    self.min_version = min_version;
 }
 
 #[test_only]
@@ -337,4 +361,24 @@ public fun remove_exempt_type_for_testing<T>(self: &mut EmergencyFreeze) {
     let name = type_name::with_defining_ids<T>();
     assert!(!is_mandatory_exempt(&name), EMandatoryExemptType);
     self.freeze_exempt_types.remove(&name);
+}
+
+// === Version gate (ARMATURE-45, see `version`) ===
+
+/// The oldest framework version allowed to act on this EmergencyFreeze.
+public fun min_version(self: &EmergencyFreeze): u64 { self.min_version }
+
+/// Raise this EmergencyFreeze's floor to the running release's `MIN_SUPPORTED`. Anyone
+/// may call it; it never lowers the floor. Run by the sweep after a security
+/// upgrade.
+public fun enforce_version(self: &mut EmergencyFreeze) { self.check_version_mut() }
+
+/// Abort `version::EVersionRetired` if this release is retired for `self`.
+public(package) fun check_version(self: &EmergencyFreeze) {
+    version::assert_supported(self.min_version)
+}
+
+/// `check_version`, then raise the floor to `MIN_SUPPORTED`.
+public(package) fun check_version_mut(self: &mut EmergencyFreeze) {
+    self.min_version = version::check_and_raise(object::id(self), self.min_version);
 }

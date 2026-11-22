@@ -550,6 +550,7 @@ fun test_create_returning_vault_ids_are_consistent() {
             &init,
             string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
+            armature::version::min_supported(),
             scenario.ctx(),
         );
         assert!(vault.ou_id() == ou_id);
@@ -579,6 +580,7 @@ fun test_create_returning_vault_vault_starts_empty() {
             &init,
             string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
+            armature::version::min_supported(),
             scenario.ctx(),
         );
         assert!(vault.is_empty());
@@ -602,6 +604,7 @@ fun test_create_returning_vault_other_companions_are_shared() {
             &init,
             string::utf8(b"Test OU"),
             string::utf8(b"https://example.com/logo.png"),
+            armature::version::min_supported(),
             scenario.ctx(),
         );
         capability_vault::share(vault);

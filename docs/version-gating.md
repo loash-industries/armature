@@ -1,0 +1,34 @@
+# Version gating (ARMATURE-45)
+
+Every published version of a Sui package stays callable forever, and an object made by one version is the same type in all of them. `armature_framework` therefore carries a version floor on each object, so a newer publish can switch older code off, object by object. The design and the trade-offs behind it are in the [design doc](https://claude.ai/artifact/VqhSPvHj59kgfJzUkXHKRt).
+
+## How it works
+
+| Piece | Where | What it does |
+|---|---|---|
+| `VERSION`, `MIN_SUPPORTED` | `sources/version.move` | This release's version, and the oldest version it still trusts. |
+| `min_version: u64` | `OU`, `CapabilityVault`, `TreasuryVault`, `Charter`, `EmergencyFreeze`, `Proposal`, `CompositeFrame`, `EncryptedEntry` | The oldest version allowed to act on the object. Starts at `MIN_SUPPORTED`, or the parent's floor for a SubOU, a SpawnOU successor and an OU's companions. |
+| Stamp | `ExecutionRequest`, `CapLoan`, `Pipeline` (and `ExecutionTicket`, `AssetTransfer` through the request they wrap) | The floor of the object that minted it. Every consumer checks it. |
+| Check | 89 public functions that change state, plus the `enforce` functions | `VERSION >= min_version`, else `version::EVersionRetired`. `&mut` paths also raise the floor to `MIN_SUPPORTED`. |
+| `enforce_version` / `enforce_proposal_version` | each object module | Permissionless. Raises the floor to `MIN_SUPPORTED`, never lowers it, and emits `version::VersionFloorRaised` when it moves. |
+
+Getters stay ungated, so dependents linked to an older framework can always read. `scripts/check_version_gates.py` (run in CI) fails if a public function that takes a gated object `&mut` or by value, takes a hot potato by value, or is one of the read-only authority paths (vault borrows, ticket mints, `ticket_request`) skips the check.
+
+Root OUs (`ou::create`, `tribe::create_tribe*`) and composite frames (`composite::new_frame`) take no gated object, so retired code can still create one after a sweep. Run the sweep until no object reads below the floor.
+
+## Routine upgrade (no security fix)
+
+1. Bump `VERSION` in `version.move`. Leave `MIN_SUPPORTED` alone.
+2. Upgrade the framework.
+3. Relink dependents when convenient: their old linkage keeps working on every object.
+
+## Security upgrade
+
+1. Fix the bug, or make the buggy function abort. Set `MIN_SUPPORTED = VERSION`.
+2. Build relinked upgrades of every dependent that calls gated functions (`armature_proposals`, `armature_world_bridge`, `armature-trading`). Tell third-party extension authors the date.
+3. Upgrade the framework, then the dependents straight after.
+4. Sweep: list every live shared framework object from the indexer and call its `enforce_*` function, in batches sized by a dry run.
+5. Check every object reads `min_version >= MIN_SUPPORTED` (the indexer can track `VersionFloorRaised`). Re-sweep objects created since step 4.
+6. Point the SDK and apps at the new package ID, and map `version::EVersionRetired` to "update the app".
+
+Until an object is swept, retired code can still act on it. Any object used in the meantime moves forward on its own, because gated `&mut` paths raise the floor. Dependents linked below the new floor abort on swept objects until they relink, which is why they upgrade straight after the framework.

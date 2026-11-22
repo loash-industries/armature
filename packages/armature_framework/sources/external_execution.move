@@ -145,6 +145,8 @@ public fun ticket_from_cap<P: store>(
     clock: &Clock,
     ctx: &mut TxContext,
 ): ExecutionTicket<P> {
+    ou.check_version_mut();
+    freeze.check_version();
     let ticket = ticket_from_cap_core(cap, ou, freeze, metadata_ipfs, payload, clock, false, ctx);
     ou.record_execution(type_name::with_defining_ids<P>(), clock.timestamp_ms());
     ticket
@@ -167,6 +169,8 @@ public fun ticket_from_cap_readonly<P: store>(
     clock: &Clock,
     ctx: &mut TxContext,
 ): ExecutionTicket<P> {
+    ou.check_version();
+    freeze.check_version();
     ticket_from_cap_core(cap, ou, freeze, metadata_ipfs, payload, clock, true, ctx)
 }
 
@@ -227,6 +231,9 @@ public fun execute_enable_bypass_type<NewType: store>(
     ticket: ExecutionTicket<EnableBypassType>,
     ctx: &mut TxContext,
 ) {
+    ou.check_version_mut();
+    vault.check_version_mut();
+    ticket.check_ticket_version();
     assert!(ou.id() == ticket.ticket_ou_id(), EOUIdMismatch);
     assert!(vault.ou_id() == ou.id(), EVaultOUMismatch);
 
@@ -271,6 +278,9 @@ public fun execute_disable_bypass_type<NewType: store>(
     vault: &mut CapabilityVault,
     ticket: ExecutionTicket<DisableBypassType>,
 ) {
+    ou.check_version_mut();
+    vault.check_version_mut();
+    ticket.check_ticket_version();
     assert!(ou.id() == ticket.ticket_ou_id(), EOUIdMismatch);
     assert!(vault.ou_id() == ou.id(), EVaultOUMismatch);
 
@@ -347,6 +357,7 @@ fun ticket_from_cap_core<P: store>(
         ou.type_config_by_name(&name).permissions(),
         ou.type_config_by_name(&name).borrow_scope(),
         false,
+        ou.min_version(),
         ctx,
     );
 

@@ -1,6 +1,7 @@
 module armature::encrypted_entry;
 
 use armature::ou::OU;
+use armature::version;
 use std::string::String;
 use sui::event;
 
@@ -26,6 +27,8 @@ public struct EncryptedEntry has key, store {
     description: String,
     created_by: address,
     encrypt_epoch: u64,
+    /// Version floor (see `version`): its OU's floor at publish.
+    min_version: u64,
 }
 
 // === Events ===
@@ -57,6 +60,7 @@ public struct EntryRemoved has copy, drop {
 /// upload the ciphertext blob before calling this. Aborts if the 32-entry cap is reached.
 #[allow(lint(share_owned))]
 public fun publish_entry(ou: &mut OU, location: String, description: String, ctx: &mut TxContext) {
+    ou.check_version_mut();
     assert!(ou.status().is_active(), EOUNotActive);
     assert!(ou.is_governance_member(ctx.sender()), ENotMember);
     assert!(ou.entries().length() < MAX_ENTRIES, EEntriesCapReached);
@@ -68,6 +72,7 @@ public fun publish_entry(ou: &mut OU, location: String, description: String, ctx
         description,
         created_by: ctx.sender(),
         encrypt_epoch: ou.encrypt_epoch(),
+        min_version: ou.min_version(),
     };
 
     let entry_id = object::id(&entry);
@@ -93,6 +98,8 @@ public fun update_entry(
     new_location: String,
     ctx: &TxContext,
 ) {
+    ou.check_version();
+    entry.check_version_mut();
     assert!(ou.is_governance_member(ctx.sender()), ENotMember);
     assert!(entry.ou_id == ou.id(), EOuMismatch);
     assert!(entry.encrypt_epoch != ou.encrypt_epoch(), EEntryNotStale);
@@ -111,6 +118,8 @@ public fun update_entry(
 /// Update the blob location within the same epoch (no re-keying required).
 /// Use when re-pinning or migrating storage without a key rotation.
 public fun edit_entry(ou: &OU, entry: &mut EncryptedEntry, new_location: String, ctx: &TxContext) {
+    ou.check_version();
+    entry.check_version_mut();
     assert!(ou.is_governance_member(ctx.sender()), ENotMember);
     assert!(entry.ou_id == ou.id(), EOuMismatch);
 
@@ -129,6 +138,7 @@ public fun edit_entry(ou: &OU, entry: &mut EncryptedEntry, new_location: String,
 /// for out-of-band rotations such as suspected key compromise or periodic hygiene.
 /// The EncryptionEpochRotated event is emitted inside ou::increment_encrypt_epoch.
 public fun rotate_encryption_epoch(ou: &mut OU, ctx: &TxContext) {
+    ou.check_version_mut();
     assert!(ou.status().is_active(), EOUNotActive);
     assert!(ou.is_governance_member(ctx.sender()), ENotMember);
 
@@ -139,6 +149,8 @@ public fun rotate_encryption_epoch(ou: &mut OU, ctx: &TxContext) {
 /// The caller is responsible for ensuring the blob is no longer accessible
 /// through any still-valid Seal key before calling this.
 public fun remove_entry(ou: &mut OU, entry: EncryptedEntry, ctx: &TxContext) {
+    ou.check_version_mut();
+    entry.check_version();
     assert!(ou.is_governance_member(ctx.sender()), ENotMember);
     assert!(entry.ou_id == ou.id(), EOuMismatch);
 
@@ -149,6 +161,7 @@ public fun remove_entry(ou: &mut OU, entry: EncryptedEntry, ctx: &TxContext) {
         description: _,
         created_by: _,
         encrypt_epoch: _,
+        min_version: _,
     } = entry;
     let entry_id = id.to_inner();
     ou.remove_entry_id(entry_id);
@@ -185,3 +198,28 @@ public fun entry_created_by(self: &EncryptedEntry): address { self.created_by }
 public fun entry_encrypt_epoch(self: &EncryptedEntry): u64 { self.encrypt_epoch }
 
 public fun max_entries(): u64 { MAX_ENTRIES }
+
+// === Version gate (ARMATURE-45, see `version`) ===
+
+/// The oldest framework version allowed to act on this EncryptedEntry.
+public fun min_version(self: &EncryptedEntry): u64 { self.min_version }
+
+/// Raise this EncryptedEntry's floor to the running release's `MIN_SUPPORTED`. Anyone
+/// may call it; it never lowers the floor. Run by the sweep after a security
+/// upgrade.
+public fun enforce_version(self: &mut EncryptedEntry) { self.check_version_mut() }
+
+/// Abort `version::EVersionRetired` if this release is retired for `self`.
+public(package) fun check_version(self: &EncryptedEntry) {
+    version::assert_supported(self.min_version)
+}
+
+/// `check_version`, then raise the floor to `MIN_SUPPORTED`.
+public(package) fun check_version_mut(self: &mut EncryptedEntry) {
+    self.min_version = version::check_and_raise(object::id(self), self.min_version);
+}
+
+#[test_only]
+public fun set_min_version_for_testing(self: &mut EncryptedEntry, min_version: u64) {
+    self.min_version = min_version;
+}

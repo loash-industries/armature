@@ -2,6 +2,7 @@ module armature::capability_vault;
 
 use armature::permissions;
 use armature::proposal::ExecutionRequest;
+use armature::version;
 use std::type_name;
 use sui::dynamic_object_field as dof;
 use sui::vec_map::{Self, VecMap};
@@ -24,12 +25,16 @@ public struct CapabilityVault has key, store {
     cap_types: VecSet<std::ascii::String>,
     cap_ids: VecSet<ID>,
     ids_by_type: VecMap<std::ascii::String, vector<ID>>,
+    /// Version floor (see `version`): its OU's floor at creation.
+    min_version: u64,
 }
 
 /// Hot-potato receipt for a loaned capability. Must be consumed by `return_cap`.
 public struct CapLoan {
     cap_id: ID,
     vault_id: ID,
+    /// The lending vault's version floor (see `version`).
+    min_version: u64,
 }
 
 /// Controller token for a sub-OU relationship.
@@ -42,13 +47,14 @@ public struct SubOUControl has key, store {
 // === Constructor ===
 
 /// Create a new empty CapabilityVault. Only callable within the framework package.
-public(package) fun new(ou_id: ID, ctx: &mut TxContext): CapabilityVault {
+public(package) fun new(ou_id: ID, min_version: u64, ctx: &mut TxContext): CapabilityVault {
     CapabilityVault {
         id: object::new(ctx),
         ou_id,
         cap_types: vec_set::empty(),
         cap_ids: vec_set::empty(),
         ids_by_type: vec_map::empty(),
+        min_version,
     }
 }
 
@@ -101,6 +107,8 @@ public fun store_cap<T: key + store, P>(
     cap: T,
     req: &ExecutionRequest<P>,
 ) {
+    self.check_version_mut();
+    req.check_request_version();
     assert!(self.ou_id == req.req_ou_id(), EOUIdMismatch);
     req.assert_permitted(permissions::vault_store());
     let cap_id = object::id(&cap);
@@ -122,6 +130,8 @@ public(package) fun receive_cap<T: key + store, P>(
     cap: T,
     req: &ExecutionRequest<P>,
 ) {
+    self.check_version_mut();
+    req.check_request_version();
     req.assert_permitted(permissions::vault_extract());
     let cap_id = object::id(&cap);
     register_cap<T>(self, cap_id);
@@ -140,6 +150,9 @@ public fun receive_cap_authorized<T: key + store, Send, Recv>(
     sendreq: &ExecutionRequest<Send>,
     recvreq: &ExecutionRequest<Recv>,
 ) {
+    self.check_version_mut();
+    sendreq.check_request_version();
+    recvreq.check_request_version();
     assert!(self.ou_id == recvreq.req_ou_id(), EOUIdMismatch);
     sendreq.assert_permitted(permissions::vault_extract());
     recvreq.assert_permitted(permissions::vault_store());
@@ -158,6 +171,8 @@ public fun borrow_cap<T: key + store, P>(
     cap_id: ID,
     req: &ExecutionRequest<P>,
 ): &T {
+    self.check_version();
+    req.check_request_version();
     assert!(self.ou_id == req.req_ou_id(), EOUIdMismatch);
     req.assert_permitted(permissions::vault_borrow());
     req.assert_may_borrow(&type_name::with_defining_ids<T>());
@@ -180,6 +195,7 @@ public fun borrow_external_cap<P>(
     ou_id: ID,
     cap_id: ID,
 ): &armature::proposal::ExternalExecutionCap<P> {
+    self.check_version();
     assert!(self.ou_id == ou_id, EOUIdMismatch);
     dof::borrow(&self.id, cap_id)
 }
@@ -192,6 +208,8 @@ public fun borrow_cap_mut<T: key + store, P>(
     cap_id: ID,
     req: &ExecutionRequest<P>,
 ): &mut T {
+    self.check_version_mut();
+    req.check_request_version();
     assert!(self.ou_id == req.req_ou_id(), EOUIdMismatch);
     req.assert_permitted(permissions::vault_borrow());
     req.assert_may_borrow(&type_name::with_defining_ids<T>());
@@ -209,6 +227,8 @@ public fun loan_cap<T: key + store, P>(
     cap_id: ID,
     req: &ExecutionRequest<P>,
 ): (T, CapLoan) {
+    self.check_version_mut();
+    req.check_request_version();
     assert!(self.ou_id == req.req_ou_id(), EOUIdMismatch);
     req.assert_permitted(permissions::vault_borrow());
     req.assert_may_borrow(&type_name::with_defining_ids<T>());
@@ -216,13 +236,16 @@ public fun loan_cap<T: key + store, P>(
     let loan = CapLoan {
         cap_id,
         vault_id: object::id(self),
+        min_version: self.min_version,
     };
     (cap, loan)
 }
 
 /// Return a loaned capability to the vault. Consumes the CapLoan hot potato.
 public fun return_cap<T: key + store>(self: &mut CapabilityVault, cap: T, loan: CapLoan) {
-    let CapLoan { cap_id, vault_id } = loan;
+    self.check_version_mut();
+    let CapLoan { cap_id, vault_id, min_version } = loan;
+    version::assert_supported(min_version);
     assert!(object::id(&cap) == cap_id, ECapIdMismatch);
     assert!(object::id(self) == vault_id, EVaultIdMismatch);
     dof::add(&mut self.id, cap_id, cap);
@@ -238,6 +261,8 @@ public fun extract_cap<T: key + store, P>(
     cap_id: ID,
     req: &ExecutionRequest<P>,
 ): T {
+    self.check_version_mut();
+    req.check_request_version();
     assert!(self.ou_id == req.req_ou_id(), EOUIdMismatch);
     req.assert_permitted(permissions::vault_extract());
     deregister_cap<T>(self, cap_id);
@@ -253,6 +278,7 @@ public(package) fun privileged_extract<T: key + store>(
     cap_id: ID,
     control: &SubOUControl,
 ): T {
+    self.check_version_mut();
     assert!(control.subou_id == self.ou_id, ENotController);
     deregister_cap<T>(self, cap_id);
     dof::remove(&mut self.id, cap_id)
@@ -270,6 +296,8 @@ public(package) fun create_subou_control<P>(
     req: &ExecutionRequest<P>,
     ctx: &mut TxContext,
 ): ID {
+    self.check_version_mut();
+    req.check_request_version();
     assert!(self.ou_id == req.req_ou_id(), EOUIdMismatch);
     req.assert_permitted(permissions::vault_extract());
     let control = SubOUControl {
@@ -291,6 +319,8 @@ public fun destroy_subou_control<P>(
     cap_id: ID,
     req: &ExecutionRequest<P>,
 ) {
+    self.check_version_mut();
+    req.check_request_version();
     assert!(self.ou_id == req.req_ou_id(), EOUIdMismatch);
     req.assert_permitted(permissions::vault_extract());
     deregister_cap<SubOUControl>(self, cap_id);
@@ -312,7 +342,15 @@ public(package) fun new_subou_control(subou_id: ID, ctx: &mut TxContext): SubOUC
     }
 }
 
+/// The version floor this loan carries.
+public fun loan_min_version(loan: &CapLoan): u64 { loan.min_version }
+
 // === Test Helpers ===
+
+#[test_only]
+public fun set_min_version_for_testing(self: &mut CapabilityVault, min_version: u64) {
+    self.min_version = min_version;
+}
 
 #[test_only]
 /// Create a SubOUControl for testing.
@@ -336,7 +374,7 @@ public fun is_empty(self: &CapabilityVault): bool {
 
 /// Destroy an empty CapabilityVault. Aborts if capabilities are still stored.
 public(package) fun destroy_empty(vault: CapabilityVault) {
-    let CapabilityVault { id, ou_id: _, cap_types, cap_ids, ids_by_type } = vault;
+    let CapabilityVault { id, ou_id: _, cap_types, cap_ids, ids_by_type, min_version: _ } = vault;
     assert!(cap_ids.is_empty());
     assert!(cap_types.is_empty());
     assert!(ids_by_type.is_empty());
@@ -370,4 +408,24 @@ fun deregister_cap<T: key + store>(self: &mut CapabilityVault, cap_id: ID) {
         self.cap_types.remove(&type_name);
         let (_, _) = self.ids_by_type.remove(&type_name);
     };
+}
+
+// === Version gate (ARMATURE-45, see `version`) ===
+
+/// The oldest framework version allowed to act on this CapabilityVault.
+public fun min_version(self: &CapabilityVault): u64 { self.min_version }
+
+/// Raise this CapabilityVault's floor to the running release's `MIN_SUPPORTED`. Anyone
+/// may call it; it never lowers the floor. Run by the sweep after a security
+/// upgrade.
+public fun enforce_version(self: &mut CapabilityVault) { self.check_version_mut() }
+
+/// Abort `version::EVersionRetired` if this release is retired for `self`.
+public(package) fun check_version(self: &CapabilityVault) {
+    version::assert_supported(self.min_version)
+}
+
+/// `check_version`, then raise the floor to `MIN_SUPPORTED`.
+public(package) fun check_version_mut(self: &mut CapabilityVault) {
+    self.min_version = version::check_and_raise(object::id(self), self.min_version);
 }

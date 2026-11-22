@@ -24,6 +24,8 @@ public struct BoardUpdated has copy, drop {
 /// Validation (non-empty result, no duplicates, adds not already members,
 /// removals currently members) is enforced by governance::set_board.
 public fun execute_set_board(ou: &mut OU, ticket: ExecutionTicket<SetBoard>) {
+    ou.check_version_mut();
+    ticket.check_ticket_version();
     set_board_impl(ou, ticket.ticket_payload(), ticket.ticket_request(set_board::permit()));
     ticket.discharge(set_board::permit());
 }

@@ -72,6 +72,9 @@ jobs:
       - name: Check every ExecutionRequest consumer is gated (ROAD-39)
         run: python3 scripts/check_request_gates.py
 
+      - name: Check every state-changing framework function checks the version floor (ARMATURE-45)
+        run: python3 scripts/check_version_gates.py
+
       - name: Build Move packages
         run: |
           for dir in packages/*; do

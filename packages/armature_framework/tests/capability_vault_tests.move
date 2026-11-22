@@ -27,7 +27,7 @@ const ADMIN: address = @0xA;
 
 fun setup(ctx: &mut TxContext): (CapabilityVault, ID) {
     let ou_id = object::id_from_address(@0xDA0);
-    let vault = capability_vault::new(ou_id, ctx);
+    let vault = capability_vault::new(ou_id, armature::version::min_supported(), ctx);
     (vault, ou_id)
 }
 
@@ -57,8 +57,8 @@ fun make_recv_req(ou_id: ID): proposal::ExecutionRequest<RecvProposal> {
 fun setup_two_vaults(ctx: &mut TxContext): (CapabilityVault, CapabilityVault, ID, ID) {
     let ou_a = object::id_from_address(@0xDA0A);
     let ou_b = object::id_from_address(@0xDA0B);
-    let vault_a = capability_vault::new(ou_a, ctx);
-    let vault_b = capability_vault::new(ou_b, ctx);
+    let vault_a = capability_vault::new(ou_a, armature::version::min_supported(), ctx);
+    let vault_b = capability_vault::new(ou_b, armature::version::min_supported(), ctx);
     (vault_a, vault_b, ou_a, ou_b)
 }
 
