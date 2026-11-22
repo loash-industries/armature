@@ -32,3 +32,13 @@ Root OUs (`ou::create`, `tribe::create_tribe*`) and composite frames (`composite
 6. Point the SDK and apps at the new package ID, and map `version::EVersionRetired` to "update the app".
 
 Until an object is swept, retired code can still act on it. Any object used in the meantime moves forward on its own, because gated `&mut` paths raise the floor. Dependents linked below the new floor abort on swept objects until they relink, which is why they upgrade straight after the framework.
+
+## Rehearsal
+
+`scripts/rehearse_version_gating.sh` runs both upgrade kinds end to end on a throwaway localnet, with its own client config (your `~/.sui` config and the repo's packages are not touched). It publishes the framework at v1, publishes `armature_proposals` and a one-function probe package linked to v1, creates two OUs, then:
+
+- routine upgrade (VERSION 2, MIN_SUPPORTED 1): v1, v2 and the v1-linked probe all work; floors stay at 1;
+- security upgrade (VERSION 3, MIN_SUPPORTED 3), sweeping only OU A: v1, v2 and the probe abort in `version::assert_supported` on A but still work on B; v3 works on both and raises B's floor to 3 as it goes, after which v1 aborts on B too.
+
+`armature_world_bridge` needs world-contracts on localnet, so the rehearsal uses the probe to observe old linkage at run time; old linkage behaves the same for every dependent. Run it before every security upgrade, with the real fix in place.
+
