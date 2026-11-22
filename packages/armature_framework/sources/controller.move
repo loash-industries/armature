@@ -32,6 +32,7 @@ public fun privileged_submit<P: store + drop>(
     payload: P,
     ctx: &mut TxContext,
 ): ExecutionRequest<P> {
+    subou.check_version();
     assert_registered_control(control, subou);
     assert!(subou.status().is_active(), EOUNotActive);
 
@@ -44,6 +45,7 @@ public fun privileged_submit<P: store + drop>(
         0,
         vector[],
         true,
+        subou.min_version(),
         ctx,
     )
 }
@@ -51,6 +53,7 @@ public fun privileged_submit<P: store + drop>(
 /// Consume the ExecutionRequest from a privileged operation.
 /// Validates the request's OU ID matches the SubOUControl's target.
 public fun privileged_consume<P>(req: ExecutionRequest<P>, control: &SubOUControl) {
+    req.check_request_version();
     assert!(req.req_ou_id() == control.subou_id(), EControlMismatch);
     proposal::consume(req);
 }
@@ -64,6 +67,8 @@ public fun privileged_extract<T: key + store>(
     subou: &OU,
     control: &SubOUControl,
 ): T {
+    subou_vault.check_version_mut();
+    subou.check_version();
     assert!(subou_vault.ou_id() == subou.id(), EControlMismatch);
     assert_registered_control(control, subou);
     subou_vault.privileged_extract(cap_id, control)
@@ -80,6 +85,10 @@ public fun receive_cap_from_controller<T: key + store, P>(
     controller_vault: &CapabilityVault,
     req: &ExecutionRequest<P>,
 ) {
+    subou_vault.check_version_mut();
+    subou.check_version();
+    controller_vault.check_version();
+    req.check_request_version();
     req.assert_permitted(permissions::vault_extract());
     assert!(subou_vault.ou_id() == subou.id(), EControlMismatch);
     assert!(controller_vault.ou_id() == req.req_ou_id(), EControlMismatch);
@@ -94,7 +103,7 @@ public fun receive_cap_from_controller<T: key + store, P>(
 /// Abort unless `control` is bound to `subou` (EControlMismatch) and is the
 /// SubOU's registered controller (ENotController). The second check is what
 /// stops a SubOUControl minted elsewhere from acting on an OU it does not
-/// control: only the object recorded by `ou::share_subou` passes.
+/// control: only the object recorded by `ou::share_subou` (framework-only) passes.
 public fun assert_registered_control(control: &SubOUControl, subou: &OU) {
     assert!(control.subou_id() == subou.id(), EControlMismatch);
     assert!(subou.controller_cap_id() == &option::some(object::id(control)), ENotController);

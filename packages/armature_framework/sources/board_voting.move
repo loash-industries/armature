@@ -49,6 +49,7 @@ public fun submit_proposal<P: store>(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
+    ou.check_version();
     let name = type_name::with_defining_ids<P>();
     assert_submittable(ou, &name);
 
@@ -69,6 +70,7 @@ public fun submit_proposal<P: store>(
         config,
         ou.governance(),
         true,
+        ou.min_version(),
         clock,
         ctx,
     );
@@ -87,6 +89,8 @@ public fun vote<P: store>(
     clock: &Clock,
     ctx: &TxContext,
 ) {
+    proposal.check_proposal_version_mut();
+    ou.check_version();
     assert!(proposal.ou_id() == ou.id(), EOUIdMismatch);
     proposal.record_vote(ou.governance(), approve, clock, ctx);
 }
@@ -123,6 +127,8 @@ public fun submit_vote_execute<P: store>(
     clock: &Clock,
     ctx: &mut TxContext,
 ): ExecutionTicket<P> {
+    ou.check_version_mut();
+    freeze.check_version();
     let ticket = submit_vote_execute_core(ou, metadata_ipfs, payload, freeze, clock, false, ctx);
     ou.record_execution(type_name::with_defining_ids<P>(), clock.timestamp_ms());
     ticket
@@ -144,6 +150,8 @@ public fun submit_vote_execute_readonly<P: store>(
     clock: &Clock,
     ctx: &mut TxContext,
 ): ExecutionTicket<P> {
+    ou.check_version();
+    freeze.check_version();
     submit_vote_execute_core(ou, metadata_ipfs, payload, freeze, clock, true, ctx)
 }
 
@@ -160,6 +168,8 @@ public fun ticket_from_vote<P: store>(
     clock: &Clock,
     ctx: &TxContext,
 ): ExecutionTicket<P> {
+    ou.check_version_mut();
+    freeze.check_version();
     let ticket = ticket_from_vote_core(ou, prop, freeze, clock, false, ctx);
     ou.record_execution(type_name::with_defining_ids<P>(), clock.timestamp_ms());
     ticket
@@ -177,6 +187,8 @@ public fun ticket_from_vote_readonly<P: store>(
     clock: &Clock,
     ctx: &TxContext,
 ): ExecutionTicket<P> {
+    ou.check_version();
+    freeze.check_version();
     ticket_from_vote_core(ou, prop, freeze, clock, true, ctx)
 }
 
@@ -235,6 +247,7 @@ fun submit_vote_execute_core<P: store>(
         total_snapshot_weight,
         ou.last_executed_ms_by_name(&name),
         ou.is_execution_paused(),
+        ou.min_version(),
         clock,
         ctx,
     )
@@ -280,6 +293,7 @@ fun ticket_from_vote_core<P: store>(
         ou.is_execution_paused(),
         ou.type_config_by_name(&name).permissions(),
         ou.type_config_by_name(&name).borrow_scope(),
+        ou.min_version(),
         clock,
         ctx,
     );

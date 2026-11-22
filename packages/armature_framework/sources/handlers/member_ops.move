@@ -53,6 +53,8 @@ public struct MembersBatchRemoved has copy, drop {
 // === Handlers ===
 
 public fun execute_add_member(ou: &mut OU, ticket: ExecutionTicket<AddMember>) {
+    ou.check_version_mut();
+    ticket.check_ticket_version();
     add_member_impl(ou, ticket.ticket_payload(), ticket.ticket_request(add_member::permit()));
     ticket.discharge(add_member::permit());
 }
@@ -71,6 +73,8 @@ public fun execute_add_member(ou: &mut OU, ticket: ExecutionTicket<AddMember>) {
 /// actually happened. See `ou::add_board_members_governance` for the
 /// rationale.
 public fun execute_batch_add_members(ou: &mut OU, ticket: ExecutionTicket<BatchAddMembers>) {
+    ou.check_version_mut();
+    ticket.check_ticket_version();
     assert!(ou.id() == ticket.ticket_ou_id(), EOuMismatch);
     let payload = ticket.ticket_payload();
     let members = payload.members();
@@ -102,6 +106,8 @@ public fun execute_batch_add_members(ou: &mut OU, ticket: ExecutionTicket<BatchA
 /// - any duplicate address in the batch (`governance::EDuplicateBoardMember`)
 /// - removal would leave the board empty (`governance::EEmptyBoard`)
 public fun execute_batch_remove_members(ou: &mut OU, ticket: ExecutionTicket<BatchRemoveMembers>) {
+    ou.check_version_mut();
+    ticket.check_ticket_version();
     assert!(ou.id() == ticket.ticket_ou_id(), EOuMismatch);
     let payload = ticket.ticket_payload();
     let members = payload.members();
@@ -117,6 +123,8 @@ public fun execute_batch_remove_members(ou: &mut OU, ticket: ExecutionTicket<Bat
 }
 
 public fun execute_remove_member(ou: &mut OU, ticket: ExecutionTicket<RemoveMember>) {
+    ou.check_version_mut();
+    ticket.check_ticket_version();
     remove_member_impl(
         ou,
         ticket.ticket_payload(),

@@ -87,15 +87,23 @@ public fun execute_create_subou(
     ticket: ExecutionTicket<CreateSubOU>,
     ctx: &mut TxContext,
 ) {
+    vault.check_version_mut();
+    ticket.check_ticket_version();
     assert!(vault.ou_id() == ticket.ticket_ou_id(), EVaultOUMismatch);
 
     let payload = ticket.ticket_payload();
     let gov_init = governance::init_board(*payload.initial_board());
 
-    let (subou, freeze_admin_cap) = ou::create_subou(
+    // The SubOU inherits its parent's version floor.
+    let vault_floor = vault.min_version();
+    let ticket_floor = ticket.ticket_min_version();
+    let parent_floor = if (vault_floor > ticket_floor) vault_floor else ticket_floor;
+    let (subou, freeze_admin_cap) = ou::create_subou_configured_with_floor(
         &gov_init,
         *payload.name(),
         *payload.metadata_uri(),
+        vector[],
+        parent_floor,
         ctx,
     );
 
@@ -117,14 +125,21 @@ public fun execute_create_subou(
 
 /// Execute a SpawnOU proposal.
 public fun execute_spawn_ou(ou: &mut OU, ticket: ExecutionTicket<SpawnOU>, ctx: &mut TxContext) {
+    ou.check_version_mut();
+    ticket.check_ticket_version();
     assert!(ou.id() == ticket.ticket_ou_id(), EOUMismatch);
 
     let payload = ticket.ticket_payload();
 
-    let successor_id = ou::create(
+    // The successor inherits the higher of its predecessor's and the ticket's
+    // version floor.
+    let ticket_floor = ticket.ticket_min_version();
+    let successor_floor = if (ou.min_version() > ticket_floor) ou.min_version() else ticket_floor;
+    let successor_id = ou::create_with_floor(
         payload.governance_init(),
         *payload.name(),
         *payload.metadata_uri(),
+        successor_floor,
         ctx,
     );
 
@@ -146,6 +161,10 @@ public fun execute_spin_out_subou(
     ticket: ExecutionTicket<SpinOutSubOU>,
     ctx: &mut TxContext,
 ) {
+    vault.check_version_mut();
+    subou_vault.check_version_mut();
+    subou.check_version_mut();
+    ticket.check_ticket_version();
     assert!(vault.ou_id() == ticket.ticket_ou_id(), EVaultOUMismatch);
 
     let payload = ticket.ticket_payload();
@@ -226,6 +245,9 @@ public fun begin_transfer_assets(
     source_cap_vault: &CapabilityVault,
     ticket: ExecutionTicket<TransferAssets>,
 ): AssetTransfer {
+    source_treasury.check_version();
+    source_cap_vault.check_version();
+    ticket.check_ticket_version();
     let ou_id = ticket.ticket_ou_id();
     let payload = ticket.ticket_payload();
 
@@ -262,6 +284,9 @@ public fun transfer_coin<T>(
     target: &mut TreasuryVault,
     ctx: &mut TxContext,
 ) {
+    self.ticket.check_ticket_version();
+    source.check_version_mut();
+    target.check_version_mut();
     assert!(object::id(source) == self.source_treasury_id, ESourceMismatch);
     let payload = self.ticket.ticket_payload();
     assert!(object::id(target) == payload.target_treasury_id(), ETargetTreasuryMismatch);
@@ -287,6 +312,9 @@ public fun transfer_cap<T: key + store>(
     target: &mut CapabilityVault,
     cap_id: ID,
 ) {
+    self.ticket.check_ticket_version();
+    source.check_version_mut();
+    target.check_version_mut();
     assert!(object::id(source) == self.source_vault_id, ESourceMismatch);
     let payload = self.ticket.ticket_payload();
     assert!(object::id(target) == payload.target_vault_id(), ETargetVaultMismatch);
@@ -304,8 +332,28 @@ public fun transfer_cap<T: key + store>(
 /// Close the transfer. Aborts with EAssetsRemaining unless every listed coin
 /// type and cap has been moved.
 public fun finish_transfer_assets(self: AssetTransfer) {
+    self.ticket.check_ticket_version();
     let AssetTransfer { ticket, source_treasury_id: _, source_vault_id: _, coins_left, caps_left } =
         self;
     assert!(coins_left.is_empty() && caps_left.is_empty(), EAssetsRemaining);
     ticket.discharge(transfer_assets::permit());
+}
+
+// === Test Helpers ===
+
+#[test_only]
+/// Return `self` with its ticket's request stamped with `min_version`, e.g.
+/// `version::retired_floor_for_testing()`.
+public fun asset_transfer_with_min_version_for_testing(
+    self: AssetTransfer,
+    min_version: u64,
+): AssetTransfer {
+    let AssetTransfer { ticket, source_treasury_id, source_vault_id, coins_left, caps_left } = self;
+    AssetTransfer {
+        ticket: ticket.ticket_with_min_version_for_testing(min_version),
+        source_treasury_id,
+        source_vault_id,
+        coins_left,
+        caps_left,
+    }
 }

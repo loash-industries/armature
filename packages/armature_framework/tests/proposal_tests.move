@@ -62,6 +62,7 @@ fun create_test_proposal(scenario: &mut test_scenario::Scenario, clock: &Clock) 
             config,
             ou.governance(),
             ou.status().is_active(),
+            armature::version::min_supported(),
             clock,
             scenario.ctx(),
         );
@@ -178,6 +179,7 @@ fun test_execute_deletes_proposal() {
             false,
             0,
             vector[],
+            armature::version::min_supported(),
             &clock,
             scenario.ctx(),
         );
@@ -419,6 +421,7 @@ fun test_execute_after_window_aborts() {
             false,
             0,
             vector[],
+            armature::version::min_supported(),
             &clock,
             scenario.ctx(),
         );
@@ -455,6 +458,7 @@ fun create_and_pass_max_expiry_proposal(scenario: &mut test_scenario::Scenario, 
             config,
             ou.governance(),
             ou.status().is_active(),
+            armature::version::min_supported(),
             clock,
             scenario.ctx(),
         );
@@ -493,6 +497,7 @@ fun test_execute_with_max_expiry_does_not_overflow() {
             false,
             0,
             vector[],
+            armature::version::min_supported(),
             &clock,
             scenario.ctx(),
         );
@@ -629,6 +634,7 @@ fun test_non_board_member_cannot_execute_aborts() {
             false,
             0,
             vector[],
+            armature::version::min_supported(),
             &clock,
             scenario.ctx(),
         );
@@ -673,6 +679,7 @@ fun test_board_member_can_execute() {
             false,
             0,
             vector[],
+            armature::version::min_supported(),
             &clock,
             scenario.ctx(),
         );
@@ -719,6 +726,7 @@ fun test_passed_proposal_retryable_after_failure() {
             false,
             0,
             vector[],
+            armature::version::min_supported(),
             &clock,
             scenario.ctx(),
         );
@@ -853,6 +861,7 @@ fun test_execute_delay_not_elapsed_aborts() {
             config,
             ou.governance(),
             ou.status().is_active(),
+            armature::version::min_supported(),
             &clock,
             scenario.ctx(),
         );
@@ -881,6 +890,7 @@ fun test_execute_delay_not_elapsed_aborts() {
             false,
             0,
             vector[],
+            armature::version::min_supported(),
             &clock,
             scenario.ctx(),
         );
@@ -924,6 +934,7 @@ fun test_execute_delay_elapsed_succeeds() {
             config,
             ou.governance(),
             ou.status().is_active(),
+            armature::version::min_supported(),
             &clock,
             scenario.ctx(),
         );
@@ -954,6 +965,7 @@ fun test_execute_delay_elapsed_succeeds() {
             false,
             0,
             vector[],
+            armature::version::min_supported(),
             &clock,
             scenario.ctx(),
         );
@@ -998,6 +1010,7 @@ fun test_execute_window_starts_after_delay() {
             config,
             ou.governance(),
             ou.status().is_active(),
+            armature::version::min_supported(),
             &clock,
             scenario.ctx(),
         );
@@ -1028,6 +1041,7 @@ fun test_execute_window_starts_after_delay() {
             false,
             0,
             vector[],
+            armature::version::min_supported(),
             &clock,
             scenario.ctx(),
         );
@@ -1071,6 +1085,7 @@ fun test_execute_cooldown_active_aborts() {
             config,
             ou.governance(),
             ou.status().is_active(),
+            armature::version::min_supported(),
             &clock,
             scenario.ctx(),
         );
@@ -1099,6 +1114,7 @@ fun test_execute_cooldown_active_aborts() {
             false,
             0,
             vector[],
+            armature::version::min_supported(),
             &clock,
             scenario.ctx(),
         );
@@ -1142,6 +1158,7 @@ fun test_execute_cooldown_elapsed_succeeds() {
             config,
             ou.governance(),
             ou.status().is_active(),
+            armature::version::min_supported(),
             &clock,
             scenario.ctx(),
         );
@@ -1170,6 +1187,7 @@ fun test_execute_cooldown_elapsed_succeeds() {
             false,
             0,
             vector[],
+            armature::version::min_supported(),
             &clock,
             scenario.ctx(),
         );
@@ -1211,6 +1229,7 @@ fun test_execute_paused_aborts() {
             true,
             0,
             vector[],
+            armature::version::min_supported(),
             &clock,
             scenario.ctx(),
         );
@@ -1268,6 +1287,7 @@ fun consume_execution_request_works_after_governance_execution() {
             false,
             0,
             vector[],
+            armature::version::min_supported(),
             &clock,
             scenario.ctx(),
         );
@@ -1567,6 +1587,7 @@ fun test_removed_member_cannot_execute() {
             false,
             0,
             vector[],
+            armature::version::min_supported(),
             &clock,
             scenario.ctx(),
         );

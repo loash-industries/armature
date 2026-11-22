@@ -6,6 +6,7 @@ use armature::governance;
 use armature::ou::{Self, ProposalTypeInit};
 use armature::permissions;
 use armature::proposal::ExecutionRequest;
+use armature::version;
 use std::string::String;
 
 // === Public Functions ===
@@ -35,13 +36,20 @@ public fun create_wired_subou<P>(
     config_overrides: vector<ProposalTypeInit>,
     ctx: &mut TxContext,
 ): ID {
+    parent_vault.check_version_mut();
+    req.check_request_version();
     req.assert_permitted(permissions::vault_store() | permissions::vault_extract());
     let gov = governance::init_board(board);
-    let (subou, freeze_cap) = ou::create_subou_configured(
+    // The SubOU inherits its parent's version floor.
+    let vault_floor = parent_vault.min_version();
+    let req_floor = req.req_min_version();
+    let parent_floor = if (vault_floor > req_floor) vault_floor else req_floor;
+    let (subou, freeze_cap) = ou::create_subou_configured_with_floor(
         &gov,
         name,
         metadata_uri,
         config_overrides,
+        parent_floor,
         ctx,
     );
     let subou_id = object::id(&subou);
@@ -90,6 +98,7 @@ public fun create_tribe(
         &tribe_gov,
         tribe_name,
         tribe_metadata_uri,
+        version::min_supported(),
         ctx,
     );
 
@@ -98,6 +107,7 @@ public fun create_tribe(
         &officer_gov,
         officer_name,
         officer_metadata_uri,
+        version::min_supported(),
         ctx,
     );
     let officer_ou_id = object::id(&officer_ou);
@@ -171,6 +181,7 @@ public fun create_tribe_configured(
         tribe_name,
         tribe_metadata_uri,
         tribe_config_overrides,
+        version::min_supported(),
         ctx,
     );
 
@@ -184,6 +195,7 @@ public fun create_tribe_configured(
         officer_name,
         officer_metadata_uri,
         officer_config_overrides,
+        version::min_supported(),
         ctx,
     );
     let officer_ou_id = object::id(&officer_ou);

@@ -20,6 +20,7 @@ use armature::enable_proposal_type::EnableProposalType;
 use armature::ou::OU;
 use armature::proposal::{Self, ExecutionTicket, ProposalConfig};
 use armature::update_proposal_config::UpdateProposalConfig;
+use armature::version;
 use std::string::String;
 use std::type_name::{Self, TypeName};
 use sui::clock::Clock;
@@ -100,6 +101,11 @@ public struct CompositeFrame has key, store {
     ou_id: ID,
     step_type_keys: vector<std::ascii::String>,
     step_types: vector<TypeName>,
+    /// Version floor (see `version`): MIN_SUPPORTED at `new_frame`, never
+    /// raised while the frame is unsealed (owned frames can't be swept, so a
+    /// frame built by a retired release must be refused, not laundered), and
+    /// raised to the OU's floor in `submit_composite`.
+    min_version: u64,
 }
 
 /// Hot-potato step sequencer. No abilities — must be consumed in the same PTB
@@ -115,6 +121,8 @@ public struct Pipeline {
     current_step: u64,
     total_steps: u64,
     last_executed_snapshot: VecMap<TypeName, u64>,
+    /// Version floor (see `version`) of the ticket and frame it began from.
+    min_version: u64,
 }
 
 // === Events ===
@@ -146,6 +154,7 @@ public fun new_frame(ou_id: ID, ctx: &mut TxContext): CompositeFrame {
         ou_id,
         step_type_keys: vector[],
         step_types: vector[],
+        min_version: version::min_supported(),
     }
 }
 
@@ -158,6 +167,8 @@ public fun new_frame(ou_id: ID, ctx: &mut TxContext): CompositeFrame {
 /// - The type is not enabled in the OU
 /// - The type's ProposalConfig has composable_allowed = false
 public fun add_step<P: store>(frame: &mut CompositeFrame, ou: &OU, payload: P) {
+    frame.check_frame_build_version();
+    ou.check_version();
     let step_type = type_name::with_defining_ids<P>();
     assert!(
         step_type != type_name::with_defining_ids<EnableProposalType>()
@@ -175,6 +186,8 @@ public fun add_enable_proposal_type_step(
     ou: &OU,
     payload: EnableProposalType,
 ) {
+    frame.check_frame_build_version();
+    ou.check_version();
     assert!(payload.config().permissions() == 0, EGrantInComposite);
     assert!(payload.config().borrow_scope().is_empty(), EGrantInComposite);
     add_step_unchecked(frame, ou, payload);
@@ -189,6 +202,8 @@ public fun add_update_proposal_config_step(
     ou: &OU,
     payload: UpdateProposalConfig,
 ) {
+    frame.check_frame_build_version();
+    ou.check_version();
     let bits = payload.permissions();
     let scope = payload.borrow_scope();
     if (bits.is_some() || scope.is_some()) {
@@ -239,6 +254,8 @@ public fun submit_composite(
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
+    ou.check_version();
+    frame.check_frame_build_version();
     assert!(frame.ou_id == ou.id(), EOUIdMismatch);
     assert!(ou.status().is_active(), EOUNotActive);
     assert!(!frame.step_type_keys.is_empty(), EEmptyFrame);
@@ -265,6 +282,13 @@ public fun submit_composite(
 
     let step_count = frame.step_type_keys.length();
 
+    // The shared frame and the proposal take the OU's floor, raised to this
+    // release's MIN_SUPPORTED.
+    let mut floor = frame.min_version;
+    if (ou.min_version() > floor) floor = ou.min_version();
+    let floor = version::raised(floor);
+    frame.min_version = floor;
+
     // Seal the frame before sharing so no caller can mutate it after the vote.
     seal_frame(&mut frame);
 
@@ -280,6 +304,7 @@ public fun submit_composite(
         effective,
         ou.governance(),
         true,
+        floor,
         clock,
         ctx,
     );
@@ -306,6 +331,9 @@ public fun begin_pipeline(
     frame: &CompositeFrame,
     ticket: ExecutionTicket<CompositePayload>,
 ): Pipeline {
+    ou.check_version();
+    frame.check_version();
+    ticket.check_ticket_version();
     assert!(ou.id() == ticket.ticket_ou_id(), EOUIdMismatch);
     let payload = ticket.ticket_payload();
     assert!(payload.frame_id() == object::id(frame), EFrameMismatch);
@@ -319,6 +347,10 @@ public fun begin_pipeline(
     let last_executed_snapshot = snapshot_last_executed(ou, payload.step_types());
     let ou_id = ticket.ticket_ou_id();
     let composite_proposal_id = ticket.ticket_proposal_id();
+    let ticket_floor = ticket.ticket_min_version();
+    let mut min_version = if (frame.min_version > ticket_floor) frame.min_version else ticket_floor;
+    if (ou.min_version() > min_version) min_version = ou.min_version();
+    let min_version = version::raised(min_version);
 
     // Consume the composite-level ticket; the Pipeline hot potato takes over.
     ticket.discharge(composite_payload::permit());
@@ -330,6 +362,7 @@ public fun begin_pipeline(
         current_step: 0,
         total_steps,
         last_executed_snapshot,
+        min_version,
     }
 }
 
@@ -351,6 +384,10 @@ public fun advance_step<P: store>(
     freeze: &EmergencyFreeze,
     clock: &Clock,
 ): (ExecutionTicket<P>, Pipeline) {
+    ou.check_version_mut();
+    frame.check_version_mut();
+    pipeline.check_pipeline_version();
+    freeze.check_version();
     assert!(ou.id() == pipeline.ou_id, EOUIdMismatch);
     assert!(object::id(frame) == pipeline.frame_id, EFrameMismatch);
     assert!(pipeline.current_step < pipeline.total_steps, EPipelineComplete);
@@ -382,12 +419,18 @@ public fun advance_step<P: store>(
     let payload: P = df::remove(&mut frame.id, StepKey { index: step_idx });
     frame.steps_extracted = frame.steps_extracted + 1;
 
+    // The step ticket takes the highest floor among the pipeline, and the OU
+    // and frame as raised above.
+    let mut step_floor = pipeline.min_version;
+    if (ou.min_version() > step_floor) step_floor = ou.min_version();
+    if (frame.min_version > step_floor) step_floor = frame.min_version;
     let ticket = proposal::new_ticket_composite<P>(
         pipeline.ou_id,
         pipeline.composite_proposal_id,
         payload,
         step_config.permissions(),
         step_config.borrow_scope(),
+        step_floor,
     );
 
     let Pipeline {
@@ -397,6 +440,7 @@ public fun advance_step<P: store>(
         current_step: _,
         total_steps,
         last_executed_snapshot,
+        min_version,
     } = pipeline;
 
     let next = Pipeline {
@@ -406,6 +450,7 @@ public fun advance_step<P: store>(
         current_step: step_idx + 1,
         total_steps,
         last_executed_snapshot,
+        min_version,
     };
 
     (ticket, next)
@@ -414,6 +459,7 @@ public fun advance_step<P: store>(
 /// Consume the Pipeline hot potato after all steps have been advanced.
 /// Aborts if any steps remain unexecuted.
 public fun finalize_pipeline(pipeline: Pipeline) {
+    pipeline.check_pipeline_version();
     assert!(pipeline.current_step == pipeline.total_steps, EPipelineIncomplete);
     let Pipeline {
         frame_id: _,
@@ -422,6 +468,7 @@ public fun finalize_pipeline(pipeline: Pipeline) {
         current_step: _,
         total_steps: _,
         last_executed_snapshot: _,
+        min_version: _,
     } = pipeline;
 }
 
@@ -430,6 +477,7 @@ public fun finalize_pipeline(pipeline: Pipeline) {
 /// The caller receives the Sui storage rebate.
 /// Aborts if any step payloads remain unextracted (EFrameNotExhausted).
 public fun delete_exhausted_frame(frame: CompositeFrame) {
+    frame.check_version();
     let CompositeFrame {
         id,
         sealed: _,
@@ -437,6 +485,7 @@ public fun delete_exhausted_frame(frame: CompositeFrame) {
         ou_id: _,
         step_type_keys,
         step_types: _,
+        min_version: _,
     } = frame;
     assert!(steps_extracted == step_type_keys.length(), EFrameNotExhausted);
     object::delete(id);
@@ -577,3 +626,57 @@ public fun pipeline_current_step(pipeline: &Pipeline): u64 { pipeline.current_st
 public fun pipeline_total_steps(pipeline: &Pipeline): u64 { pipeline.total_steps }
 
 public fun max_composite_steps(): u64 { MAX_COMPOSITE_STEPS }
+
+// === Version gate (ARMATURE-45, see `version`) ===
+
+/// The oldest framework version allowed to act on this CompositeFrame.
+public fun min_version(self: &CompositeFrame): u64 { self.min_version }
+
+/// Raise this CompositeFrame's floor to the running release's `MIN_SUPPORTED`. Anyone
+/// may call it on a shared (sealed) frame; it never lowers the floor. Run by
+/// the sweep after a security upgrade. An unsealed frame is owned and is never
+/// raised: this only checks it (see `check_frame_build_version`), so its owner
+/// can't launder a frame built by a retired release.
+public fun enforce_version(self: &mut CompositeFrame) {
+    if (self.sealed) self.check_version_mut() else self.check_frame_build_version()
+}
+
+/// Abort unless this release may build on or submit the unsealed frame `self`:
+/// its floor must be at least `MIN_SUPPORTED` (`version::assert_stamp_supported`),
+/// so a frame whose steps a retired release's `add_step` checked is refused.
+public(package) fun check_frame_build_version(self: &CompositeFrame) {
+    version::assert_stamp_supported(self.min_version)
+}
+
+/// Abort `version::EVersionRetired` if this release is retired for `self`.
+public(package) fun check_version(self: &CompositeFrame) {
+    version::assert_supported(self.min_version)
+}
+
+/// `check_version`, then raise the floor to `MIN_SUPPORTED`.
+public(package) fun check_version_mut(self: &mut CompositeFrame) {
+    self.min_version = version::check_and_raise(object::id(self), self.min_version);
+}
+
+/// The version floor this pipeline carries.
+public fun pipeline_min_version(pipeline: &Pipeline): u64 { pipeline.min_version }
+
+/// Abort `version::EVersionRetired` if this release is retired for the pipeline.
+public(package) fun check_pipeline_version(pipeline: &Pipeline) {
+    version::assert_stamp_supported(pipeline.min_version)
+}
+
+#[test_only]
+public fun set_min_version_for_testing(self: &mut CompositeFrame, min_version: u64) {
+    self.min_version = min_version;
+}
+
+#[test_only]
+/// Return `pipeline` stamped with `min_version`, e.g. `version::retired_floor_for_testing()`.
+public fun pipeline_with_min_version_for_testing(
+    mut pipeline: Pipeline,
+    min_version: u64,
+): Pipeline {
+    pipeline.min_version = min_version;
+    pipeline
+}

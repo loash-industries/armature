@@ -43,6 +43,8 @@ public fun execute_transfer_freeze_admin(
     cap: FreezeAdminCap,
     ticket: ExecutionTicket<TransferFreezeAdmin>,
 ) {
+    freeze.check_version_mut();
+    ticket.check_ticket_version();
     assert!(freeze.ou_id() == ticket.ticket_ou_id(), EFreezeOuMismatch);
     assert!(cap.admin_cap_ou_id() == freeze.ou_id(), ECapOuMismatch);
 
@@ -66,6 +68,8 @@ public fun execute_unfreeze_proposal_type(
     freeze: &mut EmergencyFreeze,
     ticket: ExecutionTicket<UnfreezeProposalType>,
 ) {
+    freeze.check_version_mut();
+    ticket.check_ticket_version();
     let payload = ticket.ticket_payload();
     emergency::governance_unfreeze_type(
         freeze,
@@ -80,6 +84,8 @@ public fun execute_update_freeze_config(
     freeze: &mut EmergencyFreeze,
     ticket: ExecutionTicket<UpdateFreezeConfig>,
 ) {
+    freeze.check_version_mut();
+    ticket.check_ticket_version();
     assert!(freeze.ou_id() == ticket.ticket_ou_id(), EFreezeOuMismatch);
 
     let payload = ticket.ticket_payload();
@@ -104,6 +110,8 @@ public fun execute_update_freeze_exempt_types(
     freeze: &mut EmergencyFreeze,
     ticket: ExecutionTicket<UpdateFreezeExemptTypes>,
 ) {
+    freeze.check_version_mut();
+    ticket.check_ticket_version();
     assert!(freeze.ou_id() == ticket.ticket_ou_id(), EFreezeOuMismatch);
 
     let payload = ticket.ticket_payload();

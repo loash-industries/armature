@@ -27,6 +27,7 @@ use armature::update_freeze_config::UpdateFreezeConfig;
 use armature::update_freeze_exempt_types::UpdateFreezeExemptTypes;
 use armature::update_metadata::UpdateMetadata;
 use armature::update_proposal_config::UpdateProposalConfig;
+use armature::version;
 use std::string::String;
 use std::type_name::{Self, TypeName};
 use sui::dynamic_field as df;
@@ -187,6 +188,9 @@ public struct OU has key, store {
     controller_paused: bool,
     encrypt_epoch: u64,
     entries: vector<ID>,
+    /// Version floor (see `version`): MIN_SUPPORTED at creation, or the
+    /// parent's floor for a SubOU or SpawnOU successor if higher.
+    min_version: u64,
 }
 
 /// Dynamic-field key of a proposal-type slot. Wraps the canonical `TypeName`
@@ -294,12 +298,25 @@ public fun create(
     metadata_uri: String,
     ctx: &mut TxContext,
 ): ID {
+    create_with_floor(gov_init, name, metadata_uri, version::min_supported(), ctx)
+}
+
+/// `create` with the new OU's version floor raised to `parent_floor`: for a
+/// SpawnOU successor, which inherits its predecessor's floor.
+public(package) fun create_with_floor(
+    gov_init: &GovernanceTypeInit,
+    name: String,
+    metadata_uri: String,
+    parent_floor: u64,
+    ctx: &mut TxContext,
+): ID {
     let (ou, treasury, cap_vault, ou_charter, freeze, freeze_admin_cap) = build(
         gov_init,
         name,
         metadata_uri,
         false,
         vector[],
+        parent_floor,
         ctx,
     );
     let ou_id = object::id(&ou);
@@ -324,9 +341,10 @@ public(package) fun create_returning_vault(
     gov_init: &GovernanceTypeInit,
     name: String,
     metadata_uri: String,
+    parent_floor: u64,
     ctx: &mut TxContext,
 ): (ID, capability_vault::CapabilityVault) {
-    create_returning_vault_configured(gov_init, name, metadata_uri, vector[], ctx)
+    create_returning_vault_configured(gov_init, name, metadata_uri, vector[], parent_floor, ctx)
 }
 
 /// Like `create_returning_vault` but applies `config_overrides` over the default
@@ -339,6 +357,7 @@ public(package) fun create_returning_vault_configured(
     name: String,
     metadata_uri: String,
     config_overrides: vector<ProposalTypeInit>,
+    parent_floor: u64,
     ctx: &mut TxContext,
 ): (ID, capability_vault::CapabilityVault) {
     let (ou, treasury, cap_vault, ou_charter, freeze, freeze_admin_cap) = build(
@@ -347,6 +366,7 @@ public(package) fun create_returning_vault_configured(
         metadata_uri,
         false,
         config_overrides,
+        parent_floor,
         ctx,
     );
     let ou_id = object::id(&ou);
@@ -370,6 +390,7 @@ public(package) fun create_subou_returning_vault_configured(
     name: String,
     metadata_uri: String,
     config_overrides: vector<ProposalTypeInit>,
+    parent_floor: u64,
     ctx: &mut TxContext,
 ): (OU, emergency::FreezeAdminCap, capability_vault::CapabilityVault) {
     let (ou, treasury, cap_vault, ou_charter, freeze, freeze_admin_cap) = build(
@@ -378,6 +399,7 @@ public(package) fun create_subou_returning_vault_configured(
         metadata_uri,
         true,
         config_overrides,
+        parent_floor,
         ctx,
     );
 
@@ -396,9 +418,17 @@ public(package) fun create_subou_returning_vault(
     gov_init: &GovernanceTypeInit,
     name: String,
     metadata_uri: String,
+    parent_floor: u64,
     ctx: &mut TxContext,
 ): (OU, emergency::FreezeAdminCap, capability_vault::CapabilityVault) {
-    create_subou_returning_vault_configured(gov_init, name, metadata_uri, vector[], ctx)
+    create_subou_returning_vault_configured(
+        gov_init,
+        name,
+        metadata_uri,
+        vector[],
+        parent_floor,
+        ctx,
+    )
 }
 
 /// Create a new SubOU with Board governance and filtered proposal types.
@@ -407,7 +437,11 @@ public(package) fun create_subou_returning_vault(
 /// Companion objects (treasury, vault, charter, emergency) are shared internally.
 /// Hierarchy-altering proposal types (SpawnOU, SpinOutSubOU, CreateSubOU)
 /// and the bypass meta-types are excluded from the SubOU's default slots.
-public fun create_subou(
+///
+/// Framework-only, like `share_subou`: outside the framework a SubOU can only
+/// be made through CreateSubOU or `tribe::create_wired_subou`, which bind its
+/// controller. Tests outside the package use `create_subou_for_testing`.
+public(package) fun create_subou(
     gov_init: &GovernanceTypeInit,
     name: String,
     metadata_uri: String,
@@ -419,11 +453,32 @@ public fun create_subou(
 /// Like `create_subou` but applies `config_overrides` over the subou default
 /// slots. Existing types have their config replaced; non-blocked types not yet
 /// enabled are inserted and enabled. Blocked types abort with EBlockedProposalType.
-public fun create_subou_configured(
+/// Framework-only (see `create_subou`).
+public(package) fun create_subou_configured(
     gov_init: &GovernanceTypeInit,
     name: String,
     metadata_uri: String,
     config_overrides: vector<ProposalTypeInit>,
+    ctx: &mut TxContext,
+): (OU, emergency::FreezeAdminCap) {
+    create_subou_configured_with_floor(
+        gov_init,
+        name,
+        metadata_uri,
+        config_overrides,
+        version::min_supported(),
+        ctx,
+    )
+}
+
+/// `create_subou_configured` with the SubOU's version floor raised to
+/// `parent_floor`: a SubOU inherits its parent's floor.
+public(package) fun create_subou_configured_with_floor(
+    gov_init: &GovernanceTypeInit,
+    name: String,
+    metadata_uri: String,
+    config_overrides: vector<ProposalTypeInit>,
+    parent_floor: u64,
     ctx: &mut TxContext,
 ): (OU, emergency::FreezeAdminCap) {
     let (ou, treasury, cap_vault, ou_charter, freeze, freeze_admin_cap) = build(
@@ -432,6 +487,7 @@ public fun create_subou_configured(
         metadata_uri,
         true,
         config_overrides,
+        parent_floor,
         ctx,
     );
 
@@ -443,10 +499,16 @@ public fun create_subou_configured(
     (ou, freeze_admin_cap)
 }
 
-/// Share a SubOU after setting its controller_cap_id.
-/// Consumes the OU by value — can only be called on an un-shared OU.
+/// Share a SubOU after setting its controller_cap_id. Framework-only.
+///
+/// It was `public` through Cycle 7. Sui lets a transaction take an
+/// already-shared object by value as long as it re-shares it, so anyone could
+/// pass a live OU and overwrite its `controller_cap_id`: marking a root OU as
+/// controlled for good, or moving a SubOU's pointer off its bound control
+/// (ARMATURE-45). Its callers (`tribe`, `lifecycle_ops`) pass only OUs they
+/// have just created.
 #[allow(lint(custom_state_change, share_owned))]
-public fun share_subou(mut ou: OU, controller_cap_id: ID) {
+public(package) fun share_subou(mut ou: OU, controller_cap_id: ID) {
     ou.controller_cap_id = option::some(controller_cap_id);
     transfer::share_object(ou);
 }
@@ -465,6 +527,11 @@ public fun destroy(
     charter: charter::Charter,
     freeze: emergency::EmergencyFreeze,
 ) {
+    ou.check_version();
+    treasury.check_version();
+    vault.check_version();
+    charter.check_version();
+    freeze.check_version();
     assert!(ou.status.is_migrating(), ENotMigrating);
     assert!(object::id(&treasury) == ou.treasury_id, ETreasuryIdMismatch);
     assert!(object::id(&vault) == ou.capability_vault_id, EVaultIdMismatch);
@@ -495,6 +562,7 @@ public fun destroy(
         controller_paused: _,
         encrypt_epoch: _,
         entries: _,
+        min_version: _,
     } = ou;
     governance.destroy();
     id.delete();
@@ -905,6 +973,8 @@ public fun set_board_governance<P>(
     to_remove: vector<address>,
     req: &ExecutionRequest<P>,
 ) {
+    self.check_version_mut();
+    req.check_request_version();
     self.assert_permitted(permissions::board_set(), req);
     let any_removed = !to_remove.is_empty();
     self.governance.set_board(to_add, to_remove);
@@ -920,6 +990,8 @@ public fun add_board_member_governance<P>(
     member: address,
     req: &ExecutionRequest<P>,
 ) {
+    self.check_version_mut();
+    req.check_request_version();
     self.assert_permitted(permissions::board_add(), req);
     self.governance.add_board_member(member);
 }
@@ -945,6 +1017,8 @@ public fun add_board_members_governance<P>(
     new_members: vector<address>,
     req: &ExecutionRequest<P>,
 ): (vector<address>, vector<address>) {
+    self.check_version_mut();
+    req.check_request_version();
     self.assert_permitted(permissions::board_add(), req);
     self.governance.add_board_members(new_members)
 }
@@ -957,6 +1031,8 @@ public fun remove_board_member_governance<P>(
     member: address,
     req: &ExecutionRequest<P>,
 ) {
+    self.check_version_mut();
+    req.check_request_version();
     self.assert_permitted(permissions::board_remove(), req);
     self.governance.remove_board_member(member);
     self.increment_encrypt_epoch();
@@ -970,6 +1046,8 @@ public fun remove_board_members_governance<P>(
     members: vector<address>,
     req: &ExecutionRequest<P>,
 ): vector<address> {
+    self.check_version_mut();
+    req.check_request_version();
     self.assert_permitted(permissions::board_remove(), req);
     let removed = self.governance.remove_board_members(members);
     self.increment_encrypt_epoch();
@@ -990,6 +1068,8 @@ public fun enable_proposal_type<NewType, P>(
     config: ProposalConfig,
     req: &ExecutionRequest<P>,
 ) {
+    self.check_version_mut();
+    req.check_request_version();
     self.assert_permitted(permissions::type_admin(), req);
     let name = type_name_of<NewType>();
     assert!(
@@ -1014,6 +1094,8 @@ public fun enable_proposal_type<NewType, P>(
 /// it here holds it for every TYPE_ADMIN caller.
 /// Requires TYPE_ADMIN (`assert_permitted`).
 public fun disable_proposal_type<P>(self: &mut OU, name: TypeName, req: &ExecutionRequest<P>) {
+    self.check_version_mut();
+    req.check_request_version();
     self.assert_permitted(permissions::type_admin(), req);
     assert!(!is_undisableable_type(&name), EUndisableableType);
     let ou_id = self.id();
@@ -1031,6 +1113,8 @@ public fun update_proposal_config<P>(
     new_config: ProposalConfig,
     req: &ExecutionRequest<P>,
 ) {
+    self.check_version_mut();
+    req.check_request_version();
     self.assert_permitted(permissions::type_admin(), req);
     assert!(
         !is_framework_type(&name)
@@ -1061,6 +1145,8 @@ public fun update_proposal_config<P>(
 /// Pause or resume proposal execution on this OU.
 /// Requires PAUSE (`assert_permitted`).
 public fun set_execution_paused<P>(self: &mut OU, paused: bool, req: &ExecutionRequest<P>) {
+    self.check_version_mut();
+    req.check_request_version();
     self.assert_permitted(permissions::pause(), req);
     self.execution_paused = paused;
 }
@@ -1068,6 +1154,8 @@ public fun set_execution_paused<P>(self: &mut OU, paused: bool, req: &ExecutionR
 /// Set or clear controller-initiated pause on this SubOU.
 /// Controller override only: requires a privileged request (`assert_controller`).
 public fun set_controller_paused<P>(self: &mut OU, paused: bool, req: &ExecutionRequest<P>) {
+    self.check_version_mut();
+    req.check_request_version();
     self.assert_controller(req);
     self.controller_paused = paused;
 }
@@ -1076,6 +1164,8 @@ public fun set_controller_paused<P>(self: &mut OU, paused: bool, req: &Execution
 /// Resets controller_cap_id to none and controller_paused to false.
 /// Controller override only: requires a privileged request (`assert_controller`).
 public fun clear_controller<P>(self: &mut OU, req: &ExecutionRequest<P>) {
+    self.check_version_mut();
+    req.check_request_version();
     self.assert_controller(req);
     self.controller_cap_id = option::none();
     self.controller_paused = false;
@@ -1084,6 +1174,8 @@ public fun clear_controller<P>(self: &mut OU, req: &ExecutionRequest<P>) {
 /// Transition the OU to Migrating status (irreversible).
 /// Requires MIGRATE (`assert_permitted`).
 public fun set_migrating<P>(self: &mut OU, successor_ou_id: ID, req: &ExecutionRequest<P>) {
+    self.check_version_mut();
+    req.check_request_version();
     self.assert_permitted(permissions::migrate(), req);
     self.status = OUStatus::Migrating { successor_ou_id };
 }
@@ -1102,6 +1194,8 @@ public fun borrow_type_state<P, S: store>(self: &OU): &S {
 
 /// Borrow mutable reference to type state. Requires ExecutionRequest for authorization.
 public fun borrow_type_state_mut<P, S: store>(self: &mut OU, req: &ExecutionRequest<P>): &mut S {
+    self.check_version_mut();
+    req.check_request_version();
     assert!(self.id() == req.req_ou_id(), EOUIdMismatch);
     df::borrow_mut(&mut self.id, type_name::with_defining_ids<P>())
 }
@@ -1109,12 +1203,16 @@ public fun borrow_type_state_mut<P, S: store>(self: &mut OU, req: &ExecutionRequ
 /// Initialize type state for proposal type P (lazy-init on first execution).
 /// Requires ExecutionRequest for authorization.
 public fun init_type_state<P, S: store>(self: &mut OU, state: S, req: &ExecutionRequest<P>) {
+    self.check_version_mut();
+    req.check_request_version();
     assert!(self.id() == req.req_ou_id(), EOUIdMismatch);
     df::add(&mut self.id, type_name::with_defining_ids<P>(), state);
 }
 
 /// Remove type state for proposal type P. Requires ExecutionRequest for authorization.
 public fun remove_type_state<P, S: store>(self: &mut OU, req: &ExecutionRequest<P>): S {
+    self.check_version_mut();
+    req.check_request_version();
     assert!(self.id() == req.req_ou_id(), EOUIdMismatch);
     df::remove(&mut self.id, type_name::with_defining_ids<P>())
 }
@@ -1185,6 +1283,7 @@ fun build(
     metadata_uri: String,
     is_subou: bool,
     overrides: vector<ProposalTypeInit>,
+    parent_floor: u64,
     ctx: &mut TxContext,
 ): (
     OU,
@@ -1205,18 +1304,19 @@ fun build(
     // Create a placeholder OU ID so companion objects can reference it
     let ou_uid = object::new(ctx);
     let ou_id = ou_uid.to_inner();
+    let min_version = version::floor_for_new(parent_floor);
 
     // Create companion objects
-    let treasury = treasury_vault::new(ou_id, ctx);
+    let treasury = treasury_vault::new(ou_id, min_version, ctx);
     let treasury_id = object::id(&treasury);
 
-    let cap_vault = capability_vault::new(ou_id, ctx);
+    let cap_vault = capability_vault::new(ou_id, min_version, ctx);
     let capability_vault_id = object::id(&cap_vault);
 
-    let ou_charter = charter::new(ou_id, name, metadata_uri, ctx);
+    let ou_charter = charter::new(ou_id, name, metadata_uri, min_version, ctx);
     let charter_id = object::id(&ou_charter);
 
-    let freeze = emergency::new(ou_id, ctx);
+    let freeze = emergency::new(ou_id, min_version, ctx);
     let emergency_freeze_id = object::id(&freeze);
 
     let freeze_admin_cap = emergency::new_admin_cap(ou_id, ctx);
@@ -1234,6 +1334,7 @@ fun build(
         controller_paused: false,
         encrypt_epoch: 0,
         entries: vector[],
+        min_version,
     };
 
     event::emit(OUCreated {
@@ -1464,8 +1565,49 @@ public fun set_controller_for_testing(self: &mut OU, control_id: ID) {
 }
 
 #[test_only]
+/// `share_subou` for tests outside the framework package, now that it is
+/// `public(package)`.
+public fun share_subou_for_testing(ou: OU, controller_cap_id: ID) {
+    share_subou(ou, controller_cap_id)
+}
+
+/// `create_subou` for tests outside the framework package.
+#[test_only]
+public fun create_subou_for_testing(
+    gov_init: &GovernanceTypeInit,
+    name: String,
+    metadata_uri: String,
+    ctx: &mut TxContext,
+): (OU, emergency::FreezeAdminCap) {
+    create_subou(gov_init, name, metadata_uri, ctx)
+}
+
+#[test_only]
+public fun set_min_version_for_testing(self: &mut OU, min_version: u64) {
+    self.min_version = min_version;
+}
+
+#[test_only]
 /// Disable proposal type `T` on the OU without an ExecutionRequest.
 public fun test_disable_type<T>(self: &mut OU) {
     let ou_id = self.id();
     remove_slot(&mut self.id, ou_id, type_name_of<T>());
+}
+
+// === Version gate (ARMATURE-45, see `version`) ===
+
+/// The oldest framework version allowed to act on this OU.
+public fun min_version(self: &OU): u64 { self.min_version }
+
+/// Raise this OU's floor to the running release's `MIN_SUPPORTED`. Anyone
+/// may call it; it never lowers the floor. Run by the sweep after a security
+/// upgrade.
+public fun enforce_version(self: &mut OU) { self.check_version_mut() }
+
+/// Abort `version::EVersionRetired` if this release is retired for `self`.
+public(package) fun check_version(self: &OU) { version::assert_supported(self.min_version) }
+
+/// `check_version`, then raise the floor to `MIN_SUPPORTED`.
+public(package) fun check_version_mut(self: &mut OU) {
+    self.min_version = version::check_and_raise(object::id(self), self.min_version);
 }
