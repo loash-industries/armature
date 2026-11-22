@@ -367,6 +367,13 @@ public fun store_cap_for_testing<T: key + store>(self: &mut CapabilityVault, cap
     store_cap_init(self, cap);
 }
 
+#[test_only]
+/// Return `loan` stamped with `min_version`, e.g. `version::retired_floor_for_testing()`.
+public fun cap_loan_with_min_version_for_testing(mut loan: CapLoan, min_version: u64): CapLoan {
+    loan.min_version = min_version;
+    loan
+}
+
 /// Returns true if the vault contains no capabilities.
 public fun is_empty(self: &CapabilityVault): bool {
     self.cap_ids.is_empty()

@@ -335,3 +335,22 @@ public fun finish_transfer_assets(self: AssetTransfer) {
     assert!(coins_left.is_empty() && caps_left.is_empty(), EAssetsRemaining);
     ticket.discharge(transfer_assets::permit());
 }
+
+// === Test Helpers ===
+
+#[test_only]
+/// Return `self` with its ticket's request stamped with `min_version`, e.g.
+/// `version::retired_floor_for_testing()`.
+public fun asset_transfer_with_min_version_for_testing(
+    self: AssetTransfer,
+    min_version: u64,
+): AssetTransfer {
+    let AssetTransfer { ticket, source_treasury_id, source_vault_id, coins_left, caps_left } = self;
+    AssetTransfer {
+        ticket: ticket.ticket_with_min_version_for_testing(min_version),
+        source_treasury_id,
+        source_vault_id,
+        coins_left,
+        caps_left,
+    }
+}

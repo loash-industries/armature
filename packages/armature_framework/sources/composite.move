@@ -646,3 +646,13 @@ public(package) fun check_pipeline_version(pipeline: &Pipeline) {
 public fun set_min_version_for_testing(self: &mut CompositeFrame, min_version: u64) {
     self.min_version = min_version;
 }
+
+#[test_only]
+/// Return `pipeline` stamped with `min_version`, e.g. `version::retired_floor_for_testing()`.
+public fun pipeline_with_min_version_for_testing(
+    mut pipeline: Pipeline,
+    min_version: u64,
+): Pipeline {
+    pipeline.min_version = min_version;
+    pipeline
+}
